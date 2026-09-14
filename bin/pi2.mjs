@@ -70,7 +70,7 @@ function printHelp() {
 
 \x1b[1mTUI KEYS:\x1b[0m
   enter send/steer · esc abort (again = force-restart pi) · ^r resume session · tab focus · ⇧tab view
-  ↑↓ history/scroll · pgup/pgdn/wheel scroll focused pane · ^t settings · ^n new session · x expand · ^c quit
+  ↑↓ history/scroll · pgup/pgdn/wheel scroll focused pane · drag-select copies · ^t settings · ^n new session · x expand · ^c quit
 
 \x1b[1mEXAMPLES:\x1b[0m
   pi2

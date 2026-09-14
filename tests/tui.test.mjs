@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseD2, layoutD2, renderD2 } from '../lib/tui/d2.mjs';
-import { planSideWidth } from '../lib/tui/app.mjs';
+import { planSideWidth, makeKeyParser } from '../lib/tui/app.mjs';
 import { planD2, computePhase, freshChecks, PHASES } from '../lib/delivery.mjs';
 import { createFeed, applyEvent, summarizeArgs, renderFeed, hydrateFeed } from '../lib/tui/feed.mjs';
-import { strip, width, wrap, truncate, hasTruecolor } from '../lib/tui/ansi.mjs';
+import { strip, width, wrap, truncate, hasTruecolor, sliceCols, inverseCols } from '../lib/tui/ansi.mjs';
 import { getTheme, resolveThemeName, flattenTheme, THEME_NAMES } from '../lib/tui/theme.mjs';
 import { framePrompt, shouldFrame, unframe, frameHint, FRAME_HINTS } from '../lib/tui/framing.mjs';
 import { listSessions, mostRecentSession, sessionDirFor, buildPiArgs } from '../lib/pi.mjs';
@@ -335,4 +335,44 @@ test('buildPiArgs forwards session selection but never --resume', () => {
   assert.deepEqual(buildPiArgs({ session: 'abc123', delivery: false }, { installed: true }), ['--session', 'abc123']);
   assert.deepEqual(buildPiArgs({ continue: true, delivery: false }, { installed: true }), ['--continue']);
   assert.ok(!buildPiArgs({ resume: true, delivery: false }, { installed: true }).includes('--resume'));
+});
+
+test('mouse SGR events map to press, drag, release, and wheel keys', () => {
+  const keys = [];
+  const parse = makeKeyParser(k => keys.push(k));
+  parse('\x1b[<0;10;5M');   // left press at col 10, row 5
+  parse('\x1b[<32;14;5M');  // left drag to col 14
+  parse('\x1b[<0;14;5m');   // release
+  parse('\x1b[<64;3;3M');   // wheel up
+  assert.deepEqual(keys.map(k => k.key), ['mousedown', 'mousedrag', 'mouseup', 'wheelup']);
+  assert.deepEqual({ x: keys[0].x, y: keys[0].y, button: keys[0].button }, { x: 10, y: 5, button: 0 });
+  assert.equal(keys[1].button, 0);
+  assert.equal(keys[2].x, 14);
+  // modifier bits are masked off; right-button presses don't masquerade as left
+  const more = [];
+  const parse2 = makeKeyParser(k => more.push(k));
+  parse2('\x1b[<4;1;1M');   // shift+left press → still a left mousedown
+  parse2('\x1b[<34;2;2M');  // right-button drag → button 2
+  assert.equal(more[0].button, 0);
+  assert.equal(more[1].key, 'mousedrag');
+  assert.equal(more[1].button, 2);
+});
+
+test('sliceCols and inverseCols handle display-column ranges', () => {
+  assert.equal(sliceCols('hello world', 0, 5), 'hello');
+  assert.equal(sliceCols('hello world', 6, 11), 'world');
+  assert.equal(sliceCols('he世llo', 0, 4), 'he世'); // wide char occupies 2 columns
+  const marked = inverseCols('plain text', 0, 5);
+  assert.equal(strip(marked), 'plain text');
+  assert.match(marked, /\x1b\[7mplain\x1b\[27m/);
+  // selection past end of line → inverse padding fills the requested range
+  const padded = inverseCols('ab', 0, 8);
+  assert.equal(strip(padded), 'ab      ');
+  assert.match(padded, /\x1b\[7m {6}\x1b\[27m/);
+  // short line inside a mid-selection row starting at column 0
+  assert.equal(strip(inverseCols('x', 0, 4)), 'x   ');
+  // styled input keeps its escapes and stays unaltered outside the range
+  const styled = inverseCols('\x1b[31mred\x1b[0m plain', 4, 9);
+  assert.equal(strip(styled), 'red plain');
+  assert.match(styled, /\x1b\[27m/);
 });
