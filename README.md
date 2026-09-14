@@ -17,9 +17,26 @@ git clone https://github.com/B-icy/pi2 && cd pi2
 npm ci && npm i -g .          # gives you `pi2`; or just run `node bin/pi2.mjs`
 ```
 
-First run needs a provider — pi's own auth flow applies (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or pi's `/login`).
-
 Still using pi directly? `pi install git:github.com/B-icy/pi2` works too — pi2 detects a pi-managed install and skips the bundled copy.
+
+## Connect a provider
+
+First run needs AI credentials. One store (`~/.pi/agent/auth.json`) covers the console, headless runs, and the dashboard.
+
+**Subscription** (Claude Pro/Max, ChatGPT Plus/Pro, GitHub Copilot, xAI, OpenRouter, Radius):
+
+```sh
+pi2 login          # opens pi's auth — run /login, pick a provider, /quit when done
+```
+
+**API key** — export the env var, or run `pi2 login` and pick a key provider to store it:
+
+```sh
+export ANTHROPIC_API_KEY=sk-ant-...   # or OPENAI_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, XAI_API_KEY, ...
+pi2
+```
+
+Full provider list: [pi providers docs](https://github.com/earendil-works/pi-coding-agent/blob/main/docs/providers.md). Override the default model with `--model <id>` (e.g. `pi2 --model sonnet`).
 
 ## Use it
 
