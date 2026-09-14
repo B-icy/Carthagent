@@ -52,7 +52,11 @@ function printHelp() {
   --model <id>            Model id or pattern (e.g. openrouter/inkling, sonnet)
                           In the TUI, type on the model row to search/autocomplete
   --thinking <level>      off|minimal|low|medium|high|xhigh|max
-  --theme <name>          opencode | tokyonight | nebula | ember | forest | mono
+  --theme <name>          opencode | tokyonight | nebula | ember | forest | mono |
+                          obsidian | midnight | nord | paper | daylight |
+                          solarized-dark | solarized-light | solarized |
+                          okabe-dark | okabe-light | okabe |
+                          contrast-dark | contrast-light | contrast | system
   --pi-cli <path>         Explicit path to pi's dist/cli.js or binary
   --session <path|id>     Resume a specific session file or partial session id
   --continue, -c          Resume the most recent session for this directory
