@@ -1,0 +1,21 @@
+{
+  "name": "cli",
+  "description": "Python task-tracker CLI scored by a subprocess behavioral grader",
+  "prompt": "Build a simple Python command-line task tracker. It should let me add, list, and complete tasks, save them between runs, and include tests and a short README.",
+  "developmentChecks": [
+    {
+      "id": "acceptance",
+      "kind": "runtime",
+      "argv": ["{python}", "{scenario}/grade_cli.py", "{cwd}"],
+      "timeoutSeconds": 45
+    }
+  ],
+  "holdoutChecks": [
+    {
+      "id": "acceptance",
+      "kind": "runtime",
+      "argv": ["{python}", "{scenario}/grade_cli.py", "{cwd}"],
+      "timeoutSeconds": 45
+    }
+  ]
+}

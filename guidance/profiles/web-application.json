@@ -1,0 +1,26 @@
+{
+  "id": "web-application",
+  "title": "Web application",
+  "priority": 100,
+  "activateOnDependency": true,
+  "match": {
+    "keywords": ["web", "website", "frontend", "browser", "react", "next.js", "nextjs", "vue", "svelte", "dashboard", "page", "component", "api route"],
+    "dependencies": ["next", "react", "react-dom", "vue", "svelte", "@angular/core", "vite"]
+  },
+  "planning": [
+    "Inspect the existing framework, package scripts, route conventions, design system, and neighboring components before choosing an implementation pattern.",
+    "Define one end-to-end user path before styling breadth. Keep server data access, validation, domain logic, and presentation at explicit boundaries.",
+    "Modify the canonical implementation instead of leaving copy, v1/v2/v3, test-page, or temporary variants in production paths.",
+    "Account for loading, empty, error, retry, narrow viewport, keyboard, and accessible-name states where the requested surface can encounter them.",
+    "Use shared request/response types or runtime schemas at network boundaries; do not spread untyped API payload assumptions through components."
+  ],
+  "checks": [
+    "Run the repository's existing lint, typecheck, test, and production build commands; a dev-server render alone is insufficient.",
+    "Exercise the public browser path with realistic API success and failure responses, assert no console errors, and inspect the result at desktop and narrow widths.",
+    "Check that effects clean up, stale requests cannot overwrite newer state, non-2xx responses are handled before parsing, and loading always settles."
+  ],
+  "review": [
+    "Reject duplicated components, speculative abstractions, placeholder production behavior, dead imports, broad any types, and comments that describe unfinished work.",
+    "Confirm the implementation follows the existing visual language instead of adding isolated inline styling or decorative motion not requested by the user."
+  ]
+}

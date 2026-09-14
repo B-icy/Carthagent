@@ -6,11 +6,11 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from grade_minecraft_clone import nested_ursina_callbacks, playable_frame, run
-
-
 ROOT = Path(__file__).resolve().parents[1]
-GRADER = ROOT / "tests" / "grade_minecraft_clone.py"
+GRADER = ROOT / "scenarios" / "game" / "grade_minecraft_clone.py"
+sys.path.insert(0, str(GRADER.parent))
+
+from grade_minecraft_clone import nested_ursina_callbacks, playable_frame, run
 
 
 def write_file(path, body):

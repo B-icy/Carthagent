@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fingerprint, validatePlan, planD2, pendingChecks, restoreState, runCommand, shouldContinue, localPath, createSerialQueue, validateRevision, turnBudgetExceeded } from '../lib/delivery.mjs';
+import { createReport, latestReport, saveReport } from '../lib/reports.mjs';
 
 function fixture(t) {
   const cwd = mkdtempSync(join(tmpdir(), 'pi delivery spaces '));
@@ -113,4 +114,24 @@ test('provider errors do not consume the productive turn budget', () => {
   assert.equal(turnBudgetExceeded({ turns: 1, providerErrors: 0, maxTurns: 0 }), true);
   for (const bad of [{ turns: 1.5, providerErrors: 0, maxTurns: 1 }, { turns: 1, providerErrors: -1, maxTurns: 1 }, { turns: 1, providerErrors: 0, maxTurns: -1 }])
     assert.throws(() => turnBudgetExceeded(bad));
+});
+test('runCommand works without a log path', async t => {
+  const cwd = fixture(t);
+  const result = await runCommand([process.execPath, '-e', 'console.log("ok")'], { cwd });
+  assert.equal(result.code, 0);
+  assert.match(result.output, /ok/);
+  assert.equal(result.logPath, undefined);
+});
+test('delivery reports are persisted and the newest report is discovered', t => {
+  const cwd = fixture(t);
+  const first = createReport(cwd, { status: 'implementing', plan: plan(), evidence: {} }, 'session-a');
+  const second = createReport(cwd, { status: 'verified', plan: plan(), evidence: {} }, 'session-b');
+  const state = { ...second.state, review: 'reviewed' };
+  saveReport(second.path, state);
+  const newer = new Date(Date.now() + 1000);
+  utimesSync(second.path, newer, newer);
+  const latest = latestReport(cwd);
+  assert.equal(latest.path, second.path);
+  assert.equal(latest.state.review, 'reviewed');
+  assert.match(readFileSync(join(first.dir, 'plan.d2'), 'utf8'), /Working app/);
 });

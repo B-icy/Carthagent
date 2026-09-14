@@ -3,10 +3,21 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync, realpathSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, realpathSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
-const candidates = [process.env.PI2_CLI, process.env.PI_CLI, ...[dirname(process.execPath), dirname(realpathSync(process.execPath))].map(p => join(p, 'node_modules/@earendil-works/pi-coding-agent/dist/cli.js'))].filter(Boolean);
+const candidates = [
+  process.env.PI2_CLI,
+  process.env.PI_CLI,
+  resolve(dirname(fileURLToPath(import.meta.url)), '../node_modules/@earendil-works/pi-coding-agent/dist/cli.js'),
+  resolve(dirname(fileURLToPath(import.meta.url)), '../node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js'),
+  ...[dirname(process.execPath), dirname(realpathSync(process.execPath))].flatMap(path => [
+    join(path, 'node_modules/@earendil-works/pi-coding-agent/dist/cli.js'),
+    join(path, 'node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js'),
+    join(path, '..', 'lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js'),
+    join(path, '..', 'lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js')
+  ])
+].filter(Boolean);
 const cli = candidates.find(existsSync);
 let factory;
 if (cli) {
@@ -280,4 +291,20 @@ test('source mutation by a verifier is recorded as failed evidence', options, as
   await f.call('delivery_plan', f.plan);
   await assert.rejects(f.call('delivery_check', { id: 'run' }), /changedDuringCheck/);
   assert.equal(f.entries.at(-1).data.evidence.run.passed, false);
+});
+test('request guidance is injected behind the scenes and survives follow-ups', options, async t => {
+  const f = fixture(t);
+  writeFileSync(join(f.cwd, 'package.json'), JSON.stringify({ dependencies: { next: '15.1.7' } }));
+  const prompt = 'Add authenticated trades and a portfolio time series chart backed by a third-party API';
+  const started = f.hooks.before_agent_start({ systemPrompt: 'base', prompt }, f.ctx);
+  for (const id of ['web-application', 'authenticated-web', 'transactional-data', 'external-api', 'data-visualization']) assert.match(started.systemPrompt, new RegExp(`\\[${id}\\]`));
+  await f.call('delivery_plan', f.plan);
+  const state = f.entries.at(-1).data;
+  // Persisted only for internal continuity across resumes and follow-up prompts.
+  assert.deepEqual(state.guidanceProfiles, ['web-application', 'authenticated-web', 'transactional-data', 'external-api', 'data-visualization']);
+  assert.equal(state.plan.guidanceProfiles, undefined);
+  assert.doesNotMatch(readFileSync(join(f.cwd, '.harness', 'integration-session', state.runId, 'plan.d2'), 'utf8'), /guidance/i);
+  const followUp = f.hooks.before_agent_start({ systemPrompt: 'base', prompt: 'Fix that failure' }, f.ctx);
+  assert.match(followUp.systemPrompt, /\[transactional-data\]/);
+  assert.match(followUp.systemPrompt, /\[data-visualization\]/);
 });

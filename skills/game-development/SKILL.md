@@ -1,8 +1,8 @@
 ---
 name: game-development
-description: Build or repair games, simulations, and interactive visual applications from a single prompt. Covers engine API probes, asset completeness, frame budgets, deterministic logic tests, real input smoke tests, screenshots, and packaging. Read before implementing a Minecraft/voxel clone or other GUI game.
+description: Build or repair games, simulations, and interactive visual applications through phased delivery. Covers engine API probes, asset completeness, frame budgets, deterministic logic tests, real input smoke tests, screenshots, and packaging. Read before implementing a Minecraft/voxel clone or other GUI game.
 ---
-# One-prompt game delivery
+# Phased game delivery
 
 ## First 10%: discover and de-risk
 - Inspect entry point, installed engine version/source, assets, platform, and run instructions. Preserve the user's original before a major rewrite; do not overwrite unrelated work.

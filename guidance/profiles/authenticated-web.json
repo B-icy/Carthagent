@@ -1,0 +1,24 @@
+{
+  "id": "authenticated-web",
+  "title": "Authenticated web application",
+  "priority": 90,
+  "match": {
+    "keywords": ["auth", "authenticated", "authentication", "authorize", "authorization", "login", "logout", "signup", "account", "oauth", "session", "user", "member"],
+    "dependencies": ["next-auth", "@auth/core", "passport", "lucia", "@clerk/nextjs"]
+  },
+  "planning": [
+    "Separate authentication from authorization: every server route must verify both identity and access to the requested resource.",
+    "Centralize session and database helpers; do not create a new database client in each route or export framework-invalid values from route modules.",
+    "Return only fields the current user is allowed to see, especially participant identity, account, and financial data.",
+    "Require explicit confirmation and CSRF-safe methods for destructive account or membership actions."
+  ],
+  "checks": [
+    "Test unauthenticated, authenticated-but-not-authorized, missing-resource, and successful requests for each changed route.",
+    "Test direct API access independently of page middleware; client redirects are not authorization controls.",
+    "Verify secrets remain server-only and required authentication configuration fails clearly when absent."
+  ],
+  "review": [
+    "Look for ownership filters that only narrow nested relations while still returning the parent resource.",
+    "Look for host-header-derived internal requests, over-broad ORM includes, account deletion without relational handling, and user identifiers sourced from unvalidated client input."
+  ]
+}
