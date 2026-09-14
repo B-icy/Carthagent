@@ -30,7 +30,7 @@ const TEXT_PAIRS = [
 
 // Non-text UI elements (AA 3:1): control outlines, status dots, nav underline.
 const UI_PAIRS = [
-  ['control-border', 'sunken'],
+  ['control-border', 'sunken'], ['control-border', 'panel'],
   ['success', 'chrome'], ['warning', 'chrome'], ['error', 'chrome'],
 ];
 
