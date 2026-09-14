@@ -20,6 +20,7 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm cache clean --force
+      - run: rm -rf node_modules package-lock.json
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
