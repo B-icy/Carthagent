@@ -7,6 +7,7 @@ import { dirname, join, resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import os from 'node:os';
 import {
   fingerprint,
   validatePlan,
@@ -14,6 +15,16 @@ import {
   runCommand
 } from '../lib/delivery.mjs';
 import { latestReport, saveReport } from '../lib/reports.mjs';
+
+// Ensure pi2 operates completely isolated in its own agent directory (~/.pi2/agent)
+// so it NEVER touches, reads, or piggybacks on any existing ~/.pi/agent installation.
+const defaultAgentDir = process.env.PI2_AGENT_DIR || process.env.PI2_CODING_AGENT_DIR || join(os.homedir(), '.pi2', 'agent');
+if (!process.env.PI2_CODING_AGENT_DIR && !process.env.PI2_AGENT_DIR) {
+  process.env.PI2_CODING_AGENT_DIR = defaultAgentDir;
+}
+if (!process.env.PI_CODING_AGENT_DIR) {
+  process.env.PI_CODING_AGENT_DIR = process.env.PI2_CODING_AGENT_DIR || defaultAgentDir;
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -42,14 +53,14 @@ function printHelp() {
   \x1b[32mcheck\x1b[0m [id], \x1b[32mc\x1b[0m [id]     Execute check suite (default: 'all') in bounded subprocess
   \x1b[32mhash\x1b[0m, \x1b[32mfingerprint\x1b[0m     Calculate workspace SHA-256 source freshness fingerprint
   \x1b[32mvalidate\x1b[0m <file.json> Validate acceptance contract against delivery schema
-  \x1b[32mlogin\x1b[0m, \x1b[32mauth\x1b[0m             Connect an AI provider (opens pi's /login flow)
+  \x1b[32mlogin\x1b[0m, \x1b[32mauth\x1b[0m             Connect an AI provider (interactive login)
   \x1b[32mserve\x1b[0m, \x1b[32mweb\x1b[0m, \x1b[32mstart\x1b[0m     Start the interactive web dashboard on port 3000
   \x1b[32mtest\x1b[0m                   Run core unit test suite
   \x1b[32meval\x1b[0m [args...]         Run evaluation harness (evaluate.mjs)
   \x1b[32mhelp\x1b[0m, \x1b[32m--help\x1b[0m, \x1b[32m-h\x1b[0m       Display this help message
 
 \x1b[1mTUI OPTIONS:\x1b[0m
-  --provider <name>       Provider for the embedded pi agent (default: pi settings)
+  --provider <name>       Provider for the AI agent (default: provider settings)
   --model <id>            Model id or pattern (e.g. openrouter/inkling, sonnet)
                           In the TUI, type on the model row to search/autocomplete
   --thinking <level>      off|minimal|low|medium|high|xhigh|max
@@ -58,23 +69,23 @@ function printHelp() {
                           solarized-dark | solarized-light | solarized |
                           okabe-dark | okabe-light | okabe |
                           contrast-dark | contrast-light | contrast | system
-  --pi-cli <path>         Explicit path to pi's dist/cli.js or binary
+  --agent-cli, --pi-cli   Explicit path to agent entrypoint
   --session <path|id>     Resume a specific session file or partial session id
   --continue, -c          Resume the most recent session for this directory
   --resume, -r            Open the session picker at startup (TUI only)
   --validators <file>     User-owned required-validator manifest (delivery)
   --context <file>        Extra task/delivery context file
   --bash-cap <sec>        Cap un-timed shell tool timeouts during a run
-  --isolate               Run pi with only pi2's extension (no other extensions/skills)
+  --isolate               Run with only pi2's delivery extension (no other extensions/skills)
   --no-strict             Don't require delivery_plan before write/edit tools
-  --no-delivery           Run the console without the delivery extension (plain pi)
+  --no-delivery           Run the console without the delivery extension
   --no-guide              Send prompts verbatim instead of auto-applying delivery framing
   --guide                 Force delivery framing on (default)
   --demo                  Drive the console with a scripted mock run (no provider)
-  -p, --print             Headless passthrough: run pi -p and stream output (no TUI)
+  -p, --print             Headless passthrough: stream output without TUI
 
 \x1b[1mTUI KEYS:\x1b[0m
-  enter send/steer · esc abort (again = force-restart pi) · ^r resume session · tab focus · ⇧tab view
+  enter send/steer · esc abort (again = force-restart agent) · ^r resume session · tab focus · ⇧tab view
   ↑↓ history/scroll · pgup/pgdn/wheel scroll focused pane · drag-select copies · ^t settings · ^n new session · x expand · ^c quit
 
 \x1b[1mEXAMPLES:\x1b[0m
@@ -89,7 +100,7 @@ function printHelp() {
 
 const TUI_FLAGS = {
   '--provider': 'provider', '--model': 'model', '--thinking': 'thinking', '--theme': 'theme',
-  '--pi-cli': 'piCli', '--validators': 'validators', '--context': 'context', '--bash-cap': 'bashCap',
+  '--pi-cli': 'piCli', '--agent-cli': 'piCli', '--validators': 'validators', '--context': 'context', '--bash-cap': 'bashCap',
   '--session': 'session',
 };
 const TUI_BOOL = {
@@ -131,8 +142,16 @@ async function handleTui(list) {
     const framingOn = (opts.autoFraming ?? true);
     const prompt = shouldFrame(opts.prompt, { enabled: framingOn, delivery: opts.delivery !== false })
       ? framePrompt(opts.prompt) : opts.prompt;
-    const args = [...piCmd.args, '-p', ...buildPiArgs(opts), '--', prompt];
-    const child = spawn(piCmd.cmd, args, { stdio: 'inherit', cwd: process.cwd(), env: process.env });
+    const args = [...piCmd.args, '-p', ...buildPiArgs({ isolate: true, ...opts }), '--', prompt];
+    const child = spawn(piCmd.cmd, args, {
+      stdio: 'inherit',
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        PI2_CODING_AGENT_DIR: process.env.PI2_CODING_AGENT_DIR || defaultAgentDir,
+        PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR || defaultAgentDir
+      }
+    });
     child.on('exit', code => process.exit(code || 0));
     return;
   }
@@ -251,8 +270,16 @@ async function handleLogin() {
   const { locatePi } = await import('../lib/pi.mjs');
   let piCmd;
   try { piCmd = locatePi(); } catch (e) { console.error(e.message); process.exit(1); }
-  console.log('Opening pi — run \x1b[36m/login\x1b[0m to pick a provider (subscription OAuth or API key), then \x1b[36m/quit\x1b[0m to return.');
-  const child = spawn(piCmd.cmd, piCmd.args, { stdio: 'inherit', cwd, env: process.env });
+  console.log('Opening auth setup — run \x1b[36m/login\x1b[0m to pick a provider (subscription OAuth or API key), then \x1b[36m/quit\x1b[0m when done.');
+  const child = spawn(piCmd.cmd, piCmd.args, {
+    stdio: 'inherit',
+    cwd,
+    env: {
+      ...process.env,
+      PI2_CODING_AGENT_DIR: process.env.PI2_CODING_AGENT_DIR || defaultAgentDir,
+      PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR || defaultAgentDir
+    }
+  });
   child.on('exit', code => process.exit(code || 0));
 }
 
@@ -262,7 +289,12 @@ function handleServe() {
   const child = spawn(process.execPath, [serverScript], {
     stdio: 'inherit',
     cwd: root,
-    env: { ...process.env, PI2_WORKSPACE: cwd }
+    env: {
+      ...process.env,
+      PI2_WORKSPACE: cwd,
+      PI2_CODING_AGENT_DIR: process.env.PI2_CODING_AGENT_DIR || defaultAgentDir,
+      PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR || defaultAgentDir
+    }
   });
   child.on('exit', (code) => process.exit(code || 0));
 }

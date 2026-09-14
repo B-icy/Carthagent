@@ -58,6 +58,7 @@
     "pi2": "node bin/pi2.mjs",
     "check": "node tools/check-syntax.mjs",
     "typecheck": "tsc --noEmit --skipLibCheck --target ES2023 --module NodeNext --moduleResolution NodeNext --types node extensions/delivery.ts",
+    "lint": "npm run check && npm run typecheck",
     "build": "npm run check && npm run typecheck",
     "test": "node --test tests/*.test.mjs",
     "test:python": "node tools/test-python.mjs"

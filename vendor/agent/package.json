@@ -1,0 +1,14 @@
+{
+  "name": "pi2-engine",
+  "version": "0.2.0",
+  "description": "Baked-in agent engine for pi2",
+  "type": "module",
+  "piConfig": {
+    "name": "pi2",
+    "configDir": ".pi2"
+  },
+  "main": "./index.js",
+  "bin": {
+    "pi2-engine": "./cli.js"
+  }
+}
