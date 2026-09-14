@@ -4,22 +4,22 @@ CLI and [pi](https://github.com/earendil-works/pi-coding-agent) package that tur
 
 ## Install
 
-Requires Node ≥ 22.19 and [pi](https://github.com/earendil-works/pi-coding-agent) (tested with 0.85.1).
+Requires Node ≥ 22.19 — nothing else. [pi](https://github.com/earendil-works/pi-coding-agent) is bundled inside the package, so one command installs everything:
 
 ```sh
-# install as a pi package
-pi install git:github.com/B-icy/pi-evidence-driven-delivery
-
-# or load it for a single run
-pi -e /path/to/pi2/extensions/delivery.ts --skill /path/to/pi2/skills -p "Build the thing"
+npm i -g github:B-icy/pi2 && pi2
 ```
 
-For development:
+Or from a clone:
 
 ```sh
 git clone https://github.com/B-icy/pi2 && cd pi2
-npm ci
+npm ci && npm i -g .          # gives you `pi2`; or just run `node bin/pi2.mjs`
 ```
+
+First run needs a provider — pi's own auth flow applies (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or pi's `/login`).
+
+Still using pi directly? `pi install git:github.com/B-icy/pi2` works too — pi2 detects a pi-managed install and skips the bundled copy.
 
 ## Use it
 
