@@ -42,6 +42,7 @@ function printHelp() {
   \x1b[32mcheck\x1b[0m [id], \x1b[32mc\x1b[0m [id]     Execute check suite (default: 'all') in bounded subprocess
   \x1b[32mhash\x1b[0m, \x1b[32mfingerprint\x1b[0m     Calculate workspace SHA-256 source freshness fingerprint
   \x1b[32mvalidate\x1b[0m <file.json> Validate acceptance contract against delivery schema
+  \x1b[32mlogin\x1b[0m, \x1b[32mauth\x1b[0m             Connect an AI provider (opens pi's /login flow)
   \x1b[32mserve\x1b[0m, \x1b[32mweb\x1b[0m, \x1b[32mstart\x1b[0m     Start the interactive web dashboard on port 3000
   \x1b[32mtest\x1b[0m                   Run core unit test suite
   \x1b[32meval\x1b[0m [args...]         Run evaluation harness (evaluate.mjs)
@@ -242,6 +243,19 @@ async function handleValidate() {
   }
 }
 
+async function handleLogin() {
+  if (!process.stdout.isTTY) {
+    console.error('login requires an interactive terminal — or set an API key env var (see README)');
+    process.exit(1);
+  }
+  const { locatePi } = await import('../lib/pi.mjs');
+  let piCmd;
+  try { piCmd = locatePi(); } catch (e) { console.error(e.message); process.exit(1); }
+  console.log('Opening pi — run \x1b[36m/login\x1b[0m to pick a provider (subscription OAuth or API key), then \x1b[36m/quit\x1b[0m to return.');
+  const child = spawn(piCmd.cmd, piCmd.args, { stdio: 'inherit', cwd, env: process.env });
+  child.on('exit', code => process.exit(code || 0));
+}
+
 function handleServe() {
   console.log('\x1b[1m[pi2]\x1b[0m Launching Evidence-Driven Delivery server...');
   const serverScript = join(root, 'server.mjs');
@@ -304,6 +318,10 @@ switch (command) {
     break;
   case 'validate':
     handleValidate();
+    break;
+  case 'login':
+  case 'auth':
+    handleLogin();
     break;
   case 'serve':
   case 'web':
