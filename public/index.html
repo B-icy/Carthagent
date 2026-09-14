@@ -4,24 +4,110 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>pi2</title>
+  <script>
+    (() => {
+      const param = new URLSearchParams(location.search).get('theme');
+      const chosen = param || localStorage.getItem('pi2-theme') || 'system';
+      if (param) localStorage.setItem('pi2-theme', param);
+      const dark = typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.dataset.theme = chosen === 'system' ? (dark ? 'obsidian' : 'paper') : chosen;
+      document.documentElement.dataset.themeChoice = chosen;
+    })();
+  </script>
   <style>
     :root {
-      color-scheme: dark;
-      --bg: #0f0f0f;
-      --panel: #151515;
-      --panel-2: #1b1b1b;
-      --border: #2b2b2b;
-      --border-strong: #3a3a3a;
-      --text: #e7e7e7;
-      --muted: #969696;
-      --faint: #696969;
-      --accent: #a277ff;
-      --accent-bg: #251d36;
-      --success: #61ffca;
-      --warning: #ffca85;
-      --error: #ff6767;
       --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
       --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    /* Every theme must define the full token set; tests/theme.test.mjs verifies
+       presence plus WCAG AA contrast (4.5:1 text, 3:1 UI components). */
+    :root, [data-theme="obsidian"] {
+      color-scheme: dark;
+      --bg: #0f0f0f; --chrome: #141414; --panel: #161616; --panel-2: #1d1d1d; --sunken: #0b0b0b;
+      --border: #2c2c2c; --border-strong: #3d3d3d; --border-hover: #565656; --control-border: #6f6f6f;
+      --text: #e8e8e8; --muted: #9a9a9a; --faint: #808080; --code: #c9c9c9;
+      --accent: #a78bff; --accent-ink: #130e1f; --accent-bg: #2a2140; --hover-bg: #242424;
+      --success: #5fd4a4; --warning: #ffc078; --error: #ff7d7d;
+    }
+    [data-theme="midnight"] {
+      color-scheme: dark;
+      --bg: #0d1117; --chrome: #161b22; --panel: #161b22; --panel-2: #21262d; --sunken: #010409;
+      --border: #30363d; --border-strong: #3d444d; --border-hover: #484f58; --control-border: #6e7681;
+      --text: #e6edf3; --muted: #9198a1; --faint: #7d8590; --code: #d1d7e0;
+      --accent: #58a6ff; --accent-ink: #051120; --accent-bg: #12233a; --hover-bg: #262c33;
+      --success: #56d364; --warning: #e3b341; --error: #ff7b72;
+    }
+    [data-theme="solarized-dark"] {
+      color-scheme: dark;
+      --bg: #002b36; --chrome: #00232c; --panel: #073642; --panel-2: #0a4050; --sunken: #00212b;
+      --border: #0d4a5a; --border-strong: #1a5c6e; --border-hover: #2a6d82; --control-border: #4d7f8d;
+      --text: #a2b2b2; --muted: #93a1a1; --faint: #8d9c9e; --code: #a5b5b5;
+      --accent: #5eacdc; --accent-ink: #04222e; --accent-bg: #0a3a4d; --hover-bg: #0c4353;
+      --success: #a4b94e; --warning: #d4a72c; --error: #f0938a;
+    }
+    [data-theme="nord"] {
+      color-scheme: dark;
+      --bg: #2e3440; --chrome: #2b303c; --panel: #3b4252; --panel-2: #3f4653; --sunken: #272c37;
+      --border: #4c566a; --border-strong: #5b6a82; --border-hover: #6a7a94; --control-border: #7180a0;
+      --text: #eceff4; --muted: #c0c9d8; --faint: #a6aec0; --code: #d8dee9;
+      --accent: #8fc4d3; --accent-ink: #20262f; --accent-bg: #39485f; --hover-bg: #464f61;
+      --success: #a3be8c; --warning: #ebcb8b; --error: #e6a8ad;
+    }
+    [data-theme="contrast-dark"] {
+      color-scheme: dark;
+      --bg: #000000; --chrome: #000000; --panel: #0d0d0d; --panel-2: #1a1a1a; --sunken: #000000;
+      --border: #6f6f6f; --border-strong: #8f8f8f; --border-hover: #aaaaaa; --control-border: #9a9a9a;
+      --text: #ffffff; --muted: #b8b8b8; --faint: #949494; --code: #e0e0e0;
+      --accent: #82aaff; --accent-ink: #001133; --accent-bg: #16233f; --hover-bg: #1f1f1f;
+      --success: #5eead4; --warning: #fde047; --error: #ff8a8a;
+    }
+    [data-theme="okabe-dark"] {
+      color-scheme: dark;
+      --bg: #121316; --chrome: #15171b; --panel: #1a1c21; --panel-2: #22252b; --sunken: #0d0e11;
+      --border: #30333b; --border-strong: #41454f; --border-hover: #535763; --control-border: #6d727d;
+      --text: #e8eaed; --muted: #9ba1aa; --faint: #7e8490; --code: #c9cdd4;
+      --accent: #56b4e9; --accent-ink: #071824; --accent-bg: #173246; --hover-bg: #26292f;
+      --success: #35d6a5; --warning: #e8d24a; --error: #f07c3f;
+    }
+    [data-theme="paper"] {
+      color-scheme: light;
+      --bg: #faf9f6; --chrome: #f1efe9; --panel: #ffffff; --panel-2: #f1efe9; --sunken: #f5f3ee;
+      --border: #e0dcd2; --border-strong: #c9c3b4; --border-hover: #a8a296; --control-border: #7a7466;
+      --text: #24292f; --muted: #5c6470; --faint: #666d76; --code: #3a424d;
+      --accent: #5b4bd4; --accent-ink: #ffffff; --accent-bg: #eceafc; --hover-bg: #e8e5db;
+      --success: #157347; --warning: #8a6100; --error: #cb2d3b;
+    }
+    [data-theme="daylight"] {
+      color-scheme: light;
+      --bg: #f6f8fa; --chrome: #ffffff; --panel: #ffffff; --panel-2: #eef1f4; --sunken: #f6f8fa;
+      --border: #d1d9e0; --border-strong: #b7c0c9; --border-hover: #8c959f; --control-border: #7d8590;
+      --text: #1f2328; --muted: #59636e; --faint: #6a7280; --code: #383f47;
+      --accent: #0963c9; --accent-ink: #ffffff; --accent-bg: #ddf1ff; --hover-bg: #e6eaee;
+      --success: #1a7f37; --warning: #8a5700; --error: #cf222e;
+    }
+    [data-theme="solarized-light"] {
+      color-scheme: light;
+      --bg: #fdf6e3; --chrome: #faf2de; --panel: #fdf6e3; --panel-2: #f1e9d2; --sunken: #faf2de;
+      --border: #e3d8b8; --border-strong: #cbbf98; --border-hover: #ab9f78; --control-border: #8a7f61;
+      --text: #073642; --muted: #586e75; --faint: #5a6e75; --code: #2d4a52;
+      --accent: #1e6aa4; --accent-ink: #ffffff; --accent-bg: #e6f0f8; --hover-bg: #ece2c6;
+      --success: #636f00; --warning: #866500; --error: #c62d2b;
+    }
+    [data-theme="contrast-light"] {
+      color-scheme: light;
+      --bg: #ffffff; --chrome: #ffffff; --panel: #ffffff; --panel-2: #f2f2f2; --sunken: #f7f7f7;
+      --border: #767676; --border-strong: #595959; --border-hover: #404040; --control-border: #595959;
+      --text: #000000; --muted: #3d3d3d; --faint: #525252; --code: #1a1a1a;
+      --accent: #0043c8; --accent-ink: #ffffff; --accent-bg: #e0ebff; --hover-bg: #e8e8e8;
+      --success: #00633b; --warning: #694d00; --error: #b00020;
+    }
+    [data-theme="okabe-light"] {
+      color-scheme: light;
+      --bg: #fbfbf8; --chrome: #ffffff; --panel: #ffffff; --panel-2: #f2f2ec; --sunken: #f6f6f0;
+      --border: #dadad0; --border-strong: #b8b8a8; --border-hover: #90907e; --control-border: #6f7d87;
+      --text: #20242a; --muted: #4f5862; --faint: #667079; --code: #343c46;
+      --accent: #0072b2; --accent-ink: #ffffff; --accent-bg: #e8f3fc; --hover-bg: #e8e8dd;
+      --success: #00795b; --warning: #8a6300; --error: #a3537f;
     }
     * { box-sizing: border-box; }
     body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); font: 14px/1.5 var(--sans); }
@@ -29,7 +115,7 @@
     button { cursor: pointer; }
     code, pre, textarea.code { font-family: var(--mono); }
     .shell { min-height: 100vh; display: grid; grid-template-rows: auto auto 1fr; }
-    header { border-bottom: 1px solid var(--border); background: #111; }
+    header { border-bottom: 1px solid var(--border); background: var(--chrome); }
     .header-row { max-width: 1440px; margin: 0 auto; min-height: 58px; padding: 0 24px; display: flex; align-items: center; gap: 20px; }
     .brand { display: flex; align-items: baseline; gap: 9px; min-width: 0; }
     .brand strong { font: 600 16px var(--mono); }
@@ -41,7 +127,7 @@
     .status.blocked::before, .status.failed::before { background: var(--error); }
     .status.verifying::before, .status.implementing::before { background: var(--warning); }
     .hash { color: var(--faint); font: 12px var(--mono); }
-    nav { border-bottom: 1px solid var(--border); background: #111; }
+    nav { border-bottom: 1px solid var(--border); background: var(--chrome); }
     .tabs { max-width: 1440px; margin: 0 auto; padding: 0 24px; display: flex; gap: 22px; overflow-x: auto; }
     .tab { border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); padding: 11px 0 10px; font-size: 13px; }
     .tab:hover { color: var(--text); }
@@ -69,13 +155,13 @@
     .acceptance li { display: block; }
     .acceptance code { display: block; color: var(--faint); margin-top: 4px; font-size: 11px; }
     .button { border: 1px solid var(--border-strong); border-radius: 5px; background: var(--panel-2); color: var(--text); padding: 7px 11px; font-size: 12px; }
-    .button:hover { border-color: #555; background: #222; }
-    .button.primary { background: var(--accent); border-color: var(--accent); color: #100c17; font-weight: 600; }
+    .button:hover { border-color: var(--border-hover); background: var(--hover-bg); }
+    .button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
     .button.danger { color: var(--error); }
     .button:disabled { opacity: .45; cursor: default; }
     .actions { display: flex; gap: 8px; flex-wrap: wrap; }
     label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
-    input, textarea, select { width: 100%; border: 1px solid var(--border-strong); border-radius: 5px; background: #101010; color: var(--text); padding: 9px 10px; outline: none; }
+    input, textarea, select { width: 100%; border: 1px solid var(--control-border); border-radius: 5px; background: var(--sunken); color: var(--text); padding: 9px 10px; outline: none; }
     input:focus, textarea:focus, select:focus { border-color: var(--accent); }
     textarea { resize: vertical; min-height: 90px; }
     textarea.code { min-height: 430px; font-size: 12px; line-height: 1.55; tab-size: 2; }
@@ -83,14 +169,14 @@
     .message { min-height: 20px; margin-top: 12px; color: var(--muted); font-size: 12px; white-space: pre-wrap; }
     .message.error { color: var(--error); }
     .message.success { color: var(--success); }
-    .mono-block { margin: 0; border: 1px solid var(--border); border-radius: 5px; background: #0c0c0c; color: #bdbdbd; padding: 14px; overflow: auto; max-height: 480px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+    .mono-block { margin: 0; border: 1px solid var(--border); border-radius: 5px; background: var(--sunken); color: var(--code); padding: 14px; overflow: auto; max-height: 480px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
     .fingerprint { color: var(--muted); font: 12px var(--mono); overflow-wrap: anywhere; }
     .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 6px; }
     table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    th { color: var(--muted); font-weight: 500; text-align: left; background: #121212; }
+    th { color: var(--muted); font-weight: 500; text-align: left; background: var(--sunken); }
     th, td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
     tr:last-child td { border-bottom: 0; }
-    td code { color: #c7c7c7; white-space: nowrap; }
+    td code { color: var(--code); white-space: nowrap; }
     .check-state { font-family: var(--mono); }
     .check-state.passed { color: var(--success); }
     .check-state.failed { color: var(--error); }
@@ -100,7 +186,9 @@
     .gate.ready { border-left-color: var(--success); }
     .gate.blocked { border-left-color: var(--error); }
     .doc-tabs { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 12px; }
-    .doc-tab.active { border-color: var(--accent); color: var(--accent); }
+    .doc-tab.active { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+    .theme-select { width: auto; min-width: 150px; padding: 6px 8px; font-size: 12px; }
+    .button:focus-visible, .tab:focus-visible, .theme-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
     @media (max-width: 900px) {
       .header-row { flex-wrap: wrap; padding: 12px 16px; gap: 10px 16px; }
       .workspace { order: 3; flex-basis: 100%; }
@@ -117,6 +205,24 @@
       <div id="workspace" class="workspace">loading workspace</div>
       <div id="status" class="status">idle</div>
       <div id="header-hash" class="hash">—</div>
+      <select id="theme-select" class="theme-select" aria-label="Color theme">
+        <option value="system">System (auto)</option>
+        <optgroup label="Dark">
+          <option value="obsidian">Obsidian</option>
+          <option value="midnight">Midnight</option>
+          <option value="solarized-dark">Solarized Dark</option>
+          <option value="nord">Nord</option>
+          <option value="contrast-dark">High Contrast Dark</option>
+          <option value="okabe-dark">Okabe Dark (colorblind)</option>
+        </optgroup>
+        <optgroup label="Light">
+          <option value="paper">Paper</option>
+          <option value="daylight">Daylight</option>
+          <option value="solarized-light">Solarized Light</option>
+          <option value="contrast-light">High Contrast Light</option>
+          <option value="okabe-light">Okabe Light (colorblind)</option>
+        </optgroup>
+      </select>
       <button id="run-all-header" class="button primary">Run checks</button>
     </div>
   </header>
@@ -250,6 +356,17 @@
     if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`);
     return data;
   }
+
+  const themeSelect = byId('theme-select');
+  const prefersDark = () => typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
+  themeSelect.value = document.documentElement.dataset.themeChoice || 'system';
+  themeSelect.addEventListener('change', () => {
+    localStorage.setItem('pi2-theme', themeSelect.value);
+    document.documentElement.dataset.theme = themeSelect.value === 'system' ? (prefersDark() ? 'obsidian' : 'paper') : themeSelect.value;
+  });
+  if (typeof matchMedia === 'function') matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
+    if (themeSelect.value === 'system') document.documentElement.dataset.theme = event.matches ? 'obsidian' : 'paper';
+  });
 
   document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => {
     document.querySelectorAll('.tab').forEach(item => item.classList.toggle('active', item === tab));
