@@ -2,70 +2,159 @@
 /**
  * pi2 CLI - Evidence-driven delivery & contract verification
  */
-import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import {
   fingerprint,
   validatePlan,
   planD2,
-  runCommand,
-  pendingChecks
+  runCommand
 } from '../lib/delivery.mjs';
+import { latestReport, saveReport } from '../lib/reports.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const cwd = process.cwd();
 const root = resolve(__dirname, '..');
+const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version;
 
 const argv = process.argv.slice(2);
 const command = argv[0];
 
 function printHelp() {
   console.log(`
-\x1b[1m\x1b[36mπ² (pi2) - Evidence-Driven Delivery CLI\x1b[0m \x1b[90mv0.2.0\x1b[0m
+\x1b[1m\x1b[36mpi2\x1b[0m \x1b[90m${version}\x1b[0m
 
 \x1b[1mUSAGE:\x1b[0m
+  pi2                     Launch the interactive split-terminal delivery console
+  pi2 <task>              Open the console and immediately deliver <task>
   pi2 <command> [options]
 
 \x1b[1mCOMMANDS:\x1b[0m
+  \x1b[32mtui\x1b[0m, \x1b[32mui\x1b[0m                 Interactive console: live run feed + live plan.d2 side panel
+  \x1b[32mresume\x1b[0m, \x1b[32msessions\x1b[0m          Open the console with the session picker to resume prior work
+  \x1b[32mcontinue\x1b[0m               Open the console on the most recent session
+  \x1b[32mdemo\x1b[0m                  Same console driven by a scripted mock run — no provider needed
   \x1b[32mstatus\x1b[0m, \x1b[32ms\x1b[0m             Display workspace fingerprint, active contract & pending checks
   \x1b[32mcheck\x1b[0m [id], \x1b[32mc\x1b[0m [id]     Execute check suite (default: 'all') in bounded subprocess
   \x1b[32mhash\x1b[0m, \x1b[32mfingerprint\x1b[0m     Calculate workspace SHA-256 source freshness fingerprint
   \x1b[32mvalidate\x1b[0m <file.json> Validate acceptance contract against delivery schema
   \x1b[32mserve\x1b[0m, \x1b[32mweb\x1b[0m, \x1b[32mstart\x1b[0m     Start the interactive web dashboard on port 3000
-  \x1b[32mtest\x1b[0m                   Run core unit test suite (14/14 tests)
+  \x1b[32mtest\x1b[0m                   Run core unit test suite
   \x1b[32meval\x1b[0m [args...]         Run evaluation harness (evaluate.mjs)
   \x1b[32mhelp\x1b[0m, \x1b[32m--help\x1b[0m, \x1b[32m-h\x1b[0m       Display this help message
 
+\x1b[1mTUI OPTIONS:\x1b[0m
+  --provider <name>       Provider for the embedded pi agent (default: pi settings)
+  --model <id>            Model id or pattern (e.g. openrouter/inkling, sonnet)
+                          In the TUI, type on the model row to search/autocomplete
+  --thinking <level>      off|minimal|low|medium|high|xhigh|max
+  --theme <name>          opencode | tokyonight | nebula | ember | forest | mono
+  --pi-cli <path>         Explicit path to pi's dist/cli.js or binary
+  --session <path|id>     Resume a specific session file or partial session id
+  --continue, -c          Resume the most recent session for this directory
+  --resume, -r            Open the session picker at startup (TUI only)
+  --validators <file>     User-owned required-validator manifest (delivery)
+  --context <file>        Extra task/delivery context file
+  --bash-cap <sec>        Cap un-timed shell tool timeouts during a run
+  --isolate               Run pi with only pi2's extension (no other extensions/skills)
+  --no-strict             Don't require delivery_plan before write/edit tools
+  --no-delivery           Run the console without the delivery extension (plain pi)
+  --no-guide              Send prompts verbatim instead of auto-applying delivery framing
+  --guide                 Force delivery framing on (default)
+  --demo                  Drive the console with a scripted mock run (no provider)
+  -p, --print             Headless passthrough: run pi -p and stream output (no TUI)
+
+\x1b[1mTUI KEYS:\x1b[0m
+  enter send/steer · esc abort (again = force-restart pi) · ^r resume session · tab focus · ⇧tab view
+  ↑↓ history/scroll · pgup/pgdn/wheel scroll focused pane · ^t settings · ^n new session · x expand · ^c quit
+
 \x1b[1mEXAMPLES:\x1b[0m
-  pi2 hash
-  pi2 check all
-  pi2 status
-  pi2 serve
+  pi2
+  pi2 "Build a task CLI with tests"
+  pi2 --model sonnet --theme opencode "Fix the failing tests in src/"
+  pi2 --validators validators.json "Migrate the schema"
 `);
+}
+
+// ---------------------------------------------------------------- TUI routing
+
+const TUI_FLAGS = {
+  '--provider': 'provider', '--model': 'model', '--thinking': 'thinking', '--theme': 'theme',
+  '--pi-cli': 'piCli', '--validators': 'validators', '--context': 'context', '--bash-cap': 'bashCap',
+  '--session': 'session',
+};
+const TUI_BOOL = {
+  '--isolate': ['isolate', true], '--no-strict': ['strict', false], '--strict': ['strict', true],
+  '--no-delivery': ['delivery', false], '-p': ['print', true], '--print': ['print', true],
+  '--no-guide': ['autoFraming', false], '--guide': ['autoFraming', true],
+  '--demo': ['demo', true],
+  '-c': ['continue', true], '--continue': ['continue', true],
+  '-r': ['resume', true], '--resume': ['resume', true],
+};
+
+function parseTuiArgs(list) {
+  const opts = {};
+  const prompt = [];
+  for (let i = 0; i < list.length; i++) {
+    const a = list[i];
+    if (a === '--') { prompt.push(...list.slice(i + 1)); break; }
+    if (TUI_FLAGS[a]) { opts[TUI_FLAGS[a]] = list[++i]; continue; }
+    if (TUI_BOOL[a]) { const [k, v] = TUI_BOOL[a]; opts[k] = v; continue; }
+    if (a.startsWith('-')) { console.error(`\x1b[31mUnknown flag:\x1b[0m ${a}`); process.exit(1); }
+    prompt.push(a);
+  }
+  if (prompt.length) opts.prompt = prompt.join(' ');
+  return opts;
+}
+
+async function handleTui(list) {
+  const opts = parseTuiArgs(list);
+  if (opts.demo && !process.stdout.isTTY) { console.error('demo requires an interactive terminal'); process.exit(1); }
+  // Headless passthrough: explicit --print, or stdout isn't a TTY
+  if (opts.print || !process.stdout.isTTY) {
+    // The session picker needs a TTY — headless -r continues the most recent.
+    if (opts.resume) { opts.resume = false; opts.continue = true; }
+    const { locatePi, buildPiArgs } = await import('../lib/tui/app.mjs');
+    const { shouldFrame, framePrompt } = await import('../lib/tui/framing.mjs');
+    let piCmd;
+    try { piCmd = locatePi(opts.piCli); } catch (e) { console.error(e.message); process.exit(1); }
+    if (!opts.prompt) { console.error('non-interactive mode requires a prompt'); process.exit(1); }
+    const framingOn = (opts.autoFraming ?? true);
+    const prompt = shouldFrame(opts.prompt, { enabled: framingOn, delivery: opts.delivery !== false })
+      ? framePrompt(opts.prompt) : opts.prompt;
+    const args = [...piCmd.args, '-p', ...buildPiArgs(opts), '--', prompt];
+    const child = spawn(piCmd.cmd, args, { stdio: 'inherit', cwd: process.cwd(), env: process.env });
+    child.on('exit', code => process.exit(code || 0));
+    return;
+  }
+  const { runTui } = await import('../lib/tui/app.mjs');
+  await runTui(opts);
 }
 
 async function handleStatus() {
   const currentFp = fingerprint(cwd, ['.']);
-  console.log(`\x1b[1mWorkspace:\x1b[0m            ${cwd}`);
-  console.log(`\x1b[1mSHA-256 Fingerprint:\x1b[0m  \x1b[36m${currentFp}\x1b[0m`);
-
-  // Check if there is an active contract or saved session
-  const planPath = join(cwd, '.harness', 'plan.json');
-  if (existsSync(planPath)) {
-    try {
-      const plan = JSON.parse(readFileSync(planPath, 'utf8'));
-      console.log(`\x1b[1mContract Goal:\x1b[0m        ${plan.goal}`);
-      console.log(`\x1b[1mDeclared Checks:\x1b[0m      ${plan.checks?.map(c => c.id).join(', ')}`);
-    } catch {
-      // ignore parse error
-    }
-  } else {
-    console.log(`\x1b[90m(No local .harness/plan.json active in cwd. Run 'pi2 serve' to manage contracts in UI)\x1b[0m`);
+  const report = latestReport(cwd);
+  console.log(`\x1b[1mWorkspace:\x1b[0m     ${cwd}`);
+  console.log(`\x1b[1mFingerprint:\x1b[0m   \x1b[36m${currentFp}\x1b[0m`);
+  if (!report?.state?.plan) {
+    console.log('\x1b[90mNo delivery report found for this workspace.\x1b[0m');
+    return;
   }
+  const { state } = report;
+  const checkStatus = check => {
+    const evidence = state.evidence?.[check.id];
+    if (!evidence) return 'pending';
+    if (!evidence.passed) return 'failed';
+    return evidence.fingerprint === currentFp ? 'passed' : 'stale';
+  };
+  console.log(`\x1b[1mStatus:\x1b[0m        ${state.status}`);
+  console.log(`\x1b[1mGoal:\x1b[0m          ${state.plan.goal}`);
+  console.log(`\x1b[1mChecks:\x1b[0m        ${state.plan.checks.map(check => `${checkStatus(check)}:${check.id}`).join(', ')}`);
+  console.log(`\x1b[1mReport:\x1b[0m        ${report.path}`);
 }
 
 async function handleHash() {
@@ -81,56 +170,51 @@ async function handleHash() {
 
 async function handleCheck() {
   const checkId = argv[1] || 'all';
-  console.log(`\x1b[1m[pi2]\x1b[0m Running verification check: \x1b[36m${checkId}\x1b[0m`);
-
-  const initialHash = fingerprint(cwd, ['.']);
-  console.log(`\x1b[1m[pi2]\x1b[0m Pre-check fingerprint: \x1b[90m${initialHash.slice(0, 16)}...\x1b[0m`);
-
-  // Default check if none specified in workspace
-  let checks = [
-    { id: 'unit_tests', kind: 'test', argv: [process.execPath, '--test', join(root, 'tests', 'delivery.test.mjs')], timeoutSeconds: 30 }
-  ];
-
-  const planPath = join(cwd, '.harness', 'plan.json');
-  if (existsSync(planPath)) {
-    try {
-      const plan = JSON.parse(readFileSync(planPath, 'utf8'));
-      if (plan.checks?.length) {
-        checks = checkId === 'all' ? plan.checks : plan.checks.filter(c => c.id === checkId);
-      }
-    } catch {
-      // ignore
-    }
+  const report = latestReport(cwd);
+  if (!report?.state?.plan) {
+    console.error('No delivery report found for this workspace.');
+    process.exit(1);
+  }
+  const state = report.state;
+  const checks = checkId === 'all' ? state.plan.checks : state.plan.checks.filter(check => check.id === checkId);
+  if (!checks.length) {
+    console.error(`Unknown check ID: ${checkId}`);
+    process.exit(1);
   }
 
   let allPassed = true;
+  const priorStatus = state.status;
+  state.status = 'verifying';
   for (const check of checks) {
-    console.log(`\n\x1b[1m=== Running check [${check.id}] ===\x1b[0m`);
-    console.log(`Command: ${check.argv.join(' ')}`);
-    const res = await runCommand(check.argv, {
+    const before = fingerprint(cwd, ['.']);
+    console.log(`\n\x1b[1m${check.id}\x1b[0m  ${check.argv.join(' ')}`);
+    const result = await runCommand(check.argv, {
       cwd,
-      timeoutSeconds: check.timeoutSeconds || 60
+      timeoutSeconds: check.timeoutSeconds,
+      logPath: join(report.dir, `${check.id}-${randomUUID()}.log`)
     });
-
-    if (res.output) {
-      console.log(res.output.trim());
-    }
-
-    const postHash = fingerprint(cwd, ['.']);
-    if (res.code === 0 && !res.timedOut && !res.cancelled) {
-      console.log(`\x1b[32m✓ Check [${check.id}] PASSED (${res.durationMs}ms)\x1b[0m`);
-      if (postHash !== initialHash) {
-        console.warn(`\x1b[33m⚠ Warning: Check modified workspace files! Fingerprint changed.\x1b[0m`);
-      }
-    } else {
-      console.log(`\x1b[31m✕ Check [${check.id}] FAILED (Exit code: ${res.code})\x1b[0m`);
-      allPassed = false;
-    }
+    const after = fingerprint(cwd, ['.']);
+    const passed = result.code === 0 && !result.timedOut && !result.cancelled && !result.outputLimit && before === after;
+    state.evidence[check.id] = {
+      passed,
+      fingerprint: after,
+      code: result.code,
+      timedOut: result.timedOut,
+      cancelled: result.cancelled,
+      outputLimit: result.outputLimit,
+      changedDuringCheck: before !== after,
+      durationMs: result.durationMs,
+      logPath: result.logPath,
+      outputTail: result.output.slice(-1200)
+    };
+    saveReport(report.path, state);
+    if (result.output) console.log(result.output.trim());
+    console.log(passed ? `\x1b[32mpassed\x1b[0m (${result.durationMs}ms)` : `\x1b[31mfailed\x1b[0m (exit ${result.code})`);
+    allPassed &&= passed;
   }
-
-  if (!allPassed) {
-    process.exit(1);
-  }
+  state.status = allPassed && priorStatus === 'verified' ? 'verified' : 'implementing';
+  saveReport(report.path, state);
+  if (!allPassed) process.exit(1);
 }
 
 async function handleValidate() {
@@ -160,14 +244,14 @@ function handleServe() {
   const child = spawn(process.execPath, [serverScript], {
     stdio: 'inherit',
     cwd: root,
-    env: process.env
+    env: { ...process.env, PI2_WORKSPACE: cwd }
   });
   child.on('exit', (code) => process.exit(code || 0));
 }
 
 function handleTest() {
   console.log('\x1b[1m[pi2]\x1b[0m Running unit test suite...');
-  const child = spawn(process.execPath, ['--test', 'tests/delivery.test.mjs'], {
+  const child = spawn(process.execPath, ['--test', 'tests/*.test.mjs'], {
     stdio: 'inherit',
     cwd: root,
     env: process.env
@@ -187,6 +271,21 @@ function handleEval() {
 
 // Router
 switch (command) {
+  case 'tui':
+  case 'ui':
+  case 'interactive':
+    handleTui(argv.slice(1));
+    break;
+  case 'demo':
+    handleTui([...argv.slice(1), '--demo']);
+    break;
+  case 'resume':
+  case 'sessions':
+    handleTui([...argv.slice(1), '--resume']);
+    break;
+  case 'continue':
+    handleTui([...argv.slice(1), '--continue']);
+    break;
   case 'status':
   case 's':
     handleStatus();
@@ -216,12 +315,23 @@ switch (command) {
   case 'help':
   case '--help':
   case '-h':
-  case undefined:
     printHelp();
     break;
+  case '--version':
+  case '-v':
+    console.log(version);
+    break;
+  case undefined:
+    // Bare `pi2` → interactive split-terminal console
+    handleTui([]);
+    break;
   default:
-    // If unknown command, show help or run check
-    console.error(`\x1b[31mUnknown command:\x1b[0m ${command}`);
-    printHelp();
-    process.exit(1);
+    // pi-style: unknown first arg means the args ARE the task prompt
+    // e.g. `pi2 "Build a task CLI"` or `pi2 --model sonnet "Fix tests"`
+    if (command.startsWith('-') && !TUI_FLAGS[command] && !TUI_BOOL[command]) {
+      console.error(`\x1b[31mUnknown command or flag:\x1b[0m ${command}`);
+      printHelp();
+      process.exit(1);
+    }
+    handleTui(argv);
 }

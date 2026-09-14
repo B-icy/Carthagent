@@ -1,14 +1,17 @@
 direction: right
-inspect: "Inspect repository + installed APIs"
-contract: "Acceptance contract\nScope, risks, concrete checks"
-plan: "D2 implementation plan"
-slice: "Runnable vertical slice\nRendering verified first for games"
-build: "Implement features + regression tests"
+inspect: "Inspect repository + installed APIs\nIdentify relevant knowledge bases/skills"
+plan: "Acceptance contract + plan\nScope, risks, concrete checks"
+pressure: "Pressure-test plan\nVerify checks detect failure"
+slice: "Runnable vertical slice"
+build: "Implement features + regression tests\nMark progress per step"
 verify: "Run checks against source fingerprint\nRecord exit status + output tail"
 review: "Adversarial review\nInteraction + visual + failure paths"
 repair: "Repair failures (bounded)\nFailing check + quoted output tail"
+adjust: "Adjust plan on wrong assumptions\nUpdate steps/checks to match reality"
 deliver: "Evidence + launch instructions\nExplicit limitations"
-inspect -> contract -> plan -> slice -> build -> verify -> review -> deliver
+inspect -> plan -> pressure -> slice -> build -> verify -> review -> deliver
 verify -> repair: failed / stale
-review -> repair: defect
 repair -> verify
+build -> adjust: wrong assumption
+adjust -> plan: revise contract
+review -> repair: defect

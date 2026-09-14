@@ -1,0 +1,25 @@
+{
+  "id": "data-visualization",
+  "title": "Data visualization",
+  "priority": 60,
+  "match": {
+    "keywords": ["chart", "graph", "visualization", "timeseries", "time series", "analytics", "sparkline", "candlestick"],
+    "dependencies": ["recharts", "chart.js", "react-chartjs-2", "d3", "echarts", "plotly.js"]
+  },
+  "planning": [
+    "Define the canonical raw data shape and a pure transformation layer before implementing chart rendering.",
+    "Preserve machine timestamps and numeric values through sorting and filtering; format labels only at render time with an explicit timezone.",
+    "Do not fabricate smoothness by interpolating or backfilling across unknown periods unless the product semantics require it and the UI labels it.",
+    "Choose one chart implementation and remove abandoned variants after comparison.",
+    "Bound data volume and expensive transforms; derive data with memoization rather than mirrored state and JSON-stringify comparisons."
+  ],
+  "checks": [
+    "Test unsorted data, duplicate timestamps, timezone and daylight-saving boundaries, market or business closures, gaps, empty series, and malformed values.",
+    "Test rapid symbol or range changes so stale responses cannot replace current data.",
+    "Render at narrow and wide dimensions and verify accessible text or tabular summaries for key values."
+  ],
+  "review": [
+    "Reject sorting by formatted display labels, fake future prices, unnecessary animation, duplicate chart libraries, and test controls left in production UI.",
+    "Confirm tooltip values, axes, units, timestamps, and fallback provenance agree with the underlying data."
+  ]
+}

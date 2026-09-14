@@ -1,0 +1,24 @@
+{
+  "id": "external-api",
+  "title": "External API integration",
+  "priority": 70,
+  "match": {
+    "keywords": ["third-party api", "external api", "api integration", "provider", "webhook", "oauth api", "payment provider", "email provider", "stripe", "sendgrid", "twilio"],
+    "dependencies": ["axios", "stripe", "@sendgrid/mail", "twilio"]
+  },
+  "planning": [
+    "Create one server-side provider adapter that validates configuration and normalizes remote payloads into an internal type.",
+    "Define timeout, cancellation, retry, rate-limit, cache, pagination, and partial-failure behavior before adding UI consumers.",
+    "Validate symbols, identifiers, date ranges, and other user-controlled values before placing them into provider URLs.",
+    "Keep credentials server-only and avoid logging secrets, full upstream payloads, or sensitive customer data."
+  ],
+  "checks": [
+    "Test malformed provider payloads, missing credentials, non-2xx responses, timeout, rate limiting, empty data, and partial provider outage.",
+    "Assert bounded request counts and pagination termination with deterministic mocked responses.",
+    "Verify cached or fallback data carries timestamp and provenance so stale values are not silently presented as current."
+  ],
+  "review": [
+    "Reject repeated provider-fetch logic across routes, unbounded sequential calls, arbitrary delays as rate-limit control, and zero-filled placeholder fields presented as real data.",
+    "Confirm upstream failures map to stable internal error responses without leaking provider details."
+  ]
+}

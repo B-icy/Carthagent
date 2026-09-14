@@ -1,12 +1,24 @@
 # pi2: Evidence-driven delivery
 
-A package and CLI for [pi2](https://github.com/B-icy/pi-evidence-driven-delivery) and the [pi coding agent](https://github.com/earendil-works/pi-coding-agent) that turns one-prompt software requests into evidence-backed deliveries: acceptance contracts with executable checks, source-freshness fingerprints that invalidate stale evidence, user-owned required validators, explicit task context, bounded repair nudges, and an opt-in scenario evaluation runner for smaller models. See `docs/workflow.svg` for the delivery flow and `docs/evaluation.md` for the honest live-trial history, failures included.
+A package and CLI for [pi2](https://github.com/B-icy/pi-evidence-driven-delivery) and the [pi coding agent](https://github.com/earendil-works/pi-coding-agent) that turns software requests into evidence-backed deliveries: acceptance contracts with executable checks, source-freshness fingerprints that invalidate stale evidence, user-owned required validators, explicit task context, bounded repair nudges, and an opt-in scenario evaluation runner for smaller models. See `docs/workflow.svg` for the delivery flow and `docs/evaluation.md` for the honest live-trial history, failures included.
 
 ## CLI Usage
 
 The package exposes the standalone `pi2` command line interface:
 
 ```sh
+# Launch the interactive split-terminal console (persistent pi session)
+pi2
+
+# Preview the console without a provider — scripted demo run
+pi2 demo
+
+# Same, but immediately deliver a task — like `pi "..."`
+pi2 "Build a Python task CLI with tests"
+
+# Headless delivery run (also auto-selected when stdout is not a TTY)
+pi2 -p "Build the requested software"
+
 # Calculate workspace SHA-256 source freshness fingerprint
 pi2 hash
 
@@ -23,21 +35,44 @@ pi2 serve
 pi2 test
 ```
 
+### The interactive console
+
+`pi2` (or `pi2 tui`) runs `pi --mode rpc` as a persistent agent session under a native terminal UI:
+
+- **Messages:** streamed assistant text, thinking, tool calls, bounded output tails, shell commands, and steering while the agent runs.
+- **Plan:** the active `plan.d2`, step state, declared checks, evidence freshness, usage, and workspace fingerprint.
+- **Delivery framing:** plain implementation requests use the delivery template automatically. `/raw <text>` bypasses it once, `/guide` toggles it, and `--no-guide` disables it. Questions are sent verbatim.
+- **Themes:** `opencode` (default), `tokyonight`, `nebula`, `ember`, `forest`, and `mono`; select one with `--theme`, `/theme`, or `^t`. The interface uses static surfaces and status indicators rather than decorative animations.
+
+Keys: `enter` send (or steer mid-run) · `esc` abort/clear — press again while still running to force-restart a wedged pi process (the session file is resumed, nothing is lost) · `^r` session picker · `tab` focus feed/plan pane · `⇧tab` cycle split/feed/plan views · `↑↓` history or scroll focused pane · `pgup/pgdn`/wheel scroll focused pane · `x` expand tool output · `^t` settings overlay (theme/model/thinking) · `^n` new session · `^l` clear feed · `^c` quit (aborts a running agent first, then force-restarts).
+
+Sessions persist under `~/.pi/agent/sessions/` like pi's own. `pi2 -c` continues the most recent session for the directory, `pi2 --session <path|id>` opens a specific one, and `pi2 -r` (or `pi2 resume`, `^r`, `/resume` inside the console) shows a filterable picker — the feed is rebuilt from the session file on switch.
+
+Slash input is forwarded to pi (extension commands); built-ins: `/raw`, `/guide`, `/resume`, `/restart`, `/theme`, `/model`, `/thinking`, `/compact`, `/new`, `/export`, `/stats`, `/clear`, `/quit`.
+
+Options: `--provider`, `--model`, `--thinking`, `--theme`, `--pi-cli`, `--session`, `-c/--continue`, `-r/--resume`, `--validators`, `--context`, `--bash-cap`, `--isolate` (run pi with only pi2's resources), `--no-strict`, `--no-delivery` (plain pi session), `--no-guide`, `--demo` (scripted mock run, no provider needed), `-p/--print` (headless).
+
+The console is pure Node with zero dependencies — it runs anywhere pi runs: Linux, macOS, and Windows terminals (Windows Terminal, VS Code, or conhost with ANSI enabled). `pi2 demo` exercises the full visual pipeline against a scripted session.
+
+`pi2 serve` opens a local dashboard for the workspace from which it is invoked. It binds to `127.0.0.1` and prints a per-launch authenticated URL. Treat that URL as sensitive because an authenticated dashboard can execute the checks declared by the active plan.
+
 ## Install
 
-Install or run via `pi2`:
+Install the package with the upstream `pi` CLI:
 
 ```sh
-pi2 install git:github.com/B-icy/pi-evidence-driven-delivery
+pi install git:github.com/B-icy/pi-evidence-driven-delivery
 ```
 
-Or try it for one run only:
+Or load the extension directly for one run:
 
 ```sh
-pi2 -e git:github.com/B-icy/pi-evidence-driven-delivery -p "Build the requested software"
+pi -e /path/to/pi-evidence-driven-delivery/extensions/delivery.ts \
+  --skill /path/to/pi-evidence-driven-delivery/skills \
+  -p "Build the requested software"
 ```
 
-Tested with pi 0.85.1 / Node 23.9.0. No npm install is needed when loaded by pi: it supplies the declared peer dependencies (`typebox`, `@earendil-works/pi-coding-agent`). Core tests use Node built-ins; extension integration tests also need an installed pi.
+After installation, `pi2` is the harness console and command-line interface; package management remains under `pi`. Requires Node 22.19 or newer and is tested with pi 0.85.1. No npm install is needed when loaded as a pi package because pi supplies the optional peer dependencies (`typebox`, `@earendil-works/pi-coding-agent`).
 
 ## Design
 
@@ -51,6 +86,31 @@ The failure pattern addressed here is **plausible code -> untested success claim
 6. Only mark the contract verified when every required check has current evidence.
 
 `lib/delivery.mjs` contains the testable mechanics; `extensions/delivery.ts` adapts them to pi lifecycle events. No pi internals, credentials, provider payloads, default model or trust policy are replaced.
+
+## Request-aware delivery guidance
+
+Before each agent run, pi2 quietly routes the request through the JSON profiles in `guidance/profiles/` — matched on request wording and, where a profile opts in, project dependencies. Matching profiles append focused planning, verification, and review requirements to the delivery system prompt before `delivery_plan` runs. A web project therefore receives the general web-application guidance automatically, while a request that also touches authentication, transactional data, external APIs, or charts picks up the additional relevant profiles. Profiles selected earlier in a run stay active through follow-up prompts and session resumes.
+
+Routing is internal: it does not change the CLI, the plan contract, generated D2, or any interface. The only observable effect is that plans, checks, and reviews account for the risk classes the request actually involves.
+
+Profiles are data rather than router branches. Add a future domain by creating another JSON file:
+
+```json
+{
+  "id": "background-jobs",
+  "title": "Background jobs",
+  "priority": 50,
+  "match": {
+    "keywords": ["queue", "worker", "background job"],
+    "dependencies": ["bullmq"]
+  },
+  "planning": ["Define delivery, retry, ordering, and idempotency semantics."],
+  "checks": ["Test duplicate delivery, retry exhaustion, and worker restart."],
+  "review": ["Reject unbounded retries and non-idempotent handlers."]
+}
+```
+
+Set `"activateOnDependency": true` only when every change in projects using that dependency should receive the profile. Otherwise request keywords control activation. Invalid profiles fail during extension startup rather than silently weakening guidance.
 
 ## Tools
 
@@ -78,7 +138,7 @@ Example plan shape:
 
 Artifact roots are files/directories, not globs. `["."]` is usually simplest. Generated-only roots such as `artifacts/` are rejected. Fingerprinting covers the **entire cwd**, not merely declared artifacts, so an undeclared new source/config file still invalidates previous results. Replanning resets evidence but cannot silently drop original acceptance text while work is active.
 
-Excluded directory names: `.git`, `.venv`, `venv`, `node_modules`, `__pycache__`, `.harness`, `artifacts`, `saves`, `.tools`, `.pytest_cache`, `.ruff_cache`; `.pyc`/`.pyo` files are also excluded. Do not put product source in excluded directories. Fingerprinting is deliberately bounded to 5,000 files / 64 MiB; it fails explicitly rather than silently omitting large inputs. Use an appropriately scoped cwd for larger repositories.
+Excluded directory names: `.git`, `.venv`, `venv`, `node_modules`, `__pycache__`, `.harness`, `artifacts`, `saves`, `.tools`, `.pytest_cache`, `.ruff_cache`, `dist`, `build`, `.next`, `.nuxt`, `.cache`, `coverage`, `.turbo`, and `target`; compiled binary/object formats are also excluded. Do not put product source in excluded directories. Fingerprinting is deliberately bounded to 5,000 files / 64 MiB; it fails explicitly rather than silently omitting large inputs. Use an appropriately scoped cwd for larger repositories.
 
 ## User-owned required validators
 
@@ -138,7 +198,7 @@ Use this for any domain: browser-app accessibility checks, service API contracts
 
 ## Skills and prompts
 
-- `/oneshot <task>` — explicit end-to-end delivery prompt.
+- `/guide <task>` — explicit phased end-to-end delivery prompt.
 - `software-delivery` — vertical slices, real subprocess tests, data integrity, Windows/Unicode pitfalls, services/web/refactors.
 - `game-development` — import-safe game architecture, performance, real input smoke, screenshots, API-specific lessons. Scenario runners may inject this skill and starter recipe explicitly for graphics tasks; the core extension does not special-case game prompts.
 - `game-development/assets/ursina_starter.py` — a runnable, tested graphics/input slice to adapt, **not a finished game**. Its smoke asserts a nonblank framebuffer by sampling pixels (`assert_nonblank`): a saved PNG alone is not render evidence. The assertion is unit-tested to reject flat, black and missing images.
@@ -149,23 +209,38 @@ D2 source is always generated; D2 itself is optional for rendering. With D2 inst
 ## Test without model calls
 
 ```sh
-node --test tests/*.test.mjs
+npm ci
+npm run check
+npm test
 ```
 
-Run from the repository root. If pi is not found by the integration tests, set `PI_CLI` to its absolute `dist/cli.js`. Pure-library tests need only Node. Tests cover contract validation, stale evidence, path boundaries, generated-only scope rejection, command errors/timeouts, cancellation, parallel queuing, branching, compaction context, bounded repairs and required validators.
+npm and `package-lock.json` are the canonical dependency workflow. Run from the repository root. The suite discovers both `dist/cli.js` and `dist/bundle/cli.js` in common global layouts; if pi is elsewhere, set `PI_CLI` to the absolute CLI path. Pure-library tests need only Node. Tests cover contract validation, stale evidence, path boundaries, generated-only scope rejection, command errors/timeouts, cancellation, parallel queuing, branching, compaction context, bounded repairs, required validators, CLI report access, and dashboard authentication.
+
+The game grader tests additionally require the game runtime dependencies:
+
+```sh
+python3 -m pip install -r scenarios/game/requirements.txt
+npm run test:python
+```
 
 ## Live evaluation (opt-in, spends API credit)
 
 ```sh
 node ./evaluate.mjs --allow-live --task cli --mode both
-.venv/bin/python -m pip install -r requirements-game.txt
+.venv/bin/python -m pip install -r scenarios/game/requirements.txt
 xvfb-run -a node ./evaluate.mjs --allow-live --task game --mode both --timeout 600 --max-turns 100 --python .venv/bin/python
 ```
+
+`--dry-run` prints the fully assembled command lines, seed copies, and resolved validator manifest for a scenario without calling a provider.
+
+### Scenarios are pluggable
+
+Task domains are **manifests**, not special cases in the runner. Each `scenarios/<name>/` directory holds a `scenario.json` (prompt, shared `setup` context, custom-mode `context` files, optional `skills` to inline, `seeds`, `developmentChecks`, `holdoutChecks`) plus its graders and fixtures. Check argv entries support `{python}` `{node}` `{root}` `{home}` `{cwd}` `{scenario}` placeholders. The game profile is one such path — `scenarios/game/` contains its Minecraft-style prompt, the Ursina context notes, the `grade_minecraft_clone.py` acceptance grader, `requirements.txt`, and the deliberately-defective `baseline/minecraft.py` preserved for reference. Add a new domain by dropping in another directory; `evaluate.mjs --task <name>` picks it up, and `--scenario` is an explicit alias.
 
 Defaults: `inception/mercury-2.5`, the direct Inception Labs Mercury 2.5 model configured in pi, with a 100-productive-turn cap. Override `--provider`, `--model`, `--python`, `--pi-cli`, `--timeout`, `--max-turns`, `--max-cost`. Existing pi authentication is used; no keys are copied into the repo.
 
 Each trial gets a new directory. The concise scenario request remains the only user prompt; executable paths and bounded-run rules are appended as evaluator-owned system context. Baseline disables project context, extensions and skills. Custom loads this package, any scenario context through `--delivery-context`, and fixed required validators outside the candidate workspace. Both are scored after the run with development checks and final holdout checks, preserving each check's tier/provenance in `summary.json`; `externalGrade` is the holdout verdict. **The custom condition receives validator feedback during development**; this measures oracle-assisted harness behavior, not an unassisted model benchmark.
 
-Game trials are one scenario, not a core-harness special case. They begin from the included deliberately-defective baseline `default/minecraft.py` (a preserved original one-shot result, not an upgraded game), require `--python` pointing at an interpreter with Ursina and Pillow installed, and use `tests/grade_minecraft_clone.py` as the scenario acceptance grader. Development runs include both headless and normal-window checks so renderer-only success cannot hide a broken public launch path; the holdout reruns the full grade independently after the model exits. The interactive Linux grade also requires a display plus `xdotool` and `scrot` (for example, run the evaluation under `xvfb-run`).
+Game trials are one scenario, not a core-harness special case. They begin from the deliberately-defective baseline `scenarios/game/baseline/minecraft.py` (a preserved original baseline result, not an upgraded game), require `--python` pointing at an interpreter with Ursina and Pillow installed, and use `scenarios/game/grade_minecraft_clone.py` as the scenario acceptance grader. Development runs include both headless and normal-window checks so renderer-only success cannot hide a broken public launch path; the holdout reruns the full grade independently after the model exits. The interactive Linux grade also requires a display plus `xdotool` and `scrot` (for example, run the evaluation under `xvfb-run`).
 
 Evidence includes event JSONL, tool counts, model turns, reported cost/tokens, deadlines, external scores and generated products. Recovered connection errors are logged without falsely marking a completed run as failed. One/few stochastic trials are not statistically sufficient to claim a general win.

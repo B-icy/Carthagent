@@ -1,9 +1,17 @@
 import { CONFIG_DIR_NAME, truncateTail, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import { mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
-import { basename, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { validatePlan, planD2, fingerprint, atomicJson, runCommand, pendingChecks, restoreState, shouldContinue, localPath, createSerialQueue, validateRevision, bindRequiredChecks, loadRequiredChecks } from '../lib/delivery.mjs';
+import { fileURLToPath } from 'node:url';
+import { validatePlan, planD2WithProgress, fingerprint, atomicJson, runCommand, pendingChecks, restoreState, shouldContinue, localPath, createSerialQueue, validateRevision, bindRequiredChecks, loadRequiredChecks, updateStepStatus } from '../lib/delivery.mjs';
+import { formatGuidance, loadGuidanceProfiles, routeGuidance } from '../lib/guidance.mjs';
+
+const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url));
+const BROWSER_CHECK = join(EXTENSION_DIR, '..', 'tools', 'browser-check.mjs');
+const BROWSER_CHECK_GUIDANCE = existsSync(BROWSER_CHECK)
+  ? `\nFor web/browser tasks, a self-contained browser check is available: ${JSON.stringify(BROWSER_CHECK)}. Declare it as a runtime check, e.g. ["node","${BROWSER_CHECK}","--page","index.html","--assert","#app","--assert-count","#items:3","--click","#btn","--then-text","#out:done","--console-clean","--screenshot","artifacts/ui.png"]. It serves the workspace over HTTP, runs jsdom assertions with real inline-script execution (clicks, text, selectors, console-error detection), and captures a real Firefox screenshot when Firefox is installed — no external downloads needed.`
+  : '';
 
 const text = (value: unknown) => {
   const output = truncateTail(typeof value === 'string' ? value : JSON.stringify(value, null, 2), { maxBytes: 48000, maxLines: 1000 });
@@ -12,29 +20,35 @@ const text = (value: unknown) => {
 const shortString = () => Type.String({ minLength: 1, maxLength: 1200 });
 const strings = (maxItems = 20) => Type.Array(shortString(), { minItems: 1, maxItems });
 const GUIDANCE = `Software delivery workflow (not required for questions or read-only reviews):
-For substantial implementation work, inspect the repository and installed library APIs first. Load the relevant domain skill when one exists. Use delivery_plan BEFORE implementation: capture assumptions, a small vertical-slice plan, artifact roots, acceptance criteria and real check commands. D2 is generated for the flowchart; use D2 for any additional flowcharts.
-Implement a runnable slice early, then complete the agreed behavior in small coherent steps. Don't stop at a scaffold. Verify uncertain APIs with installed source or a tiny executable probe; never invent library methods or assume assets exist. Separate testable logic from rendering/services. Include error handling, dependencies, launch instructions, and regression tests. Exercise actual interaction paths in fresh subprocesses with the normal environment, not only compilation or internal function calls. Include non-ASCII text, paths with spaces, and invalid data where applicable. Python on Windows may have cp1252 stdout: use ASCII-escaped JSON or configure the application's UTF-8 output; don't hide failures by changing only the test environment. For visual work, capture and inspect a screenshot if your model supports images; otherwise explicitly disclose that visual review is unperformed.
-After creating a file, prefer focused edit calls over repeatedly rewriting the full file. Whole-file rewrites bloat model context, increase provider rate-limit risk, and can accidentally remove previously working behavior.
-Use a few meaningful check suites (usually 2–4), not one command per criterion: multiple acceptance criteria can share a suite. When user-owned required validators already cover a requirement, do not duplicate them with shallow model-authored checks; add only focused checks for logic they do not cover. Scope honestly: enumerate every explicit requirement in the user's prompt and back each core requirement with an acceptance criterion and a real check. Narrow contracts that omit core requirements (a renderer-only contract for a gameplay prompt) make 'verified' a scope failure, not a smaller task; if budget remains once checks pass, implement and verify the missing requirements instead of stopping at the first passing slice. Run delivery_check with id="all" to execute every declared check sequentially. It executes the argv with a deadline, records logs and fingerprints the entire working project (excluding dependencies, caches and generated artifacts), so omitting a source file cannot hide stale evidence. Artifact roots must contain product source/tests/config/docs, never only artifacts/. Use ["."] for the project. Do not edit during checks; run dependent tools in separate batches. Use artifacts/ for generated screenshots/build output; .harness/ is reserved for harness logs. Re-run checks after final edits.
-Before concluding, adversarially review the implementation against each acceptance criterion and call delivery_finish with the review, launch command and honest limitations. Failed, missing or stale checks cannot produce verified status. If genuinely blocked, use status=blocked with the reason; do not weaken tests to manufacture success. One-shot means one USER prompt, not one tool call. No automatic deployments or unrequested destructive changes.`;
+For substantial implementation work, inspect the repository and installed library APIs first. Identify which domain skills or knowledge bases apply to this task — check the available skills list and read the matching skill before implementing. Use delivery_plan BEFORE implementation: capture assumptions, a small vertical-slice plan, artifact roots, acceptance criteria and real check commands. D2 is generated for the flowchart; use D2 for any additional flowcharts.
+Pressure-test the plan before writing code: review it against every explicit requirement in the user's prompt, verify uncertain APIs with installed source or a tiny executable probe, and confirm the checks can actually detect failure. If the plan is weak or incomplete, call delivery_plan again to fix it — the plan is a living contract, not a one-time artifact.
+Implement a runnable slice early, then complete the agreed behavior in small coherent steps. Mark progress with delivery_progress as each step finishes so the plan panel stays current. Don't stop at a scaffold. Verify uncertain APIs with installed source or a tiny executable probe; never invent library methods or assume assets exist. Separate testable logic from rendering/services. Include error handling, dependencies, launch instructions, and regression tests. Exercise actual interaction paths in fresh subprocesses with the normal environment, not only compilation or internal function calls. Include non-ASCII text, paths with spaces, and invalid data where applicable. On Windows, stdout may use a legacy code page (e.g. cp1252): use ASCII-escaped JSON or configure the application's UTF-8 output; don't hide failures by changing only the test environment. For visual work, capture and inspect a screenshot if your model supports images; otherwise explicitly disclose that visual review is unperformed.
+After creating a file, prefer focused edit calls over repeatedly rewriting the full file. Whole-file rewrites bloat model context, increase provider rate-limit risk, and can accidentally remove previously working behavior. If development reveals a wrong assumption or a step can't be completed as planned, call delivery_plan again to adjust the contract — update steps and checks to match reality, but never silently drop original acceptance criteria.
+Use a few meaningful check suites (usually 2–4), not one command per criterion: multiple acceptance criteria can share a suite. When user-owned required validators already cover a requirement, do not duplicate them with shallow model-authored checks; add only focused checks for logic they do not cover. Scope honestly: enumerate every explicit requirement in the user's prompt and back each core requirement with an acceptance criterion and a real check. Narrow contracts that omit core requirements make 'verified' a scope failure, not a smaller task; if budget remains once checks pass, implement and verify the missing requirements instead of stopping at the first passing slice. Run delivery_check with id="all" to execute every declared check sequentially. It executes the argv with a deadline, records logs and fingerprints the entire working project (excluding dependencies, caches and generated artifacts), so omitting a source file cannot hide stale evidence. Artifact roots must contain product source/tests/config/docs, never only artifacts/. Use ["."] for the project. Do not edit during checks; run dependent tools in separate batches. Use artifacts/ for generated screenshots/build output; .harness/ is reserved for harness logs. Re-run checks after final edits.
+Before concluding, adversarially review the implementation against each acceptance criterion and call delivery_finish with the review, launch command and honest limitations. Failed, missing or stale checks cannot produce verified status. If genuinely blocked, use status=blocked with the reason; do not weaken tests to manufacture success. Phased delivery means steady progress across many tool calls within the run, not a single response. No automatic deployments or unrequested destructive changes.`;
 
 export default function delivery(pi: ExtensionAPI) {
   let state: any = null;
   let touched = false, nudges = 0;
   const exclusive = createSerialQueue();
+  const guidanceProfiles = loadGuidanceProfiles();
+  let activeGuidance: any[] = [];
   let required: any[] = [], extraGuidance = '', configError = '';
   let writeCounts = new Map<string, number>();
   let initialFiles = new Set<string>();
   pi.registerFlag('delivery-validators', { description: 'Path to user-owned required validator manifest; these checks cannot be omitted by the model', type: 'string' });
   pi.registerFlag('delivery-context', { description: 'Path to optional task/context guidance injected into the delivery system prompt', type: 'string' });
   pi.registerFlag('delivery-strict', { description: 'Require delivery_plan before built-in edit/write (not a security sandbox)', type: 'boolean', default: false });
-  pi.registerFlag('delivery-bash-cap', { description: 'Cap bash/powershell tool timeouts at N seconds (0 disables). A single un-timed runaway command (e.g. find /) can otherwise consume an entire bounded run. Instruct the model to set bounded timeouts either way.', type: 'number', default: 0 });
+  pi.registerFlag('delivery-bash-cap', { description: 'Cap bash/powershell tool timeouts at N seconds (0 disables). A single un-timed runaway command (e.g. find /) can otherwise consume an entire bounded run. Instruct the model to set bounded timeouts either way.', type: 'string', default: '0' });
   pi.registerFlag('delivery-protect-existing', { description: 'Require focused edits instead of whole-file replacement for files present at session start', type: 'boolean', default: false });
-  pi.registerFlag('delivery-rewrite-cap', { description: 'Maximum built-in write calls per path in a bounded run; later changes must use focused edits (0 disables)', type: 'number', default: 0 });
-  pi.registerFlag('delivery-turn-delay-ms', { description: 'Base delay after tool results in bounded runs, scaled by active context size to reduce provider rate-limit bursts (0 disables)', type: 'number', default: 0 });
-  pi.registerFlag('delivery-tool-output-cap', { description: 'Maximum characters retained from each text tool result in bounded runs; preserves the beginning and end (0 disables)', type: 'number', default: 0 });
+  pi.registerFlag('delivery-rewrite-cap', { description: 'Maximum built-in write calls per path in a bounded run; later changes must use focused edits (0 disables)', type: 'string', default: '0' });
+  pi.registerFlag('delivery-turn-delay-ms', { description: 'Base delay after tool results in bounded runs, scaled by active context size to reduce provider rate-limit bursts (0 disables)', type: 'string', default: '0' });
+  pi.registerFlag('delivery-tool-output-cap', { description: 'Maximum characters retained from each text tool result in bounded runs; preserves the beginning and end (0 disables)', type: 'string', default: '0' });
   function restore(ctx: ExtensionContext) {
     state = restoreState(ctx.sessionManager.getBranch());
+    activeGuidance = (state?.guidanceProfiles || state?.plan?.guidanceProfiles || [])
+      .map((id: string) => guidanceProfiles.find(profile => profile.id === id))
+      .filter(Boolean);
     touched = false;
     nudges = state?.nudges ?? 0;
     required = [];
@@ -83,8 +97,14 @@ export default function delivery(pi: ExtensionAPI) {
     if (event.source !== 'extension') { nudges = 0; touched = false; }
     return { action: 'continue' };
   });
-  pi.on('before_agent_start', event => {
-    let guidance = GUIDANCE;
+  pi.on('before_agent_start', (event, ctx) => {
+    const routed = routeGuidance(event.prompt, { cwd: ctx?.cwd || process.cwd(), profiles: guidanceProfiles });
+    activeGuidance = state && !['verified', 'blocked'].includes(state.status)
+      ? [...new Map([...activeGuidance, ...routed].map(profile => [profile.id, profile])).values()].sort((a, b) => b.priority - a.priority)
+      : routed;
+    let guidance = GUIDANCE + BROWSER_CHECK_GUIDANCE;
+    const routedText = formatGuidance(activeGuidance);
+    if (routedText) guidance += `\n\n${routedText}`;
     if (extraGuidance) guidance += `\n\nTask-specific delivery context:\n${extraGuidance}`;
     if (required.length) guidance += `\nUser-owned required validators will be added to your plan automatically: ${JSON.stringify(required)}. Run delivery_check id="all"; repair failures rather than replacing or bypassing these checks.`;
     return { systemPrompt: event.systemPrompt + '\n\n' + guidance };
@@ -92,23 +112,24 @@ export default function delivery(pi: ExtensionAPI) {
   pi.on('context', event => {
     if (!state || state.status === 'blocked') return;
     // Re-injected after compaction without replacing Pi's summary or pruning user messages.
-    const summary = { goal: state.plan.goal, status: state.status, acceptance: state.plan.acceptance, steps: state.plan.steps, artifacts: state.plan.artifacts, checks: state.plan.checks, evidence: Object.fromEntries(Object.entries(state.evidence).map(([id, e]) => [id, { passed: e.passed, fingerprint: e.fingerprint, code: e.code, outputTail: e.outputTail ? e.outputTail.slice(-400) : undefined }])) };
+    const summary = { goal: state.plan.goal, status: state.status, acceptance: state.plan.acceptance, steps: state.plan.steps, artifacts: state.plan.artifacts, checks: state.plan.checks, evidence: Object.fromEntries(Object.entries(state.evidence).map(([id, e]: any) => [id, { passed: e.passed, fingerprint: e.fingerprint, code: e.code, outputTail: e.outputTail ? e.outputTail.slice(-400) : undefined }])) };
     return { messages: [...event.messages, { role: 'custom' as const, customType: 'delivery-context', content: `Delivery contract (evidence may be stale after edits):\n${JSON.stringify(summary)}\nUse delivery_status to inspect current freshness.`, display: false, timestamp: Date.now() }] };
   });
   pi.on('tool_call', (event, ctx) => {
+    const input = event.input as Record<string, any> | undefined;
     if (
       event.toolName === 'edit' &&
-      event.input &&
-      typeof event.input === 'object' &&
-      typeof event.input.edits === 'string'
+      input &&
+      typeof input === 'object' &&
+      typeof input.edits === 'string'
     ) {
       try {
-        const edits = JSON.parse(event.input.edits);
+        const edits = JSON.parse(input.edits);
         if (
           Array.isArray(edits) &&
           edits.every(edit => edit && typeof edit === 'object' && !Array.isArray(edit))
         ) {
-          event.input.edits = edits;
+          input.edits = edits;
         }
       } catch {
         // Leave invalid input unchanged so the tool returns its normal validation error.
@@ -116,10 +137,10 @@ export default function delivery(pi: ExtensionAPI) {
     }
     const shellCommand =
       ['bash', 'powershell'].includes(event.toolName) &&
-      event.input &&
-      typeof event.input === 'object' &&
-      typeof event.input.command === 'string'
-        ? event.input.command
+      input &&
+      typeof input === 'object' &&
+      typeof input.command === 'string'
+        ? input.command
         : '';
     const mutatingShell =
       /(?:^|[;&|]\s*)\b(?:rm|mv|cp|mkdir|touch|truncate|install)\b/i.test(shellCommand) ||
@@ -131,10 +152,10 @@ export default function delivery(pi: ExtensionAPI) {
       !state &&
       (['write', 'edit'].includes(event.toolName) || mutatingShell)
     ) {
-      return { block: true, reason: 'Call delivery_plan first. Read-only inspection and API probes remain available.' };
+      return { block: true, reason: 'BLOCKED — call delivery_plan NOW before any write/edit/bash. Schema: {goal, assumptions[], artifacts[], steps[], acceptance:[{requirement, checks:[checkId...]}], checks:[{id, kind:"test"|"runtime"|"static", argv:[...], timeoutSeconds}]}. Do not retry this tool until the plan exists; read-only inspection stays available.' };
     }
-    if (['write', 'edit'].includes(event.toolName) && event.input && typeof event.input === 'object') {
-      const path = typeof event.input.path === 'string' ? event.input.path.replaceAll('\\', '/') : '';
+    if (['write', 'edit'].includes(event.toolName) && input && typeof input === 'object') {
+      const path = typeof input.path === 'string' ? input.path.replaceAll('\\', '/') : '';
       const cwdAsRelativePath = ctx?.cwd?.replaceAll('\\', '/').replace(/^\/+/, '') ?? '';
       const cwdName = ctx?.cwd ? basename(ctx.cwd).replaceAll('\\', '/') : '';
       if (
@@ -146,7 +167,7 @@ export default function delivery(pi: ExtensionAPI) {
       ) {
         return {
           block: true,
-          reason: 'This path recreates the working directory inside itself. Use a workspace-relative product path such as README.md or src/app.py.',
+          reason: 'This path recreates the working directory inside itself. Use a workspace-relative product path such as README.md or src/index.ts.',
         };
       }
       if (
@@ -161,8 +182,8 @@ export default function delivery(pi: ExtensionAPI) {
       }
     }
     const rewriteCap = Math.max(0, Number(pi.getFlag('delivery-rewrite-cap')) || 0);
-    if (rewriteCap > 0 && event.toolName === 'write' && event.input && typeof event.input === 'object') {
-      const path = typeof event.input.path === 'string' ? event.input.path : '';
+    if (rewriteCap > 0 && event.toolName === 'write' && input && typeof input === 'object') {
+      const path = typeof input.path === 'string' ? input.path : '';
       if (path) {
         const count = writeCounts.get(path) ?? 0;
         if (count >= rewriteCap) {
@@ -176,10 +197,10 @@ export default function delivery(pi: ExtensionAPI) {
     }
     // Bounded-run protection: shell tools have no default timeout, so one un-timed
     // runaway command (observed live: `find /`) can block until the wall clock expires.
-    // Mutating event.input is a documented pi guarantee and affects execution.
+    // Mutating input is a documented pi guarantee and affects execution.
     const cap = Number(pi.getFlag('delivery-bash-cap')) || 0;
-    if (['bash', 'powershell'].includes(event.toolName) && event.input && typeof event.input === 'object') {
-      const command = typeof event.input.command === 'string' ? event.input.command : '';
+    if (['bash', 'powershell'].includes(event.toolName) && input && typeof input === 'object') {
+      const command = typeof input.command === 'string' ? input.command : '';
       if (ctx?.cwd && initialFiles.size) {
         const redirects = [...command.matchAll(/(?:^|[^>])>(?!>)\s*(?:"([^"]+)"|'([^']+)'|([^\s;&|]+))/g)]
           .map(match => match[1] ?? match[2] ?? match[3])
@@ -223,7 +244,7 @@ export default function delivery(pi: ExtensionAPI) {
       if (broadTermination) {
         return { block: true, reason: 'Broad process termination is prohibited in bounded delivery runs. Capture the launched child PID and terminate only that PID.' };
       }
-      if (cap > 0 && (typeof event.input.timeout !== 'number' || event.input.timeout > cap)) event.input.timeout = cap;
+      if (cap > 0 && (typeof input.timeout !== 'number' || input.timeout > cap)) input.timeout = cap;
     }
   });
   pi.on('tool_result', async (event, ctx) => {
@@ -261,10 +282,10 @@ export default function delivery(pi: ExtensionAPI) {
         if (configError) throw Error(configError);
         const plan = validatePlan(bindRequiredChecks(params, required), ctx.cwd);
         validateRevision(state, plan);
-        state = { version: 1, runId: randomUUID(), plan, evidence: {}, status: 'implementing', createdAt: new Date().toISOString() };
+        state = { version: 1, runId: randomUUID(), revision: (state?.revision || 0) + 1, guidanceProfiles: activeGuidance.map(profile => profile.id), plan, evidence: {}, status: 'implementing', createdAt: new Date().toISOString(), stepStatus: {} };
         const dir = directory(ctx);
         mkdirSync(dir, { recursive: true });
-        writeFileSync(join(dir, 'plan.d2'), planD2(plan));
+        writeFileSync(join(dir, 'plan.d2'), planD2WithProgress(plan, {}));
         persist(ctx);
         return text({ plan: join(dir, 'plan.d2'), report: join(dir, 'report.json'), next: 'Build a runnable slice, add regression tests, then delivery_check each check ID.' });
       });
@@ -275,6 +296,23 @@ export default function delivery(pi: ExtensionAPI) {
     async execute(_id, _params, _signal, _update, ctx) {
       if (!state) return text('No delivery contract.');
       return text({ ...state, pendingChecks: pendingChecks(state, fingerprint(ctx.cwd, ['.'])) });
+    },
+  });
+  pi.registerTool({
+    name: 'delivery_progress', label: 'Update step progress', description: 'Mark a plan step as active, done, or failed. Regenerates plan.d2 so the side panel stays current. Use as each step completes or hits a blocker.',
+    parameters: Type.Object({
+      step: Type.Integer({ minimum: 0 }),
+      status: Type.String({ description: 'active, done, failed, or pending' }),
+    }),
+    async execute(_id, params, _signal, _update, ctx) {
+      return exclusive(async () => {
+        if (!state) throw Error('Call delivery_plan first');
+        updateStepStatus(state, params.step, params.status);
+        const dir = directory(ctx);
+        writeFileSync(join(dir, 'plan.d2'), planD2WithProgress(state.plan, state.stepStatus));
+        persist(ctx);
+        return text({ step: params.step, status: params.status, plan: join(dir, 'plan.d2') });
+      });
     },
   });
   pi.registerTool({

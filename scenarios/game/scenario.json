@@ -1,0 +1,33 @@
+{
+  "name": "game",
+  "description": "Minecraft-style Ursina game starting from a verified renderer slice, graded headless and in a real window",
+  "prompt": "Build me a simple Minecraft-style game in Python. I should be able to explore the world, break and place different blocks, pause, and save my progress. Make it feel complete enough to play, and include tests and setup instructions.",
+  "setup": "Ursina and Pillow are already installed in the supplied Python. External renderer probe: {root}/skills/game-development/scripts/verify_ursina.py. Run it early against minecraft.py and again after renderer changes; the required check uses the same probe. Preserve the seeded renderer lifecycle: default launch must call app.run() and stay interactive, while app.destroy() belongs only after the bounded --smoke path. Normal-window acceptance drives the public keyboard and mouse paths and rejects smoke-only state changes, so attach input/update methods to a live Entity. Keep the initial positive-Z movement path on terrain and clear while leaving a target reachable afterward.",
+  "skills": ["game-development"],
+  "context": ["context.md"],
+  "seeds": [
+    { "from": "{root}/skills/game-development/assets/ursina_starter.py", "to": "minecraft.py" }
+  ],
+  "developmentChecks": [
+    {
+      "id": "acceptance_core",
+      "kind": "runtime",
+      "argv": ["{python}", "{scenario}/grade_minecraft_clone.py", "{cwd}", "--probe", "{root}/skills/game-development/scripts/verify_ursina.py", "--skip-interactive"],
+      "timeoutSeconds": 90
+    },
+    {
+      "id": "acceptance_interactive",
+      "kind": "runtime",
+      "argv": ["{python}", "{scenario}/grade_minecraft_clone.py", "{cwd}", "--probe", "{root}/skills/game-development/scripts/verify_ursina.py"],
+      "timeoutSeconds": 120
+    }
+  ],
+  "holdoutChecks": [
+    {
+      "id": "acceptance_holdout",
+      "kind": "runtime",
+      "argv": ["{python}", "{scenario}/grade_minecraft_clone.py", "{cwd}", "--probe", "{root}/skills/game-development/scripts/verify_ursina.py"],
+      "timeoutSeconds": 120
+    }
+  ]
+}

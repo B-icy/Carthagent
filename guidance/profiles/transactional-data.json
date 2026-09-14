@@ -1,0 +1,25 @@
+{
+  "id": "transactional-data",
+  "title": "Transactional data",
+  "priority": 80,
+  "match": {
+    "keywords": ["transaction", "balance", "money", "price", "payment", "checkout", "order", "purchase", "inventory", "booking", "reservation", "billing", "invoice", "subscription", "refund", "ledger", "wallet", "credit", "debit", "funds", "trade", "portfolio", "stock", "shares", "investment"]
+  },
+  "planning": [
+    "Write domain invariants explicitly before implementation: valid quantities, allowed states, ownership, available balance or inventory, and replay behavior.",
+    "Treat client-supplied prices, totals, ownership, and status as untrusted; resolve authoritative values on the server at mutation time.",
+    "Use decimal or integer minor-unit storage for money rather than binary floating point.",
+    "Make validation and mutation atomic with an appropriate database transaction or conditional update; account for concurrent requests and retries.",
+    "Define idempotency and audit requirements for mutations that must not execute twice."
+  ],
+  "checks": [
+    "Test zero, negative, fractional, non-finite, malformed, and very large inputs as well as invalid enum values.",
+    "Run concurrent mutation tests proving balance, holdings, inventory, or capacity cannot go negative or exceed limits.",
+    "Test rollback on downstream failure and replay of the same request where duplicate execution would be harmful.",
+    "Verify calculations at rounding boundaries with deterministic fixtures."
+  ],
+  "review": [
+    "Reject read-check-write sequences outside a transaction, Float money columns, truthiness-based numeric validation, and duplicate calculation implementations.",
+    "Confirm historical reports never use future values as fallback data and never present estimated values as authoritative without labeling them."
+  ]
+}

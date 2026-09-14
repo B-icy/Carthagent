@@ -1,343 +1,220 @@
 import express from 'express';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
-import { exec } from 'node:child_process';
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import {
   fingerprint,
   validatePlan,
   planD2,
   bindRequiredChecks,
-  loadRequiredChecks,
   pendingChecks,
   runCommand,
-  createSerialQueue,
-  shouldContinue,
-  turnBudgetExceeded
+  createSerialQueue
 } from './lib/delivery.mjs';
+import { createReport, latestReport, saveReport } from './lib/reports.mjs';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const cwd = process.cwd();
-
+const root = dirname(fileURLToPath(import.meta.url));
+const cwd = resolve(process.env.PI2_WORKSPACE || process.cwd());
+const port = Number(process.env.PI2_PORT) || 3000;
+const token = process.env.PI2_SERVER_TOKEN || randomBytes(24).toString('hex');
 const app = express();
-const PORT = 3000;
 const enqueue = createSerialQueue();
+let active = latestReport(cwd);
+let currentState = active?.state || { version: 1, status: 'idle', plan: null, evidence: {}, review: '', launch: '', limitations: [] };
 
-app.use(express.json({ limit: '5mb' }));
+app.disable('x-powered-by');
+app.use((req, res, next) => {
+  res.setHeader('content-security-policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'");
+  res.setHeader('referrer-policy', 'no-referrer');
+  res.setHeader('x-content-type-options', 'nosniff');
+  if (req.path.startsWith('/api/')) res.setHeader('cache-control', 'no-store');
+  next();
+});
+app.use(express.json({ limit: '1mb' }));
+app.use('/api', (req, res, next) => {
+  const supplied = req.get('x-pi2-token') || '';
+  const expected = Buffer.from(token);
+  const received = Buffer.from(supplied);
+  if (expected.length !== received.length || !timingSafeEqual(expected, received)) return res.status(401).json({ error: 'Unauthorized' });
+  const origin = req.get('origin');
+  if (origin && !new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`]).has(origin)) return res.status(403).json({ error: 'Origin not allowed' });
+  next();
+});
 
-// Initial sample plan
-const SAMPLE_PLANS = {
-  cli: {
-    goal: 'A reliable evidence-driven task CLI with persistent storage and robust error handling',
-    assumptions: ['Node.js standard library and built-in runner are sufficient'],
-    artifacts: ['lib/delivery.mjs', 'tests', 'README.md'],
-    steps: [
-      'Inspect repository source tree and runtime versions',
-      'Runnable vertical slice: argument parser and command dispatcher',
-      'Implement data persistence and error boundaries',
-      'Subprocess test suite with execution and timeout checks',
-      'Review limitations, edge cases and verified handoff'
-    ],
-    acceptance: [
-      {
-        requirement: 'Commands run cleanly in fresh subprocesses and exit with code 0',
-        checks: ['delivery_unit_tests']
-      },
-      {
-        requirement: 'Fingerprinting detects modifications and invalidates stale evidence',
-        checks: ['fingerprint_smoke']
-      }
-    ],
-    checks: [
-      {
-        id: 'delivery_unit_tests',
-        kind: 'test',
-        argv: ['node', '--test', 'tests/delivery.test.mjs'],
-        timeoutSeconds: 30
-      },
-      {
-        id: 'fingerprint_smoke',
-        kind: 'runtime',
-        argv: ['node', '-e', 'import("./lib/delivery.mjs").then(m => { const h = m.fingerprint(process.cwd(), ["."]); if (!h || h.length !== 64) process.exit(1); console.log("Valid SHA-256 fingerprint:", h); })'],
-        timeoutSeconds: 10
-      }
-    ]
-  },
-  ursina_game: {
-    goal: 'Interactive Minecraft/voxel game prototype with verified Ursina graphics framebuffer nonblank probe',
-    assumptions: ['Python 3 with Ursina or mock graphics fallback installed'],
-    artifacts: ['skills/game-development', 'skills/game-development/assets/ursina_starter.py'],
-    steps: [
-      'Stage graphics framebuffer test slice first',
-      'Adapt Ursina starter with nonblank pixel sampling',
-      'Build chunk voxel generator and player camera controller',
-      'Execute render and input smoke tests',
-      'Review framerate, UX limitations and record handoff'
-    ],
-    acceptance: [
-      {
-        requirement: 'Renderer starts up and produces a verified nonblank framebuffer',
-        checks: ['ursina_probe']
-      }
-    ],
-    checks: [
-      {
-        id: 'ursina_probe',
-        kind: 'test',
-        argv: ['python3', 'skills/game-development/scripts/verify_ursina.py', '--help'],
-        timeoutSeconds: 15
-      }
-    ]
+function refresh() {
+  const found = latestReport(cwd);
+  if (found && (!active || found.path !== active.path || found.mtimeMs > active.mtimeMs)) {
+    active = found;
+    currentState = found.state;
   }
-};
+}
 
-let currentState = {
-  status: 'planned',
-  plan: structuredClone(SAMPLE_PLANS.cli),
-  evidence: {},
-  review: '',
-  launch: 'npm test',
-  limitations: []
-};
-
-// --- API ROUTES ---
+function persist() {
+  if (!active) active = createReport(cwd, currentState);
+  else saveReport(active.path, currentState);
+  active = { ...active, state: currentState, mtimeMs: Date.now() };
+}
 
 app.get('/api/status', (req, res) => {
   try {
-    const currentFp = fingerprint(cwd, ['.']);
-    const pending = currentState.plan ? pendingChecks(currentState, currentFp) : [];
+    refresh();
+    const currentFingerprint = fingerprint(cwd, ['.']);
+    const pending = currentState.plan ? pendingChecks(currentState, currentFingerprint) : [];
     res.json({
       status: currentState.status,
       plan: currentState.plan,
-      evidence: currentState.evidence,
-      review: currentState.review,
-      launch: currentState.launch,
-      limitations: currentState.limitations,
-      currentFingerprint: currentFp,
+      evidence: currentState.evidence || {},
+      review: currentState.review || currentState.handoff?.review || '',
+      launch: currentState.launch || currentState.handoff?.launch || '',
+      limitations: currentState.limitations || currentState.handoff?.limitations || [],
+      currentFingerprint,
       pendingChecks: pending,
-      isFresh: pending.length === 0 && currentState.plan?.checks?.every(c => currentState.evidence[c.id]?.passed)
+      workspace: cwd,
+      report: active?.path || null
     });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
-});
-
-app.get('/api/fingerprint', (req, res) => {
-  try {
-    const roots = req.query.roots ? req.query.roots.split(',').map(s => s.trim()) : ['.'];
-    const hash = fingerprint(cwd, roots);
-    res.json({ fingerprint: hash, roots, timestamp: new Date().toISOString() });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-app.get('/api/presets', (req, res) => {
-  res.json(SAMPLE_PLANS);
 });
 
 app.post('/api/plan/validate', (req, res) => {
   try {
-    const plan = req.body.plan;
-    const validated = validatePlan(plan, cwd);
-    const d2 = planD2(validated);
-    res.json({ valid: true, plan: validated, d2 });
-  } catch (err) {
-    res.status(400).json({ valid: false, error: err.message });
+    const plan = validatePlan(req.body.plan, cwd);
+    res.json({ valid: true, plan, d2: planD2(plan) });
+  } catch (error) {
+    res.status(400).json({ valid: false, error: error.message });
   }
 });
 
 app.post('/api/plan/d2', (req, res) => {
-  try {
-    const plan = req.body.plan;
-    const d2 = planD2(plan);
-    res.json({ d2 });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
+  try { res.json({ d2: planD2(req.body.plan) }); }
+  catch (error) { res.status(400).json({ error: error.message }); }
 });
 
 app.post('/api/plan/set', (req, res) => {
   try {
-    const plan = req.body.plan;
-    const validated = validatePlan(plan, cwd);
-    currentState.plan = validated;
-    currentState.status = 'planned';
-    currentState.evidence = {}; // Reset evidence on replan
-    const d2 = planD2(validated);
-    res.json({ success: true, plan: validated, d2 });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
+    const plan = validatePlan(req.body.plan, cwd);
+    currentState = {
+      version: 1,
+      runId: randomUUID(),
+      revision: (currentState.revision || 0) + 1,
+      status: 'implementing',
+      plan,
+      evidence: {},
+      stepStatus: {},
+      createdAt: new Date().toISOString()
+    };
+    active = createReport(cwd, currentState);
+    currentState = active.state;
+    res.json({ success: true, plan, d2: planD2(plan), report: active.path });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
   }
 });
 
 app.post('/api/plan/bind-required', (req, res) => {
   try {
-    const { plan, required } = req.body;
-    const bound = bindRequiredChecks(plan, required);
-    const validated = validatePlan(bound, cwd);
-    const d2 = planD2(validated);
-    res.json({ success: true, plan: validated, d2 });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
+    const plan = validatePlan(bindRequiredChecks(req.body.plan, req.body.required), cwd);
+    res.json({ success: true, plan, d2: planD2(plan) });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
   }
 });
 
 app.post('/api/checks/run', async (req, res) => {
-  const { id } = req.body;
-  if (!currentState.plan?.checks?.length) {
-    return res.status(400).json({ error: 'No active plan configured' });
-  }
-
-  const checksToRun = id === 'all'
-    ? currentState.plan.checks
-    : currentState.plan.checks.filter(c => c.id === id);
-
-  if (!checksToRun.length) {
-    return res.status(404).json({ error: `Check with ID "${id}" not found in plan` });
-  }
-
+  refresh();
+  if (!currentState.plan?.checks?.length) return res.status(400).json({ error: 'No active plan' });
+  const checks = req.body.id === 'all' ? currentState.plan.checks : currentState.plan.checks.filter(check => check.id === req.body.id);
+  if (!checks.length) return res.status(404).json({ error: `Unknown check ID: ${req.body.id}` });
   try {
     const results = await enqueue(async () => {
       const runResults = [];
-      for (const check of checksToRun) {
-        const logPath = join(cwd, '.harness', 'web-run', `${check.id}-${Date.now()}.log`);
-        const cmdRes = await runCommand(check.argv, {
+      const priorStatus = currentState.status;
+      currentState.status = 'verifying';
+      persist();
+      for (const check of checks) {
+        const before = fingerprint(cwd, ['.']);
+        const result = await runCommand(check.argv, {
           cwd,
-          timeoutSeconds: check.timeoutSeconds || 60,
-          logPath
+          timeoutSeconds: check.timeoutSeconds,
+          logPath: join(active.dir, `${check.id}-${randomUUID()}.log`)
         });
-        const currentHash = fingerprint(cwd, ['.']);
-        const passed = cmdRes.code === 0 && !cmdRes.timedOut && !cmdRes.cancelled && !cmdRes.outputLimit;
-
-        const evidenceEntry = {
-          passed,
-          fingerprint: currentHash,
-          durationMs: cmdRes.durationMs,
-          code: cmdRes.code,
-          timedOut: cmdRes.timedOut,
-          cancelled: cmdRes.cancelled,
-          outputLimit: cmdRes.outputLimit,
-          output: cmdRes.output,
-          logPath: cmdRes.logPath,
+        const after = fingerprint(cwd, ['.']);
+        const evidence = {
+          passed: result.code === 0 && !result.timedOut && !result.cancelled && !result.outputLimit && before === after,
+          fingerprint: after,
+          durationMs: result.durationMs,
+          code: result.code,
+          timedOut: result.timedOut,
+          cancelled: result.cancelled,
+          outputLimit: result.outputLimit,
+          changedDuringCheck: before !== after,
+          outputTail: result.output.slice(-1200),
+          logPath: result.logPath,
           timestamp: new Date().toISOString()
         };
-
-        currentState.evidence[check.id] = evidenceEntry;
-        runResults.push({ id: check.id, ...evidenceEntry });
+        currentState.evidence[check.id] = evidence;
+        persist();
+        runResults.push({ id: check.id, ...evidence, output: result.output });
       }
+      const pending = pendingChecks(currentState, fingerprint(cwd, ['.']));
+      currentState.status = priorStatus === 'verified' && !pending.length ? 'verified' : 'implementing';
+      persist();
       return runResults;
     });
-
-    const currentFp = fingerprint(cwd, ['.']);
-    const pending = pendingChecks(currentState, currentFp);
-
-    res.json({
-      success: true,
-      results,
-      evidence: currentState.evidence,
-      pendingChecks: pending,
-      currentFingerprint: currentFp
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    const currentFingerprint = fingerprint(cwd, ['.']);
+    res.json({ results, pendingChecks: pendingChecks(currentState, currentFingerprint), currentFingerprint });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
 app.post('/api/finish', (req, res) => {
   try {
+    refresh();
     const { status, review, launch, limitations } = req.body;
-    if (!['verified', 'blocked'].includes(status)) {
-      return res.status(400).json({ error: 'Status must be "verified" or "blocked"' });
-    }
-
+    if (!['verified', 'blocked'].includes(status)) return res.status(400).json({ error: 'Status must be verified or blocked' });
+    if (!currentState.plan) return res.status(400).json({ error: 'No active plan' });
     if (status === 'verified') {
-      const currentFp = fingerprint(cwd, ['.']);
-      const pending = pendingChecks(currentState, currentFp);
-      if (pending.length > 0) {
-        return res.status(400).json({
-          error: `Cannot verify contract: pending, failed, or stale checks: ${pending.join(', ')}`
-        });
-      }
+      const pending = pendingChecks(currentState, fingerprint(cwd, ['.']));
+      if (pending.length) return res.status(400).json({ error: `Checks are pending, failed, or stale: ${pending.join(', ')}` });
+    } else if (!Array.isArray(limitations) || !limitations.length) {
+      return res.status(400).json({ error: 'Blocked status requires a reason' });
     }
-
     currentState.status = status;
     currentState.review = review || '';
     currentState.launch = launch || '';
     currentState.limitations = Array.isArray(limitations) ? limitations : [];
-
+    currentState.handoff = { status, review: currentState.review, launch: currentState.launch, limitations: currentState.limitations, fingerprint: fingerprint(cwd, ['.']), at: new Date().toISOString() };
+    persist();
     res.json({ success: true, state: currentState });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-app.post('/api/reset', (req, res) => {
-  currentState = {
-    status: 'planned',
-    plan: structuredClone(SAMPLE_PLANS.cli),
-    evidence: {},
-    review: '',
-    launch: 'npm test',
-    limitations: []
-  };
-  res.json({ success: true, state: currentState });
-});
-
-app.get('/api/test-runner', (req, res) => {
-  exec('npm test', { cwd }, (err, stdout, stderr) => {
-    res.json({
-      code: err ? err.code : 0,
-      passed: !err,
-      stdout,
-      stderr
-    });
-  });
-});
-
-app.get('/api/workflow.svg', (req, res) => {
-  const svgPath = join(cwd, 'docs', 'workflow.svg');
-  if (existsSync(svgPath)) {
-    res.setHeader('Content-Type', 'image/svg+xml');
-    res.send(readFileSync(svgPath, 'utf8'));
-  } else {
-    res.status(404).send('workflow.svg not found');
+  } catch (error) {
+    res.status(400).json({ error: error.message });
   }
 });
 
 app.get('/api/docs/:name', (req, res) => {
-  const { name } = req.params;
   const paths = {
-    readme: join(cwd, 'README.md'),
-    evaluation: join(cwd, 'docs', 'evaluation.md'),
-    oneshot: join(cwd, 'prompts', 'oneshot.md'),
-    'game-dev': join(cwd, 'skills', 'game-development', 'SKILL.md'),
-    'software-delivery': join(cwd, 'skills', 'software-delivery', 'SKILL.md')
+    readme: join(root, 'README.md'),
+    evaluation: join(root, 'docs', 'evaluation.md'),
+    delivery: join(root, 'prompts', 'delivery.md'),
+    'game-development': join(root, 'skills', 'game-development', 'SKILL.md'),
+    'software-delivery': join(root, 'skills', 'software-delivery', 'SKILL.md'),
+    'typescript-delivery': join(root, 'skills', 'typescript-delivery', 'SKILL.md')
   };
-
-  const target = paths[name];
-  if (target && existsSync(target)) {
-    res.json({ content: readFileSync(target, 'utf8'), path: target });
-  } else {
-    res.status(404).json({ error: 'Document not found' });
-  }
+  const path = paths[req.params.name];
+  if (!path || !existsSync(path)) return res.status(404).json({ error: 'Document not found' });
+  res.json({ content: readFileSync(path, 'utf8'), path });
 });
 
-// Serve static UI
-app.use(express.static(join(cwd, 'public')));
-
-// Fallback for any client side route (Express 5 compatible)
+app.use(express.static(join(root, 'public')));
 app.use((req, res, next) => {
-  if (req.method === 'GET') {
-    const indexPath = join(cwd, 'public', 'index.html');
-    if (existsSync(indexPath)) {
-      return res.sendFile(indexPath);
-    }
-  }
+  if (req.method === 'GET') return res.sendFile(join(root, 'public', 'index.html'));
   next();
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Evidence-Driven Delivery server running on http://0.0.0.0:${PORT}`);
+app.listen(port, '127.0.0.1', () => {
+  console.log(`pi2 dashboard: http://127.0.0.1:${port}/?token=${token}`);
+  console.log(`workspace: ${cwd}`);
 });

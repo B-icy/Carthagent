@@ -1,0 +1,24 @@
+{
+  "id": "database-change",
+  "title": "Database change",
+  "priority": 75,
+  "match": {
+    "keywords": ["database", "schema", "migration", "prisma", "sql", "foreign key", "cascade", "relation", "delete account", "account deletion", "data model"],
+    "dependencies": ["@prisma/client", "drizzle-orm", "sequelize", "typeorm", "mongoose"]
+  },
+  "planning": [
+    "Define data invariants, ownership, uniqueness, deletion behavior, and query access patterns before changing the schema.",
+    "Use database constraints for invariants that must survive concurrent requests; application checks alone are insufficient.",
+    "Plan a forward migration for existing rows and state whether rollback, backfill, or staged deployment is required.",
+    "Centralize the database client and domain queries instead of duplicating ORM access across route handlers."
+  ],
+  "checks": [
+    "Apply migrations against both an empty database and representative existing data, then run affected route or service tests.",
+    "Test uniqueness, foreign-key, cascade or restrict behavior, transaction rollback, and concurrent writes.",
+    "Inspect generated SQL and query shape for missing indexes, over-fetching, and accidental full-table work."
+  ],
+  "review": [
+    "Reject schema comments that stand in for migration design, required fields without backfills, and account deletion paths that ignore related rows.",
+    "Confirm money, timestamps, enums, and optionality use domain-appropriate database types."
+  ]
+}
