@@ -15,7 +15,7 @@ import {
   runCommand
 } from '../lib/delivery.mjs';
 import { latestReport, saveReport } from '../lib/reports.mjs';
-import { normalizeReviewMode, resolveReviewMode, loadPi2Config, savePi2Config, pi2ConfigPath, reviewerPrompt, parseVerdict } from '../lib/review.mjs';
+import { normalizeReviewMode, resolveReviewMode, loadPi2Config, savePi2Config, pi2ConfigPath, reviewerPrompt, parseVerdict, resolveStickyDefaults } from '../lib/review.mjs';
 
 // Ensure pi2 operates completely isolated in its own agent directory (~/.pi2/agent)
 // so it NEVER touches, reads, or piggybacks on any existing ~/.pi/agent installation.
@@ -134,6 +134,12 @@ function parseTuiArgs(list) {
 
 async function handleTui(list) {
   const opts = parseTuiArgs(list);
+  // Sticky theme/model: explicit --theme/--model flags win, else fall back to
+  // the last choice persisted in ~/.pi2/config.json. Undefined lets the engine
+  // apply its own default rather than forcing a stale id.
+  const sticky = resolveStickyDefaults(opts);
+  opts.theme = sticky.theme;
+  opts.model = sticky.model;
   if (opts.demo && !process.stdout.isTTY) { console.error('demo requires an interactive terminal'); process.exit(1); }
   // Headless passthrough: explicit --print, or stdout isn't a TTY
   if (opts.print || !process.stdout.isTTY) {

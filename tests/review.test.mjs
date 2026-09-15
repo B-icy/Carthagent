@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   REVIEW_MODES, normalizeReviewMode, resolveReviewMode,
-  loadPi2Config, savePi2Config, shouldOfferReview,
+  loadPi2Config, savePi2Config, resolveStickyDefaults, shouldOfferReview,
   reviewKickoff, reviewerPrompt, parseVerdict,
 } from '../lib/review.mjs';
 
@@ -41,6 +41,39 @@ test('resolveReviewMode precedence: explicit flag > config > ask default', t => 
   assert.equal(resolveReviewMode(undefined, loadPi2Config(path)), 'no');
   assert.equal(resolveReviewMode('yes', loadPi2Config(path)), 'yes');
   assert.equal(resolveReviewMode('garbage', loadPi2Config(path)), 'no');
+});
+
+test('resolveStickyDefaults: flag > config > undefined (built-in default)', t => {
+  const path = configFixture(t);
+  const cfg = loadPi2Config(path);
+  // nothing set → falls through to the engine's own defaults
+  assert.deepEqual(resolveStickyDefaults({}, cfg), { theme: undefined, model: undefined });
+  assert.deepEqual(resolveStickyDefaults({ theme: 'ember', model: 'sonnet' }, cfg), { theme: 'ember', model: 'sonnet' });
+  // config fills in only the keys the flag leaves empty
+  savePi2Config({ theme: 'nord', model: 'anthropic/opus' }, path);
+  const cfg2 = loadPi2Config(path);
+  assert.deepEqual(resolveStickyDefaults({}, cfg2), { theme: 'nord', model: 'anthropic/opus' });
+  assert.deepEqual(resolveStickyDefaults({ theme: 'mono' }, cfg2), { theme: 'mono', model: 'anthropic/opus' });
+  assert.deepEqual(resolveStickyDefaults({ model: 'sonnet' }, cfg2), { theme: 'nord', model: 'sonnet' });
+  // a flag wins over a conflicting config value
+  assert.equal(resolveStickyDefaults({ theme: 'ember' }, cfg2).theme, 'ember');
+});
+
+test('sticky theme/model round-trip through the config file', t => {
+  const path = configFixture(t);
+  // simulate the TUI persisting a theme, then a model, then loading on next launch
+  savePi2Config({ theme: 'tokyonight' }, path);
+  savePi2Config({ model: 'openrouter/inkling' }, path);
+  const cfg = loadPi2Config(path);
+  assert.equal(cfg.theme, 'tokyonight');
+  assert.equal(cfg.model, 'openrouter/inkling');
+  assert.equal(resolveStickyDefaults({}, cfg).theme, 'tokyonight');
+  assert.equal(resolveStickyDefaults({}, cfg).model, 'openrouter/inkling');
+  // a stale review setting coexists with the new keys
+  savePi2Config({ review: 'yes' }, path);
+  const merged = loadPi2Config(path);
+  assert.equal(merged.review, 'yes');
+  assert.equal(merged.theme, 'tokyonight');
 });
 
 test('shouldOfferReview gates on mode, evidence of change and prior offers', () => {
