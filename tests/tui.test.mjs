@@ -4,7 +4,7 @@ import { parseD2, layoutD2, renderD2 } from '../lib/tui/d2.mjs';
 import { planSideWidth, makeKeyParser, matchSlash } from '../lib/tui/app.mjs';
 import { planD2, computePhase, freshChecks, PHASES } from '../lib/delivery.mjs';
 import { createFeed, applyEvent, summarizeArgs, renderFeed, hydrateFeed } from '../lib/tui/feed.mjs';
-import { strip, width, wrap, truncate, hasTruecolor, sliceCols, inverseCols } from '../lib/tui/ansi.mjs';
+import { strip, width, wrap, truncate, hasTruecolor, sliceCols, inverseCols, mix, fg } from '../lib/tui/ansi.mjs';
 import { getTheme, resolveThemeName, flattenTheme, THEME_NAMES } from '../lib/tui/theme.mjs';
 import { framePrompt, shouldFrame, unframe, frameHint, FRAME_HINTS } from '../lib/tui/framing.mjs';
 import { listSessions, mostRecentSession, sessionDirFor, buildPiArgs } from '../lib/pi.mjs';
@@ -79,6 +79,32 @@ test('renderD2 breathes the arrowhead into the active node', () => {
     assert.ok(!p.includes('▽') && !p.includes('◁'), `frame ${f}`);
   }
 });
+
+test('renderD2 swirls a comet around the active node border', () => {
+  const g = parseD2(planD2(SAMPLE_PLAN));
+  const theme = getTheme('opencode');
+  const accent = theme.primary || theme.accent;
+  // The comet head is the only border cell mixed toward pure white, so its
+  // exact SGR sequence is a stable fingerprint the base border pulse never hits.
+  const head = fg(mix(accent, '#ffffff', 0.55));
+  const pos = (f, states) => {
+    const { lines } = renderD2(g, { width: 44, theme, states, frame: f });
+    for (let y = 0; y < lines.length; y++) {
+      const at = lines[y].indexOf(head);
+      if (at < 0) continue;
+      const ch = lines[y].slice(at + head.length).replace(/\x1b\[[\d;]*m/g, '')[0];
+      if (/[=\u250c-\u257f]/.test(ch)) return `${y}:${strip(lines[y].slice(0, at)).length}`;
+    }
+    return null;
+  };
+  const active = new Map([['goal', 'done'], ['step0', 'active']]);
+  assert.ok(pos(0, active) != null, 'comet head present on the active node');
+  assert.notEqual(pos(0, active), pos(7, active), 'comet orbits the perimeter between frames');
+  const idle = new Map([['goal', 'done'], ['step0', 'done']]);
+  const { lines } = renderD2(g, { width: 44, theme, states: idle, frame: 0 });
+  assert.ok(!lines.join('\n').includes(head), 'no comet when no active node');
+});
+
 
 test('renderD2 works at tiny widths without crashing', () => {
   const g = parseD2(planD2(SAMPLE_PLAN));

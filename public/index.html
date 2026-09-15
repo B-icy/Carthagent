@@ -200,6 +200,39 @@
     .theme-select { width: auto; min-width: 150px; padding: 6px 8px; font-size: 12px; }
     .button:focus-visible, .tab:focus-visible, .theme-select:focus-visible,
     input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    /* D2 flowchart (Plan tab): visual graph with a current-step highlight,
+       a swirling ring around the active node, and a slow pulse on the arrow
+       that leads into it. States mirror the console's computeNodeStates. */
+    .d2-chart { min-height: 60px; }
+    .d2-current { font: 600 12px var(--mono); color: var(--accent); margin: 10px 0 2px; min-height: 16px; }
+    .d2-current.idle { color: var(--muted); font-weight: 400; }
+    .d2-svg { width: 100%; height: auto; display: block; overflow: visible; }
+    .d2-node { stroke-width: 1.5; }
+    .d2-done { stroke: var(--success); fill: var(--success); fill-opacity: .10; }
+    .d2-active { stroke: var(--accent); fill: var(--accent); fill-opacity: .12; stroke-width: 2; }
+    .d2-fail { stroke: var(--error); fill: var(--error); fill-opacity: .12; }
+    .d2-blocked { stroke: var(--warning); fill: var(--warning); fill-opacity: .10; }
+    .d2-pending { stroke: var(--border); fill: var(--panel); }
+    .d2-label { font: 600 12px var(--mono); fill: var(--text); }
+    .d2-label-pending { fill: var(--muted); }
+    .d2-label-fail { fill: var(--error); }
+    .d2-label-blocked { fill: var(--warning); }
+    .d2-dot { fill: var(--border); }
+    .d2-dot-done { fill: var(--success); }
+    .d2-dot-active { fill: var(--accent); }
+    .d2-dot-fail { fill: var(--error); }
+    .d2-dot-blocked { fill: var(--warning); }
+    .d2-edge-label { font: 11px var(--mono); fill: var(--warning); }
+    .d2-swirl { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 5 9; transform-box: fill-box; transform-origin: center; animation: d2-swirl 2.6s linear infinite; }
+    .d2-edge-pulse { animation: d2-edge-pulse 2.8s ease-in-out infinite; }
+    .d2-arrow-pulse { animation: d2-arrow-pulse 2.8s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+    @keyframes d2-swirl { to { transform: rotate(360deg); } }
+    @keyframes d2-edge-pulse { 0%, 100% { opacity: .35; stroke-width: 1.4; } 50% { opacity: 1; stroke-width: 2.6; } }
+    @keyframes d2-arrow-pulse { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
+    .d2-source { margin-top: 12px; }
+    .d2-source summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+    .d2-source pre { margin-top: 8px; max-height: 220px; }
+    @media (prefers-reduced-motion: reduce) { .d2-swirl, .d2-edge-pulse, .d2-arrow-pulse { animation: none; } }
     @media (max-width: 900px) {
       .header-row { flex-wrap: wrap; padding: 12px 16px; gap: 10px 16px; }
       .workspace { order: 3; flex-basis: 100%; }
@@ -283,7 +316,9 @@
         </div>
         <div class="card span-5">
           <h3>D2</h3>
-          <pre id="d2" class="mono-block" style="margin-top:12px">No plan loaded.</pre>
+          <div id="d2-current" class="d2-current" hidden></div>
+          <div id="d2" class="d2-chart" style="margin-top:12px">No plan loaded.</div>
+          <details class="d2-source"><summary>D2 source</summary><pre id="d2-source-pre" class="mono-block"></pre></details>
         </div>
       </div>
     </section>
@@ -483,9 +518,253 @@
     catch (error) { byId('workspace').textContent = error.message; }
   }
 
+  // --- D2 flowchart (visual graph with a current-step highlight) ---
+  // The Plan tab used to dump raw D2 source into a <pre>. It now renders an
+  // SVG flowchart that mirrors the console's computeNodeStates so the active
+  // step is obvious: the active box wears a swirling ring and the arrow into
+  // it pulses slowly. The raw source stays available under a <details>.
+  const SVGNS = 'http' + '://www.w3.org/2000/svg';
+  const svgEl = tag => document.createElementNS(SVGNS, tag);
+
+  /** Parse planD2-style source into { nodes, edges } (mirrors lib/tui/d2.mjs). */
+  function parseD2Source(src) {
+    const nodes = new Map(), edges = [];
+    const ensure = id => { if (!nodes.has(id)) nodes.set(id, { id, label: id }); return nodes.get(id); };
+    for (const raw of String(src).split('\n')) {
+      const line = raw.trim();
+      if (!line || line.startsWith('#') || line.startsWith('direction:')) continue;
+      const edge = line.match(/^([\w.-]+)\s*-+>\s*([\w.-]+)\s*(?::\s*(.*))?$/);
+      if (edge) { ensure(edge[1]); ensure(edge[2]); edges.push({ from: edge[1], to: edge[2], label: (edge[3] || '').replace(/^"|"$/g, '') }); continue; }
+      const decl = line.match(/^([\w.-]+)\s*:\s*(.+)$/);
+      if (decl && !decl[2].startsWith('{')) {
+        const n = ensure(decl[1]); let label = decl[2].trim();
+        try { if (label.startsWith('"')) label = JSON.parse(label); } catch { label = label.replace(/^"|"$/g, ''); }
+        n.label = label;
+      }
+    }
+    return { nodes: [...nodes.values()], edges };
+  }
+
+  /** Longest-path ranks; back edges (cycles, e.g. repair -> verify) go to a side column. */
+  function layoutD2(graph) {
+    const ids = graph.nodes.map(n => n.id);
+    const back = new Set();
+    const adj = new Map(ids.map(id => [id, []]));
+    for (const e of graph.edges) adj.get(e.from)?.push(e);
+    const stack = new Set(), seen = new Set();
+    const dfs = id => {
+      if (stack.has(id) || seen.has(id)) return;
+      stack.add(id);
+      for (const e of adj.get(id) || []) { if (stack.has(e.to)) { back.add(e); continue; } dfs(e.to); }
+      stack.delete(id); seen.add(id);
+    };
+    const roots = ids.filter(id => !graph.edges.some(e => e.to === id));
+    (roots.length ? roots : ids.slice(0, 1)).forEach(dfs);
+    ids.forEach(dfs);
+    const rank = new Map(ids.map(id => [id, 0]));
+    for (let i = 0; i < ids.length; i++) {
+      let moved = false;
+      for (const e of graph.edges) {
+        if (back.has(e)) continue;
+        const want = rank.get(e.from) + 1;
+        if (rank.get(e.to) < want) { rank.set(e.to, want); moved = true; }
+      }
+      if (!moved) break;
+    }
+    const col = new Map(ids.map(id => [id, 0]));
+    for (const e of back) col.set(e.from, 1);
+    return { rank, col, back };
+  }
+
+  /** Map live delivery state to per-node states (mirrors computeNodeStates in the TUI). */
+  function computeD2States() {
+    const st = new Map();
+    const plan = state.plan;
+    if (!plan) return st;
+    const ev = state.evidence || {};
+    const status = state.status || 'idle';
+    const checks = plan.checks || [];
+    const curHash = state.currentFingerprint;
+    let anyFail = false, allPass = checks.length > 0, allFresh = allPass;
+    for (const c of checks) {
+      const e = ev[c.id];
+      if (!e) { allPass = false; allFresh = false; }
+      else if (!e.passed) { anyFail = true; allPass = false; allFresh = false; }
+      else if (curHash && e.fingerprint !== curHash) allFresh = false;
+    }
+    st.set('goal', 'done');
+    const implActive = status === 'implementing' || status === 'planned';
+    const stepStatus = state.stepStatus || {};
+    (plan.steps || []).forEach((_, i) => {
+      const s = stepStatus[`step${i}`];
+      st.set(`step${i}`, s === 'done' ? 'done' : s === 'failed' ? 'fail' : s === 'active' ? 'active' : implActive ? 'active' : 'done');
+    });
+    let verify = 'pending';
+    if (anyFail) verify = 'fail';
+    else if (status === 'verifying') verify = 'active';
+    else if (allFresh && status === 'verified') verify = 'done';
+    else if (allPass) verify = 'done';
+    if (status === 'blocked') verify = anyFail ? 'fail' : 'blocked';
+    st.set('verify', verify);
+    st.set('repair', anyFail ? 'fail' : 'pending');
+    st.set('review', status === 'verified' ? 'done' : allPass && !anyFail ? 'active' : 'pending');
+    st.set('deliver', status === 'verified' ? 'done' : status === 'blocked' ? 'blocked' : 'pending');
+    return st;
+  }
+
+  function d2EdgeColor(targetState, isBack) {
+    if (isBack) return 'var(--error)';
+    if (targetState === 'fail') return 'var(--error)';
+    if (targetState === 'active') return 'var(--accent)';
+    if (targetState === 'done') return 'var(--success)';
+    return 'var(--border-strong)';
+  }
+
+  /** Render D2 source as an SVG flowchart into #d2, highlighting the current step. */
+  function renderD2Chart(source, states) {
+    const container = byId('d2');
+    const cur = byId('d2-current');
+    const srcPre = byId('d2-source-pre');
+    clear(container);
+    if (srcPre) srcPre.textContent = source || '';
+    if (!source) {
+      container.textContent = 'No plan loaded.';
+      if (cur) { cur.hidden = true; cur.textContent = ''; }
+      return;
+    }
+    const graph = parseD2Source(source);
+    const { rank, col, back } = layoutD2(graph);
+    const st = states || new Map();
+    const spine = graph.nodes.filter(n => col.get(n.id) === 0).sort((a, b) => rank.get(a.id) - rank.get(b.id));
+    const side = graph.nodes.filter(n => col.get(n.id) === 1).sort((a, b) => rank.get(a.id) - rank.get(b.id));
+    const pad = 12, nodeW = 220, nodeH = 46, vGap = 30, sideGap = 84;
+    const pos = new Map();
+    spine.forEach((n, i) => pos.set(n.id, { x: pad, y: pad + i * (nodeH + vGap) }));
+    side.forEach(n => {
+      const inc = graph.edges.find(e => e.to === n.id && !back.has(e));
+      let row = spine.length;
+      if (inc) { const f = spine.findIndex(s => s.id === inc.from); if (f >= 0) row = f + 1; }
+      pos.set(n.id, { x: pad + nodeW + sideGap, y: pad + row * (nodeH + vGap) });
+    });
+    const W = Math.max(...[...pos.values()].map(p => p.x)) + nodeW + pad;
+    const H = Math.max(...[...pos.values()].map(p => p.y)) + nodeH + pad;
+    const svg = svgEl('svg');
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    svg.setAttribute('class', 'd2-svg');
+    svg.setAttribute('role', 'img');
+    const svgTitle = svgEl('title'); svgTitle.textContent = 'Delivery flow'; svg.append(svgTitle);
+
+    // Edges first (behind nodes), arrowheads last (above borders) so heads stay crisp.
+    const edgePaths = [], arrowheads = [], edgeLabels = [];
+    for (const e of graph.edges) {
+      const a = pos.get(e.from), b = pos.get(e.to);
+      if (!a || !b) continue;
+      const isBack = back.has(e);
+      const targetState = st.get(e.to) || 'pending';
+      const toActive = targetState === 'active';
+      const ec = d2EdgeColor(targetState, isBack);
+      let pathD, tip, dir, lx, ly, anchor = 'middle';
+      if (isBack) {
+        const sx = a.x + nodeW / 2, sy = a.y, ex = b.x + nodeW / 2, ey = b.y;
+        pathD = `M ${sx} ${sy} C ${sx} ${sy - 48} ${ex} ${ey - 48} ${ex} ${ey}`;
+        tip = [ex, ey]; dir = 'down'; lx = (sx + ex) / 2; ly = Math.min(sy, ey) - 14;
+      } else if (col.get(e.from) === 0 && col.get(e.to) === 0) {
+        const sx = a.x + nodeW / 2, sy = a.y + nodeH, ex = b.x + nodeW / 2, ey = b.y;
+        pathD = `M ${sx} ${sy} L ${ex} ${ey}`;
+        tip = [ex, ey]; dir = 'down'; lx = sx + 8; ly = sy + (ey - sy) / 2; anchor = 'start';
+      } else {
+        const sx = a.x + nodeW, sy = a.y + nodeH / 2, ex = b.x, ey = b.y + nodeH / 2;
+        pathD = `M ${sx} ${sy} L ${ex} ${ey}`;
+        tip = [ex, ey]; dir = 'right'; lx = sx + (ex - sx) / 2; ly = sy - 8;
+      }
+      const path = svgEl('path');
+      path.setAttribute('d', pathD);
+      path.setAttribute('fill', 'none');
+      path.setAttribute('stroke', ec);
+      path.setAttribute('stroke-width', '1.6');
+      if (isBack) path.setAttribute('stroke-dasharray', '5 4');
+      if (toActive) path.setAttribute('class', 'd2-edge-pulse');
+      edgePaths.push(path);
+      const ah = svgEl('polygon');
+      const [tx, ty] = tip;
+      ah.setAttribute('points', dir === 'down' ? `${tx},${ty} ${tx - 5},${ty - 8} ${tx + 5},${ty - 8}` : `${tx},${ty} ${tx - 8},${ty - 5} ${tx - 8},${ty + 5}`);
+      ah.setAttribute('fill', ec);
+      if (toActive) ah.setAttribute('class', 'd2-arrow-pulse');
+      arrowheads.push(ah);
+      if (e.label) {
+        const lt = svgEl('text');
+        lt.textContent = e.label;
+        lt.setAttribute('x', lx); lt.setAttribute('y', ly);
+        lt.setAttribute('class', 'd2-edge-label');
+        lt.setAttribute('text-anchor', anchor);
+        edgeLabels.push(lt);
+      }
+    }
+    edgePaths.forEach(p => svg.append(p));
+    for (const n of graph.nodes) {
+      const p = pos.get(n.id);
+      const s = st.get(n.id) || 'pending';
+      if (s === 'active') {
+        const ring = svgEl('ellipse');
+        ring.setAttribute('cx', p.x + nodeW / 2);
+        ring.setAttribute('cy', p.y + nodeH / 2);
+        ring.setAttribute('rx', nodeW / 2 + 7);
+        ring.setAttribute('ry', nodeH / 2 + 5);
+        ring.setAttribute('class', 'd2-swirl');
+        svg.append(ring);
+      }
+      const rect = svgEl('rect');
+      rect.setAttribute('x', p.x); rect.setAttribute('y', p.y);
+      rect.setAttribute('width', nodeW); rect.setAttribute('height', nodeH);
+      rect.setAttribute('rx', 8);
+      rect.setAttribute('class', `d2-node d2-${s}`);
+      svg.append(rect);
+      const dot = svgEl('circle');
+      dot.setAttribute('cx', p.x + 16); dot.setAttribute('cy', p.y + nodeH / 2);
+      dot.setAttribute('r', 4);
+      dot.setAttribute('class', `d2-dot d2-dot-${s}`);
+      svg.append(dot);
+      const label = svgEl('text');
+      const full = String(n.label);
+      label.textContent = full.length > 30 ? full.slice(0, 29) + '…' : full;
+      label.setAttribute('x', p.x + 30); label.setAttribute('y', p.y + nodeH / 2);
+      label.setAttribute('class', `d2-label d2-label-${s}`);
+      label.setAttribute('dominant-baseline', 'middle');
+      const t = svgEl('title'); t.textContent = full; label.append(t);
+      svg.append(label);
+    }
+    arrowheads.forEach(a => svg.append(a));
+    edgeLabels.forEach(l => svg.append(l));
+    container.append(svg);
+
+    // Current-step indicator: the active node, else the next/blocked frontier, else complete.
+    if (cur) {
+      const active = graph.nodes.find(n => st.get(n.id) === 'active');
+      if (active) {
+        cur.hidden = false; cur.className = 'd2-current';
+        cur.textContent = `▶ Current: ${active.label}`;
+      } else {
+        const next = spine.find(n => (st.get(n.id) || 'pending') === 'pending') || spine.find(n => ['fail', 'blocked'].includes(st.get(n.id)));
+        if (next) {
+          const mark = st.get(next.id) === 'fail' ? '✗ Stuck at' : st.get(next.id) === 'blocked' ? '■ Blocked at' : 'Up next';
+          cur.hidden = false; cur.className = 'd2-current idle';
+          cur.textContent = `${mark}: ${next.label}`;
+        } else if (spine.length && spine.every(n => st.get(n.id) === 'done')) {
+          cur.hidden = false; cur.className = 'd2-current';
+          cur.textContent = '✓ Flow complete';
+        } else { cur.hidden = true; cur.textContent = ''; }
+      }
+    }
+  }
+
   async function updateD2(plan) {
-    try { byId('d2').textContent = (await api('/api/plan/d2', { method: 'POST', body: JSON.stringify({ plan }) })).d2; }
-    catch (error) { byId('d2').textContent = error.message; }
+    try {
+      const result = await api('/api/plan/d2', { method: 'POST', body: JSON.stringify({ plan }) });
+      renderD2Chart(result.d2, computeD2States());
+    } catch (error) {
+      byId('d2').textContent = error.message;
+      const cur = byId('d2-current'); if (cur) { cur.hidden = true; cur.textContent = ''; }
+    }
   }
 
   async function planAction(save) {
@@ -494,7 +773,7 @@
       const path = save ? '/api/plan/set' : '/api/plan/validate';
       const result = await api(path, { method: 'POST', body: JSON.stringify({ plan }) });
       setMessage('plan-message', save ? `Saved: ${result.report}` : 'Plan is valid.', 'success');
-      if (save) await loadStatus(); else byId('d2').textContent = result.d2;
+      if (save) await loadStatus(); else renderD2Chart(result.d2, null);
     } catch (error) { setMessage('plan-message', error.message, 'error'); }
   }
 
