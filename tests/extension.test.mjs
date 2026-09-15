@@ -7,6 +7,9 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'no
 import { tmpdir } from 'node:os';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+// Self-review defaults persist to ~/.pi2/config.json — isolate tests from the
+// real user config before any extension code reads it.
+process.env.PI2_CONFIG = join(mkdtempSync(join(tmpdir(), 'pi2 test config ')), 'config.json');
 const candidates = [
   process.env.PI2_CLI,
   process.env.PI_CLI,
@@ -26,20 +29,23 @@ const options = { skip: !factory && 'Agent engine or dev toolchain not found: ru
 function fixture(t) {
   const cwd = mkdtempSync(join(tmpdir(), 'pi extension integration '));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  // Per-fixture self-review config so /review mode writes stay isolated.
+  process.env.PI2_CONFIG = join(cwd, 'config.json');
   writeFileSync(join(cwd, 'app.py'), 'print(1)');
-  const hooks = {}, tools = {}, entries = [], messages = [], flags = { 'delivery-strict': true };
+  const hooks = {}, tools = {}, commands = {}, entries = [], messages = [], flags = { 'delivery-strict': true };
   const pi = {
     registerFlag() {}, getFlag: name => flags[name],
     on(name, fn) { hooks[name] = fn; },
     registerTool(tool) { tools[tool.name] = tool; },
+    registerCommand(name, command) { commands[name] = command; },
     appendEntry(customType, data) { entries.push({ type: 'custom', customType, data }); },
     sendMessage(message) { messages.push(message); },
   };
   factory(pi);
-  const ctx = { cwd, hasUI: false, sessionManager: { getBranch: () => entries, getSessionId: () => 'integration-session' }, hasPendingMessages: () => false };
+  const ctx = { cwd, hasUI: false, mode: 'rpc', ui: { notify() {}, select: async () => undefined }, sessionManager: { getBranch: () => entries, getSessionId: () => 'integration-session' }, hasPendingMessages: () => false };
   const call = (name, params = {}) => tools[name].execute('test-id', params, undefined, undefined, ctx);
   const plan = { goal: 'Working script', assumptions: [], artifacts: ['app.py'], steps: ['Implement', 'Verify'], acceptance: [{ requirement: 'Runs', checks: ['run'] }], checks: [{ id: 'run', kind: 'runtime', argv: [process.execPath, '-e', 'console.log("passed")'], timeoutSeconds: 5 }] };
-  return { cwd, ctx, hooks, entries, messages, flags, call, plan };
+  return { cwd, ctx, hooks, commands, entries, messages, flags, call, plan };
 }
 
 test('real extension loads, gates writes, executes checks and rejects stale evidence', options, async t => {
@@ -303,4 +309,98 @@ test('request guidance is injected behind the scenes and survives follow-ups', o
   const followUp = f.hooks.before_agent_start({ systemPrompt: 'base', prompt: 'Fix that failure' }, f.ctx);
   assert.match(followUp.systemPrompt, /\[transactional-data\]/);
   assert.match(followUp.systemPrompt, /\[data-visualization\]/);
+});
+
+const finish = { status: 'verified', review: 'Reviewed executable behavior.', launch: 'python app.py', limitations: [] };
+async function verifyRun(f) {
+  await f.call('delivery_plan', f.plan);
+  await f.call('delivery_check', { id: 'all' });
+  await f.call('delivery_finish', finish);
+}
+const reviewMessages = f => f.messages.filter(m => m.customType === 'delivery-review');
+
+test('review mode yes auto-kicks the loop after a verified finish', options, async t => {
+  const f = fixture(t);
+  f.flags['delivery-review'] = 'yes';
+  await verifyRun(f);
+  f.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, f.ctx);
+  assert.equal(reviewMessages(f).length, 1);
+  assert.match(reviewMessages(f)[0].content, /gh pr create/);
+  assert.match(reviewMessages(f)[0].content, /pi2\.mjs" review <pr-number-or-url>/);
+  // The loop is active — subsequent run ends must not re-kick.
+  f.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, f.ctx);
+  assert.equal(reviewMessages(f).length, 1);
+});
+
+test('review mode no never offers or kicks the loop', options, async t => {
+  const f = fixture(t);
+  f.flags['delivery-review'] = 'no';
+  await verifyRun(f);
+  f.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, f.ctx);
+  assert.equal(reviewMessages(f).length, 0);
+  assert.doesNotMatch(f.hooks.before_agent_start({ systemPrompt: 'base', prompt: 'more work' }, f.ctx).systemPrompt, /Self-review/);
+});
+
+test('review mode ask defers to the host over rpc and hints when headless', options, async t => {
+  const f = fixture(t);
+  await verifyRun(f);
+  // rpc host (pi2 console) renders the offer itself — extension stays silent.
+  f.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, f.ctx);
+  assert.equal(reviewMessages(f).length, 0);
+  // Headless mode gets a passive, non-turn hint instead.
+  const headless = fixture(t);
+  headless.ctx.mode = 'print';
+  await verifyRun(headless);
+  headless.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, headless.ctx);
+  assert.equal(reviewMessages(headless).length, 1);
+  assert.match(reviewMessages(headless)[0].content, /run \/review/i);
+});
+
+test('review mode ask prompts via ui.select on a real pi TUI', options, async t => {
+  const f = fixture(t);
+  f.ctx.mode = 'tui';
+  let asked = 0;
+  f.ctx.ui.select = async () => { asked++; return 'Start self-review'; };
+  await verifyRun(f);
+  f.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, f.ctx);
+  await new Promise(r => setImmediate(r));
+  assert.equal(asked, 1);
+  assert.equal(reviewMessages(f).length, 1);
+  // A declined offer is not repeated for the same fingerprint.
+  const declined = fixture(t);
+  declined.ctx.mode = 'tui';
+  let askedTwice = 0;
+  declined.ctx.ui.select = async () => { askedTwice++; return 'Skip'; };
+  await verifyRun(declined);
+  declined.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, declined.ctx);
+  declined.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, declined.ctx);
+  await new Promise(r => setImmediate(r));
+  assert.equal(askedTwice, 1);
+  assert.equal(reviewMessages(declined).length, 0);
+});
+
+test('/review command starts a loop and persists mode defaults', options, async t => {
+  const f = fixture(t);
+  assert.ok(f.commands.review, 'extension registers a /review command');
+  await f.commands.review.handler('', f.ctx);
+  assert.equal(reviewMessages(f).length, 1);
+  // Persisting 'no' is honored immediately — a verified finish stays silent.
+  const f2 = fixture(t);
+  await f2.commands.review.handler('no', f2.ctx);
+  await verifyRun(f2);
+  f2.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, f2.ctx);
+  assert.equal(reviewMessages(f2).length, 0);
+  // An explicit flag still wins over the persisted default for the session.
+  f2.flags['delivery-review'] = 'yes';
+  f2.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, f2.ctx);
+  assert.equal(reviewMessages(f2).length, 1);
+});
+
+test('review guidance is described when the loop is opt-in or automatic', options, async t => {
+  const f = fixture(t);
+  const asked = f.hooks.before_agent_start({ systemPrompt: 'base', prompt: 'task' }, f.ctx);
+  assert.match(asked.systemPrompt, /Self-review is available and opt-in/);
+  f.flags['delivery-review'] = 'yes';
+  const auto = f.hooks.before_agent_start({ systemPrompt: 'base', prompt: 'task' }, f.ctx);
+  assert.match(auto.systemPrompt, /Self-review runs automatically/);
 });

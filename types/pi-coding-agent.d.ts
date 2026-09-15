@@ -30,11 +30,17 @@ declare module '@earendil-works/pi-coding-agent' {
     execute(id: string, params: any, signal: any, onUpdate: ((result?: any) => void) | undefined, ctx: ExtensionContext): Promise<ExtensionToolResult>;
   }
 
+  export interface ExtensionCommand {
+    description: string;
+    handler(args: string, ctx: ExtensionContext): unknown;
+  }
+
   export interface ExtensionAPI {
     registerFlag(name: string, flag: ExtensionFlag): void;
     getFlag(name: string): unknown;
     on(event: string, handler: (...args: any[]) => any): void;
     registerTool(tool: ExtensionTool): void;
+    registerCommand(name: string, command: ExtensionCommand): void;
     appendEntry(customType: string, data: unknown): void;
     sendMessage(message: unknown, options?: unknown): void;
   }

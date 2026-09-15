@@ -15,6 +15,7 @@ import {
   runCommand
 } from '../lib/delivery.mjs';
 import { latestReport, saveReport } from '../lib/reports.mjs';
+import { normalizeReviewMode, resolveReviewMode, loadPi2Config, savePi2Config, pi2ConfigPath, reviewerPrompt, parseVerdict } from '../lib/review.mjs';
 
 // Ensure pi2 operates completely isolated in its own agent directory (~/.pi2/agent)
 // so it NEVER touches, reads, or piggybacks on any existing ~/.pi/agent installation.
@@ -57,6 +58,8 @@ function printHelp() {
   \x1b[32mserve\x1b[0m, \x1b[32mweb\x1b[0m, \x1b[32mstart\x1b[0m     Start the interactive web dashboard on port 3000
   \x1b[32mtest\x1b[0m                   Run core unit test suite
   \x1b[32meval\x1b[0m [args...]         Run evaluation harness (evaluate.mjs)
+  \x1b[32mreview\x1b[0m                Show self-review default · \x1b[32mreview\x1b[0m ask|yes|no sets it
+  \x1b[32mreview\x1b[0m <pr>           Run a fresh-context review of a pull request
   \x1b[32mhelp\x1b[0m, \x1b[32m--help\x1b[0m, \x1b[32m-h\x1b[0m       Display this help message
 
 \x1b[1mTUI OPTIONS:\x1b[0m
@@ -76,6 +79,8 @@ function printHelp() {
   --validators <file>     User-owned required-validator manifest (delivery)
   --context <file>        Extra task/delivery context file
   --bash-cap <sec>        Cap un-timed shell tool timeouts during a run
+  --review <mode>         Self-review loop after major changes: ask|yes|no
+                          (default: ~/.pi2/config.json, else ask — /review in-session)
   --isolate               Run with only pi2's delivery extension (no other extensions/skills)
   --no-strict             Don't require delivery_plan before write/edit tools
   --no-delivery           Run the console without the delivery extension
@@ -101,7 +106,7 @@ function printHelp() {
 const TUI_FLAGS = {
   '--provider': 'provider', '--model': 'model', '--thinking': 'thinking', '--theme': 'theme',
   '--pi-cli': 'piCli', '--agent-cli': 'piCli', '--validators': 'validators', '--context': 'context', '--bash-cap': 'bashCap',
-  '--session': 'session',
+  '--session': 'session', '--review': 'review',
 };
 const TUI_BOOL = {
   '--isolate': ['isolate', true], '--no-strict': ['strict', false], '--strict': ['strict', true],
@@ -309,6 +314,75 @@ function handleTest() {
   child.on('exit', (code) => process.exit(code || 0));
 }
 
+/**
+ * `pi2 review` — self-review control surface:
+ *   pi2 review              show the effective default and where it's set
+ *   pi2 review ask|yes|no   persist the default to ~/.pi2/config.json
+ *   pi2 review <pr>         run a detached fresh-context reviewer over a PR
+ */
+async function handleReview(args) {
+  const ref = args[0];
+  if (!ref || ref === 'status') {
+    const config = loadPi2Config();
+    console.log(`\x1b[1mself-review default:\x1b[0m \x1b[36m${resolveReviewMode(undefined, config)}\x1b[0m  (config: ${config.review ?? 'unset'} @ ${pi2ConfigPath()})`);
+    console.log('\nusage:');
+    console.log('  pi2 review ask|yes|no   Set the default for all sessions');
+    console.log('  pi2 review <pr>         Fresh-context review of a pull request now');
+    console.log('  pi2 --review <mode>     Per-launch override · /review inside a session');
+    return;
+  }
+  const mode = normalizeReviewMode(ref);
+  if (mode) {
+    savePi2Config({ review: mode });
+    console.log(`\x1b[32mself-review default → ${mode}\x1b[0m  (saved to ${pi2ConfigPath()})`);
+    return;
+  }
+  if (ref.startsWith('-')) {
+    console.error(`\x1b[31mUnknown review option:\x1b[0m ${ref}`);
+    process.exit(2);
+  }
+  await runReview(ref, args.slice(1));
+}
+
+/**
+ * Fresh-context review of a pull request: validates the PR via `gh`, then
+ * spawns the bundled engine headless with no extensions/skills so the
+ * reviewer brings no shared context. Exit 0 = APPROVE, 1 = CHANGES-REQUESTED,
+ * 2 = infrastructure failure (gh, engine, timeout).
+ */
+async function runReview(prRef, rest) {
+  let timeoutSeconds = 300, piCli;
+  for (let i = 0; i < rest.length; i++) {
+    if (rest[i] === '--timeout') timeoutSeconds = Math.max(1, Number(rest[++i]) || 300);
+    else if (rest[i] === '--agent-cli' || rest[i] === '--pi-cli') piCli = rest[++i];
+    else { console.error(`\x1b[31mUnknown option:\x1b[0m ${rest[i]}`); process.exit(2); }
+  }
+  const view = await runCommand(['gh', 'pr', 'view', prRef, '--json', 'title,url,headRefName,baseRefName'], { cwd, timeoutSeconds: 30 });
+  if (view.code !== 0) {
+    console.error(`\x1b[31mCannot load PR ${prRef}\x1b[0m — is gh installed and authenticated, and is ${cwd} a GitHub repo clone?`);
+    if (view.output.trim()) console.error(view.output.trim());
+    process.exit(2);
+  }
+  let meta = {};
+  try { meta = JSON.parse(view.output); } catch { }
+  const { locatePi } = await import('../lib/pi.mjs');
+  let piCmd;
+  try { piCmd = locatePi(piCli); } catch (e) { console.error(e.message); process.exit(2); }
+  const prompt = reviewerPrompt({ prRef, cwd, meta });
+  const logPath = join(cwd, '.harness', 'reviews', `review-${Date.now()}.log`);
+  const result = await runCommand(
+    [piCmd.cmd, ...piCmd.args, '-p', '--no-extensions', '--no-skills', '--no-prompt-templates', '--', prompt],
+    { cwd, timeoutSeconds, logPath }
+  );
+  if (result.output.trim()) process.stdout.write(result.output.trim() + '\n');
+  console.log(`\x1b[90mreview log: ${logPath}\x1b[0m`);
+  if (result.timedOut) { console.error(`\x1b[31mreviewer timed out after ${timeoutSeconds}s\x1b[0m`); process.exit(2); }
+  if (result.cancelled || result.code !== 0) { console.error(`\x1b[31mreviewer exited abnormally (code ${result.code})\x1b[0m`); process.exit(2); }
+  const verdict = parseVerdict(result.output);
+  if (!verdict) { console.error('\x1b[31mreviewer produced no VERDICT line — treat as inconclusive\x1b[0m'); process.exit(2); }
+  process.exit(verdict === 'APPROVE' ? 0 : 1);
+}
+
 function handleEval() {
   const evalScript = join(root, 'evaluate.mjs');
   const child = spawn(process.execPath, [evalScript, ...argv.slice(1)], {
@@ -365,6 +439,9 @@ switch (command) {
     break;
   case 'eval':
     handleEval();
+    break;
+  case 'review':
+    handleReview(argv.slice(1));
     break;
   case 'help':
   case '--help':

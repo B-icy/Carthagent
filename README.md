@@ -54,7 +54,7 @@ Inside the console: `enter` send/steer · `esc` abort (again = force-restart pi,
 
 **Themes:** 21 AA-contrast-verified options — dark (`opencode`, `tokyonight`, `nebula`, `ember`, `forest`, `mono`, `obsidian`, `midnight`, `nord`, `solarized-dark`, `okabe-dark`, `contrast-dark`), light (`paper`, `daylight`, `solarized-light`, `okabe-light`, `contrast-light`), and adaptive (`solarized`, `okabe`, `contrast`, `system`) that follow `COLORFGBG` or `PI2_THEME_MODE=light|dark`. Pick via `--theme`, `/theme`, or `^t`. The dashboard has the same set behind a header picker. `okabe-*` uses the colorblind-safe Okabe-Ito palette.
 
-Useful flags: `--model`, `--thinking`, `--validators <file>`, `--context <file>`, `--bash-cap <sec>`, `--isolate`, `--no-delivery`, `--no-guide`, `-c`/`-r`/`--session`.
+Useful flags: `--model`, `--thinking`, `--validators <file>`, `--context <file>`, `--bash-cap <sec>`, `--review ask|yes|no`, `--isolate`, `--no-delivery`, `--no-guide`, `-c`/`-r`/`--session`.
 
 ## How it works
 
@@ -69,6 +69,27 @@ Useful flags: `--model`, `--thinking`, `--validators <file>`, `--context <file>`
 | `delivery_finish` | `verified` only if every required check has fresh evidence; otherwise `blocked` |
 
 The discipline: evidence is fingerprinted against the whole workspace — edit any file and its checks go stale. Checks are real subprocesses (`argv`, no implicit shell), FIFO-queued, 1–300 s deadlines, logs under `.harness/`. Failed or missing checks get at most two automatic repair nudges per prompt. This is a workflow guardrail, not a security sandbox — for untrusted code use a container.
+
+## Self-review
+
+When a run finishes a substantial change (a verified delivery or file edits), pi2 can offer a review loop: the agent pushes a branch, opens a PR, and a **detached fresh-context reviewer** (`pi2 review <pr>` — a separate engine process with no shared context) inspects it. Findings come back to the working agent, which fixes, pushes, and re-reviews — up to 3 rounds or `VERDICT: APPROVE`.
+
+It's opt-in and tri-state, resolved as `--review <mode>` flag → `~/.pi2/config.json` → `ask`:
+
+| Mode | Behavior |
+|---|---|
+| `ask` (default) | Offer the loop at the end of a major change (`^y` accepts, `esc` skips) |
+| `yes` | Start the loop automatically — no prompt |
+| `no` | Never offer |
+
+```sh
+pi2 review            # show the effective default
+pi2 review yes        # persist a default for all sessions
+pi2 review 14         # run the fresh-context reviewer over a PR directly
+pi2 --review no       # per-launch override
+```
+
+Inside a session, `/review` starts a loop immediately and `/review ask|yes|no|status` manages the same default. The loop needs `git` + an authenticated `gh` — without them the agent reports and skips instead of simulating a review.
 
 ## Make it yours
 
