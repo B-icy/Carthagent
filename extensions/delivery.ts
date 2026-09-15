@@ -6,8 +6,10 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { validatePlan, planD2WithProgress, fingerprint, atomicJson, runCommand, pendingChecks, restoreState, shouldContinue, localPath, createSerialQueue, validateRevision, bindRequiredChecks, loadRequiredChecks, updateStepStatus } from '../lib/delivery.mjs';
 import { formatGuidance, loadGuidanceProfiles, routeGuidance } from '../lib/guidance.mjs';
+import { normalizeReviewMode, resolveReviewMode, loadPi2Config, savePi2Config, pi2ConfigPath, reviewKickoff, MAX_REVIEW_ROUNDS } from '../lib/review.mjs';
 
 const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url));
+const PI2_BIN = join(EXTENSION_DIR, '..', 'bin', 'pi2.mjs');
 const BROWSER_CHECK = join(EXTENSION_DIR, '..', 'tools', 'browser-check.mjs');
 const BROWSER_CHECK_GUIDANCE = existsSync(BROWSER_CHECK)
   ? `\nFor web/browser tasks, a self-contained browser check is available: ${JSON.stringify(BROWSER_CHECK)}. Declare it as a runtime check, e.g. ["node","${BROWSER_CHECK}","--page","index.html","--assert","#app","--assert-count","#items:3","--click","#btn","--then-text","#out:done","--console-clean","--screenshot","artifacts/ui.png"]. It serves the workspace over HTTP, runs jsdom assertions with real inline-script execution (clicks, text, selectors, console-error detection), and captures a real Firefox screenshot when Firefox is installed — no external downloads needed.`
@@ -30,6 +32,7 @@ Before concluding, adversarially review the implementation against each acceptan
 export default function delivery(pi: ExtensionAPI) {
   let state: any = null;
   let touched = false, nudges = 0;
+  let reviewLoop = false, reviewOfferedFor = '', reviewRounds = 0;
   const exclusive = createSerialQueue();
   const guidanceProfiles = loadGuidanceProfiles();
   let activeGuidance: any[] = [];
@@ -44,6 +47,42 @@ export default function delivery(pi: ExtensionAPI) {
   pi.registerFlag('delivery-rewrite-cap', { description: 'Maximum built-in write calls per path in a bounded run; later changes must use focused edits (0 disables)', type: 'string', default: '0' });
   pi.registerFlag('delivery-turn-delay-ms', { description: 'Base delay after tool results in bounded runs, scaled by active context size to reduce provider rate-limit bursts (0 disables)', type: 'string', default: '0' });
   pi.registerFlag('delivery-tool-output-cap', { description: 'Maximum characters retained from each text tool result in bounded runs; preserves the beginning and end (0 disables)', type: 'string', default: '0' });
+  pi.registerFlag('delivery-review', { description: 'Self-review loop after substantial changes: ask (offer) | yes (always run) | no (off). Default: ~/.pi2/config.json review, else ask', type: 'string' });
+  // Explicit --delivery-review flag wins for the session; otherwise the
+  // persisted ~/.pi2/config.json default applies (re-read so /review mode
+  // changes take effect), else 'ask'.
+  function effectiveReviewMode() {
+    return resolveReviewMode(pi.getFlag('delivery-review'), loadPi2Config());
+  }
+  // Kick the working agent into the PR ↔ fresh-context review ↔ fixes loop.
+  // triggerTurn starts a new turn when idle; followUp queues behind a live run.
+  function startReview() {
+    reviewLoop = true;
+    reviewRounds = 0;
+    pi.sendMessage({ customType: 'delivery-review', display: true, content: reviewKickoff(PI2_BIN) }, { triggerTurn: true, deliverAs: 'followUp' });
+  }
+  /**
+   * End-of-run offer. A "substantial change" is a verified delivery contract
+   * or any write/edit this run. In ask mode the interactive TUI surfaces the
+   * prompt itself (extension dialogs are unreachable over rpc), so here we
+   * only cover real pi TUI (ui.select) and headless runs (passive hint).
+   */
+  function offerReview(ctx: ExtensionContext, hash: string) {
+    if (reviewLoop) return;
+    const mode = effectiveReviewMode();
+    if (mode === 'no') return;
+    if (!(state?.status === 'verified' || touched)) return;
+    if (hash && reviewOfferedFor === hash) return;
+    reviewOfferedFor = hash || 'offered';
+    if (mode === 'yes') { startReview(); return; }
+    if (ctx.mode === 'tui' && typeof ctx.ui?.select === 'function') {
+      Promise.resolve(ctx.ui.select('Substantial change finished — start a self-review loop? (branch + PR → fresh-context review → fixes)', ['Start self-review', 'Skip']))
+        .then((pick: any) => { if (pick === 'Start self-review') startReview(); })
+        .catch(() => { });
+    } else if (ctx.mode !== 'rpc') {
+      pi.sendMessage({ customType: 'delivery-review', display: true, content: `Self-review available — run /review to loop a fresh-context review over a PR (default: pi2 review ask|yes|no).` }, { triggerTurn: false });
+    }
+  }
   function restore(ctx: ExtensionContext) {
     state = restoreState(ctx.sessionManager.getBranch());
     activeGuidance = (state?.guidanceProfiles || state?.plan?.guidanceProfiles || [])
@@ -51,6 +90,9 @@ export default function delivery(pi: ExtensionAPI) {
       .filter(Boolean);
     touched = false;
     nudges = state?.nudges ?? 0;
+    reviewLoop = false;
+    reviewOfferedFor = '';
+    reviewRounds = 0;
     required = [];
     extraGuidance = '';
     configError = '';
@@ -94,7 +136,7 @@ export default function delivery(pi: ExtensionAPI) {
   pi.on('session_start', (_event, ctx) => restore(ctx));
   pi.on('session_tree', (_event, ctx) => restore(ctx));
   pi.on('input', event => {
-    if (event.source !== 'extension') { nudges = 0; touched = false; }
+    if (event.source !== 'extension') { nudges = 0; touched = false; reviewLoop = false; reviewOfferedFor = ''; reviewRounds = 0; }
     return { action: 'continue' };
   });
   pi.on('before_agent_start', (event, ctx) => {
@@ -107,6 +149,9 @@ export default function delivery(pi: ExtensionAPI) {
     if (routedText) guidance += `\n\n${routedText}`;
     if (extraGuidance) guidance += `\n\nTask-specific delivery context:\n${extraGuidance}`;
     if (required.length) guidance += `\nUser-owned required validators will be added to your plan automatically: ${JSON.stringify(required)}. Run delivery_check id="all"; repair failures rather than replacing or bypassing these checks.`;
+    const reviewMode = effectiveReviewMode();
+    if (reviewMode === 'ask') guidance += '\nSelf-review is available and opt-in: when you finish a substantial change (a verified delivery or multiple file edits), close your summary by offering the user a self-review loop — a PR, a detached fresh-context `pi2 review` pass, then fixes. Start it only if they accept, or when they run /review.';
+    else if (reviewMode === 'yes') guidance += '\nSelf-review runs automatically after substantial changes: when the harness hands you the self-review instruction, follow it (PR → fresh-context review → fixes) unless the user tells you to stop.';
     return { systemPrompt: event.systemPrompt + '\n\n' + guidance };
   });
   pi.on('context', event => {
@@ -147,6 +192,19 @@ export default function delivery(pi: ExtensionAPI) {
       /(?:^|[^>])>(?!>)/.test(shellCommand) ||
       /\bsed\b[^\n]*\s-i(?:\s|$)/i.test(shellCommand) ||
       /\b(?:open|write_text|writeFileSync|writeFile)\s*\(/i.test(shellCommand);
+    // Self-review round cap: while a loop is active, each `pi2 review <pr>`
+    // invocation is a round; block runs past MAX_REVIEW_ROUNDS so the bound is
+    // real rather than prompt-text the agent could ignore.
+    if (reviewLoop && shellCommand) {
+      const invoke = /\bpi2(?:\.mjs)?["']?\s+review\s+([^\s;&|"']+)/.exec(shellCommand);
+      const arg = invoke?.[1] ?? '';
+      if (invoke && !arg.startsWith('-') && arg !== 'status' && !normalizeReviewMode(arg)) {
+        if (reviewRounds >= MAX_REVIEW_ROUNDS) {
+          return { block: true, reason: `Self-review round limit (${MAX_REVIEW_ROUNDS}) reached — stop the loop: summarize the outstanding findings for the user instead of re-running the reviewer.` };
+        }
+        reviewRounds++;
+      }
+    }
     if (
       pi.getFlag('delivery-strict') &&
       !state &&
@@ -365,11 +423,24 @@ export default function delivery(pi: ExtensionAPI) {
       });
     },
   });
+  pi.registerCommand('review', {
+    description: 'Start a self-review loop now, or set the default: /review ask|yes|no|status',
+    handler: async (args: string, ctx: ExtensionContext) => {
+      const arg = String(args ?? '').trim().toLowerCase();
+      if (!arg) { startReview(); ctx.ui?.notify?.('self-review loop started', 'info'); return; }
+      if (arg === 'status') { ctx.ui?.notify?.(`self-review mode: ${effectiveReviewMode()}`, 'info'); return; }
+      const mode = normalizeReviewMode(arg);
+      if (!mode) { ctx.ui?.notify?.('usage: /review ask|yes|no|status — bare /review starts a loop now', 'warning'); return; }
+      savePi2Config({ review: mode });
+      const overridden = normalizeReviewMode(pi.getFlag('delivery-review'));
+      ctx.ui?.notify?.(`self-review default → ${mode} (saved to ${pi2ConfigPath()})${overridden && overridden !== mode ? ` — note: --delivery-review=${overridden} still wins this session` : ''}`, 'info');
+    },
+  });
   pi.on('agent_end', (event, ctx) => {
     const last = [...event.messages].reverse().find((m: any) => m.role === 'assistant') as any;
-    let fresh = false, pending: string[] = [], failures: string[] = [];
+    let fresh = false, pending: string[] = [], failures: string[] = [], hash = '';
     try {
-      const hash = fingerprint(ctx.cwd, ['.']);
+      hash = fingerprint(ctx.cwd, ['.']);
       fresh = !!state && state.handoff?.fingerprint === hash;
       if (state) {
         pending = pendingChecks(state, hash);
@@ -377,7 +448,10 @@ export default function delivery(pi: ExtensionAPI) {
           .map(([id, e]: any) => `check ${id} failed (exit ${e.code}, timedOut ${e.timedOut})${e.outputTail ? `; last output: ${String(e.outputTail).slice(-400)}` : ''}`);
       }
     } catch { /* explicit re-verification required */ }
-    if (!shouldContinue({ state, touched, nudges, stopReason: last?.stopReason, pendingMessages: ctx.hasPendingMessages(), fresh })) return;
+    if (!shouldContinue({ state, touched, nudges, stopReason: last?.stopReason, pendingMessages: ctx.hasPendingMessages(), fresh })) {
+      offerReview(ctx, hash);
+      return;
+    }
     nudges++;
     if (state) persist(ctx);
     const specifics = [...(pending.length ? [`pending checks: ${pending.join(', ')}`] : []), ...failures].join('\n');

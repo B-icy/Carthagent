@@ -337,6 +337,21 @@ test('buildPiArgs forwards session selection but never --resume', () => {
   assert.ok(!buildPiArgs({ resume: true, delivery: false }, { installed: true }).includes('--resume'));
 });
 
+test('buildPiArgs forwards the self-review mode to the delivery extension', () => {
+  const args = buildPiArgs({ review: 'yes' });
+  const i = args.indexOf('--delivery-review');
+  assert.ok(i > -1 && args[i + 1] === 'yes');
+  assert.ok(!buildPiArgs({ delivery: false, review: 'yes' }).includes('--delivery-review'), 'no extension, no flag');
+  assert.ok(!buildPiArgs({}).includes('--delivery-review'), 'unset stays unset so the config default applies');
+});
+
+test('ctrl-y is parsed for accepting self-review offers', () => {
+  const keys = [];
+  const parse = makeKeyParser(k => keys.push(k));
+  parse('\x19');
+  assert.equal(keys[0].key, 'ctrl-y');
+});
+
 test('mouse SGR events map to press, drag, release, and wheel keys', () => {
   const keys = [];
   const parse = makeKeyParser(k => keys.push(k));
