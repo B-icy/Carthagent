@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseD2, layoutD2, renderD2 } from '../lib/tui/d2.mjs';
-import { planSideWidth, makeKeyParser } from '../lib/tui/app.mjs';
+import { planSideWidth, makeKeyParser, matchSlash } from '../lib/tui/app.mjs';
 import { planD2, computePhase, freshChecks, PHASES } from '../lib/delivery.mjs';
 import { createFeed, applyEvent, summarizeArgs, renderFeed, hydrateFeed } from '../lib/tui/feed.mjs';
 import { strip, width, wrap, truncate, hasTruecolor, sliceCols, inverseCols } from '../lib/tui/ansi.mjs';
@@ -422,4 +422,28 @@ test('sliceCols and inverseCols handle display-column ranges', () => {
   const styled = inverseCols('\x1b[31mred\x1b[0m plain', 4, 9);
   assert.equal(strip(styled), 'red plain');
   assert.match(styled, /\x1b\[27m/);
+});
+
+test('matchSlash filters commands by prefix and closes on args', () => {
+  // bare '/' matches every command
+  assert.ok(matchSlash('/').length >= 16, 'bare slash lists all commands');
+  // '/h' narrows to /help
+  assert.deepEqual(matchSlash('/h').map(c => c.name), ['/help']);
+  // '/r' matches commands and aliases starting with r
+  const r = matchSlash('/r').map(c => c.name).sort();
+  assert.ok(r.includes('/resume'));
+  assert.ok(r.includes('/restart'));
+  assert.ok(r.includes('/raw'));
+  assert.ok(r.includes('/review'));
+  // alias prefix match: '/se' → /sessions (alias of /resume)
+  assert.deepEqual(matchSlash('/se').map(c => c.name), ['/resume']);
+  // '/q' matches /quit via alias
+  assert.deepEqual(matchSlash('/q').map(c => c.name), ['/quit']);
+  // unknown prefix → empty
+  assert.deepEqual(matchSlash('/xyz'), []);
+  // a space (args mode) closes the popup
+  assert.deepEqual(matchSlash('/help '), []);
+  assert.deepEqual(matchSlash('/raw foo'), []);
+  // non-slash buffer → empty
+  assert.deepEqual(matchSlash('hello'), []);
 });
