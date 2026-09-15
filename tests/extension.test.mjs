@@ -82,6 +82,16 @@ test('compaction context survives restore, branching clears stale contracts', op
   f.hooks.session_tree({}, f.ctx);
   assert.match((await f.call('delivery_status')).content[0].text, /No delivery contract/);
 });
+test('compaction context does not direct re-checks when all evidence is fresh', options, async t => {
+  const f = fixture(t);
+  await f.call('delivery_plan', f.plan);
+  await f.call('delivery_check', { id: 'all' });
+  // session_start → restore reloads state and stores cwd for the context handler.
+  f.hooks.session_start({}, f.ctx);
+  const context = f.hooks.context({ messages: [] });
+  assert.doesNotMatch(context.messages[0].content, /delivery_check id="all"/);
+  assert.match(context.messages[0].content, /current passing evidence/i);
+});
 test('agent_end queues at most two repairs and does not revive cancelled work', options, async t => {
   const f = fixture(t);
   await f.call('delivery_plan', f.plan);
