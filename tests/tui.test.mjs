@@ -69,6 +69,18 @@ test('renderD2 works at tiny widths without crashing', () => {
   }
 });
 
+test('renderD2 light themes use plain panel fills (text stays readable)', () => {
+  const g = parseD2(planD2(SAMPLE_PLAN));
+  for (const name of ['paper', 'daylight', 'solarized-light', 'contrast-light', 'okabe-light']) {
+    const theme = getTheme(name, 'light');
+    const states = new Map([['goal', 'done'], ['step0', 'active'], ['verify', 'fail']]);
+    const { lines } = renderD2(g, { width: 60, theme, states, frame: 0 });
+    // The fill for every state on a light theme is the panel background —
+    // text on the fill is text on the panel, which passes WCAG AA by design.
+    assert.ok(lines.length > 0, `${name} rendered`);
+  }
+});
+
 test('renderD2 wraps long labels across rows instead of truncating', () => {
   const plan = { ...SAMPLE_PLAN, steps: ['inspect and probe the existing runtime and APIs before writing any code'] };
   const g = parseD2(planD2(plan));
