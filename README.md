@@ -17,11 +17,9 @@ git clone https://github.com/B-icy/pi2 && cd pi2
 npm ci && npm i -g .          # gives you `pi2`; or just run `node bin/pi2.mjs`
 ```
 
-Still using pi directly? `pi install git:github.com/B-icy/pi2` works too — pi2 detects a pi-managed install and skips the bundled copy.
-
 ## Connect a provider
 
-First run needs AI credentials. One store (`~/.pi/agent/auth.json`) covers the console, headless runs, and the dashboard.
+First run needs AI credentials. One store (`~/.pi2/agent/auth.json`) covers the console, headless runs, and the dashboard.
 
 **Subscription** (Claude Pro/Max, ChatGPT Plus/Pro, GitHub Copilot, xAI, OpenRouter, Radius):
 
@@ -52,7 +50,7 @@ pi2 test               # unit suite
 pi2 --help             # everything else
 ```
 
-Inside the console: `enter` send/steer · `esc` abort (again = force-restart pi, nothing is lost) · `^r` session picker · `tab`/`⇧tab` panes · `x` expand tool output · `^t` settings · `^c` quit. Sessions persist under `~/.pi/agent/sessions/`; `pi2 -c` continues the last one, `-r` opens the picker.
+Inside the console: `enter` send/steer · `esc` abort (again = force-restart pi, nothing is lost) · `^r` session picker · `tab`/`⇧tab` panes · `x` expand tool output · `^t` settings · `^c` quit. Sessions persist under `~/.pi2/agent/sessions/`; `pi2 -c` continues the last one, `-r` opens the picker.
 
 **Themes:** 21 AA-contrast-verified options — dark (`opencode`, `tokyonight`, `nebula`, `ember`, `forest`, `mono`, `obsidian`, `midnight`, `nord`, `solarized-dark`, `okabe-dark`, `contrast-dark`), light (`paper`, `daylight`, `solarized-light`, `okabe-light`, `contrast-light`), and adaptive (`solarized`, `okabe`, `contrast`, `system`) that follow `COLORFGBG` or `PI2_THEME_MODE=light|dark`. Pick via `--theme`, `/theme`, or `^t`. The dashboard has the same set behind a header picker. `okabe-*` uses the colorblind-safe Okabe-Ito palette.
 
@@ -76,7 +74,7 @@ The discipline: evidence is fingerprinted against the whole workspace — edit a
 
 Everything below is config, not code:
 
-- **Required validators** — your tests, not the model's. `.pi/delivery.json` (trusted project) or `--validators file.json`: `{"version":1,"checks":[{"id":"acceptance","kind":"test","argv":["pytest","-q"],"timeoutSeconds":90}]}`. They can't be omitted or overridden.
+- **Required validators** — your tests, not the model's. `.pi2/delivery.json` (trusted project) or `--validators file.json`: `{"version":1,"checks":[{"id":"acceptance","kind":"test","argv":["pytest","-q"],"timeoutSeconds":90}]}`. They can't be omitted or overridden.
 - **Domain guidance** — add a JSON profile to `guidance/profiles/` (keywords/deps → planning/check/review requirements) and matching requests pick it up automatically.
 - **Extra context** — `--delivery-context notes.md` injects project/benchmark-specific instructions.
 - **Scenarios** — `scenarios/<name>/scenario.json` defines an evaluation domain; `node evaluate.mjs --task <name> --allow-live` runs it (dry-run with `--dry-run`; spends API credit otherwise).
