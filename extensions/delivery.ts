@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { validatePlan, planD2WithProgress, fingerprint, atomicJson, runCommand, pendingChecks, restoreState, shouldContinue, localPath, createSerialQueue, validateRevision, bindRequiredChecks, loadRequiredChecks, updateStepStatus } from '../lib/delivery.mjs';
 import { formatGuidance, loadGuidanceProfiles, routeGuidance } from '../lib/guidance.mjs';
-import { normalizeReviewMode, resolveReviewMode, loadPi2Config, savePi2Config, pi2ConfigPath, reviewKickoff } from '../lib/review.mjs';
+import { normalizeReviewMode, resolveReviewMode, loadPi2Config, savePi2Config, pi2ConfigPath, reviewKickoff, MAX_REVIEW_ROUNDS } from '../lib/review.mjs';
 
 const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url));
 const PI2_BIN = join(EXTENSION_DIR, '..', 'bin', 'pi2.mjs');
@@ -32,7 +32,7 @@ Before concluding, adversarially review the implementation against each acceptan
 export default function delivery(pi: ExtensionAPI) {
   let state: any = null;
   let touched = false, nudges = 0;
-  let reviewLoop = false, reviewOfferedFor = '';
+  let reviewLoop = false, reviewOfferedFor = '', reviewRounds = 0;
   const exclusive = createSerialQueue();
   const guidanceProfiles = loadGuidanceProfiles();
   let activeGuidance: any[] = [];
@@ -58,6 +58,7 @@ export default function delivery(pi: ExtensionAPI) {
   // triggerTurn starts a new turn when idle; followUp queues behind a live run.
   function startReview() {
     reviewLoop = true;
+    reviewRounds = 0;
     pi.sendMessage({ customType: 'delivery-review', display: true, content: reviewKickoff(PI2_BIN) }, { triggerTurn: true, deliverAs: 'followUp' });
   }
   /**
@@ -91,6 +92,7 @@ export default function delivery(pi: ExtensionAPI) {
     nudges = state?.nudges ?? 0;
     reviewLoop = false;
     reviewOfferedFor = '';
+    reviewRounds = 0;
     required = [];
     extraGuidance = '';
     configError = '';
@@ -134,7 +136,7 @@ export default function delivery(pi: ExtensionAPI) {
   pi.on('session_start', (_event, ctx) => restore(ctx));
   pi.on('session_tree', (_event, ctx) => restore(ctx));
   pi.on('input', event => {
-    if (event.source !== 'extension') { nudges = 0; touched = false; reviewLoop = false; reviewOfferedFor = ''; }
+    if (event.source !== 'extension') { nudges = 0; touched = false; reviewLoop = false; reviewOfferedFor = ''; reviewRounds = 0; }
     return { action: 'continue' };
   });
   pi.on('before_agent_start', (event, ctx) => {
@@ -190,6 +192,19 @@ export default function delivery(pi: ExtensionAPI) {
       /(?:^|[^>])>(?!>)/.test(shellCommand) ||
       /\bsed\b[^\n]*\s-i(?:\s|$)/i.test(shellCommand) ||
       /\b(?:open|write_text|writeFileSync|writeFile)\s*\(/i.test(shellCommand);
+    // Self-review round cap: while a loop is active, each `pi2 review <pr>`
+    // invocation is a round; block runs past MAX_REVIEW_ROUNDS so the bound is
+    // real rather than prompt-text the agent could ignore.
+    if (reviewLoop && shellCommand) {
+      const invoke = /\bpi2(?:\.mjs)?["']?\s+review\s+([^\s;&|"']+)/.exec(shellCommand);
+      const arg = invoke?.[1] ?? '';
+      if (invoke && !arg.startsWith('-') && arg !== 'status' && !normalizeReviewMode(arg)) {
+        if (reviewRounds >= MAX_REVIEW_ROUNDS) {
+          return { block: true, reason: `Self-review round limit (${MAX_REVIEW_ROUNDS}) reached — stop the loop: summarize the outstanding findings for the user instead of re-running the reviewer.` };
+        }
+        reviewRounds++;
+      }
+    }
     if (
       pi.getFlag('delivery-strict') &&
       !state &&

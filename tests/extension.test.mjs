@@ -404,3 +404,26 @@ test('review guidance is described when the loop is opt-in or automatic', option
   const auto = f.hooks.before_agent_start({ systemPrompt: 'base', prompt: 'task' }, f.ctx);
   assert.match(auto.systemPrompt, /Self-review runs automatically/);
 });
+
+test('self-review round cap blocks reviewer runs past the limit', options, async t => {
+  const f = fixture(t);
+  const reviewBash = cmd => f.hooks.tool_call({ toolName: 'bash', input: { command: cmd } }, f.ctx);
+  // Outside a loop, reviewer invocations are never capped.
+  assert.equal(reviewBash('node "/x/bin/pi2.mjs" review 15'), undefined);
+  await f.commands.review.handler('', f.ctx); // start a loop
+  // Mode changes and status checks are not rounds.
+  assert.equal(reviewBash('pi2 review yes'), undefined);
+  assert.equal(reviewBash('pi2 review status'), undefined);
+  assert.equal(reviewBash('pi2 review'), undefined);
+  // Rounds 1..3 run; round 4 is blocked with a wrap-up instruction.
+  for (const cmd of ['pi2 review 15', 'node "/x/bin/pi2.mjs" review 15 --timeout 60', 'pi2 review https://github.com/o/r/pull/15']) {
+    assert.equal(reviewBash(cmd), undefined, cmd);
+  }
+  const blocked = reviewBash('pi2 review 15');
+  assert.equal(blocked.block, true);
+  assert.match(blocked.reason, /round limit \(3\)/);
+  // User input resets the loop (and the counter) — a fresh loop may start.
+  f.hooks.input({ source: 'user' });
+  await f.commands.review.handler('', f.ctx);
+  assert.equal(reviewBash('pi2 review 15'), undefined);
+});

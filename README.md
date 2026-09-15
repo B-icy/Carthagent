@@ -72,7 +72,7 @@ The discipline: evidence is fingerprinted against the whole workspace — edit a
 
 ## Self-review
 
-When a run finishes a substantial change (a verified delivery or file edits), pi2 can offer a review loop: the agent pushes a branch, opens a PR, and a **detached fresh-context reviewer** (`pi2 review <pr>` — a separate engine process with no shared context) inspects it. Findings come back to the working agent, which fixes, pushes, and re-reviews — up to 3 rounds or `VERDICT: APPROVE`.
+When a run finishes a substantial change (a verified delivery or file edits), pi2 can offer a review loop: the agent pushes a branch, opens a PR, and a **detached fresh-context reviewer** (`pi2 review <pr>` — a separate engine process with no shared context) inspects it. Findings come back to the working agent, which fixes, pushes, and re-reviews — up to 3 rounds (enforced by the delivery extension) or `VERDICT: APPROVE`.
 
 It's opt-in and tri-state, resolved as `--review <mode>` flag → `~/.pi2/config.json` → `ask`:
 
