@@ -39,6 +39,7 @@ export default function delivery(pi: ExtensionAPI) {
   let required: any[] = [], extraGuidance = '', configError = '';
   let writeCounts = new Map<string, number>();
   let initialFiles = new Set<string>();
+  let storedCwd = '';
   pi.registerFlag('delivery-validators', { description: 'Path to user-owned required validator manifest; these checks cannot be omitted by the model', type: 'string' });
   pi.registerFlag('delivery-context', { description: 'Path to optional task/context guidance injected into the delivery system prompt', type: 'string' });
   pi.registerFlag('delivery-strict', { description: 'Require delivery_plan before built-in edit/write (not a security sandbox)', type: 'boolean', default: false });
@@ -84,6 +85,7 @@ export default function delivery(pi: ExtensionAPI) {
     }
   }
   function restore(ctx: ExtensionContext) {
+    storedCwd = ctx.cwd;
     state = restoreState(ctx.sessionManager.getBranch());
     activeGuidance = (state?.guidanceProfiles || state?.plan?.guidanceProfiles || [])
       .map((id: string) => guidanceProfiles.find(profile => profile.id === id))
@@ -144,6 +146,7 @@ export default function delivery(pi: ExtensionAPI) {
     return { action: 'continue' };
   });
   pi.on('before_agent_start', (event, ctx) => {
+    if (ctx?.cwd) storedCwd = ctx.cwd;
     const routed = routeGuidance(event.prompt, { cwd: ctx?.cwd || process.cwd(), profiles: guidanceProfiles });
     activeGuidance = state && !['verified', 'blocked'].includes(state.status)
       ? [...new Map([...activeGuidance, ...routed].map(profile => [profile.id, profile])).values()].sort((a, b) => b.priority - a.priority)
@@ -162,9 +165,25 @@ export default function delivery(pi: ExtensionAPI) {
     if (!state || state.status === 'blocked') return;
     // Re-injected after compaction without replacing Pi's summary or pruning user messages.
     const summary = { goal: state.plan.goal, status: state.status, acceptance: state.plan.acceptance, steps: state.plan.steps, artifacts: state.plan.artifacts, checks: state.plan.checks, evidence: Object.fromEntries(Object.entries(state.evidence).map(([id, e]: any) => [id, { passed: e.passed, fingerprint: e.fingerprint, code: e.code, outputTail: e.outputTail ? e.outputTail.slice(-400) : undefined }])) };
-    return { messages: [...event.messages, { role: 'custom' as const, customType: 'delivery-context', content: `Delivery contract (evidence may be stale after edits):\n${JSON.stringify(summary)}\nUse delivery_status to inspect freshness, then delivery_check id="all" to re-run any stale checks — do not just re-inspect.`, display: false, timestamp: Date.now() }] };
+    // Compute current freshness so the instruction matches reality. When all
+    // checks are already fresh, directing the agent to re-run delivery_check on
+    // every context re-injection causes an infinite status→check loop.
+    let pending: string[] | null = null;
+    try {
+      if (storedCwd) {
+        const hash = fingerprint(storedCwd, ['.']);
+        pending = pendingChecks(state, hash);
+      }
+    } catch { /* fingerprint unavailable — stay conservative below */ }
+    const instruction = pending === null
+      ? `Use delivery_status to inspect freshness, then delivery_check id="all" to re-run any stale checks — do not just re-inspect.`
+      : pending.length === 0
+        ? `All declared checks have current passing evidence (fingerprint matches). Do not re-run delivery_check — proceed to delivery_finish (or continue implementation if unfinished).`
+        : `Stale/failed/missing checks: ${pending.join(', ')}. Use delivery_status to inspect freshness, then delivery_check id="all" to re-run them — do not just re-inspect.`;
+    return { messages: [...event.messages, { role: 'custom' as const, customType: 'delivery-context', content: `Delivery contract (evidence may be stale after edits):\n${JSON.stringify(summary)}\n${instruction}`, display: false, timestamp: Date.now() }] };
   });
   pi.on('tool_call', (event, ctx) => {
+    if (ctx?.cwd) storedCwd = ctx.cwd;
     const input = event.input as Record<string, any> | undefined;
     if (
       event.toolName === 'edit' &&
