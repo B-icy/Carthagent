@@ -64,6 +64,33 @@ test('real extension loads, gates writes, executes checks and rejects stale evid
   writeFileSync(join(f.cwd, 'new_config.json'), '{}');
   await assert.rejects(f.call('delivery_finish', finish), /stale checks/);
 });
+test('delivery_finish re-entry guard prevents the agent from looping on a finished delivery', options, async t => {
+  const f = fixture(t);
+  const finish = { status: 'verified', review: 'Reviewed.', launch: 'python app.py', limitations: [] };
+  await f.call('delivery_plan', f.plan);
+  await f.call('delivery_check', { id: 'all' });
+  await f.call('delivery_finish', finish);
+  // Immediate re-call with no file changes — must return "already finished",
+  // not re-process and return a fresh success (which gives no stop signal).
+  const second = await f.call('delivery_finish', finish);
+  assert.match(second.content[0].text, /already finished/i);
+  assert.match(second.content[0].text, /do not call delivery_finish again/i);
+  // After a real file change the guard falls through to normal validation.
+  writeFileSync(join(f.cwd, 'new_file.py'), 'x = 1');
+  await assert.rejects(f.call('delivery_finish', finish), /stale checks/);
+});
+test('context handler stops re-injecting the delivery contract after verified status', options, async t => {
+  const f = fixture(t);
+  await f.call('delivery_plan', f.plan);
+  await f.call('delivery_check', { id: 'all' });
+  await f.call('delivery_finish', { status: 'verified', review: 'ok', launch: 'python app.py', limitations: [] });
+  f.hooks.session_start({}, f.ctx);
+  // After verified, the context handler must not tell the agent to "proceed
+  // to delivery_finish" — that instruction causes the agent to re-call
+  // delivery_finish and loop.
+  const result = f.hooks.context({ messages: [] });
+  assert.equal(result, undefined);
+});
 test('real extension serializes sibling checks without tool errors', options, async t => {
   const f = fixture(t);
   f.plan.checks.push({ ...f.plan.checks[0], id: 'second' });

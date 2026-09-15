@@ -162,7 +162,7 @@ export default function delivery(pi: ExtensionAPI) {
     return { systemPrompt: event.systemPrompt + '\n\n' + guidance };
   });
   pi.on('context', event => {
-    if (!state || state.status === 'blocked') return;
+    if (!state || ['blocked', 'verified'].includes(state.status)) return;
     // Re-injected after compaction without replacing Pi's summary or pruning user messages.
     const summary = { goal: state.plan.goal, status: state.status, acceptance: state.plan.acceptance, steps: state.plan.steps, artifacts: state.plan.artifacts, checks: state.plan.checks, evidence: Object.fromEntries(Object.entries(state.evidence).map(([id, e]: any) => [id, { passed: e.passed, fingerprint: e.fingerprint, code: e.code, outputTail: e.outputTail ? e.outputTail.slice(-400) : undefined }])) };
     // Compute current freshness so the instruction matches reality. When all
@@ -434,6 +434,16 @@ export default function delivery(pi: ExtensionAPI) {
         if (configError) throw Error(configError);
         if (!['verified', 'blocked'].includes(params.status)) throw Error('status must be verified or blocked');
         const hash = fingerprint(ctx.cwd, ['.']);
+        // Guard against re-entry: if the delivery is already finished and
+        // nothing has changed since (fingerprint matches the handoff), return
+        // a terminal "already done" result instead of re-processing. Without
+        // this the agent can loop on delivery_finish hundreds of times in a
+        // single turn (the success result gives no signal to stop, and the
+        // tool keeps accepting the call). If files DID change, fall through
+        // to normal validation so stale evidence is caught.
+        if (['verified', 'blocked'].includes(state.status) && state.handoff?.fingerprint === hash) {
+          return text({ status: state.status, report: join(directory(ctx), 'report.json'), note: `Delivery already finished (status=${state.status}). Do not call delivery_finish again — summarize the outcome for the user and stop.` });
+        }
         if (params.status === 'verified') {
           const missing = state.plan.artifacts.filter((p: string) => !existsSync(localPath(ctx.cwd, p)));
           const pending = pendingChecks(state, hash);
@@ -442,7 +452,7 @@ export default function delivery(pi: ExtensionAPI) {
         state.status = params.status;
         state.handoff = { ...params, fingerprint: hash, at: new Date().toISOString() };
         persist(ctx);
-        return text({ status: state.status, report: join(directory(ctx), 'report.json'), note: 'Evidence covers declared checks, not a guarantee of correctness. Distinguish automated evidence from unperformed manual/visual review.' });
+        return text({ status: state.status, report: join(directory(ctx), 'report.json'), note: 'Delivery finished. Summarize the outcome for the user and stop — do not call delivery_finish again. Evidence covers declared checks, not a guarantee of correctness. Distinguish automated evidence from unperformed manual/visual review.' });
       });
     },
   });
