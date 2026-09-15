@@ -155,6 +155,13 @@
     .list { margin: 12px 0 0; padding: 0; list-style: none; }
     .list li { padding: 9px 0; border-top: 1px solid var(--border); display: flex; gap: 10px; }
     .index { color: var(--faint); min-width: 24px; font: 12px var(--mono); }
+    .marker { display: inline-block; min-width: 15px; color: var(--faint); font: 12px var(--mono); }
+    li.step-done .marker { color: var(--success); }
+    li.step-failed .marker { color: var(--error); }
+    li.step-active .marker { color: var(--accent); font-weight: 700; animation: step-arrow 1.1s ease-in-out infinite; }
+    li.step-active .index { color: var(--accent); }
+    @keyframes step-arrow { 0%, 100% { transform: translateX(0); opacity: 1; } 50% { transform: translateX(4px); opacity: .45; } }
+    @media (prefers-reduced-motion: reduce) { li.step-active .marker { animation: none; } }
     .acceptance li { display: block; }
     .acceptance code { display: block; color: var(--faint); margin-top: 4px; font-size: 11px; }
     .button { border: 1px solid var(--border-strong); border-radius: 5px; background: var(--panel-2); color: var(--text); padding: 7px 11px; font-size: 12px; }
@@ -403,9 +410,16 @@
     byId('acceptance-card').hidden = !plan;
     if (plan) {
       clear(byId('steps'));
+      // Mirror the console's step semantics: explicit stepStatus wins, unset
+      // steps read as active while the run is in flight and done afterwards.
+      const implActive = state.status === 'implementing' || state.status === 'planned';
       plan.steps.forEach((step, index) => {
+        const st = state.stepStatus?.[`step${index}`];
+        const resolved = st === 'done' ? 'done' : st === 'failed' ? 'failed' : st === 'active' ? 'active' : implActive ? 'active' : 'done';
         const item = node('li');
-        item.append(node('span', String(index + 1).padStart(2, '0'), 'index'), node('span', step));
+        item.className = `step step-${resolved}`;
+        const glyph = resolved === 'done' ? '✓' : resolved === 'failed' ? '✗' : resolved === 'active' ? '▸' : '·';
+        item.append(node('span', glyph, 'marker'), node('span', String(index + 1).padStart(2, '0'), 'index'), node('span', step));
         byId('steps').append(item);
       });
       clear(byId('acceptance'));
@@ -416,9 +430,9 @@
       });
       if (document.activeElement !== byId('plan-json')) byId('plan-json').value = JSON.stringify(plan, null, 2);
       updateD2(plan);
-      byId('review').value = state.review || '';
-      byId('launch').value = state.launch || '';
-      byId('limitations').value = (state.limitations || []).join('\n');
+      if (document.activeElement !== byId('review')) byId('review').value = state.review || '';
+      if (document.activeElement !== byId('launch')) byId('launch').value = state.launch || '';
+      if (document.activeElement !== byId('limitations')) byId('limitations').value = (state.limitations || []).join('\n');
     }
     const checks = plan?.checks || [];
     const current = checks.filter(check => checkStatus(check) === 'passed').length;
@@ -526,6 +540,7 @@
     loadDoc(button.dataset.doc);
   }));
   loadStatus();
+  if (token) setInterval(loadStatus, 3000); // live step/check progress while the agent runs
 </script>
 </body>
 </html>

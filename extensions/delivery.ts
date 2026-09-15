@@ -136,7 +136,11 @@ export default function delivery(pi: ExtensionAPI) {
   pi.on('session_start', (_event, ctx) => restore(ctx));
   pi.on('session_tree', (_event, ctx) => restore(ctx));
   pi.on('input', event => {
-    if (event.source !== 'extension') { nudges = 0; touched = false; reviewLoop = false; reviewOfferedFor = ''; reviewRounds = 0; }
+    // Follow-up nudges from this extension re-enter as input — don't let them
+    // reset the nudge cap (would defeat the 2-nudge limit and loop forever).
+    const text = String(event.text ?? event.message ?? '');
+    const isOwnNudge = text.startsWith('Delivery follow-up') || text.startsWith('Self-review');
+    if (event.source !== 'extension' && !isOwnNudge) { nudges = 0; touched = false; reviewLoop = false; reviewOfferedFor = ''; reviewRounds = 0; }
     return { action: 'continue' };
   });
   pi.on('before_agent_start', (event, ctx) => {
@@ -158,7 +162,7 @@ export default function delivery(pi: ExtensionAPI) {
     if (!state || state.status === 'blocked') return;
     // Re-injected after compaction without replacing Pi's summary or pruning user messages.
     const summary = { goal: state.plan.goal, status: state.status, acceptance: state.plan.acceptance, steps: state.plan.steps, artifacts: state.plan.artifacts, checks: state.plan.checks, evidence: Object.fromEntries(Object.entries(state.evidence).map(([id, e]: any) => [id, { passed: e.passed, fingerprint: e.fingerprint, code: e.code, outputTail: e.outputTail ? e.outputTail.slice(-400) : undefined }])) };
-    return { messages: [...event.messages, { role: 'custom' as const, customType: 'delivery-context', content: `Delivery contract (evidence may be stale after edits):\n${JSON.stringify(summary)}\nUse delivery_status to inspect current freshness.`, display: false, timestamp: Date.now() }] };
+    return { messages: [...event.messages, { role: 'custom' as const, customType: 'delivery-context', content: `Delivery contract (evidence may be stale after edits):\n${JSON.stringify(summary)}\nUse delivery_status to inspect freshness, then delivery_check id="all" to re-run any stale checks — do not just re-inspect.`, display: false, timestamp: Date.now() }] };
   });
   pi.on('tool_call', (event, ctx) => {
     const input = event.input as Record<string, any> | undefined;
@@ -455,6 +459,6 @@ export default function delivery(pi: ExtensionAPI) {
     nudges++;
     if (state) persist(ctx);
     const specifics = [...(pending.length ? [`pending checks: ${pending.join(', ')}`] : []), ...failures].join('\n');
-    pi.sendMessage({ customType: 'delivery-gate', display: true, content: `Delivery follow-up ${nudges}/2: implementation ended without current verified evidence.${specifics ? `\n${specifics}\n` : ''}Read the quoted output, repair the root cause it points to (do not rationalize a failing probe as an environment limitation without evidence), rerun the failing checks, then delivery_finish. If genuinely blocked, record status=blocked with specific limitations. Do not merely repeat a success claim.` }, { triggerTurn: true, deliverAs: 'followUp' });
+    pi.sendMessage({ customType: 'delivery-gate', display: true, content: `Delivery follow-up ${nudges}/2: implementation ended without current verified evidence.${specifics ? `\n${specifics}\n` : ''}Run delivery_check id="all" to re-run the stale/failed checks, repair the root cause the output points to (do not rationalize a failing probe as an environment limitation without evidence), then delivery_finish. If genuinely blocked, record status=blocked with specific limitations. Do not merely re-inspect with delivery_status or repeat a success claim.` }, { triggerTurn: true, deliverAs: 'followUp' });
   });
 }
