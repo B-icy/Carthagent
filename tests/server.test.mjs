@@ -48,7 +48,9 @@ test('dashboard API requires its launch token and rejects foreign origins', asyn
   assert.equal(response.status, 200);
   assert.match(response.headers.get('content-security-policy'), /frame-ancestors 'none'/);
   assert.equal(response.headers.get('cache-control'), 'no-store');
-  assert.equal((await response.json()).workspace, server.cwd);
+  const body = await response.json();
+  assert.equal(body.workspace, server.cwd);
+  assert.deepEqual(body.stepStatus, {});
 });
 
 test('dashboard persists plans and executes checks in the selected workspace', async t => {
@@ -74,6 +76,10 @@ test('dashboard is self-contained and does not render API data with innerHTML', 
   assert.doesNotMatch(html, /https?:\/\/[^'"\s]+/);
   assert.doesNotMatch(html, /\.innerHTML\s*=/);
   assert.match(html, /textContent/);
+  // Active-step arrow effect is wired to live stepStatus.
+  assert.match(html, /@keyframes step-arrow/);
+  assert.match(html, /step-active/);
+  assert.match(html, /stepStatus/);
   const rendered = await domCheck(html, [{ selector: '.shell' }, { selector: '.brand', text: 'pi2' }, { console: 'error-free' }]);
   assert.equal(rendered.pass, true, rendered.failures.join('\n'));
 });

@@ -60,6 +60,26 @@ test('renderD2 emits styled lines that fit the requested width', () => {
   assert.match(frontierLabel, /slice/);
 });
 
+test('renderD2 breathes the arrowhead into the active node', () => {
+  const g = parseD2(planD2(SAMPLE_PLAN));
+  const theme = getTheme('mono');
+  const states = new Map([['goal', 'done'], ['step0', 'active'], ['verify', 'active']]);
+  const plain = f => strip(renderD2(g, { width: 44, theme, states, frame: f }).lines.join('\n'));
+  // Hollow ~1/4 of the cycle, solid the rest — forward ▼ and back-edge ◀ alike.
+  assert.ok(plain(0).includes('▽'));
+  assert.ok(plain(0).includes('◁'));
+  assert.ok(!plain(2).includes('▽'));
+  assert.ok(!plain(2).includes('◁'));
+  assert.ok(plain(2).includes('▼'));
+  assert.ok(plain(2).includes('◀'));
+  // No active target → arrowheads stay solid at every frame.
+  const idle = new Map([['goal', 'done'], ['step0', 'done']]);
+  for (const f of [0, 1, 2]) {
+    const p = strip(renderD2(g, { width: 44, theme, states: idle, frame: f }).lines.join('\n'));
+    assert.ok(!p.includes('▽') && !p.includes('◁'), `frame ${f}`);
+  }
+});
+
 test('renderD2 works at tiny widths without crashing', () => {
   const g = parseD2(planD2(SAMPLE_PLAN));
   for (const w of [12, 20, 30, 34, 44, 60, 80]) {

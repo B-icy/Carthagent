@@ -65,6 +65,7 @@ app.get('/api/status', (req, res) => {
       status: currentState.status,
       plan: currentState.plan,
       evidence: currentState.evidence || {},
+      stepStatus: currentState.stepStatus || {},
       review: currentState.review || currentState.handoff?.review || '',
       launch: currentState.launch || currentState.handoff?.launch || '',
       limitations: currentState.limitations || currentState.handoff?.limitations || [],

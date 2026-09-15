@@ -115,7 +115,35 @@ test('repair nudges quote the failing check, its exit code and its output tail',
   // Compaction context keeps only a short tail, not the full 1200-character evidence copy.
   const context = f.hooks.context({ messages: [] });
   assert.match(context.messages[0].content, /"passed":false/);
+  assert.match(context.messages[0].content, /delivery_check id="all"/);
   assert.ok(context.messages[0].content.length < 4000);
+});
+
+test('delivery-gate follow-up does not reset the nudge cap (no infinite loop)', options, async t => {
+  const f = fixture(t);
+  f.plan.checks[0].argv = [process.execPath, '-e', 'process.exit(1)'];
+  await f.call('delivery_plan', f.plan);
+  await assert.rejects(f.call('delivery_check', { id: 'run' }));
+  // Nudge 1 — shouldContinue fires, nudges becomes 1.
+  f.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, f.ctx);
+  assert.equal(f.messages.length, 1);
+  assert.match(f.messages[0].content, /Delivery follow-up 1\/2/);
+  // The follow-up re-enters as input — this must NOT reset nudges.
+  f.hooks.input({ source: 'interactive', text: f.messages[0].content });
+  // Nudge 2 — nudges becomes 2.
+  f.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, f.ctx);
+  assert.equal(f.messages.length, 2);
+  assert.match(f.messages[1].content, /Delivery follow-up 2\/2/);
+  // The follow-up re-enters again — still must NOT reset.
+  f.hooks.input({ source: 'interactive', text: f.messages[1].content });
+  // Nudge 3 — shouldContinue returns false (2 < 2 is false), no more nudges.
+  f.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, f.ctx);
+  assert.equal(f.messages.length, 2, 'nudge cap held — no third nudge');
+  // A genuine user prompt resets the cap.
+  f.hooks.input({ source: 'interactive', text: 'fix the failing check' });
+  f.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, f.ctx);
+  assert.equal(f.messages.length, 3);
+  assert.match(f.messages[2].content, /Delivery follow-up 1\/2/);
 });
 test('bash timeout cap bounds runaway shell commands when configured', options, t => {
   const f = fixture(t);
