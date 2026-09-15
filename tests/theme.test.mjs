@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { THEMES, flattenTheme, detectTermMode } from '../lib/tui/theme.mjs';
+import { mix } from '../lib/tui/ansi.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const html = readFileSync(join(root, 'public', 'index.html'), 'utf8');
@@ -150,3 +151,26 @@ test('detectTermMode reads COLORFGBG / PI2_THEME_MODE', () => {
   assert.equal(detectTermMode({ COLORFGBG: '0;7' }), 'light');
   assert.equal(detectTermMode({ COLORFGBG: '0;15', PI2_THEME_MODE: 'dark' }), 'dark');
 });
+
+// Light themes: the d2 graph renderer uses the plain panel as the node fill
+// (state carried by the border). Verify that text/label/glyph colors have
+// ≥4.5:1 contrast against the panel — the surface text actually renders on.
+for (const name of ['paper', 'daylight', 'solarized-light', 'contrast-light', 'okabe-light']) {
+  test(`tui light theme "${name}" text is readable on the panel fill`, () => {
+    const t = flattenTheme(THEMES[name], 'light');
+    const panelBg = t.backgroundPanel || t.background;
+    const ok = t.diffAdded || t.success;
+    const err = t.diffRemoved || t.error;
+    const warn = t.warning;
+    const accent = t.primary || t.accent;
+    const pairs = [
+      [t.text, panelBg], [t.textMuted, panelBg],
+      [ok, panelBg], [err, panelBg], [warn, panelBg], [accent, panelBg],
+      [t.borderActive, panelBg],
+    ];
+    for (const [fg, bg] of pairs) {
+      const r = contrast(fg, bg);
+      assert.ok(r >= 4.5, `${fg} on ${bg} = ${r.toFixed(2)} < 4.5`);
+    }
+  });
+}
