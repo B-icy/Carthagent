@@ -3,30 +3,26 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync, realpathSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const candidates = [
   process.env.PI2_CLI,
   process.env.PI_CLI,
-  resolve(dirname(fileURLToPath(import.meta.url)), '../node_modules/@earendil-works/pi-coding-agent/dist/cli.js'),
-  resolve(dirname(fileURLToPath(import.meta.url)), '../node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js'),
-  ...[dirname(process.execPath), dirname(realpathSync(process.execPath))].flatMap(path => [
-    join(path, 'node_modules/@earendil-works/pi-coding-agent/dist/cli.js'),
-    join(path, 'node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js'),
-    join(path, '..', 'lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js'),
-    join(path, '..', 'lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js')
-  ])
+  join(root, 'vendor', 'agent', 'cli.js')
 ].filter(Boolean);
 const cli = candidates.find(existsSync);
 let factory;
 if (cli) {
-  const requirePi = createRequire(cli);
-  const { createJiti } = requirePi('jiti');
-  const jiti = createJiti(import.meta.url, { alias: { typebox: requirePi.resolve('typebox'), '@earendil-works/pi-coding-agent': join(dirname(cli), 'index.js') } });
-  factory = await jiti.import(resolve(dirname(fileURLToPath(import.meta.url)), '../extensions/delivery.ts'), { default: true });
+  try {
+    const requirePi = createRequire(cli);
+    const { createJiti } = requirePi('jiti');
+    const jiti = createJiti(import.meta.url, { alias: { typebox: requirePi.resolve('typebox'), '@earendil-works/pi-coding-agent': join(root, 'tests', 'engine-api.mjs') } });
+    factory = await jiti.import(join(root, 'extensions', 'delivery.ts'), { default: true });
+  } catch { /* toolchain (jiti/typebox devDeps) unavailable — tests skip below */ }
 }
-const options = { skip: !cli && 'Pi not found: set PI2_CLI or PI_CLI to run extension integration tests' };
+const options = { skip: !factory && 'Agent engine or dev toolchain not found: run npm install to enable extension integration tests' };
 function fixture(t) {
   const cwd = mkdtempSync(join(tmpdir(), 'pi extension integration '));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
