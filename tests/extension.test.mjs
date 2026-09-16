@@ -64,6 +64,36 @@ test('real extension loads, gates writes, executes checks and rejects stale evid
   writeFileSync(join(f.cwd, 'new_config.json'), '{}');
   await assert.rejects(f.call('delivery_finish', finish), /stale checks/);
 });
+test('strict pre-plan gate ignores read-only fd plumbing but blocks real writes', options, async t => {
+  const f = fixture(t);
+  const bash = cmd => f.hooks.tool_call({ toolName: 'bash', input: { command: cmd } }, f.ctx);
+  // Read-only inspection with fd plumbing must pass — this is the false
+  // positive that blocked `cat x 2>/dev/null` during exploration.
+  for (const cmd of [
+    'cat package.json 2>/dev/null',
+    'ls -la && git log --oneline -5 2>/dev/null',
+    'which firefox firefox-esr 2>/dev/null; ls /snap/bin/firefox 2>/dev/null',
+    'node tests/run.mjs >/dev/null',
+    'node tests/run.mjs 2>&1 | tail -20',
+    'node tests/run.mjs 1>&2',
+    'kill %1 2>&-',
+  ]) assert.equal(bash(cmd), undefined, `should be allowed: ${cmd}`);
+  // Genuine mutations still block before a plan exists.
+  for (const cmd of [
+    'mkdir artifacts',
+    'rm -rf build',
+    'cp a b',
+    'echo hi > out.txt',
+    'echo hi >> out.txt',
+    'node tests/run.mjs 2> errors.log',
+    'node tests/run.mjs &> out.txt',
+    'echo hi > out.txt 2>&1',
+    'sed -i s/a/b/ file.txt',
+  ]) assert.equal(bash(cmd)?.block, true, `should be blocked: ${cmd}`);
+  // After the plan exists the gate lifts entirely.
+  await f.call('delivery_plan', f.plan);
+  assert.equal(bash('echo hi > out.txt'), undefined);
+});
 test('delivery_finish re-entry guard prevents the agent from looping on a finished delivery', options, async t => {
   const f = fixture(t);
   const finish = { status: 'verified', review: 'Reviewed.', launch: 'python app.py', limitations: [] };
