@@ -465,6 +465,9 @@ test('matchSlash filters commands by prefix and closes on args', () => {
   assert.deepEqual(matchSlash('/se').map(c => c.name), ['/resume']);
   // '/q' matches /quit via alias
   assert.deepEqual(matchSlash('/q').map(c => c.name), ['/quit']);
+  // '/l' narrows to /login; '/auth' is its alias
+  assert.deepEqual(matchSlash('/l').map(c => c.name), ['/login']);
+  assert.deepEqual(matchSlash('/auth').map(c => c.name), ['/login']);
   // unknown prefix → empty
   assert.deepEqual(matchSlash('/xyz'), []);
   // a space (args mode) closes the popup
