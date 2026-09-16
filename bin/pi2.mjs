@@ -92,8 +92,8 @@ function printHelp() {
   -p, --print             Headless passthrough: stream output without TUI
 
 \x1b[1mTUI KEYS:\x1b[0m
-  enter send/steer · esc abort (again = force-restart agent) · ^r resume session · tab focus · ⇧tab view
-  ↑↓ history/scroll · pgup/pgdn/wheel scroll focused pane · drag-select copies · ^t settings · ^n new session · x expand · ^c quit
+  enter send/steer · esc abort (again = force-restart agent) · ^r resume session · tab focus · shift+tab view
+  up/down history/scroll · pgup/pgdn/wheel scroll focused pane · drag-select copies · ^t settings · ^n new session · x expand · ^c quit
 
 \x1b[1mEXAMPLES:\x1b[0m
   pi2

@@ -503,6 +503,10 @@ test('detectGlyphMode honors explicit config and stays conservative on auto', ()
   assert.equal(detectGlyphMode({}, 'win32'), 'ascii');
   assert.equal(resolveGlyphs({ mode: 'ascii' }), ASCII_GLYPHS);
   assert.equal(resolveGlyphs({ mode: 'unicode' }), UNICODE_GLYPHS);
+  // `auto` and unknown values must detect, not force the Unicode tier.
+  assert.equal(resolveGlyphs({ mode: 'auto', env: { LC_ALL: 'C' }, platform: 'linux' }), ASCII_GLYPHS);
+  assert.equal(resolveGlyphs({ mode: 'auto', env: { LANG: 'en_US.UTF-8', WT_SESSION: '1' }, platform: 'win32' }), UNICODE_GLYPHS);
+  assert.equal(resolveGlyphs({ ascii: true }), ASCII_GLYPHS);
 });
 
 test('the ASCII glyph tier is 100% ASCII', () => {
