@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseD2, layoutD2, renderD2, renderD2Compact } from '../lib/tui/d2.mjs';
+import { parseD2, layoutD2, renderD2 } from '../lib/tui/d2.mjs';
 import { planSideWidth, makeKeyParser, matchSlash, computeNodeStates, barRange, scrollCell } from '../lib/tui/app.mjs';
 import { UNICODE_GLYPHS, ASCII_GLYPHS, detectGlyphMode, resolveGlyphs } from '../lib/tui/glyphs.mjs';
 import { planD2, computePhase, freshChecks, PHASES } from '../lib/delivery.mjs';
@@ -518,27 +518,11 @@ test('the ASCII glyph tier is 100% ASCII', () => {
   }
 });
 
-test('renderD2/renderFeed ASCII output contains no non-ASCII bytes', () => {
+test('renderD2 ASCII output contains no non-ASCII bytes', () => {
   const g = parseD2(planD2(SAMPLE_PLAN));
   const states = new Map([['goal', 'done'], ['step0', 'done'], ['step1', 'active'], ['verify', 'fail']]);
   const graph = renderD2(g, { width: 44, theme: getTheme('opencode'), states, frame: 2, glyphs: ASCII_GLYPHS }).lines.join('\n');
-  const compact = renderD2Compact(g, { width: 52, theme: getTheme('opencode'), states, glyphs: ASCII_GLYPHS }).lines.join('\n');
-  for (const out of [graph, compact]) {
-    assert.ok([...strip(out)].every(ch => ch.codePointAt(0) < 128), 'ascii graph is pure ASCII');
-  }
-});
-
-test('renderD2Compact is one row per node and exposes the frontier', () => {
-  const g = parseD2(planD2(SAMPLE_PLAN));
-  const states = new Map([['goal', 'done'], ['step0', 'active']]);
-  const r = renderD2Compact(g, { width: 52, theme: getTheme('opencode'), states, glyphs: UNICODE_GLYPHS });
-  assert.equal(r.lines.length, g.nodes.length);
-  for (const l of r.lines) assert.ok(width(l) <= 52, `overflow: ${JSON.stringify(l)}`);
-  assert.equal(r.frontierId, 'step0');
-  assert.ok(r.hotRow >= 0 && r.hotRow < r.lines.length);
-  const plain = strip(r.lines.join('\n'));
-  assert.match(plain, /goal/);
-  assert.match(plain, /repair/);
+  assert.ok([...strip(graph)].every(ch => ch.codePointAt(0) < 128), 'ascii graph is pure ASCII');
 });
 
 // ------------------------------------------------------------------ step states
