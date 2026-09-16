@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseD2, layoutD2, renderD2, renderD2Compact } from '../lib/tui/d2.mjs';
-import { planSideWidth, makeKeyParser, matchSlash, computeNodeStates } from '../lib/tui/app.mjs';
+import { planSideWidth, makeKeyParser, matchSlash, computeNodeStates, barRange, scrollCell } from '../lib/tui/app.mjs';
 import { UNICODE_GLYPHS, ASCII_GLYPHS, detectGlyphMode, resolveGlyphs } from '../lib/tui/glyphs.mjs';
 import { planD2, computePhase, freshChecks, PHASES } from '../lib/delivery.mjs';
 import { createFeed, applyEvent, summarizeArgs, renderFeed, hydrateFeed } from '../lib/tui/feed.mjs';
@@ -573,4 +573,30 @@ test('computeNodeStates marks exactly one step active while implementing', () =>
   // Finished runs light no step as active.
   const done = computeNodeStates({ status: 'verified', plan: STEP_PLAN, evidence: {}, stepStatus: {} }, false, null, 'h').states;
   assert.equal(actives(done).length, 0);
+});
+
+// ------------------------------------------------------------------ scrollbars
+
+test('barRange maps a viewport onto the track and hides when content fits', () => {
+  assert.equal(barRange(10, 10, 0), null);
+  assert.equal(barRange(10, 5, 0), null);
+  // Half the content visible → half-height thumb at the top.
+  assert.deepEqual(barRange(10, 20, 0), { pos: 0, len: 5 });
+  // Scrolled to the bottom → thumb flush with the bottom.
+  assert.deepEqual(barRange(10, 20, 10), { pos: 5, len: 5 });
+  // A viewport smaller than a cell still yields a one-cell thumb.
+  assert.deepEqual(barRange(2, 8, 0), { pos: 0, len: 1 });
+  // Out-of-range starts clamp instead of spilling past the track.
+  assert.deepEqual(barRange(10, 20, 999), { pos: 5, len: 5 });
+});
+
+test('scrollCell uses the theme palette and the resolved glyph tier', () => {
+  const t = getTheme('opencode');
+  const thumb = scrollCell(UNICODE_GLYPHS, 'thumb', true, t);
+  const track = scrollCell(ASCII_GLYPHS, 'track', false, t);
+  assert.match(thumb, /\u2503/, 'unicode thumb is the heavy bar');
+  assert.match(track, /\|/, 'ascii track is a pipe');
+  // Foreground only: the pane paints the surface background, so no baked bg.
+  assert.ok(!/\x1b\[48;/.test(thumb) && !/\x1b\[48;/.test(track));
+  assert.equal(scrollCell(UNICODE_GLYPHS, null, true, t), ' ', 'no bar when nothing scrolls');
 });
