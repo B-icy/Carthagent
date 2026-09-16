@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseD2, layoutD2, renderD2 } from '../lib/tui/d2.mjs';
-import { planSideWidth, makeKeyParser, matchSlash } from '../lib/tui/app.mjs';
+import { parseD2, layoutD2, renderD2, renderD2Compact } from '../lib/tui/d2.mjs';
+import { planSideWidth, makeKeyParser, matchSlash, computeNodeStates } from '../lib/tui/app.mjs';
+import { UNICODE_GLYPHS, ASCII_GLYPHS, detectGlyphMode, resolveGlyphs } from '../lib/tui/glyphs.mjs';
 import { planD2, computePhase, freshChecks, PHASES } from '../lib/delivery.mjs';
 import { createFeed, applyEvent, summarizeArgs, renderFeed, hydrateFeed } from '../lib/tui/feed.mjs';
 import { strip, width, wrap, truncate, hasTruecolor, sliceCols, inverseCols, mix, fg } from '../lib/tui/ansi.mjs';
@@ -482,4 +483,90 @@ test('matchSlash filters commands by prefix and closes on args', () => {
   assert.deepEqual(matchSlash('/raw foo'), []);
   // non-slash buffer → empty
   assert.deepEqual(matchSlash('hello'), []);
+});
+
+// ------------------------------------------------------------------ glyph tier
+
+test('detectGlyphMode honors explicit config and stays conservative on auto', () => {
+  assert.equal(detectGlyphMode({ PI2_GLYPHS: 'unicode' }, 'linux'), 'unicode');
+  assert.equal(detectGlyphMode({ PI2_GLYPHS: 'ascii' }, 'linux'), 'ascii');
+  assert.equal(detectGlyphMode({ PI2_ASCII: '1' }, 'linux'), 'ascii');
+  assert.equal(detectGlyphMode({ PI2_ASCII: '0' }, 'linux'), 'unicode');
+  // Non-UTF-8 locale or dumb terminal can never carry the symbol set.
+  assert.equal(detectGlyphMode({ LC_ALL: 'C' }, 'linux'), 'ascii');
+  assert.equal(detectGlyphMode({ TERM: 'dumb', LANG: 'en_US.UTF-8' }, 'linux'), 'ascii');
+  // Positive evidence of a modern emulator opts in.
+  assert.equal(detectGlyphMode({ LANG: 'en_US.UTF-8', WT_SESSION: '1' }, 'win32'), 'unicode');
+  assert.equal(detectGlyphMode({ LANG: 'en_US.UTF-8', TERM: 'xterm-256color', COLORTERM: 'truecolor' }, 'linux'), 'unicode');
+  // Unknown console with no marker defaults to ASCII so icons never render as `?`.
+  assert.equal(detectGlyphMode({ LANG: 'en_US.UTF-8', TERM: 'xterm-256color' }, 'linux'), 'ascii');
+  assert.equal(detectGlyphMode({}, 'win32'), 'ascii');
+  assert.equal(resolveGlyphs({ mode: 'ascii' }), ASCII_GLYPHS);
+  assert.equal(resolveGlyphs({ mode: 'unicode' }), UNICODE_GLYPHS);
+});
+
+test('the ASCII glyph tier is 100% ASCII', () => {
+  const pure = s => [...s].every(ch => ch.codePointAt(0) < 128);
+  for (const [k, v] of Object.entries(ASCII_GLYPHS)) {
+    if (k === 'box') for (const b of Object.values(v)) assert.ok(pure(b), `box.${k} = ${JSON.stringify(b)}`);
+    else if (k === 'spinner') for (const f of v) assert.ok(pure(f), `spinner ${JSON.stringify(f)}`);
+    else assert.ok(pure(v), `${k} = ${JSON.stringify(v)}`);
+  }
+});
+
+test('renderD2/renderFeed ASCII output contains no non-ASCII bytes', () => {
+  const g = parseD2(planD2(SAMPLE_PLAN));
+  const states = new Map([['goal', 'done'], ['step0', 'done'], ['step1', 'active'], ['verify', 'fail']]);
+  const graph = renderD2(g, { width: 44, theme: getTheme('opencode'), states, frame: 2, glyphs: ASCII_GLYPHS }).lines.join('\n');
+  const compact = renderD2Compact(g, { width: 52, theme: getTheme('opencode'), states, glyphs: ASCII_GLYPHS }).lines.join('\n');
+  for (const out of [graph, compact]) {
+    assert.ok([...strip(out)].every(ch => ch.codePointAt(0) < 128), 'ascii graph is pure ASCII');
+  }
+});
+
+test('renderD2Compact is one row per node and exposes the frontier', () => {
+  const g = parseD2(planD2(SAMPLE_PLAN));
+  const states = new Map([['goal', 'done'], ['step0', 'active']]);
+  const r = renderD2Compact(g, { width: 52, theme: getTheme('opencode'), states, glyphs: UNICODE_GLYPHS });
+  assert.equal(r.lines.length, g.nodes.length);
+  for (const l of r.lines) assert.ok(width(l) <= 52, `overflow: ${JSON.stringify(l)}`);
+  assert.equal(r.frontierId, 'step0');
+  assert.ok(r.hotRow >= 0 && r.hotRow < r.lines.length);
+  const plain = strip(r.lines.join('\n'));
+  assert.match(plain, /goal/);
+  assert.match(plain, /repair/);
+});
+
+// ------------------------------------------------------------------ step states
+
+const STEP_PLAN = {
+  goal: 'Build a task CLI',
+  steps: ['slice', 'persist', 'tests'],
+  checks: [{ id: 't', kind: 'test', argv: ['node', 'x'], timeoutSeconds: 5 }],
+  acceptance: [{ requirement: 'works', checks: ['t'] }],
+};
+
+test('computeNodeStates marks exactly one step active while implementing', () => {
+  const actives = states => STEP_PLAN.steps.map((_, i) => states.get(`step${i}`)).filter(s => s === 'active');
+  // Fresh plan: first step current, the rest pending — never the whole plan.
+  const fresh = computeNodeStates({ status: 'implementing', plan: STEP_PLAN, evidence: {}, stepStatus: {} }, false, null, 'h').states;
+  assert.equal(actives(fresh).length, 1);
+  assert.equal(fresh.get('step0'), 'active');
+  assert.equal(fresh.get('step1'), 'pending');
+  assert.equal(fresh.get('step2'), 'pending');
+  // Explicit done advances the current step.
+  const mid = computeNodeStates({ status: 'implementing', plan: STEP_PLAN, evidence: {}, stepStatus: { step0: 'done' } }, false, null, 'h').states;
+  assert.equal(actives(mid).length, 1);
+  assert.equal(mid.get('step0'), 'done');
+  assert.equal(mid.get('step1'), 'active');
+  assert.equal(mid.get('step2'), 'pending');
+  // An explicit active step wins even if earlier steps were never marked.
+  const jumped = computeNodeStates({ status: 'implementing', plan: STEP_PLAN, evidence: {}, stepStatus: { step2: 'active' } }, false, null, 'h').states;
+  assert.equal(actives(jumped).length, 1);
+  assert.equal(jumped.get('step2'), 'active');
+  assert.equal(jumped.get('step0'), 'done');
+  assert.equal(jumped.get('step1'), 'done');
+  // Finished runs light no step as active.
+  const done = computeNodeStates({ status: 'verified', plan: STEP_PLAN, evidence: {}, stepStatus: {} }, false, null, 'h').states;
+  assert.equal(actives(done).length, 0);
 });

@@ -445,12 +445,11 @@
     byId('acceptance-card').hidden = !plan;
     if (plan) {
       clear(byId('steps'));
-      // Mirror the console's step semantics: explicit stepStatus wins, unset
-      // steps read as active while the run is in flight and done afterwards.
-      const implActive = state.status === 'implementing' || state.status === 'planned';
+      // Mirror the console's step semantics via resolveStepStates: exactly one
+      // current step, so a fresh plan no longer lights every row as active.
+      const resolvedSteps = resolveStepStates(plan, state.stepStatus, state.status);
       plan.steps.forEach((step, index) => {
-        const st = state.stepStatus?.[`step${index}`];
-        const resolved = st === 'done' ? 'done' : st === 'failed' ? 'failed' : st === 'active' ? 'active' : implActive ? 'active' : 'done';
+        const resolved = resolvedSteps[index];
         const item = node('li');
         item.className = `step step-${resolved}`;
         const glyph = resolved === 'done' ? '✓' : resolved === 'failed' ? '✗' : resolved === 'active' ? '▸' : '·';
@@ -576,6 +575,27 @@
     return { rank, col, back };
   }
 
+  /**
+   * Resolve one state per plan step. Exactly one step is `active` while the
+   * run is in flight (the first un-done step, or the first explicitly active
+   * one); earlier steps read done and later steps pending. Mirrors
+   * computeNodeStates in lib/tui/app.mjs.
+   */
+  function resolveStepStates(plan, stepStatus, status) {
+    const implActive = status === 'implementing' || status === 'planned';
+    const raw = (plan.steps || []).map((_, i) => stepStatus?.[`step${i}`]);
+    let current = raw.findIndex(s => s === 'active');
+    if (current < 0) current = raw.findIndex(s => s !== 'done' && s !== 'failed');
+    return raw.map((s, i) => {
+      if (s === 'done') return 'done';
+      if (s === 'failed') return 'failed';
+      if (!implActive) return 'done';
+      if (i === current) return 'active';
+      if (i < current) return 'done';
+      return 'pending';
+    });
+  }
+
   /** Map live delivery state to per-node states (mirrors computeNodeStates in the TUI). */
   function computeD2States() {
     const st = new Map();
@@ -593,11 +613,8 @@
       else if (curHash && e.fingerprint !== curHash) allFresh = false;
     }
     st.set('goal', 'done');
-    const implActive = status === 'implementing' || status === 'planned';
-    const stepStatus = state.stepStatus || {};
-    (plan.steps || []).forEach((_, i) => {
-      const s = stepStatus[`step${i}`];
-      st.set(`step${i}`, s === 'done' ? 'done' : s === 'failed' ? 'fail' : s === 'active' ? 'active' : implActive ? 'active' : 'done');
+    resolveStepStates(plan, state.stepStatus, status).forEach((s, i) => {
+      st.set(`step${i}`, s === 'failed' ? 'fail' : s);
     });
     let verify = 'pending';
     if (anyFail) verify = 'fail';

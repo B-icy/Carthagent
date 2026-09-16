@@ -86,6 +86,8 @@ function printHelp() {
   --no-delivery           Run the console without the delivery extension
   --no-guide              Send prompts verbatim instead of auto-applying delivery framing
   --guide                 Force delivery framing on (default)
+  --ascii                 Plain-ASCII glyphs (for fonts that render icons as ?)
+  --glyphs <mode>         Glyph tier: auto (default) | unicode | ascii
   --demo                  Drive the console with a scripted mock run (no provider)
   -p, --print             Headless passthrough: stream output without TUI
 
@@ -106,12 +108,13 @@ function printHelp() {
 const TUI_FLAGS = {
   '--provider': 'provider', '--model': 'model', '--thinking': 'thinking', '--theme': 'theme',
   '--pi-cli': 'piCli', '--agent-cli': 'piCli', '--validators': 'validators', '--context': 'context', '--bash-cap': 'bashCap',
-  '--session': 'session', '--review': 'review',
+  '--session': 'session', '--review': 'review', '--glyphs': 'glyphs',
 };
 const TUI_BOOL = {
   '--isolate': ['isolate', true], '--no-strict': ['strict', false], '--strict': ['strict', true],
   '--no-delivery': ['delivery', false], '-p': ['print', true], '--print': ['print', true],
   '--no-guide': ['autoFraming', false], '--guide': ['autoFraming', true],
+  '--ascii': ['ascii', true],
   '--demo': ['demo', true],
   '-c': ['continue', true], '--continue': ['continue', true],
   '-r': ['resume', true], '--resume': ['resume', true],
