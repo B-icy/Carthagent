@@ -410,6 +410,13 @@ test('ctrl-y is parsed for accepting self-review offers', () => {
   assert.equal(keys[0].key, 'ctrl-y');
 });
 
+test('ctrl-v is parsed so the console can paste from the OS clipboard', () => {
+  const keys = [];
+  const parse = makeKeyParser(k => keys.push(k));
+  parse('\x16');
+  assert.equal(keys[0].key, 'ctrl-v');
+});
+
 test('mouse SGR events map to press, drag, release, and wheel keys', () => {
   const keys = [];
   const parse = makeKeyParser(k => keys.push(k));
