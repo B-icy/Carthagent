@@ -52,7 +52,7 @@ pi2 test               # unit suite
 pi2 --help             # everything else
 ```
 
-Inside the console: `enter` send/steer · `esc` abort (again = force-restart pi, nothing is lost) · `^r` session picker · `tab`/`⇧tab` panes · `x` expand tool output · `^t` settings · `^c` quit. Sessions persist under `~/.pi2/agent/sessions/`; `pi2 -c` continues the last one, `-r` opens the picker.
+Inside the console: `enter` send/steer · `esc` abort (again = force-restart pi, nothing is lost) · `^r` session picker · `tab`/`⇧tab` panes · `x` expand tool output · `^v` paste · `^t` settings · `^c` quit. Sessions persist under `~/.pi2/agent/sessions/`; `pi2 -c` continues the last one, `-r` opens the picker.
 
 **Themes:** 21 AA-contrast-verified options — dark (`opencode`, `tokyonight`, `nebula`, `ember`, `forest`, `mono`, `obsidian`, `midnight`, `nord`, `solarized-dark`, `okabe-dark`, `contrast-dark`), light (`paper`, `daylight`, `solarized-light`, `okabe-light`, `contrast-light`), and adaptive (`solarized`, `okabe`, `contrast`, `system`) that follow `COLORFGBG` or `PI2_THEME_MODE=light|dark`. Pick via `--theme`, `/theme`, or `^t`; the choice is saved to `~/.pi2/config.json` and reused on the next launch. The dashboard has the same set behind a header picker (persisted in `localStorage`). `okabe-*` uses the colorblind-safe Okabe-Ito palette.
 
