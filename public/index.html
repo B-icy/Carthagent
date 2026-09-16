@@ -164,6 +164,9 @@
     @media (prefers-reduced-motion: reduce) { li.step-active .marker { animation: none; } }
     .acceptance li { display: block; }
     .acceptance code { display: block; color: var(--faint); margin-top: 4px; font-size: 11px; }
+    .cov-ok { color: var(--success); font-weight: 700; margin-right: 6px; }
+    .cov-weak { color: var(--warning); font-weight: 700; margin-right: 6px; }
+    .cov-missing { color: var(--muted); font-weight: 700; margin-right: 6px; }
     .button { border: 1px solid var(--border-strong); border-radius: 5px; background: var(--panel-2); color: var(--text); padding: 7px 11px; font-size: 12px; }
     .button:hover { border-color: var(--border-hover); background: var(--hover-bg); }
     .button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
@@ -457,9 +460,17 @@
         byId('steps').append(item);
       });
       clear(byId('acceptance'));
-      plan.acceptance.forEach(item => {
+      const cov = acceptanceCoverage(plan, state.evidence || {}, state.currentFingerprint);
+      plan.acceptance.forEach((item, i) => {
+        const c = cov[i];
+        const cls = c.covered && !c.staticOnly ? 'cov-ok' : c.covered ? 'cov-weak' : 'cov-missing';
+        const mark = c.covered ? (c.staticOnly ? '~' : '✓') : '○';
         const row = node('li');
-        row.append(node('span', item.requirement), node('code', item.checks.join(', ')));
+        const tag = node('span', mark);
+        tag.className = cls;
+        if (c.staticOnly) tag.title = 'Only static (syntax/import) checks back this criterion';
+        if (!c.covered) tag.title = 'No fresh passing check backs this criterion';
+        row.append(tag, node('span', item.requirement), node('code', item.checks.join(', ')));
         byId('acceptance').append(row);
       });
       if (document.activeElement !== byId('plan-json')) byId('plan-json').value = JSON.stringify(plan, null, 2);
@@ -573,6 +584,24 @@
     const col = new Map(ids.map(id => [id, 0]));
     for (const e of back) col.set(e.from, 1);
     return { rank, col, back };
+  }
+
+  /** Per-criterion evidence coverage (mirrors coverageReport in lib/delivery.mjs). */
+  function acceptanceCoverage(plan, evidence, hash) {
+    const byId = new Map((plan.checks || []).map(c => [c.id, c]));
+    return (plan.acceptance || []).map(item => {
+      let fresh = 0;
+      const kinds = new Set();
+      for (const id of item.checks || []) {
+        const e = evidence[id];
+        if (!e || !e.passed) continue;
+        if (hash && e.fingerprint && e.fingerprint !== hash) continue;
+        fresh++;
+        const c = byId.get(id);
+        if (c) kinds.add(c.kind);
+      }
+      return { covered: fresh > 0, staticOnly: fresh > 0 && [...kinds].every(k => k === 'static') };
+    });
   }
 
   /**

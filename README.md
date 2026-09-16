@@ -60,7 +60,7 @@ Inside the console: `enter` send/steer · `esc` abort (again = force-restart pi,
 
 Useful flags: `--model`, `--thinking`, `--validators <file>`, `--context <file>`, `--bash-cap <sec>`, `--review ask|yes|no`, `--isolate`, `--no-delivery`, `--no-guide`, `--ascii`, `--glyphs <mode>`, `-c`/`-r`/`--session`.
 
-**Glyphs:** icons and the D2 graph adapt to your terminal. `--glyphs auto` (default) keeps the Unicode set on terminals known to render it and falls back to a pure-ASCII tier everywhere else, so tool icons, status dots and spinners never show up as `?` on limited fonts. Force one with `--ascii`, `--glyphs unicode|ascii`, or `PI2_GLYPHS=unicode|ascii` / `PI2_ASCII=1`.
+**Glyphs:** icons, status dots, spinners and the D2 graph adapt to your terminal. `--glyphs auto` (default) keeps the Unicode set on terminals known to render it and falls back to an ASCII icon tier everywhere else, so tool icons, status marks and spinners never show up as `?` on limited fonts. Force one with `--ascii`, `--glyphs unicode|ascii`, or `PI2_GLYPHS=unicode|ascii` / `PI2_ASCII=1`.
 
 ## How it works
 
@@ -69,6 +69,7 @@ Useful flags: `--model`, `--thinking`, `--validators <file>`, `--context <file>`
 | Tool | What it does |
 |---|---|
 | `delivery_plan` | Goal, steps, artifact roots, acceptance criteria → check mapping; writes `plan.d2` |
+| `delivery_revise` | Edits the live contract in place, preserving evidence for checks whose argv/kind/timeout are unchanged |
 | `delivery_check` | Runs a check argv with a deadline; records exit code, logs, workspace SHA-256 |
 | `delivery_status` | Contract + evidence state (missing/failed/stale) |
 | `delivery_progress` | Step progress for the plan panel |
