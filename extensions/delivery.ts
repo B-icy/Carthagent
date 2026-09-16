@@ -210,9 +210,18 @@ export default function delivery(pi: ExtensionAPI) {
       typeof input.command === 'string'
         ? input.command
         : '';
+    // Shell commands are "mutating" when they can change the working tree.
+    // File-descriptor plumbing (`2>&1`, `>/dev/null`, `2>&-`) is read-only and
+    // ubiquitous in inspection commands, so strip it before the redirection
+    // test — otherwise harmless `cat x 2>/dev/null` trips the strict pre-plan
+    // gate. Genuine redirection, including `>>` append, still counts.
+    const withoutFdPlumbing = shellCommand
+      .replace(/\d*>>?\s*\/dev\/null\b/g, '')  // >/dev/null, 2>/dev/null, 1>>/dev/null
+      .replace(/&?>>?\s*&\d/g, '')              // 2>&1, 1>&2, >&2
+      .replace(/\d*>&\s*-/g, '');               // 2>&-, >&-
     const mutatingShell =
       /(?:^|[;&|]\s*)\b(?:rm|mv|cp|mkdir|touch|truncate|install)\b/i.test(shellCommand) ||
-      /(?:^|[^>])>(?!>)/.test(shellCommand) ||
+      /(^|[^>])>>?(?!>)/.test(withoutFdPlumbing) ||
       /\bsed\b[^\n]*\s-i(?:\s|$)/i.test(shellCommand) ||
       /\b(?:open|write_text|writeFileSync|writeFile)\s*\(/i.test(shellCommand);
     // Self-review round cap: while a loop is active, each `pi2 review <pr>`
