@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fingerprint, validatePlan, planD2, pendingChecks, restoreState, runCommand, shouldContinue, localPath, createSerialQueue, validateRevision, turnBudgetExceeded } from '../lib/delivery.mjs';
+import { fingerprint, validatePlan, planD2, pendingChecks, coverageReport, restoreState, runCommand, shouldContinue, localPath, createSerialQueue, validateRevision, turnBudgetExceeded } from '../lib/delivery.mjs';
 import { createReport, latestReport, saveReport } from '../lib/reports.mjs';
 
 function fixture(t) {
@@ -134,4 +134,46 @@ test('delivery reports are persisted and the newest report is discovered', t => 
   assert.equal(latest.path, second.path);
   assert.equal(latest.state.review, 'reviewed');
   assert.match(readFileSync(join(first.dir, 'plan.d2'), 'utf8'), /Working app/);
+});
+
+test('coverageReport tracks fresh and static-only acceptance criteria', () => {
+  const plan = {
+    goal: 'g', artifacts: ['.'], steps: ['s'],
+    acceptance: [
+      { requirement: 'Runs for real', checks: ['run'] },
+      { requirement: 'Compiles', checks: ['static'] },
+      { requirement: 'Unproven', checks: ['missing'] },
+    ],
+    checks: [
+      { id: 'run', kind: 'runtime', argv: ['node'], timeoutSeconds: 5 },
+      { id: 'static', kind: 'static', argv: ['node', '-e', '0'], timeoutSeconds: 5 },
+    ],
+  };
+  const evidence = {
+    run: { passed: true, fingerprint: 'h' },
+    static: { passed: true, fingerprint: 'h' },
+  };
+  const report = coverageReport(plan, evidence, 'h');
+  assert.equal(report.length, 3);
+  assert.deepEqual(report[0], { requirement: 'Runs for real', checks: ['run'], fresh: 1, failing: 0, missing: 0, stale: 0, covered: true, staticOnly: false });
+  assert.equal(report[1].staticOnly, true, 'static-only evidence is flagged');
+  assert.equal(report[2].covered, false);
+  assert.equal(report[2].missing, 1);
+  // A stale fingerprint is not fresh coverage.
+  assert.equal(coverageReport(plan, evidence, 'other')[0].fresh, 0);
+  assert.equal(coverageReport(plan, evidence, 'other')[0].stale, 1);
+});
+
+test('validatePlan accepts outputs under ignored dirs but still blocks path escapes', () => {
+  const plan = {
+    goal: 'g', artifacts: ['.'], outputs: ['artifacts/proof.txt'], steps: ['s'],
+    acceptance: [{ requirement: 'r', checks: ['t'] }],
+    checks: [{ id: 't', kind: 'test', argv: ['node'], timeoutSeconds: 5 }],
+  };
+  const cwd = mkdtempSync(join(tmpdir(), 'pi outputs '));
+  try {
+    const validated = validatePlan(plan, cwd);
+    assert.deepEqual(validated.outputs, ['artifacts/proof.txt']);
+    assert.throws(() => validatePlan({ ...plan, outputs: ['../escape.txt'] }, cwd), /escapes working directory/);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
 });

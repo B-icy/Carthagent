@@ -164,6 +164,9 @@
     @media (prefers-reduced-motion: reduce) { li.step-active .marker { animation: none; } }
     .acceptance li { display: block; }
     .acceptance code { display: block; color: var(--faint); margin-top: 4px; font-size: 11px; }
+    .cov-ok { color: var(--success); font-weight: 700; margin-right: 6px; }
+    .cov-weak { color: var(--warning); font-weight: 700; margin-right: 6px; }
+    .cov-missing { color: var(--muted); font-weight: 700; margin-right: 6px; }
     .button { border: 1px solid var(--border-strong); border-radius: 5px; background: var(--panel-2); color: var(--text); padding: 7px 11px; font-size: 12px; }
     .button:hover { border-color: var(--border-hover); background: var(--hover-bg); }
     .button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
@@ -445,12 +448,11 @@
     byId('acceptance-card').hidden = !plan;
     if (plan) {
       clear(byId('steps'));
-      // Mirror the console's step semantics: explicit stepStatus wins, unset
-      // steps read as active while the run is in flight and done afterwards.
-      const implActive = state.status === 'implementing' || state.status === 'planned';
+      // Mirror the console's step semantics via resolveStepStates: exactly one
+      // current step, so a fresh plan no longer lights every row as active.
+      const resolvedSteps = resolveStepStates(plan, state.stepStatus, state.status);
       plan.steps.forEach((step, index) => {
-        const st = state.stepStatus?.[`step${index}`];
-        const resolved = st === 'done' ? 'done' : st === 'failed' ? 'failed' : st === 'active' ? 'active' : implActive ? 'active' : 'done';
+        const resolved = resolvedSteps[index];
         const item = node('li');
         item.className = `step step-${resolved}`;
         const glyph = resolved === 'done' ? '✓' : resolved === 'failed' ? '✗' : resolved === 'active' ? '▸' : '·';
@@ -458,9 +460,17 @@
         byId('steps').append(item);
       });
       clear(byId('acceptance'));
-      plan.acceptance.forEach(item => {
+      const cov = acceptanceCoverage(plan, state.evidence || {}, state.currentFingerprint);
+      plan.acceptance.forEach((item, i) => {
+        const c = cov[i];
+        const cls = c.covered && !c.staticOnly ? 'cov-ok' : c.covered ? 'cov-weak' : 'cov-missing';
+        const mark = c.covered ? (c.staticOnly ? '~' : '✓') : '○';
         const row = node('li');
-        row.append(node('span', item.requirement), node('code', item.checks.join(', ')));
+        const tag = node('span', mark);
+        tag.className = cls;
+        if (c.staticOnly) tag.title = 'Only static (syntax/import) checks back this criterion';
+        if (!c.covered) tag.title = 'No fresh passing check backs this criterion';
+        row.append(tag, node('span', item.requirement), node('code', item.checks.join(', ')));
         byId('acceptance').append(row);
       });
       if (document.activeElement !== byId('plan-json')) byId('plan-json').value = JSON.stringify(plan, null, 2);
@@ -576,6 +586,45 @@
     return { rank, col, back };
   }
 
+  /** Per-criterion evidence coverage (mirrors coverageReport in lib/delivery.mjs). */
+  function acceptanceCoverage(plan, evidence, hash) {
+    const byId = new Map((plan.checks || []).map(c => [c.id, c]));
+    return (plan.acceptance || []).map(item => {
+      let fresh = 0;
+      const kinds = new Set();
+      for (const id of item.checks || []) {
+        const e = evidence[id];
+        if (!e || !e.passed) continue;
+        if (hash && e.fingerprint && e.fingerprint !== hash) continue;
+        fresh++;
+        const c = byId.get(id);
+        if (c) kinds.add(c.kind);
+      }
+      return { covered: fresh > 0, staticOnly: fresh > 0 && [...kinds].every(k => k === 'static') };
+    });
+  }
+
+  /**
+   * Resolve one state per plan step. Exactly one step is `active` while the
+   * run is in flight (the first un-done step, or the first explicitly active
+   * one); earlier steps read done and later steps pending. Mirrors
+   * computeNodeStates in lib/tui/app.mjs.
+   */
+  function resolveStepStates(plan, stepStatus, status) {
+    const implActive = status === 'implementing' || status === 'planned';
+    const raw = (plan.steps || []).map((_, i) => stepStatus?.[`step${i}`]);
+    let current = raw.findIndex(s => s === 'active');
+    if (current < 0) current = raw.findIndex(s => s !== 'done' && s !== 'failed');
+    return raw.map((s, i) => {
+      if (s === 'done') return 'done';
+      if (s === 'failed') return 'failed';
+      if (!implActive) return 'done';
+      if (i === current) return 'active';
+      if (i < current) return 'done';
+      return 'pending';
+    });
+  }
+
   /** Map live delivery state to per-node states (mirrors computeNodeStates in the TUI). */
   function computeD2States() {
     const st = new Map();
@@ -593,11 +642,8 @@
       else if (curHash && e.fingerprint !== curHash) allFresh = false;
     }
     st.set('goal', 'done');
-    const implActive = status === 'implementing' || status === 'planned';
-    const stepStatus = state.stepStatus || {};
-    (plan.steps || []).forEach((_, i) => {
-      const s = stepStatus[`step${i}`];
-      st.set(`step${i}`, s === 'done' ? 'done' : s === 'failed' ? 'fail' : s === 'active' ? 'active' : implActive ? 'active' : 'done');
+    resolveStepStates(plan, state.stepStatus, status).forEach((s, i) => {
+      st.set(`step${i}`, s === 'failed' ? 'fail' : s);
     });
     let verify = 'pending';
     if (anyFail) verify = 'fail';

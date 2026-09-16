@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 
 import { basename, dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { validatePlan, planD2WithProgress, fingerprint, atomicJson, runCommand, pendingChecks, restoreState, shouldContinue, localPath, createSerialQueue, validateRevision, bindRequiredChecks, loadRequiredChecks, updateStepStatus } from '../lib/delivery.mjs';
+import { validatePlan, planD2WithProgress, fingerprint, atomicJson, runCommand, pendingChecks, coverageReport, restoreState, shouldContinue, localPath, createSerialQueue, validateRevision, bindRequiredChecks, loadRequiredChecks, updateStepStatus } from '../lib/delivery.mjs';
 import { formatGuidance, loadGuidanceProfiles, routeGuidance } from '../lib/guidance.mjs';
 import { normalizeReviewMode, resolveReviewMode, loadPi2Config, savePi2Config, pi2ConfigPath, reviewKickoff, MAX_REVIEW_ROUNDS } from '../lib/review.mjs';
 
@@ -22,11 +22,11 @@ const text = (value: unknown) => {
 const shortString = () => Type.String({ minLength: 1, maxLength: 1200 });
 const strings = (maxItems = 20) => Type.Array(shortString(), { minItems: 1, maxItems });
 const GUIDANCE = `Software delivery workflow (not required for questions or read-only reviews):
-For substantial implementation work, inspect the repository and installed library APIs first. Identify which domain skills or knowledge bases apply to this task — check the available skills list and read the matching skill before implementing. Use delivery_plan BEFORE implementation: capture assumptions, a small vertical-slice plan, artifact roots, acceptance criteria and real check commands. D2 is generated for the flowchart; use D2 for any additional flowcharts.
-Pressure-test the plan before writing code: review it against every explicit requirement in the user's prompt, verify uncertain APIs with installed source or a tiny executable probe, and confirm the checks can actually detect failure. If the plan is weak or incomplete, call delivery_plan again to fix it — the plan is a living contract, not a one-time artifact.
+For substantial implementation work, inspect the repository and installed library APIs first. Identify which domain skills or knowledge bases apply to this task — check the available skills list and read the matching skill before implementing. Use delivery_plan BEFORE implementation: capture assumptions, a small vertical-slice plan, artifact roots (product source/tests/config/docs), optional outputs (generated evidence such as screenshots/build output that delivery_finish must find), acceptance criteria and real check commands. D2 is generated for the flowchart.
+Pressure-test the plan before writing code: review it against every explicit requirement in the user's prompt, verify uncertain APIs with installed source or a tiny executable probe, and confirm the checks can actually detect failure. If the plan is weak or incomplete, call delivery_revise to fix it — it preserves evidence for checks you did not change. delivery_plan is a full reset for a genuinely new task. The plan is a living contract, not a one-time artifact.
 Implement a runnable slice early, then complete the agreed behavior in small coherent steps. Mark progress with delivery_progress as each step finishes so the plan panel stays current. Don't stop at a scaffold. Verify uncertain APIs with installed source or a tiny executable probe; never invent library methods or assume assets exist. Separate testable logic from rendering/services. Include error handling, dependencies, launch instructions, and regression tests. Exercise actual interaction paths in fresh subprocesses with the normal environment, not only compilation or internal function calls. Include non-ASCII text, paths with spaces, and invalid data where applicable. On Windows, stdout may use a legacy code page (e.g. cp1252): use ASCII-escaped JSON or configure the application's UTF-8 output; don't hide failures by changing only the test environment. For visual work, capture and inspect a screenshot if your model supports images; otherwise explicitly disclose that visual review is unperformed.
-After creating a file, prefer focused edit calls over repeatedly rewriting the full file. Whole-file rewrites bloat model context, increase provider rate-limit risk, and can accidentally remove previously working behavior. If development reveals a wrong assumption or a step can't be completed as planned, call delivery_plan again to adjust the contract — update steps and checks to match reality, but never silently drop original acceptance criteria.
-Use a few meaningful check suites (usually 2–4), not one command per criterion: multiple acceptance criteria can share a suite. When user-owned required validators already cover a requirement, do not duplicate them with shallow model-authored checks; add only focused checks for logic they do not cover. Scope honestly: enumerate every explicit requirement in the user's prompt and back each core requirement with an acceptance criterion and a real check. Narrow contracts that omit core requirements make 'verified' a scope failure, not a smaller task; if budget remains once checks pass, implement and verify the missing requirements instead of stopping at the first passing slice. Run delivery_check with id="all" to execute every declared check sequentially. It executes the argv with a deadline, records logs and fingerprints the entire working project (excluding dependencies, caches and generated artifacts), so omitting a source file cannot hide stale evidence. Artifact roots must contain product source/tests/config/docs, never only artifacts/. Use ["."] for the project. Do not edit during checks; run dependent tools in separate batches. Use artifacts/ for generated screenshots/build output; .harness/ is reserved for harness logs. Re-run checks after final edits.
+After creating a file, prefer focused edit calls over repeatedly rewriting the full file. Whole-file rewrites bloat model context, increase provider rate-limit risk, and can accidentally remove previously working behavior. If development reveals a wrong assumption or a step can't be completed as planned, call delivery_revise to adjust the contract — it keeps evidence for unchanged checks — update steps and checks to match reality, but never silently drop original acceptance criteria.
+Use a few meaningful check suites (usually 2–4), not one command per criterion: multiple acceptance criteria can share a suite. When user-owned required validators already cover a requirement, do not duplicate them with shallow model-authored checks; add only focused checks for logic they do not cover. Scope honestly: enumerate every explicit requirement in the user's prompt and back each core requirement with an acceptance criterion and a real check. Narrow contracts that omit core requirements make 'verified' a scope failure, not a smaller task; if budget remains once checks pass, implement and verify the missing requirements instead of stopping at the first passing slice. Run delivery_check with id="all" to execute every declared check sequentially. It executes the argv with a deadline, records logs and fingerprints the entire working project (excluding dependencies, caches and generated artifacts), so omitting a source file cannot hide stale evidence. Artifact roots must contain product source/tests/config/docs, never only generated output; declare generated screenshots/build output under outputs:[...] so delivery_finish requires them without polluting the source fingerprint. Use ["."] for the project. Do not edit during checks; run dependent tools in separate batches. artifacts/ is the conventional home for generated outputs; .harness/ is reserved for harness logs. Re-run checks after final edits.
 Before concluding, adversarially review the implementation against each acceptance criterion and call delivery_finish with the review, launch command and honest limitations. Failed, missing or stale checks cannot produce verified status. If genuinely blocked, use status=blocked with the reason; do not weaken tests to manufacture success. Phased delivery means steady progress across many tool calls within the run, not a single response. No automatic deployments or unrequested destructive changes.`;
 
 export default function delivery(pi: ExtensionAPI) {
@@ -164,7 +164,7 @@ export default function delivery(pi: ExtensionAPI) {
   pi.on('context', event => {
     if (!state || ['blocked', 'verified'].includes(state.status)) return;
     // Re-injected after compaction without replacing Pi's summary or pruning user messages.
-    const summary = { goal: state.plan.goal, status: state.status, acceptance: state.plan.acceptance, steps: state.plan.steps, artifacts: state.plan.artifacts, checks: state.plan.checks, evidence: Object.fromEntries(Object.entries(state.evidence).map(([id, e]: any) => [id, { passed: e.passed, fingerprint: e.fingerprint, code: e.code, outputTail: e.outputTail ? e.outputTail.slice(-400) : undefined }])) };
+    const summary = { goal: state.plan.goal, status: state.status, acceptance: state.plan.acceptance, steps: state.plan.steps, artifacts: state.plan.artifacts, outputs: state.plan.outputs || [], checks: state.plan.checks, evidence: Object.fromEntries(Object.entries(state.evidence).map(([id, e]: any) => [id, { passed: e.passed, fingerprint: e.fingerprint, code: e.code, outputTail: e.outputTail ? e.outputTail.slice(-400) : undefined }])) };
     // Compute current freshness so the instruction matches reality. When all
     // checks are already fresh, directing the agent to re-run delivery_check on
     // every context re-injection causes an infinite status→check loop.
@@ -354,7 +354,7 @@ export default function delivery(pi: ExtensionAPI) {
     name: 'delivery_plan', label: 'Delivery plan', description: 'Create/replace the acceptance contract and generate plan.d2. Replanning resets evidence; do not drop failing requirements. Paths are relative files/directories, not globs. Checks use executable argv (no implicit shell).',
     parameters: Type.Object({
       goal: shortString(), assumptions: Type.Array(shortString(), { maxItems: 12 }),
-      artifacts: strings(30), steps: strings(12),
+      artifacts: strings(30), outputs: Type.Optional(strings(20)), steps: strings(12),
       acceptance: Type.Array(Type.Object({ requirement: shortString(), checks: strings(12) }), { minItems: 1, maxItems: 20 }),
       checks: Type.Array(Type.Object({ id: Type.String({ pattern: '^[a-z][a-z0-9_-]{0,39}$' }), kind: Type.String({ description: 'test, runtime, or static' }), argv: strings(40), timeoutSeconds: Type.Integer({ minimum: 1, maximum: 300 }) }), { minItems: 1, maxItems: 12 }),
     }),
@@ -369,6 +369,54 @@ export default function delivery(pi: ExtensionAPI) {
         writeFileSync(join(dir, 'plan.d2'), planD2WithProgress(plan, {}));
         persist(ctx);
         return text({ plan: join(dir, 'plan.d2'), report: join(dir, 'report.json'), next: 'Build a runnable slice, add regression tests, then delivery_check each check ID.' });
+      });
+    },
+  });
+  pi.registerTool({
+    name: 'delivery_revise', label: 'Revise delivery plan', description: 'Revise the active contract in place: provide only the fields that change. steps/checks/acceptance arrays replace the current ones. Evidence is preserved for checks whose id, kind, argv and timeout are unchanged; step status is preserved for steps whose text is unchanged. Original acceptance requirements cannot be dropped. Use this instead of delivery_plan when reality diverges from the plan — it does not wipe verified evidence.',
+    parameters: Type.Object({
+      goal: Type.Optional(shortString()),
+      artifacts: Type.Optional(strings(30)),
+      outputs: Type.Optional(strings(20)),
+      steps: Type.Optional(strings(12)),
+      acceptance: Type.Optional(Type.Array(Type.Object({ requirement: shortString(), checks: strings(12) }), { minItems: 1, maxItems: 20 })),
+      checks: Type.Optional(Type.Array(Type.Object({ id: Type.String({ pattern: '^[a-z][a-z0-9_-]{0,39}$' }), kind: Type.String({ description: 'test, runtime, or static' }), argv: strings(40), timeoutSeconds: Type.Integer({ minimum: 1, maximum: 300 }) }), { minItems: 1, maxItems: 12 })),
+    }),
+    async execute(_id, params, _signal, _update, ctx) {
+      return exclusive(async () => {
+        if (configError) throw Error(configError);
+        if (!state) throw Error('Call delivery_plan first');
+        const merged = {
+          goal: params.goal ?? state.plan.goal,
+          assumptions: state.plan.assumptions || [],
+          artifacts: params.artifacts ?? state.plan.artifacts,
+          outputs: params.outputs ?? state.plan.outputs,
+          steps: params.steps ?? state.plan.steps,
+          acceptance: params.acceptance ?? state.plan.acceptance,
+          checks: params.checks ?? state.plan.checks,
+        };
+        const plan = validatePlan(bindRequiredChecks(merged, required), ctx.cwd);
+        validateRevision(state, plan);
+        // Evidence survives only when the executable contract is byte-identical:
+        // a changed argv/kind/timeout means the old pass no longer proves the check.
+        const prevChecks = new Map(state.plan.checks.map((c: any) => [c.id, c]));
+        const evidence: Record<string, any> = {};
+        for (const c of plan.checks) {
+          const prev = state.evidence?.[c.id];
+          const old = prevChecks.get(c.id) as any;
+          if (prev && old && old.kind === c.kind && old.timeoutSeconds === c.timeoutSeconds && old.argv.join('\u0000') === c.argv.join('\u0000')) evidence[c.id] = prev;
+        }
+        const stepStatus: Record<string, string> = {};
+        (plan.steps || []).forEach((s: string, i: number) => {
+          const prev = state.stepStatus?.[`step${i}`];
+          if (prev && state.plan.steps?.[i] === s) stepStatus[`step${i}`] = prev;
+        });
+        const preserved = Object.keys(evidence).length;
+        state = { ...state, revision: (state.revision || 0) + 1, plan, evidence, stepStatus, status: 'implementing', handoff: undefined };
+        const dir = directory(ctx);
+        writeFileSync(join(dir, 'plan.d2'), planD2WithProgress(plan, stepStatus));
+        persist(ctx);
+        return text({ revision: state.revision, checks: plan.checks.length, evidencePreserved: preserved, next: 'Changed or removed checks are pending again — run delivery_check for them. Unchanged checks keep their prior evidence.' });
       });
     },
   });
@@ -445,14 +493,17 @@ export default function delivery(pi: ExtensionAPI) {
           return text({ status: state.status, report: join(directory(ctx), 'report.json'), note: `Delivery already finished (status=${state.status}). Do not call delivery_finish again — summarize the outcome for the user and stop.` });
         }
         if (params.status === 'verified') {
-          const missing = state.plan.artifacts.filter((p: string) => !existsSync(localPath(ctx.cwd, p)));
+          const declared = [...state.plan.artifacts, ...(state.plan.outputs || [])];
+          const missing = declared.filter((p: string) => !existsSync(localPath(ctx.cwd, p)));
           const pending = pendingChecks(state, hash);
-          if (missing.length || pending.length) throw Error(`Cannot verify. Missing artifacts: ${missing.join(', ')}. Failed/missing/stale checks: ${pending.join(', ')}`);
+          if (missing.length || pending.length) throw Error(`Cannot verify. Missing artifacts/outputs: ${missing.join(', ')}. Failed/missing/stale checks: ${pending.join(', ')}`);
         } else if (!params.limitations.length) throw Error('Blocked delivery requires an explicit limitation/reason');
         state.status = params.status;
         state.handoff = { ...params, fingerprint: hash, at: new Date().toISOString() };
+        const coverage = coverageReport(state.plan, state.evidence, hash);
+        const weak = coverage.filter(c => !c.covered || c.staticOnly).map(c => ({ requirement: c.requirement, fresh: c.fresh, staticOnly: c.staticOnly }));
         persist(ctx);
-        return text({ status: state.status, report: join(directory(ctx), 'report.json'), note: 'Delivery finished. Summarize the outcome for the user and stop — do not call delivery_finish again. Evidence covers declared checks, not a guarantee of correctness. Distinguish automated evidence from unperformed manual/visual review.' });
+        return text({ status: state.status, report: join(directory(ctx), 'report.json'), coverage: { covered: coverage.filter(c => c.covered).length, total: coverage.length, weak }, note: 'Delivery finished. Summarize the outcome for the user and stop — do not call delivery_finish again. Evidence covers declared checks, not a guarantee of correctness. Distinguish automated evidence from unperformed manual/visual review.' });
       });
     },
   });

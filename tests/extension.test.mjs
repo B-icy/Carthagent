@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -491,4 +491,62 @@ test('self-review round cap blocks reviewer runs past the limit', options, async
   f.hooks.input({ source: 'user' });
   await f.commands.review.handler('', f.ctx);
   assert.equal(reviewBash('pi2 review 15'), undefined);
+});
+
+test('delivery_plan accepts an outputs list and requires it at verified finish', options, async t => {
+  const f = fixture(t);
+  await f.call('delivery_plan', { ...f.plan, outputs: ['artifacts/proof.txt'] });
+  await f.call('delivery_check', { id: 'all' });
+  const finish = { status: 'verified', review: 'ok', launch: 'python app.py', limitations: [] };
+  // The declared output does not exist yet — verified must be refused.
+  await assert.rejects(f.call('delivery_finish', finish), /Missing artifacts\/outputs.*proof\.txt/);
+  // Producing it under the ignored artifacts/ dir must not invalidate evidence.
+  mkdirSync(join(f.cwd, 'artifacts'), { recursive: true });
+  writeFileSync(join(f.cwd, 'artifacts', 'proof.txt'), 'render sampled 3 colors');
+  await f.call('delivery_finish', finish);
+  assert.equal(f.entries.at(-1).data.status, 'verified');
+  assert.deepEqual(f.entries.at(-1).data.plan.outputs, ['artifacts/proof.txt']);
+});
+
+test('delivery_revise preserves unchanged evidence, drops changed evidence and keeps step status', options, async t => {
+  const f = fixture(t);
+  f.plan.steps = ['Implement', 'Verify', 'Ship'];
+  f.plan.checks.push({ ...f.plan.checks[0], id: 'second' });
+  f.plan.acceptance = [{ requirement: 'Runs', checks: ['run', 'second'] }];
+  await f.call('delivery_plan', f.plan);
+  await f.call('delivery_progress', { step: 0, status: 'done' });
+  await f.call('delivery_check', { id: 'all' });
+  assert.equal(f.entries.at(-1).data.evidence.run.passed, true);
+
+  // Change only the second check; keep run byte-identical.
+  const result = await f.call('delivery_revise', {
+    steps: ['Implement', 'Verify', 'Ship', 'Document'],
+    checks: [
+      { id: 'run', kind: 'runtime', argv: [process.execPath, '-e', 'console.log("passed")'], timeoutSeconds: 5 },
+      { id: 'second', kind: 'runtime', argv: [process.execPath, '-e', 'console.log("changed")'], timeoutSeconds: 5 },
+    ],
+  });
+  const state = f.entries.at(-1).data;
+  assert.equal(state.plan.steps.length, 4);
+  assert.ok(state.evidence.run, 'unchanged check keeps evidence');
+  assert.equal(state.evidence.second, undefined, 'changed check drops evidence');
+  assert.equal(state.stepStatus.step0, 'done', 'unchanged step keeps status');
+  assert.equal(state.status, 'implementing');
+  assert.match(result.content[0].text, /evidencePreserved/);
+  // The revised contract now has a pending check, so verified is refused.
+  await assert.rejects(f.call('delivery_finish', { status: 'verified', review: 'ok', launch: 'x', limitations: [] }), /second/);
+
+  // Changing a step's text resets its status; other steps keep theirs.
+  await f.call('delivery_revise', { steps: ['Implement properly', 'Verify', 'Ship', 'Document'] });
+  const after = f.entries.at(-1).data;
+  assert.equal(after.stepStatus.step0, undefined, 'renamed step loses status');
+});
+
+test('delivery_revise cannot silently drop an original acceptance requirement', options, async t => {
+  const f = fixture(t);
+  await f.call('delivery_plan', f.plan);
+  await assert.rejects(
+    f.call('delivery_revise', { acceptance: [{ requirement: 'Something else', checks: ['run'] }] }),
+    /cannot silently remove acceptance criteria/i,
+  );
 });
