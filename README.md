@@ -27,7 +27,7 @@ First run needs AI credentials. One store (`~/.pi2/agent/auth.json`) covers the 
 pi2 login          # opens pi's auth — run /login, pick a provider, /quit when done
 ```
 
-You can also run `/login` (or `/auth`) from inside the console — it suspends the pi2 UI, opens the same pi auth screen, and returns to your session when you `/quit`.
+You can also run `/login` (or `/auth`) from inside the console: it opens an in-console popup to pick a provider and auth method, then handles OAuth URLs, device codes, and API-key prompts inline — no terminal hand-off — and restarts the agent once connected.
 
 **API key** — export the env var, or run `pi2 login` and pick a key provider to store it:
 
