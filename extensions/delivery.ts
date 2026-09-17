@@ -4,12 +4,10 @@ import { mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 
 import { basename, dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { validatePlan, planD2WithProgress, fingerprint, atomicJson, runCommand, pendingChecks, coverageReport, restoreState, shouldContinue, localPath, createSerialQueue, validateRevision, bindRequiredChecks, loadRequiredChecks, updateStepStatus } from '../lib/delivery.mjs';
+import { validatePlan, planD2WithProgress, fingerprint, atomicJson, runCommand, pendingChecks, restoreState, shouldContinue, localPath, createSerialQueue, validateRevision, bindRequiredChecks, loadRequiredChecks, updateStepStatus } from '../lib/delivery.mjs';
 import { formatGuidance, loadGuidanceProfiles, routeGuidance } from '../lib/guidance.mjs';
-import { normalizeReviewMode, resolveReviewMode, loadPi2Config, savePi2Config, pi2ConfigPath, reviewKickoff, MAX_REVIEW_ROUNDS } from '../lib/review.mjs';
 
 const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url));
-const PI2_BIN = join(EXTENSION_DIR, '..', 'bin', 'pi2.mjs');
 const BROWSER_CHECK = join(EXTENSION_DIR, '..', 'tools', 'browser-check.mjs');
 const BROWSER_CHECK_GUIDANCE = existsSync(BROWSER_CHECK)
   ? `\nFor web/browser tasks, a self-contained browser check is available: ${JSON.stringify(BROWSER_CHECK)}. Declare it as a runtime check, e.g. ["node","${BROWSER_CHECK}","--page","index.html","--assert","#app","--assert-count","#items:3","--click","#btn","--then-text","#out:done","--console-clean","--screenshot","artifacts/ui.png"]. It serves the workspace over HTTP, runs jsdom assertions with real inline-script execution (clicks, text, selectors, console-error detection), and captures a real Firefox screenshot when Firefox is installed — no external downloads needed.`
@@ -22,24 +20,22 @@ const text = (value: unknown) => {
 const shortString = () => Type.String({ minLength: 1, maxLength: 1200 });
 const strings = (maxItems = 20) => Type.Array(shortString(), { minItems: 1, maxItems });
 const GUIDANCE = `Software delivery workflow (not required for questions or read-only reviews):
-For substantial implementation work, inspect the repository and installed library APIs first. Identify which domain skills or knowledge bases apply to this task — check the available skills list and read the matching skill before implementing. Use delivery_plan BEFORE implementation: capture assumptions, a small vertical-slice plan, artifact roots (product source/tests/config/docs), optional outputs (generated evidence such as screenshots/build output that delivery_finish must find), acceptance criteria and real check commands. D2 is generated for the flowchart.
-Pressure-test the plan before writing code: review it against every explicit requirement in the user's prompt, verify uncertain APIs with installed source or a tiny executable probe, and confirm the checks can actually detect failure. If the plan is weak or incomplete, call delivery_revise to fix it — it preserves evidence for checks you did not change. delivery_plan is a full reset for a genuinely new task. The plan is a living contract, not a one-time artifact.
+For substantial implementation work, inspect the repository and installed library APIs first. Identify which domain skills or knowledge bases apply to this task — check the available skills list and read the matching skill before implementing. Use delivery_plan BEFORE implementation: capture assumptions, a small vertical-slice plan, artifact roots, acceptance criteria and real check commands. D2 is generated for the flowchart; use D2 for any additional flowcharts.
+Pressure-test the plan before writing code: review it against every explicit requirement in the user's prompt, verify uncertain APIs with installed source or a tiny executable probe, and confirm the checks can actually detect failure. If the plan is weak or incomplete, call delivery_plan again to fix it — the plan is a living contract, not a one-time artifact.
 Implement a runnable slice early, then complete the agreed behavior in small coherent steps. Mark progress with delivery_progress as each step finishes so the plan panel stays current. Don't stop at a scaffold. Verify uncertain APIs with installed source or a tiny executable probe; never invent library methods or assume assets exist. Separate testable logic from rendering/services. Include error handling, dependencies, launch instructions, and regression tests. Exercise actual interaction paths in fresh subprocesses with the normal environment, not only compilation or internal function calls. Include non-ASCII text, paths with spaces, and invalid data where applicable. On Windows, stdout may use a legacy code page (e.g. cp1252): use ASCII-escaped JSON or configure the application's UTF-8 output; don't hide failures by changing only the test environment. For visual work, capture and inspect a screenshot if your model supports images; otherwise explicitly disclose that visual review is unperformed.
-After creating a file, prefer focused edit calls over repeatedly rewriting the full file. Whole-file rewrites bloat model context, increase provider rate-limit risk, and can accidentally remove previously working behavior. If development reveals a wrong assumption or a step can't be completed as planned, call delivery_revise to adjust the contract — it keeps evidence for unchanged checks — update steps and checks to match reality, but never silently drop original acceptance criteria.
-Use a few meaningful check suites (usually 2–4), not one command per criterion: multiple acceptance criteria can share a suite. When user-owned required validators already cover a requirement, do not duplicate them with shallow model-authored checks; add only focused checks for logic they do not cover. Scope honestly: enumerate every explicit requirement in the user's prompt and back each core requirement with an acceptance criterion and a real check. Narrow contracts that omit core requirements make 'verified' a scope failure, not a smaller task; if budget remains once checks pass, implement and verify the missing requirements instead of stopping at the first passing slice. Run delivery_check with id="all" to execute every declared check sequentially. It executes the argv with a deadline, records logs and fingerprints the entire working project (excluding dependencies, caches and generated artifacts), so omitting a source file cannot hide stale evidence. Artifact roots must contain product source/tests/config/docs, never only generated output; declare generated screenshots/build output under outputs:[...] so delivery_finish requires them without polluting the source fingerprint. Use ["."] for the project. Do not edit during checks; run dependent tools in separate batches. artifacts/ is the conventional home for generated outputs; .harness/ is reserved for harness logs. Re-run checks after final edits.
+After creating a file, prefer focused edit calls over repeatedly rewriting the full file. Whole-file rewrites bloat model context, increase provider rate-limit risk, and can accidentally remove previously working behavior. If development reveals a wrong assumption or a step can't be completed as planned, call delivery_plan again to adjust the contract — update steps and checks to match reality, but never silently drop original acceptance criteria.
+Use a few meaningful check suites (usually 2–4), not one command per criterion: multiple acceptance criteria can share a suite. When user-owned required validators already cover a requirement, do not duplicate them with shallow model-authored checks; add only focused checks for logic they do not cover. Scope honestly: enumerate every explicit requirement in the user's prompt and back each core requirement with an acceptance criterion and a real check. Narrow contracts that omit core requirements make 'verified' a scope failure, not a smaller task; if budget remains once checks pass, implement and verify the missing requirements instead of stopping at the first passing slice. Run delivery_check with id="all" to execute every declared check sequentially. It executes the argv with a deadline, records logs and fingerprints the entire working project (excluding dependencies, caches and generated artifacts), so omitting a source file cannot hide stale evidence. Artifact roots must contain product source/tests/config/docs, never only artifacts/. Use ["."] for the project. Do not edit during checks; run dependent tools in separate batches. Use artifacts/ for generated screenshots/build output; .harness/ is reserved for harness logs. Re-run checks after final edits.
 Before concluding, adversarially review the implementation against each acceptance criterion and call delivery_finish with the review, launch command and honest limitations. Failed, missing or stale checks cannot produce verified status. If genuinely blocked, use status=blocked with the reason; do not weaken tests to manufacture success. Phased delivery means steady progress across many tool calls within the run, not a single response. No automatic deployments or unrequested destructive changes.`;
 
 export default function delivery(pi: ExtensionAPI) {
   let state: any = null;
   let touched = false, nudges = 0;
-  let reviewLoop = false, reviewOfferedFor = '', reviewRounds = 0;
   const exclusive = createSerialQueue();
   const guidanceProfiles = loadGuidanceProfiles();
   let activeGuidance: any[] = [];
   let required: any[] = [], extraGuidance = '', configError = '';
   let writeCounts = new Map<string, number>();
   let initialFiles = new Set<string>();
-  let storedCwd = '';
   pi.registerFlag('delivery-validators', { description: 'Path to user-owned required validator manifest; these checks cannot be omitted by the model', type: 'string' });
   pi.registerFlag('delivery-context', { description: 'Path to optional task/context guidance injected into the delivery system prompt', type: 'string' });
   pi.registerFlag('delivery-strict', { description: 'Require delivery_plan before built-in edit/write (not a security sandbox)', type: 'boolean', default: false });
@@ -48,53 +44,13 @@ export default function delivery(pi: ExtensionAPI) {
   pi.registerFlag('delivery-rewrite-cap', { description: 'Maximum built-in write calls per path in a bounded run; later changes must use focused edits (0 disables)', type: 'string', default: '0' });
   pi.registerFlag('delivery-turn-delay-ms', { description: 'Base delay after tool results in bounded runs, scaled by active context size to reduce provider rate-limit bursts (0 disables)', type: 'string', default: '0' });
   pi.registerFlag('delivery-tool-output-cap', { description: 'Maximum characters retained from each text tool result in bounded runs; preserves the beginning and end (0 disables)', type: 'string', default: '0' });
-  pi.registerFlag('delivery-review', { description: 'Self-review loop after substantial changes: ask (offer) | yes (always run) | no (off). Default: ~/.pi2/config.json review, else ask', type: 'string' });
-  // Explicit --delivery-review flag wins for the session; otherwise the
-  // persisted ~/.pi2/config.json default applies (re-read so /review mode
-  // changes take effect), else 'ask'.
-  function effectiveReviewMode() {
-    return resolveReviewMode(pi.getFlag('delivery-review'), loadPi2Config());
-  }
-  // Kick the working agent into the PR ↔ fresh-context review ↔ fixes loop.
-  // triggerTurn starts a new turn when idle; followUp queues behind a live run.
-  function startReview() {
-    reviewLoop = true;
-    reviewRounds = 0;
-    pi.sendMessage({ customType: 'delivery-review', display: true, content: reviewKickoff(PI2_BIN) }, { triggerTurn: true, deliverAs: 'followUp' });
-  }
-  /**
-   * End-of-run offer. A "substantial change" is a verified delivery contract
-   * or any write/edit this run. In ask mode the interactive TUI surfaces the
-   * prompt itself (extension dialogs are unreachable over rpc), so here we
-   * only cover real pi TUI (ui.select) and headless runs (passive hint).
-   */
-  function offerReview(ctx: ExtensionContext, hash: string) {
-    if (reviewLoop) return;
-    const mode = effectiveReviewMode();
-    if (mode === 'no') return;
-    if (!(state?.status === 'verified' || touched)) return;
-    if (hash && reviewOfferedFor === hash) return;
-    reviewOfferedFor = hash || 'offered';
-    if (mode === 'yes') { startReview(); return; }
-    if (ctx.mode === 'tui' && typeof ctx.ui?.select === 'function') {
-      Promise.resolve(ctx.ui.select('Substantial change finished — start a self-review loop? (branch + PR → fresh-context review → fixes)', ['Start self-review', 'Skip']))
-        .then((pick: any) => { if (pick === 'Start self-review') startReview(); })
-        .catch(() => { });
-    } else if (ctx.mode !== 'rpc') {
-      pi.sendMessage({ customType: 'delivery-review', display: true, content: `Self-review available — run /review to loop a fresh-context review over a PR (default: pi2 review ask|yes|no).` }, { triggerTurn: false });
-    }
-  }
   function restore(ctx: ExtensionContext) {
-    storedCwd = ctx.cwd;
     state = restoreState(ctx.sessionManager.getBranch());
     activeGuidance = (state?.guidanceProfiles || state?.plan?.guidanceProfiles || [])
       .map((id: string) => guidanceProfiles.find(profile => profile.id === id))
       .filter(Boolean);
     touched = false;
     nudges = state?.nudges ?? 0;
-    reviewLoop = false;
-    reviewOfferedFor = '';
-    reviewRounds = 0;
     required = [];
     extraGuidance = '';
     configError = '';
@@ -138,15 +94,10 @@ export default function delivery(pi: ExtensionAPI) {
   pi.on('session_start', (_event, ctx) => restore(ctx));
   pi.on('session_tree', (_event, ctx) => restore(ctx));
   pi.on('input', event => {
-    // Follow-up nudges from this extension re-enter as input — don't let them
-    // reset the nudge cap (would defeat the 2-nudge limit and loop forever).
-    const text = String(event.text ?? event.message ?? '');
-    const isOwnNudge = text.startsWith('Delivery follow-up') || text.startsWith('Self-review');
-    if (event.source !== 'extension' && !isOwnNudge) { nudges = 0; touched = false; reviewLoop = false; reviewOfferedFor = ''; reviewRounds = 0; }
+    if (event.source !== 'extension') { nudges = 0; touched = false; }
     return { action: 'continue' };
   });
   pi.on('before_agent_start', (event, ctx) => {
-    if (ctx?.cwd) storedCwd = ctx.cwd;
     const routed = routeGuidance(event.prompt, { cwd: ctx?.cwd || process.cwd(), profiles: guidanceProfiles });
     activeGuidance = state && !['verified', 'blocked'].includes(state.status)
       ? [...new Map([...activeGuidance, ...routed].map(profile => [profile.id, profile])).values()].sort((a, b) => b.priority - a.priority)
@@ -156,34 +107,15 @@ export default function delivery(pi: ExtensionAPI) {
     if (routedText) guidance += `\n\n${routedText}`;
     if (extraGuidance) guidance += `\n\nTask-specific delivery context:\n${extraGuidance}`;
     if (required.length) guidance += `\nUser-owned required validators will be added to your plan automatically: ${JSON.stringify(required)}. Run delivery_check id="all"; repair failures rather than replacing or bypassing these checks.`;
-    const reviewMode = effectiveReviewMode();
-    if (reviewMode === 'ask') guidance += '\nSelf-review is available and opt-in: when you finish a substantial change (a verified delivery or multiple file edits), close your summary by offering the user a self-review loop — a PR, a detached fresh-context `pi2 review` pass, then fixes. Start it only if they accept, or when they run /review.';
-    else if (reviewMode === 'yes') guidance += '\nSelf-review runs automatically after substantial changes: when the harness hands you the self-review instruction, follow it (PR → fresh-context review → fixes) unless the user tells you to stop.';
     return { systemPrompt: event.systemPrompt + '\n\n' + guidance };
   });
   pi.on('context', event => {
-    if (!state || ['blocked', 'verified'].includes(state.status)) return;
+    if (!state || state.status === 'blocked') return;
     // Re-injected after compaction without replacing Pi's summary or pruning user messages.
-    const summary = { goal: state.plan.goal, status: state.status, acceptance: state.plan.acceptance, steps: state.plan.steps, artifacts: state.plan.artifacts, outputs: state.plan.outputs || [], checks: state.plan.checks, evidence: Object.fromEntries(Object.entries(state.evidence).map(([id, e]: any) => [id, { passed: e.passed, fingerprint: e.fingerprint, code: e.code, outputTail: e.outputTail ? e.outputTail.slice(-400) : undefined }])) };
-    // Compute current freshness so the instruction matches reality. When all
-    // checks are already fresh, directing the agent to re-run delivery_check on
-    // every context re-injection causes an infinite status→check loop.
-    let pending: string[] | null = null;
-    try {
-      if (storedCwd) {
-        const hash = fingerprint(storedCwd, ['.']);
-        pending = pendingChecks(state, hash);
-      }
-    } catch { /* fingerprint unavailable — stay conservative below */ }
-    const instruction = pending === null
-      ? `Use delivery_status to inspect freshness, then delivery_check id="all" to re-run any stale checks — do not just re-inspect.`
-      : pending.length === 0
-        ? `All declared checks have current passing evidence (fingerprint matches). Do not re-run delivery_check — proceed to delivery_finish (or continue implementation if unfinished).`
-        : `Stale/failed/missing checks: ${pending.join(', ')}. Use delivery_status to inspect freshness, then delivery_check id="all" to re-run them — do not just re-inspect.`;
-    return { messages: [...event.messages, { role: 'custom' as const, customType: 'delivery-context', content: `Delivery contract (evidence may be stale after edits):\n${JSON.stringify(summary)}\n${instruction}`, display: false, timestamp: Date.now() }] };
+    const summary = { goal: state.plan.goal, status: state.status, acceptance: state.plan.acceptance, steps: state.plan.steps, artifacts: state.plan.artifacts, checks: state.plan.checks, evidence: Object.fromEntries(Object.entries(state.evidence).map(([id, e]: any) => [id, { passed: e.passed, fingerprint: e.fingerprint, code: e.code, outputTail: e.outputTail ? e.outputTail.slice(-400) : undefined }])) };
+    return { messages: [...event.messages, { role: 'custom' as const, customType: 'delivery-context', content: `Delivery contract (evidence may be stale after edits):\n${JSON.stringify(summary)}\nUse delivery_status to inspect current freshness.`, display: false, timestamp: Date.now() }] };
   });
   pi.on('tool_call', (event, ctx) => {
-    if (ctx?.cwd) storedCwd = ctx.cwd;
     const input = event.input as Record<string, any> | undefined;
     if (
       event.toolName === 'edit' &&
@@ -210,33 +142,11 @@ export default function delivery(pi: ExtensionAPI) {
       typeof input.command === 'string'
         ? input.command
         : '';
-    // Shell commands are "mutating" when they can change the working tree.
-    // File-descriptor plumbing (`2>&1`, `>/dev/null`, `2>&-`) is read-only and
-    // ubiquitous in inspection commands, so strip it before the redirection
-    // test — otherwise harmless `cat x 2>/dev/null` trips the strict pre-plan
-    // gate. Genuine redirection, including `>>` append, still counts.
-    const withoutFdPlumbing = shellCommand
-      .replace(/\d*>>?\s*\/dev\/null\b/g, '')  // >/dev/null, 2>/dev/null, 1>>/dev/null
-      .replace(/&?>>?\s*&\d/g, '')              // 2>&1, 1>&2, >&2
-      .replace(/\d*>&\s*-/g, '');               // 2>&-, >&-
     const mutatingShell =
       /(?:^|[;&|]\s*)\b(?:rm|mv|cp|mkdir|touch|truncate|install)\b/i.test(shellCommand) ||
-      /(^|[^>])>>?(?!>)/.test(withoutFdPlumbing) ||
+      /(?:^|[^>])>(?!>)/.test(shellCommand) ||
       /\bsed\b[^\n]*\s-i(?:\s|$)/i.test(shellCommand) ||
       /\b(?:open|write_text|writeFileSync|writeFile)\s*\(/i.test(shellCommand);
-    // Self-review round cap: while a loop is active, each `pi2 review <pr>`
-    // invocation is a round; block runs past MAX_REVIEW_ROUNDS so the bound is
-    // real rather than prompt-text the agent could ignore.
-    if (reviewLoop && shellCommand) {
-      const invoke = /\bpi2(?:\.mjs)?["']?\s+review\s+([^\s;&|"']+)/.exec(shellCommand);
-      const arg = invoke?.[1] ?? '';
-      if (invoke && !arg.startsWith('-') && arg !== 'status' && !normalizeReviewMode(arg)) {
-        if (reviewRounds >= MAX_REVIEW_ROUNDS) {
-          return { block: true, reason: `Self-review round limit (${MAX_REVIEW_ROUNDS}) reached — stop the loop: summarize the outstanding findings for the user instead of re-running the reviewer.` };
-        }
-        reviewRounds++;
-      }
-    }
     if (
       pi.getFlag('delivery-strict') &&
       !state &&
@@ -363,7 +273,7 @@ export default function delivery(pi: ExtensionAPI) {
     name: 'delivery_plan', label: 'Delivery plan', description: 'Create/replace the acceptance contract and generate plan.d2. Replanning resets evidence; do not drop failing requirements. Paths are relative files/directories, not globs. Checks use executable argv (no implicit shell).',
     parameters: Type.Object({
       goal: shortString(), assumptions: Type.Array(shortString(), { maxItems: 12 }),
-      artifacts: strings(30), outputs: Type.Optional(strings(20)), steps: strings(12),
+      artifacts: strings(30), steps: strings(12),
       acceptance: Type.Array(Type.Object({ requirement: shortString(), checks: strings(12) }), { minItems: 1, maxItems: 20 }),
       checks: Type.Array(Type.Object({ id: Type.String({ pattern: '^[a-z][a-z0-9_-]{0,39}$' }), kind: Type.String({ description: 'test, runtime, or static' }), argv: strings(40), timeoutSeconds: Type.Integer({ minimum: 1, maximum: 300 }) }), { minItems: 1, maxItems: 12 }),
     }),
@@ -382,58 +292,16 @@ export default function delivery(pi: ExtensionAPI) {
     },
   });
   pi.registerTool({
-    name: 'delivery_revise', label: 'Revise delivery plan', description: 'Revise the active contract in place: provide only the fields that change. steps/checks/acceptance arrays replace the current ones. Evidence is preserved for checks whose id, kind, argv and timeout are unchanged; step status is preserved for steps whose text is unchanged. Original acceptance requirements cannot be dropped. Use this instead of delivery_plan when reality diverges from the plan — it does not wipe verified evidence.',
-    parameters: Type.Object({
-      goal: Type.Optional(shortString()),
-      artifacts: Type.Optional(strings(30)),
-      outputs: Type.Optional(strings(20)),
-      steps: Type.Optional(strings(12)),
-      acceptance: Type.Optional(Type.Array(Type.Object({ requirement: shortString(), checks: strings(12) }), { minItems: 1, maxItems: 20 })),
-      checks: Type.Optional(Type.Array(Type.Object({ id: Type.String({ pattern: '^[a-z][a-z0-9_-]{0,39}$' }), kind: Type.String({ description: 'test, runtime, or static' }), argv: strings(40), timeoutSeconds: Type.Integer({ minimum: 1, maximum: 300 }) }), { minItems: 1, maxItems: 12 })),
-    }),
-    async execute(_id, params, _signal, _update, ctx) {
-      return exclusive(async () => {
-        if (configError) throw Error(configError);
-        if (!state) throw Error('Call delivery_plan first');
-        const merged = {
-          goal: params.goal ?? state.plan.goal,
-          assumptions: state.plan.assumptions || [],
-          artifacts: params.artifacts ?? state.plan.artifacts,
-          outputs: params.outputs ?? state.plan.outputs,
-          steps: params.steps ?? state.plan.steps,
-          acceptance: params.acceptance ?? state.plan.acceptance,
-          checks: params.checks ?? state.plan.checks,
-        };
-        const plan = validatePlan(bindRequiredChecks(merged, required), ctx.cwd);
-        validateRevision(state, plan);
-        // Evidence survives only when the executable contract is byte-identical:
-        // a changed argv/kind/timeout means the old pass no longer proves the check.
-        const prevChecks = new Map(state.plan.checks.map((c: any) => [c.id, c]));
-        const evidence: Record<string, any> = {};
-        for (const c of plan.checks) {
-          const prev = state.evidence?.[c.id];
-          const old = prevChecks.get(c.id) as any;
-          if (prev && old && old.kind === c.kind && old.timeoutSeconds === c.timeoutSeconds && old.argv.join('\u0000') === c.argv.join('\u0000')) evidence[c.id] = prev;
-        }
-        const stepStatus: Record<string, string> = {};
-        (plan.steps || []).forEach((s: string, i: number) => {
-          const prev = state.stepStatus?.[`step${i}`];
-          if (prev && state.plan.steps?.[i] === s) stepStatus[`step${i}`] = prev;
-        });
-        const preserved = Object.keys(evidence).length;
-        state = { ...state, revision: (state.revision || 0) + 1, plan, evidence, stepStatus, status: 'implementing', handoff: undefined };
-        const dir = directory(ctx);
-        writeFileSync(join(dir, 'plan.d2'), planD2WithProgress(plan, stepStatus));
-        persist(ctx);
-        return text({ revision: state.revision, checks: plan.checks.length, evidencePreserved: preserved, next: 'Changed or removed checks are pending again — run delivery_check for them. Unchanged checks keep their prior evidence.' });
-      });
-    },
-  });
-  pi.registerTool({
     name: 'delivery_status', label: 'Delivery status', description: 'Show the current contract and failed/missing/stale check IDs.', parameters: Type.Object({}),
     async execute(_id, _params, _signal, _update, ctx) {
       if (!state) return text('No delivery contract.');
-      return text({ ...state, pendingChecks: pendingChecks(state, fingerprint(ctx.cwd, ['.'])) });
+      let pending: string[] = [];
+      try {
+        pending = pendingChecks(state, fingerprint(ctx.cwd, ['.']));
+      } catch (err: any) {
+        pending = [`[scope error: ${err.message}]`];
+      }
+      return text({ ...state, pendingChecks: pending });
     },
   });
   pi.registerTool({
@@ -466,11 +334,45 @@ export default function delivery(pi: ExtensionAPI) {
           if (signal?.aborted) throw Error('Check cancelled before execution');
           state.status = 'verifying';
           delete state.evidence[check.id];
-          const before = fingerprint(ctx.cwd, ['.']);
+          let before: string;
+          try {
+            before = fingerprint(ctx.cwd, ['.']);
+          } catch (err: any) {
+            state.evidence[check.id] = {
+              passed: false,
+              fingerprint: null,
+              code: 1,
+              timedOut: false,
+              cancelled: false,
+              logPath: null,
+              durationMs: 0,
+              changedDuringCheck: false,
+              outputTail: `Evidence scope error: ${err.message}`
+            };
+            persist(ctx);
+            throw Error(`Evidence scope error: ${err.message}. If the repository exceeds file limits or cannot be scoped, call delivery_finish with status="blocked" and specific limitations rather than retrying delivery_check.`);
+          }
           persist(ctx);
           onUpdate?.(text(`Running ${check.id}: ${JSON.stringify(check.argv)}`));
           const result = await runCommand(check.argv, { cwd: ctx.cwd, timeoutSeconds: check.timeoutSeconds, signal, logPath: join(directory(ctx), `${check.id}-${randomUUID()}.log`) });
-          const after = fingerprint(ctx.cwd, ['.']);
+          let after: string;
+          try {
+            after = fingerprint(ctx.cwd, ['.']);
+          } catch (err: any) {
+            state.evidence[check.id] = {
+              passed: false,
+              fingerprint: null,
+              code: result.code,
+              timedOut: result.timedOut,
+              cancelled: result.cancelled,
+              logPath: result.logPath,
+              durationMs: result.durationMs,
+              changedDuringCheck: false,
+              outputTail: `Post-check evidence scope error: ${err.message}\n${result.output.slice(-800)}`
+            };
+            persist(ctx);
+            throw Error(`Post-check evidence scope error: ${err.message}. If the repository exceeds file limits, call delivery_finish with status="blocked" and specific limitations.`);
+          }
           const passed = result.code === 0 && !result.timedOut && !result.cancelled && !result.outputLimit && before === after;
           state.evidence[check.id] = { passed, fingerprint: after, code: result.code, timedOut: result.timedOut, cancelled: result.cancelled, logPath: result.logPath, durationMs: result.durationMs, changedDuringCheck: before !== after, outputTail: result.output.slice(-1200) };
           persist(ctx);
@@ -490,50 +392,32 @@ export default function delivery(pi: ExtensionAPI) {
         if (!state) throw Error('Call delivery_plan first');
         if (configError) throw Error(configError);
         if (!['verified', 'blocked'].includes(params.status)) throw Error('status must be verified or blocked');
-        const hash = fingerprint(ctx.cwd, ['.']);
-        // Guard against re-entry: if the delivery is already finished and
-        // nothing has changed since (fingerprint matches the handoff), return
-        // a terminal "already done" result instead of re-processing. Without
-        // this the agent can loop on delivery_finish hundreds of times in a
-        // single turn (the success result gives no signal to stop, and the
-        // tool keeps accepting the call). If files DID change, fall through
-        // to normal validation so stale evidence is caught.
-        if (['verified', 'blocked'].includes(state.status) && state.handoff?.fingerprint === hash) {
-          return text({ status: state.status, report: join(directory(ctx), 'report.json'), note: `Delivery already finished (status=${state.status}). Do not call delivery_finish again — summarize the outcome for the user and stop.` });
-        }
+        let hash: string | null = null;
         if (params.status === 'verified') {
-          const declared = [...state.plan.artifacts, ...(state.plan.outputs || [])];
-          const missing = declared.filter((p: string) => !existsSync(localPath(ctx.cwd, p)));
+          hash = fingerprint(ctx.cwd, ['.']);
+          const missing = state.plan.artifacts.filter((p: string) => !existsSync(localPath(ctx.cwd, p)));
           const pending = pendingChecks(state, hash);
-          if (missing.length || pending.length) throw Error(`Cannot verify. Missing artifacts/outputs: ${missing.join(', ')}. Failed/missing/stale checks: ${pending.join(', ')}`);
-        } else if (!params.limitations.length) throw Error('Blocked delivery requires an explicit limitation/reason');
+          if (missing.length || pending.length) throw Error(`Cannot verify. Missing artifacts: ${missing.join(', ')}. Failed/missing/stale checks: ${pending.join(', ')}`);
+        } else {
+          if (!params.limitations.length) throw Error('Blocked delivery requires an explicit limitation/reason');
+          try {
+            hash = fingerprint(ctx.cwd, ['.']);
+          } catch {
+            hash = 'unfingerprinted:scope_exceeded';
+          }
+        }
         state.status = params.status;
         state.handoff = { ...params, fingerprint: hash, at: new Date().toISOString() };
-        const coverage = coverageReport(state.plan, state.evidence, hash);
-        const weak = coverage.filter(c => !c.covered || c.staticOnly).map(c => ({ requirement: c.requirement, fresh: c.fresh, staticOnly: c.staticOnly }));
         persist(ctx);
-        return text({ status: state.status, report: join(directory(ctx), 'report.json'), coverage: { covered: coverage.filter(c => c.covered).length, total: coverage.length, weak }, note: 'Delivery finished. Summarize the outcome for the user and stop — do not call delivery_finish again. Evidence covers declared checks, not a guarantee of correctness. Distinguish automated evidence from unperformed manual/visual review.' });
+        return text({ status: state.status, report: join(directory(ctx), 'report.json'), note: 'Evidence covers declared checks, not a guarantee of correctness. Distinguish automated evidence from unperformed manual/visual review.' });
       });
-    },
-  });
-  pi.registerCommand('review', {
-    description: 'Start a self-review loop now, or set the default: /review ask|yes|no|status',
-    handler: async (args: string, ctx: ExtensionContext) => {
-      const arg = String(args ?? '').trim().toLowerCase();
-      if (!arg) { startReview(); ctx.ui?.notify?.('self-review loop started', 'info'); return; }
-      if (arg === 'status') { ctx.ui?.notify?.(`self-review mode: ${effectiveReviewMode()}`, 'info'); return; }
-      const mode = normalizeReviewMode(arg);
-      if (!mode) { ctx.ui?.notify?.('usage: /review ask|yes|no|status — bare /review starts a loop now', 'warning'); return; }
-      savePi2Config({ review: mode });
-      const overridden = normalizeReviewMode(pi.getFlag('delivery-review'));
-      ctx.ui?.notify?.(`self-review default → ${mode} (saved to ${pi2ConfigPath()})${overridden && overridden !== mode ? ` — note: --delivery-review=${overridden} still wins this session` : ''}`, 'info');
     },
   });
   pi.on('agent_end', (event, ctx) => {
     const last = [...event.messages].reverse().find((m: any) => m.role === 'assistant') as any;
-    let fresh = false, pending: string[] = [], failures: string[] = [], hash = '';
+    let fresh = false, pending: string[] = [], failures: string[] = [];
     try {
-      hash = fingerprint(ctx.cwd, ['.']);
+      const hash = fingerprint(ctx.cwd, ['.']);
       fresh = !!state && state.handoff?.fingerprint === hash;
       if (state) {
         pending = pendingChecks(state, hash);
@@ -541,13 +425,10 @@ export default function delivery(pi: ExtensionAPI) {
           .map(([id, e]: any) => `check ${id} failed (exit ${e.code}, timedOut ${e.timedOut})${e.outputTail ? `; last output: ${String(e.outputTail).slice(-400)}` : ''}`);
       }
     } catch { /* explicit re-verification required */ }
-    if (!shouldContinue({ state, touched, nudges, stopReason: last?.stopReason, pendingMessages: ctx.hasPendingMessages(), fresh })) {
-      offerReview(ctx, hash);
-      return;
-    }
+    if (!shouldContinue({ state, touched, nudges, stopReason: last?.stopReason, pendingMessages: ctx.hasPendingMessages(), fresh })) return;
     nudges++;
     if (state) persist(ctx);
     const specifics = [...(pending.length ? [`pending checks: ${pending.join(', ')}`] : []), ...failures].join('\n');
-    pi.sendMessage({ customType: 'delivery-gate', display: true, content: `Delivery follow-up ${nudges}/2: implementation ended without current verified evidence.${specifics ? `\n${specifics}\n` : ''}Run delivery_check id="all" to re-run the stale/failed checks, repair the root cause the output points to (do not rationalize a failing probe as an environment limitation without evidence), then delivery_finish. If genuinely blocked, record status=blocked with specific limitations. Do not merely re-inspect with delivery_status or repeat a success claim.` }, { triggerTurn: true, deliverAs: 'followUp' });
+    pi.sendMessage({ customType: 'delivery-gate', display: true, content: `Delivery follow-up ${nudges}/2: implementation ended without current verified evidence.${specifics ? `\n${specifics}\n` : ''}Read the quoted output, repair the root cause it points to (do not rationalize a failing probe as an environment limitation without evidence), rerun the failing checks, then delivery_finish. If genuinely blocked, record status=blocked with specific limitations. Do not merely repeat a success claim.` }, { triggerTurn: true, deliverAs: 'followUp' });
   });
 }

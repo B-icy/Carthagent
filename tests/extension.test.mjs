@@ -3,49 +3,47 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, realpathSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-// Self-review defaults persist to ~/.pi2/config.json — isolate tests from the
-// real user config before any extension code reads it.
-process.env.PI2_CONFIG = join(mkdtempSync(join(tmpdir(), 'pi2 test config ')), 'config.json');
 const candidates = [
   process.env.PI2_CLI,
   process.env.PI_CLI,
-  join(root, 'vendor', 'agent', 'cli.js')
+  resolve(dirname(fileURLToPath(import.meta.url)), '../node_modules/@earendil-works/pi-coding-agent/dist/cli.js'),
+  resolve(dirname(fileURLToPath(import.meta.url)), '../node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js'),
+  ...[dirname(process.execPath), dirname(realpathSync(process.execPath))].flatMap(path => [
+    join(path, 'node_modules/@earendil-works/pi-coding-agent/dist/cli.js'),
+    join(path, 'node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js'),
+    join(path, '..', 'lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js'),
+    join(path, '..', 'lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js')
+  ])
 ].filter(Boolean);
 const cli = candidates.find(existsSync);
 let factory;
 if (cli) {
-  try {
-    const requirePi = createRequire(cli);
-    const { createJiti } = requirePi('jiti');
-    const jiti = createJiti(import.meta.url, { alias: { typebox: requirePi.resolve('typebox'), '@earendil-works/pi-coding-agent': join(root, 'tests', 'engine-api.mjs') } });
-    factory = await jiti.import(join(root, 'extensions', 'delivery.ts'), { default: true });
-  } catch { /* toolchain (jiti/typebox devDeps) unavailable — tests skip below */ }
+  const requirePi = createRequire(cli);
+  const { createJiti } = requirePi('jiti');
+  const jiti = createJiti(import.meta.url, { alias: { typebox: requirePi.resolve('typebox'), '@earendil-works/pi-coding-agent': join(dirname(cli), 'index.js') } });
+  factory = await jiti.import(resolve(dirname(fileURLToPath(import.meta.url)), '../extensions/delivery.ts'), { default: true });
 }
-const options = { skip: !factory && 'Agent engine or dev toolchain not found: run npm install to enable extension integration tests' };
+const options = { skip: !cli && 'Pi not found: set PI2_CLI or PI_CLI to run extension integration tests' };
 function fixture(t) {
   const cwd = mkdtempSync(join(tmpdir(), 'pi extension integration '));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
-  // Per-fixture self-review config so /review mode writes stay isolated.
-  process.env.PI2_CONFIG = join(cwd, 'config.json');
   writeFileSync(join(cwd, 'app.py'), 'print(1)');
-  const hooks = {}, tools = {}, commands = {}, entries = [], messages = [], flags = { 'delivery-strict': true };
+  const hooks = {}, tools = {}, entries = [], messages = [], flags = { 'delivery-strict': true };
   const pi = {
     registerFlag() {}, getFlag: name => flags[name],
     on(name, fn) { hooks[name] = fn; },
     registerTool(tool) { tools[tool.name] = tool; },
-    registerCommand(name, command) { commands[name] = command; },
     appendEntry(customType, data) { entries.push({ type: 'custom', customType, data }); },
     sendMessage(message) { messages.push(message); },
   };
   factory(pi);
-  const ctx = { cwd, hasUI: false, mode: 'rpc', ui: { notify() {}, select: async () => undefined }, sessionManager: { getBranch: () => entries, getSessionId: () => 'integration-session' }, hasPendingMessages: () => false };
+  const ctx = { cwd, hasUI: false, sessionManager: { getBranch: () => entries, getSessionId: () => 'integration-session' }, hasPendingMessages: () => false };
   const call = (name, params = {}) => tools[name].execute('test-id', params, undefined, undefined, ctx);
   const plan = { goal: 'Working script', assumptions: [], artifacts: ['app.py'], steps: ['Implement', 'Verify'], acceptance: [{ requirement: 'Runs', checks: ['run'] }], checks: [{ id: 'run', kind: 'runtime', argv: [process.execPath, '-e', 'console.log("passed")'], timeoutSeconds: 5 }] };
-  return { cwd, ctx, hooks, commands, entries, messages, flags, call, plan };
+  return { cwd, ctx, hooks, entries, messages, flags, call, plan };
 }
 
 test('real extension loads, gates writes, executes checks and rejects stale evidence', options, async t => {
@@ -64,63 +62,6 @@ test('real extension loads, gates writes, executes checks and rejects stale evid
   writeFileSync(join(f.cwd, 'new_config.json'), '{}');
   await assert.rejects(f.call('delivery_finish', finish), /stale checks/);
 });
-test('strict pre-plan gate ignores read-only fd plumbing but blocks real writes', options, async t => {
-  const f = fixture(t);
-  const bash = cmd => f.hooks.tool_call({ toolName: 'bash', input: { command: cmd } }, f.ctx);
-  // Read-only inspection with fd plumbing must pass — this is the false
-  // positive that blocked `cat x 2>/dev/null` during exploration.
-  for (const cmd of [
-    'cat package.json 2>/dev/null',
-    'ls -la && git log --oneline -5 2>/dev/null',
-    'which firefox firefox-esr 2>/dev/null; ls /snap/bin/firefox 2>/dev/null',
-    'node tests/run.mjs >/dev/null',
-    'node tests/run.mjs 2>&1 | tail -20',
-    'node tests/run.mjs 1>&2',
-    'kill %1 2>&-',
-  ]) assert.equal(bash(cmd), undefined, `should be allowed: ${cmd}`);
-  // Genuine mutations still block before a plan exists.
-  for (const cmd of [
-    'mkdir artifacts',
-    'rm -rf build',
-    'cp a b',
-    'echo hi > out.txt',
-    'echo hi >> out.txt',
-    'node tests/run.mjs 2> errors.log',
-    'node tests/run.mjs &> out.txt',
-    'echo hi > out.txt 2>&1',
-    'sed -i s/a/b/ file.txt',
-  ]) assert.equal(bash(cmd)?.block, true, `should be blocked: ${cmd}`);
-  // After the plan exists the gate lifts entirely.
-  await f.call('delivery_plan', f.plan);
-  assert.equal(bash('echo hi > out.txt'), undefined);
-});
-test('delivery_finish re-entry guard prevents the agent from looping on a finished delivery', options, async t => {
-  const f = fixture(t);
-  const finish = { status: 'verified', review: 'Reviewed.', launch: 'python app.py', limitations: [] };
-  await f.call('delivery_plan', f.plan);
-  await f.call('delivery_check', { id: 'all' });
-  await f.call('delivery_finish', finish);
-  // Immediate re-call with no file changes — must return "already finished",
-  // not re-process and return a fresh success (which gives no stop signal).
-  const second = await f.call('delivery_finish', finish);
-  assert.match(second.content[0].text, /already finished/i);
-  assert.match(second.content[0].text, /do not call delivery_finish again/i);
-  // After a real file change the guard falls through to normal validation.
-  writeFileSync(join(f.cwd, 'new_file.py'), 'x = 1');
-  await assert.rejects(f.call('delivery_finish', finish), /stale checks/);
-});
-test('context handler stops re-injecting the delivery contract after verified status', options, async t => {
-  const f = fixture(t);
-  await f.call('delivery_plan', f.plan);
-  await f.call('delivery_check', { id: 'all' });
-  await f.call('delivery_finish', { status: 'verified', review: 'ok', launch: 'python app.py', limitations: [] });
-  f.hooks.session_start({}, f.ctx);
-  // After verified, the context handler must not tell the agent to "proceed
-  // to delivery_finish" — that instruction causes the agent to re-call
-  // delivery_finish and loop.
-  const result = f.hooks.context({ messages: [] });
-  assert.equal(result, undefined);
-});
 test('real extension serializes sibling checks without tool errors', options, async t => {
   const f = fixture(t);
   f.plan.checks.push({ ...f.plan.checks[0], id: 'second' });
@@ -138,16 +79,6 @@ test('compaction context survives restore, branching clears stale contracts', op
   f.entries.length = 0;
   f.hooks.session_tree({}, f.ctx);
   assert.match((await f.call('delivery_status')).content[0].text, /No delivery contract/);
-});
-test('compaction context does not direct re-checks when all evidence is fresh', options, async t => {
-  const f = fixture(t);
-  await f.call('delivery_plan', f.plan);
-  await f.call('delivery_check', { id: 'all' });
-  // session_start → restore reloads state and stores cwd for the context handler.
-  f.hooks.session_start({}, f.ctx);
-  const context = f.hooks.context({ messages: [] });
-  assert.doesNotMatch(context.messages[0].content, /delivery_check id="all"/);
-  assert.match(context.messages[0].content, /current passing evidence/i);
 });
 test('agent_end queues at most two repairs and does not revive cancelled work', options, async t => {
   const f = fixture(t);
@@ -182,35 +113,7 @@ test('repair nudges quote the failing check, its exit code and its output tail',
   // Compaction context keeps only a short tail, not the full 1200-character evidence copy.
   const context = f.hooks.context({ messages: [] });
   assert.match(context.messages[0].content, /"passed":false/);
-  assert.match(context.messages[0].content, /delivery_check id="all"/);
   assert.ok(context.messages[0].content.length < 4000);
-});
-
-test('delivery-gate follow-up does not reset the nudge cap (no infinite loop)', options, async t => {
-  const f = fixture(t);
-  f.plan.checks[0].argv = [process.execPath, '-e', 'process.exit(1)'];
-  await f.call('delivery_plan', f.plan);
-  await assert.rejects(f.call('delivery_check', { id: 'run' }));
-  // Nudge 1 — shouldContinue fires, nudges becomes 1.
-  f.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, f.ctx);
-  assert.equal(f.messages.length, 1);
-  assert.match(f.messages[0].content, /Delivery follow-up 1\/2/);
-  // The follow-up re-enters as input — this must NOT reset nudges.
-  f.hooks.input({ source: 'interactive', text: f.messages[0].content });
-  // Nudge 2 — nudges becomes 2.
-  f.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, f.ctx);
-  assert.equal(f.messages.length, 2);
-  assert.match(f.messages[1].content, /Delivery follow-up 2\/2/);
-  // The follow-up re-enters again — still must NOT reset.
-  f.hooks.input({ source: 'interactive', text: f.messages[1].content });
-  // Nudge 3 — shouldContinue returns false (2 < 2 is false), no more nudges.
-  f.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, f.ctx);
-  assert.equal(f.messages.length, 2, 'nudge cap held — no third nudge');
-  // A genuine user prompt resets the cap.
-  f.hooks.input({ source: 'interactive', text: 'fix the failing check' });
-  f.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, f.ctx);
-  assert.equal(f.messages.length, 3);
-  assert.match(f.messages[2].content, /Delivery follow-up 1\/2/);
 });
 test('bash timeout cap bounds runaway shell commands when configured', options, t => {
   const f = fixture(t);
@@ -406,177 +309,57 @@ test('request guidance is injected behind the scenes and survives follow-ups', o
   assert.match(followUp.systemPrompt, /\[data-visualization\]/);
 });
 
-const finish = { status: 'verified', review: 'Reviewed executable behavior.', launch: 'python app.py', limitations: [] };
-async function verifyRun(f) {
-  await f.call('delivery_plan', f.plan);
-  await f.call('delivery_check', { id: 'all' });
-  await f.call('delivery_finish', finish);
-}
-const reviewMessages = f => f.messages.filter(m => m.customType === 'delivery-review');
-
-test('review mode yes auto-kicks the loop after a verified finish', options, async t => {
+test('blocked delivery succeeds and finishes cleanly even when evidence scope limit is exceeded', options, async t => {
   const f = fixture(t);
-  f.flags['delivery-review'] = 'yes';
-  await verifyRun(f);
-  f.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, f.ctx);
-  assert.equal(reviewMessages(f).length, 1);
-  assert.match(reviewMessages(f)[0].content, /gh pr create/);
-  assert.match(reviewMessages(f)[0].content, /pi2\.mjs" review <pr-number-or-url>/);
-  // The loop is active — subsequent run ends must not re-kick.
-  f.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, f.ctx);
-  assert.equal(reviewMessages(f).length, 1);
-});
-
-test('review mode no never offers or kicks the loop', options, async t => {
-  const f = fixture(t);
-  f.flags['delivery-review'] = 'no';
-  await verifyRun(f);
-  f.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, f.ctx);
-  assert.equal(reviewMessages(f).length, 0);
-  assert.doesNotMatch(f.hooks.before_agent_start({ systemPrompt: 'base', prompt: 'more work' }, f.ctx).systemPrompt, /Self-review/);
-});
-
-test('review mode ask defers to the host over rpc and hints when headless', options, async t => {
-  const f = fixture(t);
-  await verifyRun(f);
-  // rpc host (pi2 console) renders the offer itself — extension stays silent.
-  f.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, f.ctx);
-  assert.equal(reviewMessages(f).length, 0);
-  // Headless mode gets a passive, non-turn hint instead.
-  const headless = fixture(t);
-  headless.ctx.mode = 'print';
-  await verifyRun(headless);
-  headless.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, headless.ctx);
-  assert.equal(reviewMessages(headless).length, 1);
-  assert.match(reviewMessages(headless)[0].content, /run \/review/i);
-});
-
-test('review mode ask prompts via ui.select on a real pi TUI', options, async t => {
-  const f = fixture(t);
-  f.ctx.mode = 'tui';
-  let asked = 0;
-  f.ctx.ui.select = async () => { asked++; return 'Start self-review'; };
-  await verifyRun(f);
-  f.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, f.ctx);
-  await new Promise(r => setImmediate(r));
-  assert.equal(asked, 1);
-  assert.equal(reviewMessages(f).length, 1);
-  // A declined offer is not repeated for the same fingerprint.
-  const declined = fixture(t);
-  declined.ctx.mode = 'tui';
-  let askedTwice = 0;
-  declined.ctx.ui.select = async () => { askedTwice++; return 'Skip'; };
-  await verifyRun(declined);
-  declined.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, declined.ctx);
-  declined.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, declined.ctx);
-  await new Promise(r => setImmediate(r));
-  assert.equal(askedTwice, 1);
-  assert.equal(reviewMessages(declined).length, 0);
-});
-
-test('/review command starts a loop and persists mode defaults', options, async t => {
-  const f = fixture(t);
-  assert.ok(f.commands.review, 'extension registers a /review command');
-  await f.commands.review.handler('', f.ctx);
-  assert.equal(reviewMessages(f).length, 1);
-  // Persisting 'no' is honored immediately — a verified finish stays silent.
-  const f2 = fixture(t);
-  await f2.commands.review.handler('no', f2.ctx);
-  await verifyRun(f2);
-  f2.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, f2.ctx);
-  assert.equal(reviewMessages(f2).length, 0);
-  // An explicit flag still wins over the persisted default for the session.
-  f2.flags['delivery-review'] = 'yes';
-  f2.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, f2.ctx);
-  assert.equal(reviewMessages(f2).length, 1);
-});
-
-test('review guidance is described when the loop is opt-in or automatic', options, async t => {
-  const f = fixture(t);
-  const asked = f.hooks.before_agent_start({ systemPrompt: 'base', prompt: 'task' }, f.ctx);
-  assert.match(asked.systemPrompt, /Self-review is available and opt-in/);
-  f.flags['delivery-review'] = 'yes';
-  const auto = f.hooks.before_agent_start({ systemPrompt: 'base', prompt: 'task' }, f.ctx);
-  assert.match(auto.systemPrompt, /Self-review runs automatically/);
-});
-
-test('self-review round cap blocks reviewer runs past the limit', options, async t => {
-  const f = fixture(t);
-  const reviewBash = cmd => f.hooks.tool_call({ toolName: 'bash', input: { command: cmd } }, f.ctx);
-  // Outside a loop, reviewer invocations are never capped.
-  assert.equal(reviewBash('node "/x/bin/pi2.mjs" review 15'), undefined);
-  await f.commands.review.handler('', f.ctx); // start a loop
-  // Mode changes and status checks are not rounds.
-  assert.equal(reviewBash('pi2 review yes'), undefined);
-  assert.equal(reviewBash('pi2 review status'), undefined);
-  assert.equal(reviewBash('pi2 review'), undefined);
-  // Rounds 1..3 run; round 4 is blocked with a wrap-up instruction.
-  for (const cmd of ['pi2 review 15', 'node "/x/bin/pi2.mjs" review 15 --timeout 60', 'pi2 review https://github.com/o/r/pull/15']) {
-    assert.equal(reviewBash(cmd), undefined, cmd);
-  }
-  const blocked = reviewBash('pi2 review 15');
-  assert.equal(blocked.block, true);
-  assert.match(blocked.reason, /round limit \(3\)/);
-  // User input resets the loop (and the counter) — a fresh loop may start.
-  f.hooks.input({ source: 'user' });
-  await f.commands.review.handler('', f.ctx);
-  assert.equal(reviewBash('pi2 review 15'), undefined);
-});
-
-test('delivery_plan accepts an outputs list and requires it at verified finish', options, async t => {
-  const f = fixture(t);
-  await f.call('delivery_plan', { ...f.plan, outputs: ['artifacts/proof.txt'] });
-  await f.call('delivery_check', { id: 'all' });
-  const finish = { status: 'verified', review: 'ok', launch: 'python app.py', limitations: [] };
-  // The declared output does not exist yet — verified must be refused.
-  await assert.rejects(f.call('delivery_finish', finish), /Missing artifacts\/outputs.*proof\.txt/);
-  // Producing it under the ignored artifacts/ dir must not invalidate evidence.
-  mkdirSync(join(f.cwd, 'artifacts'), { recursive: true });
-  writeFileSync(join(f.cwd, 'artifacts', 'proof.txt'), 'render sampled 3 colors');
-  await f.call('delivery_finish', finish);
-  assert.equal(f.entries.at(-1).data.status, 'verified');
-  assert.deepEqual(f.entries.at(-1).data.plan.outputs, ['artifacts/proof.txt']);
-});
-
-test('delivery_revise preserves unchanged evidence, drops changed evidence and keeps step status', options, async t => {
-  const f = fixture(t);
-  f.plan.steps = ['Implement', 'Verify', 'Ship'];
-  f.plan.checks.push({ ...f.plan.checks[0], id: 'second' });
-  f.plan.acceptance = [{ requirement: 'Runs', checks: ['run', 'second'] }];
-  await f.call('delivery_plan', f.plan);
-  await f.call('delivery_progress', { step: 0, status: 'done' });
-  await f.call('delivery_check', { id: 'all' });
-  assert.equal(f.entries.at(-1).data.evidence.run.passed, true);
-
-  // Change only the second check; keep run byte-identical.
-  const result = await f.call('delivery_revise', {
-    steps: ['Implement', 'Verify', 'Ship', 'Document'],
-    checks: [
-      { id: 'run', kind: 'runtime', argv: [process.execPath, '-e', 'console.log("passed")'], timeoutSeconds: 5 },
-      { id: 'second', kind: 'runtime', argv: [process.execPath, '-e', 'console.log("changed")'], timeoutSeconds: 5 },
-    ],
+  const oldEnv = process.env.PI2_MAX_FILES;
+  t.after(() => {
+    if (oldEnv === undefined) delete process.env.PI2_MAX_FILES;
+    else process.env.PI2_MAX_FILES = oldEnv;
   });
-  const state = f.entries.at(-1).data;
-  assert.equal(state.plan.steps.length, 4);
-  assert.ok(state.evidence.run, 'unchanged check keeps evidence');
-  assert.equal(state.evidence.second, undefined, 'changed check drops evidence');
-  assert.equal(state.stepStatus.step0, 'done', 'unchanged step keeps status');
-  assert.equal(state.status, 'implementing');
-  assert.match(result.content[0].text, /evidencePreserved/);
-  // The revised contract now has a pending check, so verified is refused.
-  await assert.rejects(f.call('delivery_finish', { status: 'verified', review: 'ok', launch: 'x', limitations: [] }), /second/);
 
-  // Changing a step's text resets its status; other steps keep theirs.
-  await f.call('delivery_revise', { steps: ['Implement properly', 'Verify', 'Ship', 'Document'] });
-  const after = f.entries.at(-1).data;
-  assert.equal(after.stepStatus.step0, undefined, 'renamed step loses status');
-});
-
-test('delivery_revise cannot silently drop an original acceptance requirement', options, async t => {
-  const f = fixture(t);
+  // Create plan
   await f.call('delivery_plan', f.plan);
+
+  // Set tight file limit (1 file) and add a second file
+  process.env.PI2_MAX_FILES = '1';
+  writeFileSync(join(f.cwd, 'extra.txt'), 'extra');
+
+  // delivery_status tolerates scope limit
+  const status = await f.call('delivery_status');
+  assert.match(status.content[0].text, /scope error/);
+
+  // delivery_check reports scope error with guidance
   await assert.rejects(
-    f.call('delivery_revise', { acceptance: [{ requirement: 'Something else', checks: ['run'] }] }),
-    /cannot silently remove acceptance criteria/i,
+    f.call('delivery_check', { id: 'run' }),
+    /Evidence scope error.*status="blocked"/
   );
+
+  // delivery_finish with status='verified' must still fail
+  await assert.rejects(
+    f.call('delivery_finish', {
+      status: 'verified',
+      review: 'Trying to verify despite scope limits',
+      launch: 'python app.py',
+      limitations: [],
+    }),
+    /Evidence scope exceeds/
+  );
+
+  // delivery_finish with status='blocked' must SUCCEED without looping or throwing
+  const finishBlocked = await f.call('delivery_finish', {
+    status: 'blocked',
+    review: 'Repository exceeds evidence scope limit; cannot run fingerprint',
+    launch: 'python app.py',
+    limitations: ['Repository exceeds maximum file count limit for automated checks.'],
+  });
+  assert.equal(finishBlocked.content[0].type, 'text');
+  const lastEntry = f.entries.at(-1).data;
+  assert.equal(lastEntry.status, 'blocked');
+  assert.equal(lastEntry.handoff.fingerprint, 'unfingerprinted:scope_exceeded');
+
+  // agent_end should NOT trigger follow-up nudges since status is blocked
+  f.messages.length = 0;
+  f.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, f.ctx);
+  assert.equal(f.messages.length, 0);
 });
+
