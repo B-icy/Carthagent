@@ -4,7 +4,7 @@ import { parseD2, layoutD2, renderD2 } from '../lib/tui/d2.mjs';
 import { planSideWidth, makeKeyParser, matchSlash, computeNodeStates, barRange, scrollCell } from '../lib/tui/app.mjs';
 import { UNICODE_GLYPHS, ASCII_GLYPHS, detectGlyphMode, resolveGlyphs } from '../lib/tui/glyphs.mjs';
 import { planD2, computePhase, freshChecks, PHASES } from '../lib/delivery.mjs';
-import { createFeed, applyEvent, summarizeArgs, renderFeed, hydrateFeed } from '../lib/tui/feed.mjs';
+import { createFeed, resetFeed, applyEvent, summarizeArgs, renderFeed, hydrateFeed } from '../lib/tui/feed.mjs';
 import { strip, width, wrap, truncate, hasTruecolor, sliceCols, inverseCols, mix, fg } from '../lib/tui/ansi.mjs';
 import { getTheme, resolveThemeName, flattenTheme, THEME_NAMES } from '../lib/tui/theme.mjs';
 import { framePrompt, shouldFrame, unframe, frameHint, FRAME_HINTS } from '../lib/tui/framing.mjs';
@@ -198,6 +198,30 @@ test('feed dedupes a locally echoed user prompt', () => {
   S.blocks.push({ kind: 'user', text: 'hi', t: Date.now() });
   applyEvent(S, { type: 'message_start', message: { role: 'user', content: [{ type: 'text', text: 'hi' }] } });
   assert.equal(S.blocks.filter(b => b.kind === 'user').length, 1);
+});
+
+test('resetFeed clears blocks, tools, and resets tokens and cost counters', () => {
+  const S = createFeed();
+  applyEvent(S, { type: 'agent_start' });
+  applyEvent(S, { type: 'turn_start' });
+  applyEvent(S, { type: 'message_start', message: { role: 'user', content: [{ type: 'text', text: 'hi' }] } });
+  applyEvent(S, { type: 'message_update', assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: 'done' } });
+  applyEvent(S, { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'done' }], usage: { totalTokens: 350, cost: { total: 0.05 } }, stopReason: 'stop' } });
+  assert.equal(S.tokens, 350);
+  assert.equal(S.cost, 0.05);
+  assert.ok(S.blocks.length > 0);
+
+  resetFeed(S);
+  assert.equal(S.tokens, 0);
+  assert.equal(S.cost, 0);
+  assert.equal(S.toolCalls, 0);
+  assert.equal(S.turns, 0);
+  assert.equal(S.blocks.length, 0);
+  assert.equal(S.toolBlocks.size, 0);
+  assert.equal(S.currentAssistant, null);
+  assert.equal(S.currentThinking, null);
+  assert.equal(S.running, false);
+  assert.equal(S.settled, true);
 });
 
 test('renderFeed produces width-bounded lines', () => {
