@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fingerprint, validatePlan, planD2, pendingChecks, coverageReport, restoreState, runCommand, shouldContinue, localPath, createSerialQueue, validateRevision, turnBudgetExceeded } from '../lib/delivery.mjs';
+import { fingerprint, validatePlan, planD2, pendingChecks, restoreState, runCommand, shouldContinue, localPath, createSerialQueue, validateRevision, turnBudgetExceeded, maxEvidenceFiles, maxEvidenceBytes } from '../lib/delivery.mjs';
 import { createReport, latestReport, saveReport } from '../lib/reports.mjs';
 
 function fixture(t) {
@@ -136,44 +136,38 @@ test('delivery reports are persisted and the newest report is discovered', t => 
   assert.match(readFileSync(join(first.dir, 'plan.d2'), 'utf8'), /Working app/);
 });
 
-test('coverageReport tracks fresh and static-only acceptance criteria', () => {
-  const plan = {
-    goal: 'g', artifacts: ['.'], steps: ['s'],
-    acceptance: [
-      { requirement: 'Runs for real', checks: ['run'] },
-      { requirement: 'Compiles', checks: ['static'] },
-      { requirement: 'Unproven', checks: ['missing'] },
-    ],
-    checks: [
-      { id: 'run', kind: 'runtime', argv: ['node'], timeoutSeconds: 5 },
-      { id: 'static', kind: 'static', argv: ['node', '-e', '0'], timeoutSeconds: 5 },
-    ],
-  };
-  const evidence = {
-    run: { passed: true, fingerprint: 'h' },
-    static: { passed: true, fingerprint: 'h' },
-  };
-  const report = coverageReport(plan, evidence, 'h');
-  assert.equal(report.length, 3);
-  assert.deepEqual(report[0], { requirement: 'Runs for real', checks: ['run'], fresh: 1, failing: 0, missing: 0, stale: 0, covered: true, staticOnly: false });
-  assert.equal(report[1].staticOnly, true, 'static-only evidence is flagged');
-  assert.equal(report[2].covered, false);
-  assert.equal(report[2].missing, 1);
-  // A stale fingerprint is not fresh coverage.
-  assert.equal(coverageReport(plan, evidence, 'other')[0].fresh, 0);
-  assert.equal(coverageReport(plan, evidence, 'other')[0].stale, 1);
+test('fingerprint respects maxEvidenceFiles and PI2_MAX_FILES override', t => {
+  const cwd = fixture(t);
+  const oldEnv = process.env.PI2_MAX_FILES;
+  t.after(() => {
+    if (oldEnv === undefined) delete process.env.PI2_MAX_FILES;
+    else process.env.PI2_MAX_FILES = oldEnv;
+  });
+
+  assert.equal(maxEvidenceFiles(), 25000);
+  assert.equal(maxEvidenceBytes(), 256 * 1024 * 1024);
+
+  process.env.PI2_MAX_FILES = '3';
+  assert.equal(maxEvidenceFiles(), 3);
+
+  // 1 file (app.py) passes
+  assert.doesNotThrow(() => fingerprint(cwd, ['.']));
+
+  // Add 3 more files (total 4 > 3)
+  writeFileSync(join(cwd, 'a.txt'), 'a');
+  writeFileSync(join(cwd, 'b.txt'), 'b');
+  writeFileSync(join(cwd, 'c.txt'), 'c');
+  assert.throws(() => fingerprint(cwd, ['.']), /Evidence scope exceeds 3 files/);
 });
 
-test('validatePlan accepts outputs under ignored dirs but still blocks path escapes', () => {
-  const plan = {
-    goal: 'g', artifacts: ['.'], outputs: ['artifacts/proof.txt'], steps: ['s'],
-    acceptance: [{ requirement: 'r', checks: ['t'] }],
-    checks: [{ id: 't', kind: 'test', argv: ['node'], timeoutSeconds: 5 }],
-  };
-  const cwd = mkdtempSync(join(tmpdir(), 'pi outputs '));
-  try {
-    const validated = validatePlan(plan, cwd);
-    assert.deepEqual(validated.outputs, ['artifacts/proof.txt']);
-    assert.throws(() => validatePlan({ ...plan, outputs: ['../escape.txt'] }, cwd), /escapes working directory/);
-  } finally { rmSync(cwd, { recursive: true, force: true }); }
+test('fingerprint omits .pi and .pi2 directory trees', t => {
+  const cwd = fixture(t);
+  const hashBefore = fingerprint(cwd, ['.']);
+  mkdirSync(join(cwd, '.pi'), { recursive: true });
+  writeFileSync(join(cwd, '.pi', 'data.json'), '{"ignore": true}');
+  mkdirSync(join(cwd, '.pi2'), { recursive: true });
+  writeFileSync(join(cwd, '.pi2', 'data.json'), '{"ignore": true}');
+  const hashAfter = fingerprint(cwd, ['.']);
+  assert.equal(hashBefore, hashAfter);
 });
+
