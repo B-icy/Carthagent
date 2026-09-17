@@ -17,8 +17,6 @@ git clone https://github.com/B-icy/pi2 && cd pi2
 npm ci && npm i -g .          # gives you `pi2`; or just run `node bin/pi2.mjs`
 ```
 
-Still using pi directly? `pi install git:github.com/B-icy/pi2` works too — pi2 detects a pi-managed install and skips the bundled copy.
-
 ## Connect a provider
 
 First run needs AI credentials. One store (`~/.pi2/agent/auth.json`) covers the console, headless runs, and the dashboard.
@@ -29,6 +27,8 @@ First run needs AI credentials. One store (`~/.pi2/agent/auth.json`) covers the 
 pi2 login          # opens pi's auth — run /login, pick a provider, /quit when done
 ```
 
+You can also run `/login` (or `/auth`) from inside the console: it opens an in-console popup to pick a provider and auth method, then handles OAuth URLs, device codes, and API-key prompts inline — no terminal hand-off — and restarts the agent once connected.
+
 **API key** — export the env var, or run `pi2 login` and pick a key provider to store it:
 
 ```sh
@@ -36,7 +36,9 @@ export ANTHROPIC_API_KEY=sk-ant-...   # or OPENAI_API_KEY, GEMINI_API_KEY, OPENR
 pi2
 ```
 
-Full provider list: [pi providers docs](https://github.com/earendil-works/pi-coding-agent/blob/main/docs/providers.md). Override the default model with `--model <id>` (e.g. `pi2 --model sonnet`).
+Multiple providers can be connected at once — credentials coexist in `~/.pi2/agent/auth.json`. In the console, `^t` (settings) has a **provider** row above **model**: `←→` switches providers (and selects that provider's first model), while the model picker stays scoped to the chosen provider. `/login` adds another provider at any time.
+
+Full provider list: [pi providers docs](https://github.com/earendil-works/pi-coding-agent/blob/main/docs/providers.md). Override the default model with `--model <id>` (e.g. `pi2 --model sonnet`). Your last model choice (via `--model`, `/model`, or the `^t` settings picker) is saved to `~/.pi2/config.json` and reused on the next launch — pass a flag to override it for that run.
 
 ## Use it
 
@@ -52,11 +54,13 @@ pi2 test               # unit suite
 pi2 --help             # everything else
 ```
 
-Inside the console: `enter` send/steer · `esc` abort (again = force-restart pi, nothing is lost) · `^r` session picker · `tab`/`⇧tab` panes · `x` expand tool output · `^t` settings · `^c` quit. Sessions persist under `~/.pi2/agent/sessions/`; `pi2 -c` continues the last one, `-r` opens the picker.
+Inside the console: `enter` send/steer · `esc` abort (again = force-restart pi, nothing is lost) · `^r` session picker · `tab`/`⇧tab` panes · `x` expand tool output · `^v` paste · `^t` settings · `^c` quit. Sessions persist under `~/.pi2/agent/sessions/`; `pi2 -c` continues the last one, `-r` opens the picker.
 
-**Themes:** 21 AA-contrast-verified options — dark (`opencode`, `tokyonight`, `nebula`, `ember`, `forest`, `mono`, `obsidian`, `midnight`, `nord`, `solarized-dark`, `okabe-dark`, `contrast-dark`), light (`paper`, `daylight`, `solarized-light`, `okabe-light`, `contrast-light`), and adaptive (`solarized`, `okabe`, `contrast`, `system`) that follow `COLORFGBG` or `PI2_THEME_MODE=light|dark`. Pick via `--theme`, `/theme`, or `^t`. The dashboard has the same set behind a header picker. `okabe-*` uses the colorblind-safe Okabe-Ito palette.
+**Themes:** 21 AA-contrast-verified options — dark (`opencode`, `tokyonight`, `nebula`, `ember`, `forest`, `mono`, `obsidian`, `midnight`, `nord`, `solarized-dark`, `okabe-dark`, `contrast-dark`), light (`paper`, `daylight`, `solarized-light`, `okabe-light`, `contrast-light`), and adaptive (`solarized`, `okabe`, `contrast`, `system`) that follow `COLORFGBG` or `PI2_THEME_MODE=light|dark`. Pick via `--theme`, `/theme`, or `^t`; the choice is saved to `~/.pi2/config.json` and reused on the next launch. The dashboard has the same set behind a header picker (persisted in `localStorage`). `okabe-*` uses the colorblind-safe Okabe-Ito palette.
 
-Useful flags: `--model`, `--thinking`, `--validators <file>`, `--context <file>`, `--bash-cap <sec>`, `--isolate`, `--no-delivery`, `--no-guide`, `-c`/`-r`/`--session`.
+Useful flags: `--model`, `--thinking`, `--validators <file>`, `--context <file>`, `--bash-cap <sec>`, `--review ask|yes|no`, `--isolate`, `--no-delivery`, `--no-guide`, `--ascii`, `--glyphs <mode>`, `-c`/`-r`/`--session`.
+
+**Glyphs:** icons, status dots, spinners and the D2 graph adapt to your terminal. `--glyphs auto` (default) keeps the Unicode set on terminals known to render it and falls back to an ASCII icon tier everywhere else, so tool icons, status marks and spinners never show up as `?` on limited fonts. Force one with `--ascii`, `--glyphs unicode|ascii`, or `PI2_GLYPHS=unicode|ascii` / `PI2_ASCII=1`.
 
 ## How it works
 
@@ -65,6 +69,7 @@ Useful flags: `--model`, `--thinking`, `--validators <file>`, `--context <file>`
 | Tool | What it does |
 |---|---|
 | `delivery_plan` | Goal, steps, artifact roots, acceptance criteria → check mapping; writes `plan.d2` |
+| `delivery_revise` | Edits the live contract in place, preserving evidence for checks whose argv/kind/timeout are unchanged |
 | `delivery_check` | Runs a check argv with a deadline; records exit code, logs, workspace SHA-256 |
 | `delivery_status` | Contract + evidence state (missing/failed/stale) |
 | `delivery_progress` | Step progress for the plan panel |
@@ -72,11 +77,32 @@ Useful flags: `--model`, `--thinking`, `--validators <file>`, `--context <file>`
 
 The discipline: evidence is fingerprinted against the whole workspace — edit any file and its checks go stale. Checks are real subprocesses (`argv`, no implicit shell), FIFO-queued, 1–300 s deadlines, logs under `.harness/`. Failed or missing checks get at most two automatic repair nudges per prompt. This is a workflow guardrail, not a security sandbox — for untrusted code use a container.
 
+## Self-review
+
+When a run finishes a substantial change (a verified delivery or file edits), pi2 can offer a review loop: the agent pushes a branch, opens a PR, and a **detached fresh-context reviewer** (`pi2 review <pr>` — a separate engine process with no shared context) inspects it. Findings come back to the working agent, which fixes, pushes, and re-reviews — up to 3 rounds (enforced by the delivery extension) or `VERDICT: APPROVE`.
+
+It's opt-in and tri-state, resolved as `--review <mode>` flag → `~/.pi2/config.json` → `ask`:
+
+| Mode | Behavior |
+|---|---|
+| `ask` (default) | Offer the loop at the end of a major change (`^y` accepts, `esc` skips) |
+| `yes` | Start the loop automatically — no prompt |
+| `no` | Never offer |
+
+```sh
+pi2 review            # show the effective default
+pi2 review yes        # persist a default for all sessions
+pi2 review 14         # run the fresh-context reviewer over a PR directly
+pi2 --review no       # per-launch override
+```
+
+Inside a session, `/review` starts a loop immediately and `/review ask|yes|no|status` manages the same default. The loop needs `git` + an authenticated `gh` — without them the agent reports and skips instead of simulating a review.
+
 ## Make it yours
 
 Everything below is config, not code:
 
-- **Required validators** — your tests, not the model's. `.pi/delivery.json` (trusted project) or `--validators file.json`: `{"version":1,"checks":[{"id":"acceptance","kind":"test","argv":["pytest","-q"],"timeoutSeconds":90}]}`. They can't be omitted or overridden.
+- **Required validators** — your tests, not the model's. `.pi2/delivery.json` (trusted project) or `--validators file.json`: `{"version":1,"checks":[{"id":"acceptance","kind":"test","argv":["pytest","-q"],"timeoutSeconds":90}]}`. They can't be omitted or overridden.
 - **Domain guidance** — add a JSON profile to `guidance/profiles/` (keywords/deps → planning/check/review requirements) and matching requests pick it up automatically.
 - **Extra context** — `--delivery-context notes.md` injects project/benchmark-specific instructions.
 - **Scenarios** — `scenarios/<name>/scenario.json` defines an evaluation domain; `node evaluate.mjs --task <name> --allow-live` runs it (dry-run with `--dry-run`; spends API credit otherwise).
