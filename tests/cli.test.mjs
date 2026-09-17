@@ -112,3 +112,15 @@ test('pi2 review <pr> exits 1 on requested changes and 2 without a verdict', t =
   assert.equal(bad.status, 2);
   assert.match(bad.stderr, /no VERDICT/);
 });
+
+test('vendored agent engine is bundled and loads ModelRuntime cleanly', async () => {
+  const agentPath = join(root, 'vendor', 'agent', 'index.js');
+  const agent = await import(agentPath);
+  assert.equal(typeof agent.ModelRuntime, 'function');
+  const runtime = await agent.ModelRuntime.create({});
+  assert.ok(runtime && typeof runtime === 'object');
+  assert.ok(Array.isArray(runtime.snapshot?.all));
+  assert.ok(runtime.snapshot.all.length > 0);
+  const providers = new Set(runtime.snapshot.all.map(m => m.provider));
+  assert.ok(providers.size >= 35);
+});

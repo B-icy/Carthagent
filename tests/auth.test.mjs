@@ -1,13 +1,21 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import {
   authTypeLabel,
   authTypes,
   applyAuthEvent,
   filterLoginProviders,
   loginProviderList,
+  loadAuthRuntime,
   newAuthState,
 } from '../lib/tui/auth.mjs';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const root = join(__dirname, '..');
 
 /** Minimal stand-in for pi's ModelRuntime. */
 function fakeRuntime(providers, status = {}) {
@@ -104,4 +112,28 @@ test('newAuthState starts in the provider-picking phase', () => {
   assert.deepEqual(state.providers, []);
   assert.equal(state.error, '');
   assert.equal(state.busy, false);
+});
+
+test('loadAuthRuntime lazily imports vendored engine and discovers OAuth/API providers', async () => {
+  const runtime = await loadAuthRuntime();
+  assert.ok(runtime && typeof runtime === 'object');
+  const providers = loginProviderList(runtime);
+  assert.equal(providers.length, 40);
+  const oauthProviders = providers.filter(p => p.types.includes('oauth')).map(p => p.id).sort();
+  assert.deepEqual(oauthProviders, [
+    'anthropic',
+    'github-copilot',
+    'kimi-coding',
+    'openai-codex',
+    'openrouter',
+    'radius',
+    'xai',
+  ]);
+});
+
+test('vendor engine does not depend on unbundled @earendil-works/chord', () => {
+  const chunkPath = join(root, 'vendor', 'agent', 'chunks', 'chunk-JVUZSMYM.js');
+  const content = readFileSync(chunkPath, 'utf8');
+  assert.doesNotMatch(content, /from\s*['"]@earendil-works\/chord/);
+  assert.match(content, /from\s*['"]\.\/chord-context\.js['"]/);
 });
