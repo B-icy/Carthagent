@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { clipboardCommands, sanitizePaste } from '../lib/tui/clipboard.mjs';
+import { clipboardCommands, clipboardWriteCommands, sanitizePaste, writeClipboard } from '../lib/tui/clipboard.mjs';
 
 test('clipboardCommands picks the platform clipboard tool', () => {
   assert.deepEqual(clipboardCommands('darwin', {}), [['pbpaste', []]]);
@@ -14,6 +14,37 @@ test('clipboardCommands adds PowerShell for WSL', () => {
   assert.equal(wsl.at(-1)[0], 'powershell.exe');
   const notWsl = clipboardCommands('linux', {});
   assert.ok(!notWsl.some(c => c[0] === 'powershell.exe'));
+});
+
+test('clipboardWriteCommands picks the platform clipboard tool', () => {
+  assert.deepEqual(clipboardWriteCommands('darwin', {}), [['pbcopy', []]]);
+  const win32 = clipboardWriteCommands('win32', {});
+  assert.equal(win32[0][0], 'clip.exe');
+  assert.equal(win32[1][0], 'powershell.exe');
+  const linux = clipboardWriteCommands('linux', {});
+  assert.deepEqual(linux.map(c => c[0]), ['wl-copy', 'xclip', 'xsel']);
+});
+
+test('clipboardWriteCommands adds clip and PowerShell for WSL', () => {
+  const wsl = clipboardWriteCommands('linux', { WSL_DISTRO_NAME: 'Ubuntu' });
+  assert.equal(wsl.at(-2)[0], 'clip.exe');
+  assert.equal(wsl.at(-1)[0], 'powershell.exe');
+  const notWsl = clipboardWriteCommands('linux', {});
+  assert.ok(!notWsl.some(c => c[0] === 'clip.exe' || c[0] === 'powershell.exe'));
+});
+
+test('writeClipboard resolves safely when tools are absent', async () => {
+  // On Linux test runner without display/tools or non-existent platform, writeClipboard resolves false without rejecting
+  const res = await writeClipboard('test text', { platform: 'unknown-platform' });
+  assert.equal(res, false);
+});
+
+test('writeClipboard pipes text to child stdin and resolves true', async () => {
+  // Test piping using node command
+  const res = await writeClipboard('hello from pi2', {
+    commands: [[process.execPath, ['-e', 'process.stdin.resume(); process.stdin.on("data", () => process.exit(0))']]],
+  });
+  assert.equal(res, true);
 });
 
 test('sanitizePaste strips whitespace and control bytes for single-line fields', () => {
