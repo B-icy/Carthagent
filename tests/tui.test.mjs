@@ -453,14 +453,38 @@ test('mouse SGR events map to press, drag, release, and wheel keys', () => {
   assert.deepEqual({ x: keys[0].x, y: keys[0].y, button: keys[0].button }, { x: 10, y: 5, button: 0 });
   assert.equal(keys[1].button, 0);
   assert.equal(keys[2].x, 14);
-  // modifier bits are masked off; right-button presses don't masquerade as left
+  // modifier bits are masked off button but preserved in flags; right-button presses don't masquerade as left
   const more = [];
   const parse2 = makeKeyParser(k => more.push(k));
-  parse2('\x1b[<4;1;1M');   // shift+left press → still a left mousedown
+  parse2('\x1b[<4;1;1M');   // shift+left press → still a left mousedown with shift: true
   parse2('\x1b[<34;2;2M');  // right-button drag → button 2
   assert.equal(more[0].button, 0);
+  assert.equal(more[0].shift, true);
   assert.equal(more[1].key, 'mousedrag');
   assert.equal(more[1].button, 2);
+});
+
+test('key parser handles cmd/ctrl/alt deletion and backspace sequences', () => {
+  const keys = [];
+  const parse = makeKeyParser(k => keys.push(k));
+  parse('\x1b[3;5~');      // ctrl-delete
+  parse('\x1b[3;9~');      // cmd-delete
+  parse('\x1b[27;5;127~'); // ctrl-backspace
+  parse('\x1b[27;9;127~'); // cmd-backspace
+  parse('\x1b[127;8u');    // cmd-backspace (Kitty)
+  parse('\x1b\x7f');       // alt-backspace
+  parse('\x1b[<16;12;20M'); // ctrl-click (button 0 + ctrl bit 16)
+  assert.deepEqual(keys.map(k => k.key), [
+    'ctrl-delete',
+    'cmd-delete',
+    'ctrl-backspace',
+    'cmd-delete',
+    'cmd-delete',
+    'alt-backspace',
+    'mousedown'
+  ]);
+  assert.equal(keys[6].ctrl, true);
+  assert.equal(keys[6].button, 0);
 });
 
 test('sliceCols and inverseCols handle display-column ranges', () => {
