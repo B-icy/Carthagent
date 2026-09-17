@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseD2, layoutD2, renderD2 } from '../lib/tui/d2.mjs';
-import { planSideWidth, makeKeyParser, matchSlash, computeNodeStates, barRange, scrollCell } from '../lib/tui/app.mjs';
+import { planSideWidth, makeKeyParser, matchSlash, slashCardDimensions, renderSlashCard, computeNodeStates, barRange, scrollCell } from '../lib/tui/app.mjs';
 import { UNICODE_GLYPHS, ASCII_GLYPHS, detectGlyphMode, resolveGlyphs } from '../lib/tui/glyphs.mjs';
 import { planD2, computePhase, freshChecks, PHASES } from '../lib/delivery.mjs';
 import { createFeed, resetFeed, applyEvent, summarizeArgs, renderFeed, hydrateFeed } from '../lib/tui/feed.mjs';
@@ -556,6 +556,48 @@ test('matchSlash filters commands by prefix and closes on args', () => {
   assert.deepEqual(matchSlash('/raw foo'), []);
   // non-slash buffer → empty
   assert.deepEqual(matchSlash('hello'), []);
+});
+
+test('slashCardDimensions left justifies the commands card aligned with prompt area', () => {
+  const geom80 = slashCardDimensions(80);
+  assert.equal(geom80.x0, 2, 'x0 is left-justified to 2 on standard 80-col terminal');
+  assert.equal(geom80.cardW, 76);
+  assert.equal(geom80.innerW, 74);
+
+  const geom120 = slashCardDimensions(120);
+  assert.equal(geom120.x0, 2, 'x0 remains left-justified on wide terminal');
+  assert.equal(geom120.cardW, 88, 'card width expands to comfortable cap of 88');
+  assert.equal(geom120.innerW, 86);
+
+  const geomTiny = slashCardDimensions(18);
+  assert.ok(geomTiny.x0 <= 2);
+  assert.equal(geomTiny.cardW, 16);
+});
+
+test('renderSlashCard contains all rows strictly within bounding box without overflow', () => {
+  const allCommands = matchSlash('/');
+  const widths = [40, 64, 80, 100, 120];
+
+  for (const W of widths) {
+    const { card, cardW, innerW } = renderSlashCard(allCommands, 0, W);
+    for (let i = 0; i < card.length; i++) {
+      const line = card[i];
+      const stripped = strip(line);
+      assert.equal(
+        width(line),
+        cardW,
+        `Row ${i} width (${width(line)}) must exactly match cardW (${cardW}) for W=${W}`
+      );
+      assert.ok(
+        stripped.startsWith('╭') || stripped.startsWith('│') || stripped.startsWith('╰'),
+        `Row ${i} should start with box border`
+      );
+      assert.ok(
+        stripped.endsWith('╮') || stripped.endsWith('│') || stripped.endsWith('╯'),
+        `Row ${i} should end with box border`
+      );
+    }
+  }
 });
 
 // ------------------------------------------------------------------ glyph tier
