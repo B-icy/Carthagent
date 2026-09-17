@@ -144,6 +144,31 @@ test('renderD2 exposes the frontier for the rail detail line', () => {
   const r = renderD2(g, { width: 44, theme: getTheme('opencode'), states: new Map([['goal', 'done'], ['verify', 'fail']]), frame: 0 });
   assert.equal(r.frontierId, 'verify');
   assert.ok(r.frontierLabel.length > 0);
+  assert.ok(Array.isArray(r.boxes), 'boxes metadata should be returned');
+  assert.ok(r.boxes.length > 0, 'boxes should contain nodes');
+  for (const b of r.boxes) {
+    assert.ok(b.id, 'box has id');
+    assert.ok(typeof b.top === 'number' && typeof b.bottom === 'number');
+    assert.ok(b.bottom >= b.top + 2, `box ${b.id} must be at least 3 rows tall`);
+    assert.equal(b.h, b.bottom - b.top + 1);
+  }
+});
+
+test('renderD2 preserves complete box borders and does not overflow width', () => {
+  const g = parseD2(planD2(SAMPLE_PLAN));
+  for (const w of [20, 30, 44, 60]) {
+    const r = renderD2(g, { width: w, theme: getTheme('opencode'), states: new Map(), frame: 0 });
+    for (const l of r.lines) {
+      assert.ok(width(l) <= w, `line width ${width(l)} must not exceed ${w}`);
+    }
+    for (const b of r.boxes) {
+      // Top border of box b must contain top corner characters and horizontal line
+      const topRow = strip(r.lines[b.top]);
+      const botRow = strip(r.lines[b.bottom]);
+      assert.ok(topRow.includes('╭') || topRow.includes('╔'), `top border exists for ${b.id}`);
+      assert.ok(botRow.includes('╰') || botRow.includes('╚'), `bottom border exists for ${b.id}`);
+    }
+  }
 });
 
 test('planSideWidth tiers widen the rail on wide terminals', () => {
