@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import {
   fingerprint,
-  checkDigest,
+  evidenceIdentity,
   validatePlan,
   planD2,
   bindRequiredChecks,
@@ -151,7 +151,7 @@ app.post('/api/checks/run', async (req, res) => {
         const evidence = {
           passed: result.code === 0 && !result.timedOut && !result.cancelled && !result.outputLimit && before === after,
           fingerprint: after,
-          checkDigest: checkDigest(check),
+          ...evidenceIdentity(currentState, check),
           durationMs: result.durationMs,
           code: result.code,
           timedOut: result.timedOut,

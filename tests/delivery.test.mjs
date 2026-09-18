@@ -36,14 +36,23 @@ test('fingerprints detect edits, additions and deletion; ignore generated eviden
   writeFileSync(join(cwd, 'app.py'), 'print(2)'); assert.notEqual(fingerprint(cwd, ['.']), initial);
 });
 test('evidence cannot pass on missing, failed or stale checks', () => {
-  const state = { plan: plan(), evidence: {} };
+  const state = { runId: 'run-a', revision: 1, plan: plan(), evidence: {} };
   assert.deepEqual(pendingChecks(state, 'new'), ['smoke']);
   state.evidence.smoke = { passed: true, fingerprint: 'old' };
   assert.deepEqual(pendingChecks(state, 'new'), ['smoke']);
   state.evidence.smoke.fingerprint = 'new';
   assert.deepEqual(pendingChecks(state, 'new'), ['smoke'], 'legacy evidence must rerun');
   state.evidence.smoke.checkDigest = checkDigest(state.plan.checks[0]);
+  assert.deepEqual(pendingChecks(state, 'new'), ['smoke']);
+  Object.assign(state.evidence.smoke, { runId: state.runId, revision: state.revision });
   assert.deepEqual(pendingChecks(state, 'new'), []);
+  assert.deepEqual(pendingChecks({ ...state, runId: 'run-b' }, 'new'), ['smoke']);
+  assert.deepEqual(pendingChecks({ ...state, revision: 2 }, 'new'), ['smoke']);
+  const restored = restoreState([{ type: 'custom', customType: 'delivery-state-v1', data: state }]);
+  assert.deepEqual(pendingChecks(restored, 'new'), []);
+  restored.revision++;
+  assert.deepEqual(pendingChecks(restored, 'new'), ['smoke']);
+  assert.deepEqual(pendingChecks(state, 'new'), [], 'restoration must not mutate original identity');
   const original = structuredClone(state.plan.checks[0]);
   for (const change of [{ argv: ['node', '-e', 'throw 1'] }, { timeoutSeconds: 99 }, { kind: 'static' }]) {
     state.plan.checks[0] = { ...original, ...change };
