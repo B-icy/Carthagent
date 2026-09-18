@@ -4,7 +4,8 @@ import { mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 
 import { basename, dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { evidenceIdentity, validatePlan, planD2WithProgress, fingerprint, atomicJson, runCommand, pendingChecks, restoreState, shouldContinue, localPath, createSerialQueue, validateRevision, bindRequiredChecks, loadRequiredChecks, updateStepStatus, verificationMode, looksInformational } from '../lib/delivery.mjs';
+import { saveReport } from '../lib/reports.mjs';
+import { evidenceIdentity, validatePlan, planD2WithProgress, fingerprint, runCommand, pendingChecks, restoreState, shouldContinue, localPath, createSerialQueue, validateRevision, bindRequiredChecks, loadRequiredChecks, updateStepStatus, verificationMode, looksInformational } from '../lib/delivery.mjs';
 import { formatGuidance, loadGuidanceProfiles, routeGuidance } from '../lib/guidance.mjs';
 
 const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url));
@@ -88,8 +89,8 @@ export default function delivery(pi: ExtensionAPI) {
   }
   function persist(ctx: ExtensionContext) {
     state.nudges = nudges;
+    saveReport(join(directory(ctx), 'report.json'), state);
     pi.appendEntry('delivery-state-v1', structuredClone(state));
-    atomicJson(join(directory(ctx), 'report.json'), state);
     if (ctx.hasUI) ctx.ui.setStatus('delivery', `delivery: ${state.status}`);
   }
   pi.on('session_start', (_event, ctx) => restore(ctx));

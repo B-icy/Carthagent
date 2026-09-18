@@ -154,6 +154,39 @@ test('delivery reports are persisted and the newest report is discovered', t => 
   assert.match(readFileSync(join(first.dir, 'plan.d2'), 'utf8'), /Working app/);
 });
 
+test('report writes reject stale snapshots and upgrade legacy reports', t => {
+  const cwd = fixture(t);
+  const report = createReport(cwd, { status: 'implementing', plan: plan(), evidence: {} });
+  const stale = structuredClone(report.state);
+  report.state.review = 'newer café';
+  saveReport(report.path, report.state);
+  assert.throws(() => saveReport(report.path, stale), /write conflict/);
+  assert.equal(JSON.parse(readFileSync(report.path)).review, 'newer café');
+  saveReport(report.path, report.state); // conflict released the lock
+  const legacyPath = join(cwd, 'legacy.json');
+  writeFileSync(legacyPath, JSON.stringify({ status: 'idle' }));
+  const legacy = { status: 'idle' };
+  saveReport(legacyPath, legacy);
+  assert.equal(legacy.storageVersion, 1);
+});
+
+test('simultaneous subprocess report writers cannot overwrite each other', async t => {
+  const cwd = fixture(t);
+  const report = createReport(cwd, { status: 'implementing', evidence: {} });
+  const moduleUrl = new URL('../lib/reports.mjs', import.meta.url).href;
+  const snapshot = JSON.stringify(report.state);
+  const results = await Promise.all(['one', 'two'].map(review => runCommand([
+    process.execPath, '--input-type=module', '-e',
+    `import {saveReport} from ${JSON.stringify(moduleUrl)}; const state = ${snapshot}; state.review = ${JSON.stringify(review)}; saveReport(${JSON.stringify(report.path)}, state);`
+  ], { cwd, timeoutSeconds: 10 })));
+  assert.equal(results.filter(result => result.code === 0).length, 1);
+  assert.match(results.find(result => result.code !== 0).output, /write conflict|Report is locked/);
+  const saved = JSON.parse(readFileSync(report.path));
+  assert.equal(saved.storageVersion, 2);
+  saveReport(report.path, saved);
+  assert.equal(saved.storageVersion, 3);
+});
+
 test('fingerprint respects maxEvidenceFiles and PI2_MAX_FILES override', t => {
   const cwd = fixture(t);
   const oldEnv = process.env.PI2_MAX_FILES;
