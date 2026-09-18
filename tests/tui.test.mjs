@@ -577,7 +577,7 @@ test('renderSlashCard contains all rows strictly within bounding box without ove
   const widths = [40, 64, 80, 100, 120];
 
   for (const W of widths) {
-    const { card, cardW, innerW } = renderSlashCard(allCommands, 0, W);
+    const { card, cardW } = renderSlashCard(allCommands, 0, W);
     for (let i = 0; i < card.length; i++) {
       const line = card[i];
       const stripped = strip(line);

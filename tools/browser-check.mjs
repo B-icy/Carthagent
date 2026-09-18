@@ -18,7 +18,6 @@
 import { resolve, isAbsolute } from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { serveDir, domCheck, firefoxScreenshot } from '../lib/browser.mjs';
 
 const args = process.argv.slice(2);

@@ -25,7 +25,29 @@ jobs:
         with:
           python-version: "3.11"
       - run: npm ci
+      - run: npm run lint
       - run: npm run build
       - run: npm test
       - run: python -m pip install Pillow==11.3.0
       - run: npm run test:python
+
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: browser-actions/setup-firefox@v1
+        with:
+          firefox-version: latest
+      - uses: browser-actions/setup-geckodriver@latest
+      - run: npm run test:browser
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: firefox-evidence
+          path: artifacts/
+          if-no-files-found: ignore

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { serveDir, domCheck, firefoxScreenshot } from '../lib/browser.mjs';
+import { serveDir, domCheck } from '../lib/browser.mjs';
 
 function fixture(t, html = '<!doctype html><div id="app">hello</div>') {
   const dir = mkdtempSync(join(tmpdir(), 'pi2 browser '));
