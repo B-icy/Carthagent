@@ -363,3 +363,77 @@ test('blocked delivery succeeds and finishes cleanly even when evidence scope li
   assert.equal(f.messages.length, 0);
 });
 
+test('informational receipts get a classification hint, build tasks do not', options, t => {
+  const f = fixture(t);
+  const question = f.hooks.before_agent_start({ systemPrompt: 'base', prompt: 'what does app.py do?' }, f.ctx);
+  assert.match(question.systemPrompt, /Receipt check/);
+  assert.match(question.systemPrompt, /verification:"none"/);
+  const build = f.hooks.before_agent_start({ systemPrompt: 'base', prompt: 'build a task cli with tests' }, f.ctx);
+  assert.doesNotMatch(build.systemPrompt, /Receipt check/);
+});
+
+test('verification:none plan finishes cleanly with no checks and no repair nudges', options, async t => {
+  const f = fixture(t);
+  await f.call('delivery_plan', { ...f.plan, verification: 'none', checks: [], acceptance: [] });
+  assert.equal(f.entries.at(-1).data.plan.verification, 'none');
+  // delivery_check explains the route to finish instead of erroring into a loop.
+  const noChecks = await f.call('delivery_check', { id: 'all' });
+  assert.match(noChecks.content[0].text, /no checks to run/);
+  const finish = { status: 'verified', review: 'Answered the question from source.', launch: 'n/a', limitations: [] };
+  await f.call('delivery_finish', finish);
+  const handoff = f.entries.at(-1).data.handoff;
+  assert.equal(handoff.status, 'verified');
+  assert.equal(handoff.verification, 'none');
+  assert.equal(handoff.advisory, true);
+  // Unlike a required verified run with a stale fingerprint, informative plans are terminal.
+  f.messages.length = 0;
+  f.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, f.ctx);
+  assert.equal(f.messages.length, 0);
+});
+
+test('advisory checks record real failures without throwing or blocking finish', options, async t => {
+  const f = fixture(t);
+  const failing = { ...f.plan, verification: 'advisory' };
+  failing.checks = [{ ...f.plan.checks[0], argv: [process.execPath, '-e', 'console.log("advisory context"); process.exit(4)'] }];
+  await f.call('delivery_plan', failing);
+  const result = await f.call('delivery_check', { id: 'all' });
+  assert.match(result.content[0].text, /advisory context/);
+  const evidence = f.entries.at(-1).data.evidence.run;
+  assert.equal(evidence.passed, false);
+  assert.equal(evidence.code, 4);
+  // A failing advisory check is context, not a repair order.
+  await f.call('delivery_finish', { status: 'verified', review: 'Reported the measured failure as context.', launch: 'n/a', limitations: ['advisory check failed by design'] });
+  const handoff = f.entries.at(-1).data.handoff;
+  assert.equal(handoff.advisory, true);
+  assert.equal(handoff.verification, 'advisory');
+  f.messages.length = 0;
+  f.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, f.ctx);
+  assert.equal(f.messages.length, 0);
+});
+
+test('pre-verify reclassification is refused once evidence exists', options, async t => {
+  const f = fixture(t);
+  await f.call('delivery_plan', f.plan);
+  // No evidence yet: the pre-verify re-check may downgrade to informational.
+  await f.call('delivery_plan', { ...f.plan, verification: 'none', checks: [], acceptance: [] });
+  assert.equal(f.entries.at(-1).data.plan.verification, 'none');
+  await f.call('delivery_plan', f.plan);
+  await f.call('delivery_check', { id: 'run' });
+  await assert.rejects(
+    f.call('delivery_plan', { ...f.plan, verification: 'none', checks: [], acceptance: [] }),
+    /Cannot downgrade verification after checks have run/,
+  );
+});
+
+test('required validators force verification:required on an informational plan', options, async t => {
+  const f = fixture(t);
+  const manifest = join(f.cwd, 'validators.json');
+  writeFileSync(manifest, JSON.stringify({ version: 1, checks: [{ id: 'oracle', kind: 'test', argv: [process.execPath, '-e', 'process.exit(0)'], timeoutSeconds: 5 }] }));
+  f.flags['delivery-validators'] = manifest;
+  f.hooks.session_start({}, f.ctx);
+  await f.call('delivery_plan', { ...f.plan, verification: 'none', checks: [], acceptance: [] });
+  const state = f.entries.at(-1).data;
+  assert.equal(state.plan.verification, 'required');
+  assert.ok(state.plan.checks.some(c => c.id === 'required_oracle'));
+});
+

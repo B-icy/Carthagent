@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 
 import { basename, dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { validatePlan, planD2WithProgress, fingerprint, atomicJson, runCommand, pendingChecks, restoreState, shouldContinue, localPath, createSerialQueue, validateRevision, bindRequiredChecks, loadRequiredChecks, updateStepStatus } from '../lib/delivery.mjs';
+import { validatePlan, planD2WithProgress, fingerprint, atomicJson, runCommand, pendingChecks, restoreState, shouldContinue, localPath, createSerialQueue, validateRevision, bindRequiredChecks, loadRequiredChecks, updateStepStatus, verificationMode, looksInformational } from '../lib/delivery.mjs';
 import { formatGuidance, loadGuidanceProfiles, routeGuidance } from '../lib/guidance.mjs';
 
 const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url));
@@ -20,6 +20,7 @@ const text = (value: unknown) => {
 const shortString = () => Type.String({ minLength: 1, maxLength: 1200 });
 const strings = (maxItems = 20) => Type.Array(shortString(), { minItems: 1, maxItems });
 const GUIDANCE = `Software delivery workflow (not required for questions or read-only reviews):
+Classify the ask before planning. Pure questions, explanations and read-only reviews are informational: either answer directly without delivery_plan, or — when a written contract helps — call delivery_plan with verification:"none" (no checks) or verification:"advisory" (optional checks whose failures are reported as context, never repaired). Reserve verification:"required" (the default) for tasks that change product files. Before running delivery_check, re-check the classification once more: a required plan may be reclassified to advisory/none only before any check has run, so decide before the verify loop. Informational plans finish cleanly with delivery_finish status="verified" and receive no repair nudges.
 For substantial implementation work, inspect the repository and installed library APIs first. Identify which domain skills or knowledge bases apply to this task — check the available skills list and read the matching skill before implementing. Use delivery_plan BEFORE implementation: capture assumptions, a small vertical-slice plan, artifact roots, acceptance criteria and real check commands. D2 is generated for the flowchart; use D2 for any additional flowcharts.
 Pressure-test the plan before writing code: review it against every explicit requirement in the user's prompt, verify uncertain APIs with installed source or a tiny executable probe, and confirm the checks can actually detect failure. If the plan is weak or incomplete, call delivery_plan again to fix it — the plan is a living contract, not a one-time artifact.
 Implement a runnable slice early, then complete the agreed behavior in small coherent steps. Mark progress with delivery_progress as each step finishes so the plan panel stays current. Don't stop at a scaffold. Verify uncertain APIs with installed source or a tiny executable probe; never invent library methods or assume assets exist. Separate testable logic from rendering/services. Include error handling, dependencies, launch instructions, and regression tests. Exercise actual interaction paths in fresh subprocesses with the normal environment, not only compilation or internal function calls. Include non-ASCII text, paths with spaces, and invalid data where applicable. On Windows, stdout may use a legacy code page (e.g. cp1252): use ASCII-escaped JSON or configure the application's UTF-8 output; don't hide failures by changing only the test environment. For visual work, capture and inspect a screenshot if your model supports images; otherwise explicitly disclose that visual review is unperformed.
@@ -107,6 +108,7 @@ export default function delivery(pi: ExtensionAPI) {
     if (routedText) guidance += `\n\n${routedText}`;
     if (extraGuidance) guidance += `\n\nTask-specific delivery context:\n${extraGuidance}`;
     if (required.length) guidance += `\nUser-owned required validators will be added to your plan automatically: ${JSON.stringify(required)}. Run delivery_check id="all"; repair failures rather than replacing or bypassing these checks.`;
+    if (looksInformational(event.prompt)) guidance += `\n\nReceipt check: this prompt reads as informational/read-only. Answer it directly, or if you record a contract use delivery_plan verification:"none" (no checks) or "advisory" (optional non-blocking evidence). Do not enter the verify/repair loop for a pure question — decide the classification now, before the verify loop.`;
     return { systemPrompt: event.systemPrompt + '\n\n' + guidance };
   });
   pi.on('context', event => {
@@ -270,12 +272,13 @@ export default function delivery(pi: ExtensionAPI) {
   });
 
   pi.registerTool({
-    name: 'delivery_plan', label: 'Delivery plan', description: 'Create/replace the acceptance contract and generate plan.d2. Replanning resets evidence; do not drop failing requirements. Paths are relative files/directories, not globs. Checks use executable argv (no implicit shell).',
+    name: 'delivery_plan', label: 'Delivery plan', description: 'Create/replace the acceptance contract and generate plan.d2. Replanning resets evidence; do not drop failing requirements. Paths are relative files/directories, not globs. Checks use executable argv (no implicit shell). Set verification:"none" for a pure informational answer, "advisory" for optional non-blocking evidence, or leave the default "required" for tasks that change product files.',
     parameters: Type.Object({
       goal: shortString(), assumptions: Type.Array(shortString(), { maxItems: 12 }),
       artifacts: strings(30), steps: strings(12),
-      acceptance: Type.Array(Type.Object({ requirement: shortString(), checks: strings(12) }), { minItems: 1, maxItems: 20 }),
-      checks: Type.Array(Type.Object({ id: Type.String({ pattern: '^[a-z][a-z0-9_-]{0,39}$' }), kind: Type.String({ description: 'test, runtime, or static' }), argv: strings(40), timeoutSeconds: Type.Integer({ minimum: 1, maximum: 300 }) }), { minItems: 1, maxItems: 12 }),
+      verification: Type.Optional(Type.String({ description: 'required (default) | advisory | none. none forbids checks/acceptance; advisory allows optional checks; required keeps strict evidence.' })),
+      acceptance: Type.Array(Type.Object({ requirement: shortString(), checks: strings(12) }), { maxItems: 20 }),
+      checks: Type.Array(Type.Object({ id: Type.String({ pattern: '^[a-z][a-z0-9_-]{0,39}$' }), kind: Type.String({ description: 'test, runtime, or static' }), argv: strings(40), timeoutSeconds: Type.Integer({ minimum: 1, maximum: 300 }) }), { maxItems: 12 }),
     }),
     async execute(_id, params, _signal, _update, ctx) {
       return exclusive(async () => {
@@ -327,6 +330,12 @@ export default function delivery(pi: ExtensionAPI) {
     async execute(_id, params, signal, onUpdate, ctx) {
       return exclusive(async () => {
         if (!state) throw Error('Call delivery_plan first');
+        const verification = verificationMode(state.plan);
+        // Pre-verify gate: an informational plan has no checks by design. Return a
+        // clear route to finish instead of an error that could start a repair loop.
+        if (verification === 'none') {
+          return text({ verification, note: 'This plan declares verification:"none" (informational), so there are no checks to run. Call delivery_finish with status="verified" and the answer. If evidence is genuinely needed, replan with verification:"advisory" before any check has run.' });
+        }
         const checks = params.id === 'all' ? state.plan.checks : state.plan.checks.filter((c: any) => c.id === params.id);
         if (!checks.length) throw Error('Unknown check ID. Use delivery_status or id="all".');
         const results = [];
@@ -376,8 +385,10 @@ export default function delivery(pi: ExtensionAPI) {
           const passed = result.code === 0 && !result.timedOut && !result.cancelled && !result.outputLimit && before === after;
           state.evidence[check.id] = { passed, fingerprint: after, code: result.code, timedOut: result.timedOut, cancelled: result.cancelled, logPath: result.logPath, durationMs: result.durationMs, changedDuringCheck: before !== after, outputTail: result.output.slice(-1200) };
           persist(ctx);
-          const message = { id: check.id, ...state.evidence[check.id], outputTail: result.output };
-          if (!passed) throw Error(JSON.stringify(message, null, 2));
+          const message = { id: check.id, advisory: verification !== 'required', ...state.evidence[check.id], outputTail: result.output };
+          // Advisory checks are evidence for an informational answer: record the
+          // real failure but do not force the repair loop.
+          if (!passed && verification === 'required') throw Error(JSON.stringify(message, null, 2));
           results.push(message);
         }
         return text(results);
@@ -385,19 +396,27 @@ export default function delivery(pi: ExtensionAPI) {
     },
   });
   pi.registerTool({
-    name: 'delivery_finish', label: 'Finish delivery', description: 'Record review and handoff. verified requires all declared checks passing on current artifact hashes and existing artifacts; ensure the declared contract covers the prompt’s core requirements, not only the easiest subset. blocked records an honest incomplete result without pretending success.',
+    name: 'delivery_finish', label: 'Finish delivery', description: 'Record review and handoff. verified requires all declared checks passing on current artifact hashes for verification:"required" contracts; informational/advisory contracts may verify once with recorded advisory evidence. blocked records an honest incomplete result without pretending success.',
     parameters: Type.Object({ status: Type.String({ description: 'verified or blocked' }), review: shortString(), launch: shortString(), limitations: Type.Array(shortString(), { maxItems: 20 }) }),
     async execute(_id, params, _signal, _update, ctx) {
       return exclusive(async () => {
         if (!state) throw Error('Call delivery_plan first');
         if (configError) throw Error(configError);
         if (!['verified', 'blocked'].includes(params.status)) throw Error('status must be verified or blocked');
+        const verification = verificationMode(state.plan);
+        const advisory = verification !== 'required';
         let hash: string | null = null;
         if (params.status === 'verified') {
-          hash = fingerprint(ctx.cwd, ['.']);
-          const missing = state.plan.artifacts.filter((p: string) => !existsSync(localPath(ctx.cwd, p)));
-          const pending = pendingChecks(state, hash);
-          if (missing.length || pending.length) throw Error(`Cannot verify. Missing artifacts: ${missing.join(', ')}. Failed/missing/stale checks: ${pending.join(', ')}`);
+          if (advisory) {
+            // Informational finish: freshness is not a hard gate, but a best-effort
+            // fingerprint keeps later edits visible in the durable report.
+            try { hash = fingerprint(ctx.cwd, ['.']); } catch { hash = null; }
+          } else {
+            hash = fingerprint(ctx.cwd, ['.']);
+            const missing = state.plan.artifacts.filter((p: string) => !existsSync(localPath(ctx.cwd, p)));
+            const pending = pendingChecks(state, hash);
+            if (missing.length || pending.length) throw Error(`Cannot verify. Missing artifacts: ${missing.join(', ')}. Failed/missing/stale checks: ${pending.join(', ')}`);
+          }
         } else {
           if (!params.limitations.length) throw Error('Blocked delivery requires an explicit limitation/reason');
           try {
@@ -407,9 +426,10 @@ export default function delivery(pi: ExtensionAPI) {
           }
         }
         state.status = params.status;
-        state.handoff = { ...params, fingerprint: hash, at: new Date().toISOString() };
+        const advisoryFailures = Object.entries(state.evidence || {}).filter(([, e]: any) => !e.passed).map(([id]) => id);
+        state.handoff = { ...params, verification, advisory, advisoryFailures, fingerprint: hash, at: new Date().toISOString() };
         persist(ctx);
-        return text({ status: state.status, report: join(directory(ctx), 'report.json'), note: 'Evidence covers declared checks, not a guarantee of correctness. Distinguish automated evidence from unperformed manual/visual review.' });
+        return text({ status: state.status, verification, advisory, advisoryFailures, report: join(directory(ctx), 'report.json'), note: advisory ? 'Informational/advisory finish: recorded checks are context, not a delivery guarantee. Distinguish them from unperformed manual/visual review.' : 'Evidence covers declared checks, not a guarantee of correctness. Distinguish automated evidence from unperformed manual/visual review.' });
       });
     },
   });

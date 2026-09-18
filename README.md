@@ -68,7 +68,7 @@ Useful flags: `--model`, `--thinking`, `--validators <file>`, `--context <file>`
 
 | Tool | What it does |
 |---|---|
-| `delivery_plan` | Goal, steps, artifact roots, acceptance criteria → check mapping; writes `plan.d2` |
+| `delivery_plan` | Goal, steps, artifact roots, acceptance criteria → check mapping; `verification: required|advisory|none`; writes `plan.d2` |
 | `delivery_revise` | Edits the live contract in place, preserving evidence for checks whose argv/kind/timeout are unchanged |
 | `delivery_check` | Runs a check argv with a deadline; records exit code, logs, workspace SHA-256 |
 | `delivery_status` | Contract + evidence state (missing/failed/stale) |
@@ -76,6 +76,8 @@ Useful flags: `--model`, `--thinking`, `--validators <file>`, `--context <file>`
 | `delivery_finish` | `verified` only if every required check has fresh evidence; otherwise `blocked` |
 
 The discipline: evidence is fingerprinted against the whole workspace — edit any file and its checks go stale. Checks are real subprocesses (`argv`, no implicit shell), FIFO-queued, 1–300 s deadlines, logs under `.harness/`. Failed or missing checks get at most two automatic repair nudges per prompt. This is a workflow guardrail, not a security sandbox — for untrusted code use a container.
+
+**Informational vs delivery asks.** Every plan declares a verification classification. `required` (the default) is the delivery contract above. `advisory` is for an informational answer that still benefits from running checks: the checks execute and their real exit codes are recorded, but a failure is reported as context instead of forcing a repair loop. `none` is a pure question/explanation with no checks at all. Informational plans finish with `delivery_finish` once (recorded as `advisory: true`) and never receive repair nudges; user-owned required validators always force `required`, and a `required` plan can only be reclassified before any check has run.
 
 ## Self-review
 

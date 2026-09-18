@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fingerprint, validatePlan, planD2, pendingChecks, restoreState, runCommand, shouldContinue, localPath, createSerialQueue, validateRevision, turnBudgetExceeded, maxEvidenceFiles, maxEvidenceBytes } from '../lib/delivery.mjs';
+import { fingerprint, validatePlan, planD2, pendingChecks, restoreState, runCommand, shouldContinue, localPath, createSerialQueue, validateRevision, turnBudgetExceeded, maxEvidenceFiles, maxEvidenceBytes, bindRequiredChecks, verificationMode, looksInformational, computePhase } from '../lib/delivery.mjs';
 import { createReport, latestReport, saveReport } from '../lib/reports.mjs';
 
 function fixture(t) {
@@ -169,5 +169,97 @@ test('fingerprint omits .pi and .pi2 directory trees', t => {
   writeFileSync(join(cwd, '.pi2', 'data.json'), '{"ignore": true}');
   const hashAfter = fingerprint(cwd, ['.']);
   assert.equal(hashBefore, hashAfter);
+});
+
+test('verification classification: none/advisory rules keep required strict', t => {
+  const cwd = fixture(t);
+  // Default is required: non-empty acceptance + checks, at least one non-static.
+  assert.deepEqual(validatePlan(plan(), cwd), plan());
+  assert.equal(verificationMode(plan()), 'required');
+  assert.equal(verificationMode({ verification: 'bogus' }), 'required');
+  assert.throws(() => validatePlan({ ...plan(), verification: 'informational' }, cwd), /verification must be one of/);
+
+  // none = pure informational answer: checks/acceptance must be absent.
+  const none = { ...plan(), verification: 'none', checks: [], acceptance: [] };
+  assert.deepEqual(validatePlan(none, cwd), none);
+  assert.throws(() => validatePlan({ ...plan(), verification: 'none' }, cwd), /none/);
+
+  // required stays strict even if the model empties the arrays.
+  assert.throws(() => validatePlan({ ...plan(), checks: [], acceptance: [] }, cwd), /required/);
+
+  // advisory may be empty, or carry checks whose failures are non-blocking.
+  const advisoryEmpty = { ...plan(), verification: 'advisory', checks: [], acceptance: [] };
+  assert.deepEqual(validatePlan(advisoryEmpty, cwd), advisoryEmpty);
+  const advisoryChecks = { ...plan(), verification: 'advisory' };
+  assert.deepEqual(validatePlan(advisoryChecks, cwd), advisoryChecks);
+  assert.throws(() => validatePlan({ ...advisoryChecks, acceptance: [] }, cwd), /together/);
+  const staticOnly = { ...plan(), verification: 'advisory', checks: [{ ...plan().checks[0], kind: 'static' }] };
+  assert.deepEqual(validatePlan(staticOnly, cwd), staticOnly);
+});
+
+test('required validators force strict verification and cannot be downgraded away', () => {
+  const informative = { goal: 'Q', artifacts: ['.'], steps: ['Answer'], verification: 'none', acceptance: [], checks: [] };
+  const bound = bindRequiredChecks(informative, [{ id: 'required_oracle', kind: 'test', argv: [process.execPath, '-e', 'process.exit(0)'], timeoutSeconds: 5 }]);
+  assert.equal(bound.verification, 'required');
+  assert.equal(bound.checks.length, 1);
+  assert.equal(bound.acceptance.length, 1);
+  assert.equal(bound.acceptance[0].checks[0], 'required_oracle');
+});
+
+test('pre-verify reclassification is allowed only before evidence exists', () => {
+  const previous = { plan: plan(), status: 'implementing', evidence: {} };
+  const informational = { goal: 'Answered a question', artifacts: ['.'], steps: ['Answer'], verification: 'none', acceptance: [], checks: [] };
+  // Re-check before the verify loop: no evidence, so reclassification is explicit.
+  assert.doesNotThrow(() => validateRevision(previous, informational));
+  // Once a check has run, a downgrade would escape its failing evidence.
+  assert.throws(
+    () => validateRevision({ ...previous, evidence: { smoke: { passed: false } } }, informational),
+    /Cannot downgrade verification after checks have run/,
+  );
+  // Upgrading informative -> required still runs acceptance protection.
+  assert.doesNotThrow(() => validateRevision({ plan: informational, status: 'implementing', evidence: {} }, plan()));
+  const weakened = plan();
+  weakened.acceptance = [{ requirement: 'A weaker requirement', checks: ['smoke'] }];
+  assert.throws(() => validateRevision({ plan: plan(), status: 'implementing', evidence: {} }, weakened), /remove acceptance/);
+});
+
+test('looksInformational recognizes read-only asks but not build tasks', () => {
+  for (const text of ['what does index.ts do?', 'explain the retry logic', 'how does auth work', 'review this diff', 'list the pending checks']) {
+    assert.equal(looksInformational(text), true, text);
+  }
+  for (const text of ['build a task cli', 'fix the failing test', 'what cache layer should I add — implement it', '/compact', '!ls', '']) {
+    assert.equal(looksInformational(text), false, text);
+  }
+});
+
+test('informational plans are terminal and skip repair nudges', () => {
+  const args = { touched: true, nudges: 0, stopReason: 'stop', pendingMessages: false, fresh: false };
+  assert.equal(shouldContinue({ ...args, state: { status: 'implementing', plan: { verification: 'none' } } }), false);
+  assert.equal(shouldContinue({ ...args, state: { status: 'implementing', plan: { verification: 'advisory' } } }), false);
+  assert.equal(shouldContinue({ ...args, state: { status: 'implementing', plan: plan() } }), true);
+});
+
+test('computePhase reaches review for check-free informational plans', () => {
+  const informative = { goal: 'Q', artifacts: ['.'], steps: ['Answer'], acceptance: [], checks: [], verification: 'none' };
+  const state = { plan: informative, evidence: {}, status: 'implementing', revision: 1 };
+  assert.equal(computePhase(state, 'h').phase, 'review');
+  assert.equal(computePhase({ ...state, stepStatus: { step0: 'done' } }, 'h').phase, 'review');
+  // Required plans still wait for evidence before review.
+  assert.equal(computePhase({ plan: plan(), evidence: {}, status: 'implementing' }, 'h').phase, 'plan');
+});
+
+test('guidance, prompt template and README document the classification', () => {
+  const prompt = readFileSync(new URL('../prompts/delivery.md', import.meta.url), 'utf8');
+  const extension = readFileSync(new URL('../extensions/delivery.ts', import.meta.url), 'utf8');
+  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+  assert.match(prompt, /Classify the ask/);
+  assert.match(prompt, /verification:"none"/);
+  assert.match(prompt, /verification:"advisory"/);
+  assert.match(prompt, /re-check the classification/);
+  assert.match(extension, /Classify the ask before planning/);
+  assert.match(extension, /verification:"none"/);
+  assert.match(extension, /looksInformational\(event\.prompt\)/);
+  assert.match(readme, /Informational vs delivery asks/);
+  assert.match(readme, /advisory/);
 });
 
