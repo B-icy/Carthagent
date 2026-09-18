@@ -16,6 +16,7 @@ import {
   planD2,
   runCommand
 } from '../lib/delivery.mjs';
+import { beginReview, parseFindings } from '../lib/review-state.mjs';
 import { latestReport, saveReport } from '../lib/reports.mjs';
 import { normalizeReviewMode, resolveReviewMode, loadPi2Config, savePi2Config, pi2ConfigPath, reviewerPrompt, parseVerdict, resolveStickyDefaults } from '../lib/review.mjs';
 
@@ -396,7 +397,11 @@ async function runReview(prRef, rest) {
   let piCmd;
   try { piCmd = locatePi(piCli); } catch (e) { console.error(e.message); process.exit(2); }
   const snapshot = fingerprint(cwd, ['.']);
-  const prompt = reviewerPrompt({ prRef, cwd, meta });
+  let round;
+  try { round = beginReview(cwd, meta.url || String(prRef), snapshot, meta.headRefOid); }
+  catch (error) { console.error(error.message); process.exitCode = 2; return; }
+  try {
+  const prompt = reviewerPrompt({ prRef, cwd, meta }) + `\nImmediately before the final VERDICT line emit one single-line REVIEW_JSON: object with version:1, snapshot:${JSON.stringify(snapshot)}, head:${JSON.stringify(meta.headRefOid)}, findings:[{file,line,severity,issue,fix}]. Severity must be blocking or nonblocking; line is a positive integer. Approval requires no blocking findings. No markdown fences.`;
   const logPath = join(cwd, '.harness', 'reviews', `review-${Date.now()}.log`);
   const result = await runCommand(
     [piCmd.cmd, ...piCmd.args, '-p', '--no-extensions', '--no-skills', '--no-prompt-templates', '--', prompt],
@@ -404,16 +409,23 @@ async function runReview(prRef, rest) {
   );
   if (result.output.trim()) process.stdout.write(result.output.trim() + '\n');
   console.log(`\x1b[90mreview log: ${logPath}\x1b[0m`);
-  if (result.timedOut) { console.error(`\x1b[31mreviewer timed out after ${timeoutSeconds}s\x1b[0m`); process.exit(2); }
-  if (result.cancelled || result.code !== 0) { console.error(`\x1b[31mreviewer exited abnormally (code ${result.code})\x1b[0m`); process.exit(2); }
+  if (result.timedOut) throw Error(`reviewer timed out after ${timeoutSeconds}s`);
+  if (result.cancelled || result.code !== 0) throw Error(`reviewer exited abnormally (code ${result.code})`);
   const after = await runCommand(['gh', 'pr', 'view', prRef, '--json', 'title,url,headRefName,baseRefName,headRefOid'], { cwd, timeoutSeconds: 30 });
   let afterMeta;
   try { afterMeta = JSON.parse(after.output); } catch { }
-  if (after.code !== 0 || afterMeta?.headRefOid !== meta.headRefOid) { console.error('PR head changed or unavailable; verdict is stale'); process.exit(2); }
-  if (fingerprint(cwd, ['.']) !== snapshot) { console.error('Review source snapshot changed; verdict is stale'); process.exit(2); }
+  if (after.code !== 0 || afterMeta?.headRefOid !== meta.headRefOid) throw Error('PR head changed or unavailable; verdict is stale');
+  if (fingerprint(cwd, ['.']) !== snapshot) throw Error('Review source snapshot changed; verdict is stale');
   const verdict = parseVerdict(result.output);
-  if (!verdict) { console.error('\x1b[31mreviewer produced no VERDICT line — treat as inconclusive\x1b[0m'); process.exit(2); }
-  process.exit(verdict === 'APPROVE' ? 0 : 1);
+  if (!verdict) throw Error('reviewer produced no VERDICT line — treat as inconclusive');
+  const findings = parseFindings(result.output, snapshot, meta.headRefOid, verdict);
+  round.finish(verdict === 'APPROVE' ? 'approved' : 'changes-requested', findings);
+  process.exitCode = verdict === 'APPROVE' ? 0 : 1;
+  } catch (error) {
+    round.finish('inconclusive', { error: error.message });
+    console.error(error.message);
+    process.exitCode = 2;
+  } finally { round.release(); }
 }
 
 function handleEval() {
