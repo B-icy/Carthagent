@@ -376,11 +376,14 @@ async function handleReview(args) {
 async function runReview(prRef, rest) {
   let timeoutSeconds = 300, piCli;
   for (let i = 0; i < rest.length; i++) {
-    if (rest[i] === '--timeout') timeoutSeconds = Math.max(1, Number(rest[++i]) || 300);
+    if (rest[i] === '--timeout') {
+      timeoutSeconds = Number(rest[++i]);
+      if (!Number.isInteger(timeoutSeconds) || timeoutSeconds < 1 || timeoutSeconds > 300) { console.error('Review timeout must be an integer from 1 to 300'); process.exit(2); }
+    }
     else if (rest[i] === '--agent-cli' || rest[i] === '--pi-cli') piCli = rest[++i];
     else { console.error(`\x1b[31mUnknown option:\x1b[0m ${rest[i]}`); process.exit(2); }
   }
-  const view = await runCommand(['gh', 'pr', 'view', prRef, '--json', 'title,url,headRefName,baseRefName'], { cwd, timeoutSeconds: 30 });
+  const view = await runCommand(['gh', 'pr', 'view', prRef, '--json', 'title,url,headRefName,baseRefName,headRefOid'], { cwd, timeoutSeconds: 30 });
   if (view.code !== 0) {
     console.error(`\x1b[31mCannot load PR ${prRef}\x1b[0m — is gh installed and authenticated, and is ${cwd} a GitHub repo clone?`);
     if (view.output.trim()) console.error(view.output.trim());
@@ -388,9 +391,11 @@ async function runReview(prRef, rest) {
   }
   let meta = {};
   try { meta = JSON.parse(view.output); } catch { }
+  if (!/^[a-f0-9]{40,64}$/i.test(meta.headRefOid || '')) { console.error('PR head identity unavailable'); process.exit(2); }
   const { locatePi } = await import('../lib/pi.mjs');
   let piCmd;
   try { piCmd = locatePi(piCli); } catch (e) { console.error(e.message); process.exit(2); }
+  const snapshot = fingerprint(cwd, ['.']);
   const prompt = reviewerPrompt({ prRef, cwd, meta });
   const logPath = join(cwd, '.harness', 'reviews', `review-${Date.now()}.log`);
   const result = await runCommand(
@@ -401,6 +406,11 @@ async function runReview(prRef, rest) {
   console.log(`\x1b[90mreview log: ${logPath}\x1b[0m`);
   if (result.timedOut) { console.error(`\x1b[31mreviewer timed out after ${timeoutSeconds}s\x1b[0m`); process.exit(2); }
   if (result.cancelled || result.code !== 0) { console.error(`\x1b[31mreviewer exited abnormally (code ${result.code})\x1b[0m`); process.exit(2); }
+  const after = await runCommand(['gh', 'pr', 'view', prRef, '--json', 'title,url,headRefName,baseRefName,headRefOid'], { cwd, timeoutSeconds: 30 });
+  let afterMeta;
+  try { afterMeta = JSON.parse(after.output); } catch { }
+  if (after.code !== 0 || afterMeta?.headRefOid !== meta.headRefOid) { console.error('PR head changed or unavailable; verdict is stale'); process.exit(2); }
+  if (fingerprint(cwd, ['.']) !== snapshot) { console.error('Review source snapshot changed; verdict is stale'); process.exit(2); }
   const verdict = parseVerdict(result.output);
   if (!verdict) { console.error('\x1b[31mreviewer produced no VERDICT line — treat as inconclusive\x1b[0m'); process.exit(2); }
   process.exit(verdict === 'APPROVE' ? 0 : 1);

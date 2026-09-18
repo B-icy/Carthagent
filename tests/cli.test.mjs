@@ -86,14 +86,14 @@ function reviewFixture(t, verdictLine) {
   mkdirSync(join(cwd, 'bin'), { recursive: true });
   const gh = join(bin, 'gh');
   writeFileSync(gh, `#!/bin/sh
-if [ "$1" = "pr" ] && [ "$2" = "view" ]; then echo '{"title":"Fixture PR","url":"https://example.test/pr/14","headRefName":"feat","baseRefName":"main"}'; exit 0; fi
+if [ "$1" = "pr" ] && [ "$2" = "view" ]; then echo '{"title":"Fixture PR","url":"https://example.test/pr/14","headRefName":"feat","baseRefName":"main","headRefOid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'; exit 0; fi
 exit 0
 `);
   chmodSync(gh, 0o755);
   // Native executable fixture: Windows cannot execute a POSIX shebang shim.
   if (process.platform === 'win32') {
     copyFileSync(process.execPath, join(bin, 'gh.exe'));
-    writeFileSync(join(cwd, 'gh-preload.cjs'), `if (require('node:path').basename(process.execPath).toLowerCase() === 'gh.exe') { console.log(JSON.stringify({title:'Fixture PR',url:'https://example.test/pr/14',headRefName:'feat',baseRefName:'main'})); process.exit(0); }`);
+    writeFileSync(join(cwd, 'gh-preload.cjs'), `if (require('node:path').basename(process.execPath).toLowerCase() === 'gh.exe') { console.log(JSON.stringify({title:'Fixture PR',url:'https://example.test/pr/14',headRefName:'feat',baseRefName:'main',headRefOid:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'})); process.exit(0); }`);
   }
   const reviewer = join(cwd, 'reviewer.mjs');
   writeFileSync(reviewer, `console.log('fixture findings');\nconsole.log('${verdictLine}');\n`);
@@ -118,6 +118,19 @@ test('pi2 review <pr> exits 1 on requested changes and 2 without a verdict', t =
   const bad = spawnSync(process.execPath, [cli, 'review', '14'], { cwd: silent.cwd, env: silent.env, encoding: 'utf8' });
   assert.equal(bad.status, 2);
   assert.match(bad.stderr, /no VERDICT/);
+});
+
+test('review rejects source mutation and invalid execution bounds', t => {
+  const { cwd, env } = reviewFixture(t, 'VERDICT: APPROVE');
+  writeFileSync(join(cwd, 'reviewer.mjs'), `import {writeFileSync} from 'node:fs'; writeFileSync('changed.txt', 'café'); console.log('VERDICT: APPROVE');`);
+  const changed = spawnSync(process.execPath, [cli, 'review', '14'], { cwd, env, encoding: 'utf8' });
+  assert.equal(changed.status, 2);
+  assert.match(changed.stderr, /snapshot changed/);
+  for (const value of ['0', '301', 'Infinity', 'invalid']) {
+    const invalid = spawnSync(process.execPath, [cli, 'review', '14', '--timeout', value], { cwd, env, encoding: 'utf8' });
+    assert.equal(invalid.status, 2);
+    assert.match(invalid.stderr, /integer from 1 to 300/);
+  }
 });
 
 test('review modes launch the real bundled engine without unknown flags', t => {
