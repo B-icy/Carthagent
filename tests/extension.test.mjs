@@ -490,3 +490,15 @@ test('repair allowance persists across user follow-ups and stops automatic conti
   assert.equal(f.messages.length, 2);
   assert.equal(JSON.parse(f.messages[1].content).reason, 'repair-rounds');
 });
+
+test('budget status command reports remaining allowance without consuming tools', options, t => {
+  const f = fixture(t);
+  f.flags['delivery-max-tools'] = '2';
+  f.hooks.agent_start({}, f.ctx);
+  f.hooks.tool_call({ toolName: 'read' }, f.ctx);
+  f.commands['delivery-budget-status'].handler('', f.ctx);
+  const status = JSON.parse(f.messages.at(-1).content);
+  assert.equal(status.tools, 1);
+  assert.equal(status.remaining.tools, 1);
+  assert.equal(status.reason, null);
+});

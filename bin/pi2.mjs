@@ -81,6 +81,9 @@ function printHelp() {
   --validators <file>     User-owned required-validator manifest (delivery)
   --context <file>        Extra task/delivery context file
   --bash-cap <sec>        Cap un-timed shell tool timeouts during a run
+  --max-tools <n>         Session tool-call budget (0 disables)
+  --max-seconds <n>       Session elapsed-time budget (0 disables)
+  --max-repairs <n>       Session automatic-repair budget (0 disables)
   --review <mode>         Self-review loop after major changes: ask|yes|no
                           (default: ~/.pi2/config.json, else ask — /review in-session)
   --isolate               Run with only pi2's delivery extension (no other extensions/skills)
@@ -107,9 +110,12 @@ function printHelp() {
 
 // ---------------------------------------------------------------- TUI routing
 
+import { validateBudgetOptions } from '../lib/budget.mjs';
+
 const TUI_FLAGS = {
   '--provider': 'provider', '--model': 'model', '--thinking': 'thinking', '--theme': 'theme',
   '--pi-cli': 'piCli', '--agent-cli': 'piCli', '--validators': 'validators', '--context': 'context', '--bash-cap': 'bashCap',
+  '--max-tools': 'maxTools', '--max-seconds': 'maxSeconds', '--max-repairs': 'maxRepairs',
   '--session': 'session', '--review': 'review', '--glyphs': 'glyphs',
 };
 const TUI_BOOL = {
@@ -128,11 +134,16 @@ function parseTuiArgs(list) {
   for (let i = 0; i < list.length; i++) {
     const a = list[i];
     if (a === '--') { prompt.push(...list.slice(i + 1)); break; }
-    if (TUI_FLAGS[a]) { opts[TUI_FLAGS[a]] = list[++i]; continue; }
+    if (TUI_FLAGS[a]) {
+      const value = list[++i];
+      if (value === undefined || value.startsWith('--')) throw Error(`Missing value for ${a}`);
+      opts[TUI_FLAGS[a]] = value; continue;
+    }
     if (TUI_BOOL[a]) { const [k, v] = TUI_BOOL[a]; opts[k] = v; continue; }
     if (a.startsWith('-')) { console.error(`\x1b[31mUnknown flag:\x1b[0m ${a}`); process.exit(1); }
     prompt.push(a);
   }
+  validateBudgetOptions(opts);
   if (prompt.length) opts.prompt = prompt.join(' ');
   return opts;
 }

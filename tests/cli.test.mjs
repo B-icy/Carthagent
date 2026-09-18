@@ -146,3 +146,12 @@ test('vendored agent engine is bundled and loads ModelRuntime cleanly', async ()
   const providers = new Set(runtime.snapshot.all.map(m => m.provider));
   assert.ok(providers.size >= 35);
 });
+
+test('CLI rejects invalid, missing and disabled-extension budget options', t => {
+  const cwd = fixture(t);
+  for (const args of [['--max-tools'], ['--max-seconds', 'NaN', 'task'], ['--no-delivery', '--max-tools', '1', 'task']]) {
+    const result = spawnSync(process.execPath, [cli, '-p', ...args], { cwd, encoding: 'utf8', timeout: 10000 });
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stderr, /Missing value|must be an integer|require the delivery/);
+  }
+});
