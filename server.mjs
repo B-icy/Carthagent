@@ -20,6 +20,8 @@ const port = Number(process.env.PI2_PORT) || 3000;
 const token = process.env.PI2_SERVER_TOKEN || randomBytes(24).toString('hex');
 const app = express();
 const enqueue = createSerialQueue();
+// Include queued requests: their check definitions belong to the active plan.
+let pendingRuns = 0;
 let active = latestReport(cwd);
 let currentState = active?.state || { version: 1, status: 'idle', plan: null, evidence: {}, review: '', launch: '', limitations: [] };
 
@@ -43,6 +45,7 @@ app.use('/api', (req, res, next) => {
 });
 
 function refresh() {
+  if (pendingRuns) return;
   const found = latestReport(cwd);
   if (found && (!active || found.path !== active.path || found.mtimeMs > active.mtimeMs)) {
     active = found;
@@ -94,6 +97,7 @@ app.post('/api/plan/d2', (req, res) => {
 });
 
 app.post('/api/plan/set', (req, res) => {
+  if (pendingRuns) return res.status(409).json({ error: 'Checks are running or queued; wait before replacing the plan' });
   try {
     const plan = validatePlan(req.body.plan, cwd);
     currentState = {
@@ -128,6 +132,7 @@ app.post('/api/checks/run', async (req, res) => {
   if (!currentState.plan?.checks?.length) return res.status(400).json({ error: 'No active plan' });
   const checks = req.body.id === 'all' ? currentState.plan.checks : currentState.plan.checks.filter(check => check.id === req.body.id);
   if (!checks.length) return res.status(404).json({ error: `Unknown check ID: ${req.body.id}` });
+  pendingRuns++;
   try {
     const results = await enqueue(async () => {
       const runResults = [];
@@ -168,10 +173,13 @@ app.post('/api/checks/run', async (req, res) => {
     res.json({ results, pendingChecks: pendingChecks(currentState, currentFingerprint), currentFingerprint });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  } finally {
+    pendingRuns--;
   }
 });
 
 app.post('/api/finish', (req, res) => {
+  if (pendingRuns) return res.status(409).json({ error: 'Checks are running or queued; wait before finishing' });
   try {
     refresh();
     const { status, review, launch, limitations } = req.body;

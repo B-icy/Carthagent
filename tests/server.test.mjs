@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -69,6 +69,40 @@ test('dashboard persists plans and executes checks in the selected workspace', a
   assert.equal(body.plan.goal, 'Server fixture');
   assert.equal(body.evidence.smoke.passed, true);
   assert.deepEqual(body.pendingChecks, []);
+});
+
+test('dashboard rejects plan replacement and finish during checks and releases after failure', async t => {
+  const server = await serverFixture(t);
+  mkdirSync(join(server.cwd, 'artifacts'));
+  const started = join(server.cwd, 'artifacts', 'started');
+  const release = join(server.cwd, 'artifacts', 'release');
+  const plan = {
+    goal: 'Concurrent café check', assumptions: [], artifacts: ['.'], steps: ['Run'],
+    acceptance: [{ requirement: 'Runs', checks: ['smoke'] }],
+    checks: [{ id: 'smoke', kind: 'runtime', argv: [process.execPath, '-e',
+      `const fs = require('node:fs'); fs.writeFileSync(${JSON.stringify(started)}, 'yes'); const timer = setInterval(() => { if (fs.existsSync(${JSON.stringify(release)})) { clearInterval(timer); process.exitCode = 1; } }, 20);`
+    ], timeoutSeconds: 5 }]
+  };
+  const post = (path, body) => fetch(`${server.url}/api/${path}`, json(server.token, body));
+  assert.equal((await post('plan/set', { plan })).status, 200);
+  const running = post('checks/run', { id: 'all' });
+  const deadline = Date.now() + 4000;
+  while (!existsSync(started) && Date.now() < deadline) await new Promise(r => setTimeout(r, 20));
+  assert.ok(existsSync(started), 'check subprocess reached barrier');
+  const replacement = { ...plan, goal: 'Replacement' };
+  assert.equal((await post('plan/set', { plan: replacement })).status, 409);
+  assert.equal((await post('finish', { status: 'blocked', limitations: ['Stop'] })).status, 409);
+  const status = await (await fetch(`${server.url}/api/status`, { headers: { 'x-pi2-token': server.token } })).json();
+  assert.equal(status.plan.goal, plan.goal);
+  assert.deepEqual(status.evidence, {});
+  writeFileSync(release, 'go');
+  const result = await running;
+  assert.equal(result.status, 200);
+  assert.equal((await result.json()).results[0].passed, false);
+  assert.equal((await post('plan/set', { plan: replacement })).status, 200);
+  const after = await (await fetch(`${server.url}/api/status`, { headers: { 'x-pi2-token': server.token } })).json();
+  assert.equal(after.plan.goal, 'Replacement');
+  assert.deepEqual(after.evidence, {});
 });
 
 test('dashboard is self-contained and does not render API data with innerHTML', async () => {
