@@ -4,7 +4,7 @@ CLI and [pi](https://github.com/earendil-works/pi-coding-agent) package that tur
 
 ## Install
 
-Requires Node ≥ 22.19 — nothing else. [pi](https://github.com/earendil-works/pi-coding-agent) is bundled inside the package, so one command installs everything:
+Core CLI requires Node ≥ 22.19. Optional workflows need additional tools: Git and authenticated `gh` for PR review, Firefox/geckodriver for real-browser checks, and Python with the scenario dependencies for game graders. [pi](https://github.com/earendil-works/pi-coding-agent) is bundled inside the package, so one command installs everything:
 
 ```sh
 npm i -g github:B-icy/pi2 && pi2
@@ -69,19 +69,18 @@ Useful flags: `--model`, `--thinking`, `--validators <file>`, `--context <file>`
 | Tool | What it does |
 |---|---|
 | `delivery_plan` | Goal, steps, artifact roots, acceptance criteria → check mapping; `verification: required|advisory|none`; writes `plan.d2` |
-| `delivery_revise` | Edits the live contract in place, preserving evidence for checks whose argv/kind/timeout are unchanged |
 | `delivery_check` | Runs a check argv with a deadline; records exit code, logs, workspace SHA-256 |
 | `delivery_status` | Contract + evidence state (missing/failed/stale) |
 | `delivery_progress` | Step progress for the plan panel |
 | `delivery_finish` | `verified` only if every required check has fresh evidence; otherwise `blocked` |
 
-The discipline: evidence is fingerprinted against the whole workspace — edit any file and its checks go stale. Checks are real subprocesses (`argv`, no implicit shell), FIFO-queued, 1–300 s deadlines, logs under `.harness/`. Failed or missing checks get at most two automatic repair nudges per prompt. This is a workflow guardrail, not a security sandbox — for untrusted code use a container.
+The discipline: evidence is bound to the run, contract revision, executable check definition and workspace source fingerprint. Source edits invalidate evidence; dependency, cache and generated-output exclusions mean this is not a hash of every file. `verified` means declared required checks passed with current evidence—not independent proof of task completeness or correctness. Checks are real subprocesses (`argv`, no implicit shell), FIFO-queued, 1–300 s deadlines, logs under `.harness/`. Failed or missing checks get at most two automatic repair nudges per prompt. This is a workflow guardrail, not a security sandbox — for untrusted code use a container.
 
 **Informational vs delivery asks.** Every plan declares a verification classification. `required` (the default) is the delivery contract above. `advisory` is for an informational answer that still benefits from running checks: the checks execute and their real exit codes are recorded, but a failure is reported as context instead of forcing a repair loop. `none` is a pure question/explanation with no checks at all. Informational plans finish with `delivery_finish` once (recorded as `advisory: true`) and never receive repair nudges; user-owned required validators always force `required`, and a `required` plan can only be reclassified before any check has run.
 
 ## Self-review
 
-When a run finishes a substantial change (a verified delivery or file edits), pi2 can offer a review loop: the agent pushes a branch, opens a PR, and a **detached fresh-context reviewer** (`pi2 review <pr>` — a separate engine process with no shared context) inspects it. Findings come back to the working agent, which fixes, pushes, and re-reviews — up to 3 rounds (enforced by the delivery extension) or `VERDICT: APPROVE`.
+When a run finishes a substantial change (a verified delivery or file edits), pi2 can offer a review loop: the agent pushes a branch, opens a PR, and a **detached fresh-context reviewer** (`pi2 review <pr>` — a separate engine process with no shared context) inspects it. Findings come back to the working agent, which fixes, pushes, and re-reviews — instructed to stop after 3 rounds or `VERDICT: APPROVE`. The round limit is not currently a persistent enforced quota. Review commands reject malformed verdicts and changed source/PR-head snapshots, but read-only behavior is an instruction, not isolation. See [review guarantees and limits](docs/review-assurance.md).
 
 It's opt-in and tri-state, resolved as `--review <mode>` flag → `~/.pi2/config.json` → `ask`:
 
@@ -109,12 +108,26 @@ Everything below is config, not code:
 - **Extra context** — `--delivery-context notes.md` injects project/benchmark-specific instructions.
 - **Scenarios** — `scenarios/<name>/scenario.json` defines an evaluation domain; `node evaluate.mjs --task <name> --allow-live` runs it (dry-run with `--dry-run`; spends API credit otherwise).
 
+## Bounded runs and browser evidence
+
+```sh
+pi2 -p --max-tools 100 --max-seconds 900 --max-repairs 2 "Implement the requested change"
+```
+
+Limits are opt-in, session-persistent cooperative controls—not dollar/token caps or hard process deadlines. Inspect with `/delivery-budget-status`; only an explicit `/delivery-budget-reset` starts a fresh allowance in the same session. See [session budgets](docs/budgets.md).
+
+Browser evidence has two tiers: jsdom for DOM/unit checks (module scripts are rejected when execution is requested), and real Firefox/WebDriver for application modules and interactions. Firefox checks subscribe to browser errors before navigation and fail on unexpected console errors, exceptions and rejected promises. Screenshots are evidence to inspect, not automatic visual approval. See [browser setup and checks](docs/webdriver.md).
+
 ## Development
 
 ```sh
-npm ci && npm run check && npm test          # unit + integration suite (no model calls)
+npm ci && npm run quality                  # lint, typecheck, build and tests; no model calls
+npm run test:browser                       # real Firefox; requires Firefox/geckodriver
 python3 -m pip install -r scenarios/game/requirements.txt && npm run test:python   # game graders
+# Only with explicit spending authorization and a cap:
 node evaluate.mjs --task cli --mode both --allow-live   # live A/B eval — spends API credit
 ```
 
-Tests cover contract validation, stale evidence, required validators, timeouts/cancellation, compaction, bounded repairs, and dashboard auth. `PI_CLI` points the suite at a non-standard pi location.
+Tests cover contract validation, stale evidence, required validators, timeouts/cancellation, compaction, actual-engine session budgets, report conflicts, and dashboard auth. Native CI covers Windows/macOS/Linux on Node 22/24; a separate Linux job runs real Firefox. WSL JS/browser evidence is local and separate; WSL Python validation remains unperformed successfully. This does not establish all terminals or browsers as supported/tested. `PI_CLI` points the suite at a non-standard pi location.
+
+See [repository quality gates](docs/quality.md) and [controlled evaluation readiness](docs/evaluation-readiness.md). Persistent review orchestration and live workspace-wide coordination remain incomplete. No controlled paid comparison yet establishes lower cost or fewer interventions for complete web deliveries.
