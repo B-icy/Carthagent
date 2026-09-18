@@ -39,7 +39,8 @@ try {
   assert.equal(readFileSync(shot).subarray(1, 4).toString(), 'PNG');
   app = await serveDir(fixture);
   writeFileSync(join(fixture, 'app.mjs'), 'let count=0; setTimeout(()=>{document.querySelector("#out").textContent="ready"},300); document.querySelector("#go").onclick=()=>{count++; setTimeout(()=>{document.querySelector("#out").textContent="café ✓ "+count},300)};');
-  const liveArgs = [process.execPath, tool, '--endpoint', endpoint, '--url', app.url, '--wait-ms', '2000', '--assert-text', '#out:ready', '--click', '#go', '--assert-text', '#out:café ✓ 1'];
+  // Include native driver round trips in the readiness budget, not only the 300ms app timer.
+  const liveArgs = [process.execPath, tool, '--endpoint', endpoint, '--url', app.url, '--wait-ms', '5000', '--assert-text', '#out:ready', '--click', '#go', '--assert-text', '#out:café ✓ 1'];
   const live = await runCommand(liveArgs, { cwd: process.cwd(), timeoutSeconds: 30 });
   assert.equal(live.code, 0, live.output);
   writeFileSync(join(fixture, 'app.mjs'), 'throw Error("Broken app")');

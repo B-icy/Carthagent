@@ -16,6 +16,7 @@ import {
   planD2,
   runCommand
 } from '../lib/delivery.mjs';
+import { lockWorkspace, selectReport } from '../lib/workspace.mjs';
 import { beginReview, parseFindings } from '../lib/review-state.mjs';
 import { latestReport, saveReport } from '../lib/reports.mjs';
 import { normalizeReviewMode, resolveReviewMode, loadPi2Config, savePi2Config, pi2ConfigPath, reviewerPrompt, parseVerdict, resolveStickyDefaults } from '../lib/review.mjs';
@@ -221,17 +222,25 @@ async function handleHash() {
 }
 
 async function handleCheck() {
+  const release = lockWorkspace(cwd);
+  try { await runWorkspaceChecks(); } finally { release(); }
+}
+
+async function runWorkspaceChecks() {
   const checkId = argv[1] || 'all';
   const report = latestReport(cwd);
   if (!report?.state?.plan) {
     console.error('No delivery report found for this workspace.');
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
+  selectReport(cwd, report.path);
   const state = report.state;
   const checks = checkId === 'all' ? state.plan.checks : state.plan.checks.filter(check => check.id === checkId);
   if (!checks.length) {
     console.error(`Unknown check ID: ${checkId}`);
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 
   let allPassed = true;
@@ -267,7 +276,7 @@ async function handleCheck() {
   }
   state.status = allPassed && priorStatus === 'verified' ? 'verified' : 'implementing';
   saveReport(report.path, state);
-  if (!allPassed) process.exit(1);
+  if (!allPassed) process.exitCode = 1;
 }
 
 async function handleValidate() {

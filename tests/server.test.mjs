@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { domCheck } from '../lib/browser.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -89,6 +89,9 @@ test('dashboard rejects plan replacement and finish during checks and releases a
   const deadline = Date.now() + 4000;
   while (!existsSync(started) && Date.now() < deadline) await new Promise(r => setTimeout(r, 20));
   assert.ok(existsSync(started), 'check subprocess reached barrier');
+  const competing = spawnSync(process.execPath, [join(root, 'bin/pi2.mjs'), 'check', 'all'], { cwd: server.cwd, encoding: 'utf8' });
+  assert.notEqual(competing.status, 0);
+  assert.match(competing.stderr, /Workspace busy/);
   const replacement = { ...plan, goal: 'Replacement' };
   assert.equal((await post('plan/set', { plan: replacement })).status, 409);
   assert.equal((await post('finish', { status: 'blocked', limitations: ['Stop'] })).status, 409);
