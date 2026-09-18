@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseD2, layoutD2, renderD2 } from '../lib/tui/d2.mjs';
-import { planSideWidth, makeKeyParser, matchSlash, slashCardDimensions, renderSlashCard, computeNodeStates, barRange, scrollCell } from '../lib/tui/app.mjs';
+import { syncActiveModel, planSideWidth, makeKeyParser, matchSlash, slashCardDimensions, renderSlashCard, computeNodeStates, barRange, scrollCell } from '../lib/tui/app.mjs';
 import { UNICODE_GLYPHS, ASCII_GLYPHS, detectGlyphMode, resolveGlyphs } from '../lib/tui/glyphs.mjs';
 import { checkDigest, planD2, computePhase, freshChecks, PHASES } from '../lib/delivery.mjs';
 import { createFeed, resetFeed, applyEvent, summarizeArgs, renderFeed, hydrateFeed } from '../lib/tui/feed.mjs';
@@ -16,6 +16,33 @@ import { mkdtempSync, writeFileSync, rmSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+test('slash card follows every selection down and back up', () => {
+  const items = matchSlash('/');
+  for (const sel of [...items.keys(), ...[...items.keys()].reverse()]) {
+    const { card } = renderSlashCard(items, sel, 140);
+    const selected = card.map(strip).filter(line => line.includes('●'));
+    assert.equal(selected.length, 1);
+    assert.ok(selected[0].includes(items[sel].name + ' '));
+    assert.equal(card.length, 11);
+  }
+});
+
+test('active model synchronization refreshes welcome blocks without redundant invalidation', () => {
+  const state = { model: 'old/model' };
+  const feed = createFeed();
+  feed.blocks.push({ kind: 'welcome', model: 'old/model' }, { kind: 'notice', text: 'keep' });
+  const version = feed.version;
+  const model = { provider: 'openrouter', id: 'anthropic/claude-opus-4.6' };
+  syncActiveModel(state, feed, model);
+  assert.equal(state.model, 'openrouter/anthropic/claude-opus-4.6');
+  assert.equal(feed.blocks[0].model, state.model);
+  assert.equal(feed.version, version + 1);
+  syncActiveModel(state, feed, model);
+  syncActiveModel(state, feed, undefined);
+  assert.equal(feed.version, version + 1);
+  assert.equal(feed.blocks[1].text, 'keep');
+});
 
 const SAMPLE_PLAN = {
   goal: 'Build a task CLI',

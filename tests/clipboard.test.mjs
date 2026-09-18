@@ -19,15 +19,13 @@ test('clipboardCommands adds PowerShell for WSL', () => {
 test('clipboardWriteCommands picks the platform clipboard tool', () => {
   assert.deepEqual(clipboardWriteCommands('darwin', {}), [['pbcopy', []]]);
   const win32 = clipboardWriteCommands('win32', {});
-  assert.equal(win32[0][0], 'clip.exe');
-  assert.equal(win32[1][0], 'powershell.exe');
+  assert.deepEqual(win32.map(c => c[0]), ['powershell.exe']);
   const linux = clipboardWriteCommands('linux', {});
   assert.deepEqual(linux.map(c => c[0]), ['wl-copy', 'xclip', 'xsel']);
 });
 
-test('clipboardWriteCommands adds clip and PowerShell for WSL', () => {
+test('clipboardWriteCommands adds PowerShell for WSL', () => {
   const wsl = clipboardWriteCommands('linux', { WSL_DISTRO_NAME: 'Ubuntu' });
-  assert.equal(wsl.at(-2)[0], 'clip.exe');
   assert.equal(wsl.at(-1)[0], 'powershell.exe');
   const notWsl = clipboardWriteCommands('linux', {});
   assert.ok(!notWsl.some(c => c[0] === 'clip.exe' || c[0] === 'powershell.exe'));
@@ -45,6 +43,24 @@ test('writeClipboard pipes text to child stdin and resolves true', async () => {
     commands: [[process.execPath, ['-e', 'process.stdin.resume(); process.stdin.on("data", () => process.exit(0))']]],
   });
   assert.equal(res, true);
+});
+
+test('Windows and WSL clipboard routes declare Unicode encodings', () => {
+  for (const [platform, env] of [['win32', {}], ['linux', { WSL_INTEROP: 'yes' }]]) {
+    const commands = clipboardWriteCommands(platform, env);
+    assert.ok(!commands.some(c => c[0] === 'clip.exe'));
+    assert.match(commands.find(c => c[0] === 'powershell.exe')[1].at(-1), /InputEncoding.*UTF8Encoding/);
+    assert.match(clipboardCommands(platform, env).find(c => c[0] === 'powershell.exe')[1].at(-1), /OutputEncoding.*UTF8Encoding/);
+  }
+});
+
+test('clipboard subprocess receives exact UTF-8 Unicode bytes without BOM', async () => {
+  const text = '● MESSAGES │ café ✓\n┬ · 日本語 😀';
+  {
+    const expected = Buffer.from(text, 'utf8').toString('hex');
+    const script = 'const chunks=[]; process.stdin.on("data", c=>chunks.push(c)); process.stdin.on("end",()=>{process.exitCode=Buffer.concat(chunks).toString("hex")===process.argv[1]?0:1;});';
+    assert.equal(await writeClipboard(text, { commands: [[process.execPath, ['-e', script, expected]]] }), true);
+  }
 });
 
 test('sanitizePaste strips whitespace and control bytes for single-line fields', () => {
