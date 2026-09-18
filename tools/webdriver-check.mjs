@@ -37,6 +37,6 @@ try {
   catch (error) { error.category ||= 'driver'; throw error; }
   console.log(JSON.stringify(result));
 } catch (error) {
-  console.error(JSON.stringify({ pass: false, error: error.message, category: error.category || 'configuration', stepIndex: error.stepIndex, selector: error.selector, expected: error.expected }));
+  console.error(JSON.stringify({ pass: false, error: error.message, category: error.category || 'configuration', stepIndex: error.stepIndex, selector: error.selector, expected: error.expected, browserErrors: error.browserErrors, droppedBrowserErrors: error.droppedBrowserErrors }));
   process.exitCode = 1;
 } finally { server?.close(); }

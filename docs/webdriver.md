@@ -55,3 +55,20 @@ node tools/test-webdriver.mjs
 It requires Firefox/geckodriver, launches a temporary local driver, exercises a
 module application and broken-module failure, and writes `artifacts/webdriver.png`.
 Default `npm test` tests CLI failures without requiring a browser installation.
+
+### Mandatory browser-error evidence
+
+Firefox BiDi `log.entryAdded` is subscribed before navigation, capturing startup
+console errors, uncaught exceptions and unhandled promise rejections. Unexpected
+error-level entries fail the check even when DOM assertions pass. Missing BiDi
+support or capture-channel failure fails closed; there is no silent DOM-only
+fallback. Diagnostics accompany assertion failures too and retain at most 50
+entries, 2,000 text characters and eight bounded stack frames per entry; dropped
+entries are counted. No broad ignore option is provided. Expected-error tests
+must currently use a separate explicit validator rather than suppressing logs.
+
+Coverage ends after the declared interactions/assertions and a BiDi round trip;
+this is not a promise to detect errors occurring arbitrarily later. Declare a
+readiness assertion for asynchronous work. Network failures are not classified
+as application errors unless the browser emits an error-level log. Warnings,
+visual correctness and all network traffic are not covered by this signal.
