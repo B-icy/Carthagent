@@ -445,12 +445,10 @@ test('buildPiArgs forwards session selection but never --resume', () => {
   assert.ok(!buildPiArgs({ resume: true, delivery: false }, { installed: true }).includes('--resume'));
 });
 
-test('buildPiArgs forwards the self-review mode to the delivery extension', () => {
-  const args = buildPiArgs({ review: 'yes' });
-  const i = args.indexOf('--delivery-review');
-  assert.ok(i > -1 && args[i + 1] === 'yes');
-  assert.ok(!buildPiArgs({ delivery: false, review: 'yes' }).includes('--delivery-review'), 'no extension, no flag');
-  assert.ok(!buildPiArgs({}).includes('--delivery-review'), 'unset stays unset so the config default applies');
+test('buildPiArgs keeps console review policy out of engine arguments', () => {
+  for (const review of ['ask', 'yes', 'no', undefined]) {
+    assert.ok(!buildPiArgs({ review }).includes('--delivery-review'));
+  }
 });
 
 test('ctrl-y is parsed for accepting self-review offers', () => {

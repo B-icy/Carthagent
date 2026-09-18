@@ -6,6 +6,7 @@ import { dirname, join, resolve, delimiter } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { createReport, latestReport } from '../lib/reports.mjs';
+import { buildPiArgs } from '../lib/pi.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const cli = join(root, 'bin', 'pi2.mjs');
@@ -111,6 +112,21 @@ test('pi2 review <pr> exits 1 on requested changes and 2 without a verdict', t =
   const bad = spawnSync(process.execPath, [cli, 'review', '14'], { cwd: silent.cwd, env: silent.env, encoding: 'utf8' });
   assert.equal(bad.status, 2);
   assert.match(bad.stderr, /no VERDICT/);
+});
+
+test('review modes launch the real bundled engine without unknown flags', t => {
+  const cwd = fixture(t);
+  for (const review of ['ask', 'yes', 'no']) {
+    const result = spawnSync(process.execPath, [join(root, 'vendor/agent/cli.js'),
+      '--offline', ...buildPiArgs({ review, isolate: true }),
+      '--list-models', 'pi2-no-such-model-123'], {
+      cwd, encoding: 'utf8', timeout: 15000,
+      env: { ...process.env, PI_CODING_AGENT_DIR: join(cwd, 'agent') },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.doesNotMatch(result.stderr, /Unknown option|Failed to load extension/);
+    assert.match(result.stdout + result.stderr, /No models (matching|available)/);
+  }
 });
 
 test('vendored agent engine is bundled and loads ModelRuntime cleanly', async () => {
