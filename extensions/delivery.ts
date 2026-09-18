@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 
 import { basename, dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { checkDigest, validatePlan, planD2WithProgress, fingerprint, atomicJson, runCommand, pendingChecks, restoreState, shouldContinue, localPath, createSerialQueue, validateRevision, bindRequiredChecks, loadRequiredChecks, updateStepStatus, verificationMode, looksInformational } from '../lib/delivery.mjs';
+import { evidenceIdentity, validatePlan, planD2WithProgress, fingerprint, atomicJson, runCommand, pendingChecks, restoreState, shouldContinue, localPath, createSerialQueue, validateRevision, bindRequiredChecks, loadRequiredChecks, updateStepStatus, verificationMode, looksInformational } from '../lib/delivery.mjs';
 import { formatGuidance, loadGuidanceProfiles, routeGuidance } from '../lib/guidance.mjs';
 
 const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url));
@@ -342,6 +342,7 @@ export default function delivery(pi: ExtensionAPI) {
         if (!checks.length) throw Error('Unknown check ID. Use delivery_status or id="all".');
         const results = [];
         for (const check of checks) {
+          const identity = evidenceIdentity(state, check);
           if (signal?.aborted) throw Error('Check cancelled before execution');
           state.status = 'verifying';
           delete state.evidence[check.id];
@@ -385,7 +386,7 @@ export default function delivery(pi: ExtensionAPI) {
             throw Error(`Post-check evidence scope error: ${err.message}. If the repository exceeds file limits, call delivery_finish with status="blocked" and specific limitations.`);
           }
           const passed = result.code === 0 && !result.timedOut && !result.cancelled && !result.outputLimit && before === after;
-          state.evidence[check.id] = { passed, checkDigest: checkDigest(check), fingerprint: after, code: result.code, timedOut: result.timedOut, cancelled: result.cancelled, logPath: result.logPath, durationMs: result.durationMs, changedDuringCheck: before !== after, outputTail: result.output.slice(-1200) };
+          state.evidence[check.id] = { passed, ...identity, fingerprint: after, code: result.code, timedOut: result.timedOut, cancelled: result.cancelled, logPath: result.logPath, durationMs: result.durationMs, changedDuringCheck: before !== after, outputTail: result.output.slice(-1200) };
           persist(ctx);
           const message = { id: check.id, advisory: verification !== 'required', ...state.evidence[check.id], outputTail: result.output };
           // Advisory checks are evidence for an informational answer: record the

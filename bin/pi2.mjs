@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import {
   fingerprint,
-  checkDigest,
+  evidenceIdentity,
   evidenceFresh,
   validatePlan,
   planD2,
@@ -189,7 +189,7 @@ async function handleStatus() {
     const evidence = state.evidence?.[check.id];
     if (!evidence) return 'pending';
     if (!evidence.passed) return 'failed';
-    return evidenceFresh(check, evidence, currentFp) ? 'passed' : 'stale';
+    return evidenceFresh(check, evidence, currentFp, state) ? 'passed' : 'stale';
   };
   console.log(`\x1b[1mStatus:\x1b[0m        ${state.status}`);
   console.log(`\x1b[1mGoal:\x1b[0m          ${state.plan.goal}`);
@@ -238,7 +238,7 @@ async function handleCheck() {
     state.evidence[check.id] = {
       passed,
       fingerprint: after,
-      checkDigest: checkDigest(check),
+      ...evidenceIdentity(state, check),
       code: result.code,
       timedOut: result.timedOut,
       cancelled: result.cancelled,
