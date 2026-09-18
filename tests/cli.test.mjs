@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync, chmodSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync, chmodSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, delimiter } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { createReport, latestReport } from '../lib/reports.mjs';
 import { buildPiArgs } from '../lib/pi.mjs';
@@ -90,9 +90,15 @@ if [ "$1" = "pr" ] && [ "$2" = "view" ]; then echo '{"title":"Fixture PR","url":
 exit 0
 `);
   chmodSync(gh, 0o755);
+  // Native executable fixture: Windows cannot execute a POSIX shebang shim.
+  if (process.platform === 'win32') {
+    copyFileSync(process.execPath, join(bin, 'gh.exe'));
+    writeFileSync(join(cwd, 'gh-preload.cjs'), `if (require('node:path').basename(process.execPath).toLowerCase() === 'gh.exe') { console.log(JSON.stringify({title:'Fixture PR',url:'https://example.test/pr/14',headRefName:'feat',baseRefName:'main'})); process.exit(0); }`);
+  }
   const reviewer = join(cwd, 'reviewer.mjs');
   writeFileSync(reviewer, `console.log('fixture findings');\nconsole.log('${verdictLine}');\n`);
   const env = { ...process.env, PI2_CONFIG: join(cwd, 'config.json'), PI2_CLI: reviewer, PATH: `${bin}${delimiter}${process.env.PATH}` };
+  if (process.platform === 'win32') env.NODE_OPTIONS = `${env.NODE_OPTIONS || ''} --require ${JSON.stringify(join(cwd, 'gh-preload.cjs'))}`;
   return { cwd, env };
 }
 
@@ -131,7 +137,7 @@ test('review modes launch the real bundled engine without unknown flags', t => {
 
 test('vendored agent engine is bundled and loads ModelRuntime cleanly', async () => {
   const agentPath = join(root, 'vendor', 'agent', 'index.js');
-  const agent = await import(agentPath);
+  const agent = await import(pathToFileURL(agentPath).href);
   assert.equal(typeof agent.ModelRuntime, 'function');
   const runtime = await agent.ModelRuntime.create({});
   assert.ok(runtime && typeof runtime === 'object');
