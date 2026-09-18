@@ -96,7 +96,7 @@ exit 0
     writeFileSync(join(cwd, 'gh-preload.cjs'), `if (require('node:path').basename(process.execPath).toLowerCase() === 'gh.exe') { console.log(JSON.stringify({title:'Fixture PR',url:'https://example.test/pr/14',headRefName:'feat',baseRefName:'main',headRefOid:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'})); process.exit(0); }`);
   }
   const reviewer = join(cwd, 'reviewer.mjs');
-  writeFileSync(reviewer, `console.log('fixture findings');\nconsole.log('${verdictLine}');\n`);
+  writeFileSync(reviewer, `const prompt = process.argv.at(-1); const snapshot = /snapshot:"([a-f0-9]+)"/.exec(prompt)?.[1]; const head = /head:"([a-f0-9]+)"/.exec(prompt)?.[1]; console.log('fixture findings'); console.log('REVIEW_JSON: ' + JSON.stringify({version:1,snapshot,head,findings:${JSON.stringify(verdictLine.includes('CHANGES-REQUESTED') ? [{file:'app.mjs',line:1,severity:'blocking',issue:'fixture issue',fix:'fixture fix'}] : [])}})); console.log('${verdictLine}');\n`);
   const env = { ...process.env, PI2_CONFIG: join(cwd, 'config.json'), PI2_CLI: reviewer, PATH: `${bin}${delimiter}${process.env.PATH}` };
   if (process.platform === 'win32') env.NODE_OPTIONS = `${env.NODE_OPTIONS || ''} --require ${JSON.stringify(join(cwd, 'gh-preload.cjs'))}`;
   return { cwd, env };
@@ -118,6 +118,18 @@ test('pi2 review <pr> exits 1 on requested changes and 2 without a verdict', t =
   const bad = spawnSync(process.execPath, [cli, 'review', '14'], { cwd: silent.cwd, env: silent.env, encoding: 'utf8' });
   assert.equal(bad.status, 2);
   assert.match(bad.stderr, /no VERDICT/);
+});
+
+test('review persists admission limits across fresh CLI processes', t => {
+  const { cwd, env } = reviewFixture(t, 'VERDICT: CHANGES-REQUESTED');
+  for (let i = 0; i < 3; i++) {
+    const result = spawnSync(process.execPath, [cli, 'review', '14'], { cwd, env, encoding: 'utf8' });
+    assert.equal(result.status, 1, result.stderr);
+  }
+  const exhausted = spawnSync(process.execPath, [cli, 'review', '14'], { cwd, env, encoding: 'utf8' });
+  assert.equal(exhausted.status, 2);
+  assert.match(exhausted.stderr, /round limit/);
+  assert.doesNotMatch(exhausted.stdout, /fixture findings/);
 });
 
 test('review rejects source mutation and invalid execution bounds', t => {
