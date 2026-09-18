@@ -58,3 +58,7 @@ The evidence supports better failure detection and a tested verification/recover
 After the 2025-09-07 hardening, Mercury 2.5 under the improved harness went from zero successful game trials to **verified, external-probe-passing deliveries in 23–41 productive turns** (100–186 s, $0.02–$0.05 reported) where it previously exhausted 91 turns or starved on connection errors and blank framebuffers. Both successful deliveries are still incomplete games: neither implemented movement or collision, and the second cleared the probe's blank-frame bar with only three sampled colors. Gameplay breadth within one delivery run remains a model-capability limit that the harness now surfaces honestly in each handoff's limitations rather than letting it hide behind green checks.
 
 For future evaluation, run multiple fresh trials of both conditions with fixed prompts, budgets, dependency environments and a separate hidden test set. Measure behavioral correctness, final gate status, renderer/visual review, wall time, failed tool calls and reported cost. Keep the failures in the report.
+
+## See also
+
+- [`docs/evaluation-inkling-voxel-tui.md`](evaluation-inkling-voxel-tui.md) — a later, separate single trial of the interactive TUI on a JavaScript voxel fixture with `openrouter/thinkingmachines/inkling:free`, including the `--review` launch crash, the post-verify `delivery_status` loop, guidance mis-routing and the token cost of the run.
