@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { parseD2, layoutD2, renderD2 } from '../lib/tui/d2.mjs';
 import { planSideWidth, makeKeyParser, matchSlash, slashCardDimensions, renderSlashCard, computeNodeStates, barRange, scrollCell } from '../lib/tui/app.mjs';
 import { UNICODE_GLYPHS, ASCII_GLYPHS, detectGlyphMode, resolveGlyphs } from '../lib/tui/glyphs.mjs';
-import { planD2, computePhase, freshChecks, PHASES } from '../lib/delivery.mjs';
+import { checkDigest, planD2, computePhase, freshChecks, PHASES } from '../lib/delivery.mjs';
 import { createFeed, resetFeed, applyEvent, summarizeArgs, renderFeed, hydrateFeed } from '../lib/tui/feed.mjs';
 import { strip, width, wrap, truncate, hasTruecolor, sliceCols, inverseCols, mix, fg } from '../lib/tui/ansi.mjs';
 import { getTheme, resolveThemeName, flattenTheme, THEME_NAMES } from '../lib/tui/theme.mjs';
@@ -365,7 +365,7 @@ test('computePhase derives the rail tracker state', () => {
   assert.equal(computePhase({ plan, evidence: {}, status: 'implementing', revision: 2 }, 'h1').revision, 2);
   assert.equal(computePhase({ plan, evidence: {}, status: 'implementing', stepStatus: { step0: 'active' } }, 'h1').phase, 'build');
   assert.equal(computePhase({ plan, evidence: {}, status: 'verifying' }, 'h1', true).phase, 'verify');
-  const fresh = { plan, evidence: { tests: { passed: true, fingerprint: 'h1' } }, status: 'implementing' };
+  const fresh = { plan, evidence: { tests: { passed: true, fingerprint: 'h1', checkDigest: checkDigest(plan.checks[0]) } }, status: 'implementing' };
   assert.equal(computePhase(fresh, 'h1').phase, 'review');
   assert.deepEqual(freshChecks(fresh, 'h1'), { fresh: 1, total: 1 });
   assert.deepEqual(freshChecks(fresh, 'h2'), { fresh: 0, total: 1 });

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fingerprint, validatePlan, planD2, pendingChecks, restoreState, runCommand, shouldContinue, localPath, createSerialQueue, validateRevision, turnBudgetExceeded, maxEvidenceFiles, maxEvidenceBytes, bindRequiredChecks, verificationMode, looksInformational, computePhase } from '../lib/delivery.mjs';
+import { checkDigest, fingerprint, validatePlan, planD2, pendingChecks, restoreState, runCommand, shouldContinue, localPath, createSerialQueue, validateRevision, turnBudgetExceeded, maxEvidenceFiles, maxEvidenceBytes, bindRequiredChecks, verificationMode, looksInformational, computePhase } from '../lib/delivery.mjs';
 import { createReport, latestReport, saveReport } from '../lib/reports.mjs';
 
 function fixture(t) {
@@ -40,7 +40,16 @@ test('evidence cannot pass on missing, failed or stale checks', () => {
   assert.deepEqual(pendingChecks(state, 'new'), ['smoke']);
   state.evidence.smoke = { passed: true, fingerprint: 'old' };
   assert.deepEqual(pendingChecks(state, 'new'), ['smoke']);
-  state.evidence.smoke.fingerprint = 'new'; assert.deepEqual(pendingChecks(state, 'new'), []);
+  state.evidence.smoke.fingerprint = 'new';
+  assert.deepEqual(pendingChecks(state, 'new'), ['smoke'], 'legacy evidence must rerun');
+  state.evidence.smoke.checkDigest = checkDigest(state.plan.checks[0]);
+  assert.deepEqual(pendingChecks(state, 'new'), []);
+  const original = structuredClone(state.plan.checks[0]);
+  for (const change of [{ argv: ['node', '-e', 'throw 1'] }, { timeoutSeconds: 99 }, { kind: 'static' }]) {
+    state.plan.checks[0] = { ...original, ...change };
+    assert.deepEqual(pendingChecks(state, 'new'), ['smoke']);
+  }
+  state.plan.checks[0] = original;
   state.evidence.smoke.passed = false; assert.deepEqual(pendingChecks(state, 'new'), ['smoke']);
 });
 test('branch restoration only uses provided active-branch entries and clones state', () => {
