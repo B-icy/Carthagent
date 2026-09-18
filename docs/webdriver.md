@@ -25,9 +25,21 @@ all steps. Exit 1 means failure, including unavailable driver or unsupported
 options. Requests and navigation have deadlines. Sessions are deleted on
 success and failure; a dead driver may require operator process cleanup.
 
-This serves static workspace files, not a framework development server.
-Build the application first where necessary. Browser page load completion is
-awaited, but arbitrary asynchronous application readiness is not polled.
+For an already running Vite/Next.js or other application server, use
+`--url http://127.0.0.1:5173` instead of `--root`/`--page`. Start and stop that
+server separately. Only navigate to applications you trust: browser checks
+execute their scripts and clicks can change application data.
+
+Element existence and text assertions poll for up to `--wait-ms 5000` per step
+(default 5000; integer range 1–60000). Invalid selectors and driver errors fail
+immediately. Clicks wait for element existence but are executed exactly once;
+interaction errors are not retried. Page navigation has a separate 15-second
+timeout. This is a per-step bound, not a whole-run budget.
+
+Failures are JSON with `category` (configuration, driver, navigation, assertion,
+interaction, screenshot, or cleanup), `error`, and where applicable zero-based
+`stepIndex`, `selector`, and `expected`. Use this evidence to fix the relevant
+step rather than blindly repeating a mutating interaction.
 Use meaningful application-state assertions: element existence alone does not
 prove that a module ran. Console errors are **not captured**; `--console-clean`
 is rejected rather than silently ignored. Screenshot success is not visual
