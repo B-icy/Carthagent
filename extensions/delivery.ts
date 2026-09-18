@@ -112,7 +112,9 @@ export default function delivery(pi: ExtensionAPI) {
     return { systemPrompt: event.systemPrompt + '\n\n' + guidance };
   });
   pi.on('context', event => {
-    if (!state || state.status === 'blocked') return;
+    // Terminal contracts must not keep asking the model to inspect freshness.
+    // Explicit checks/finish still validate evidence; a new plan restores context.
+    if (!state || ['verified', 'blocked'].includes(state.status)) return;
     // Re-injected after compaction without replacing Pi's summary or pruning user messages.
     const summary = { goal: state.plan.goal, status: state.status, acceptance: state.plan.acceptance, steps: state.plan.steps, artifacts: state.plan.artifacts, checks: state.plan.checks, evidence: Object.fromEntries(Object.entries(state.evidence).map(([id, e]: any) => [id, { passed: e.passed, fingerprint: e.fingerprint, code: e.code, outputTail: e.outputTail ? e.outputTail.slice(-400) : undefined }])) };
     return { messages: [...event.messages, { role: 'custom' as const, customType: 'delivery-context', content: `Delivery contract (evidence may be stale after edits):\n${JSON.stringify(summary)}\nUse delivery_status to inspect current freshness.`, display: false, timestamp: Date.now() }] };
