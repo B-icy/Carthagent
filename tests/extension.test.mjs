@@ -62,6 +62,24 @@ test('real extension loads, gates writes, executes checks and rejects stale evid
   writeFileSync(join(f.cwd, 'new_config.json'), '{}');
   await assert.rejects(f.call('delivery_finish', finish), /stale checks/);
 });
+test('terminal deliveries stop context reminders and repair turns across restore', options, async t => {
+  for (const status of ['verified', 'blocked']) {
+    const f = fixture(t);
+    await f.call('delivery_plan', f.plan);
+    assert.match(f.hooks.context({ messages: [] }).messages[0].content, /inspect current freshness/);
+    await f.call('delivery_check', { id: 'all' });
+    await f.call('delivery_finish', { status, review: 'Reviewed', launch: 'python app.py', limitations: status === 'blocked' ? ['External prerequisite unavailable'] : [] });
+    for (const restore of [false, true]) {
+      if (restore) f.hooks.session_start({}, f.ctx);
+      assert.equal(f.hooks.context({ messages: [] }), undefined);
+      f.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, f.ctx);
+      assert.equal(f.messages.length, 0);
+    }
+    await f.call('delivery_plan', f.plan);
+    assert.match(f.hooks.context({ messages: [] }).messages[0].content, /inspect current freshness/);
+  }
+});
+
 test('real extension serializes sibling checks without tool errors', options, async t => {
   const f = fixture(t);
   f.plan.checks.push({ ...f.plan.checks[0], id: 'second' });
