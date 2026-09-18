@@ -16,8 +16,9 @@ function fixture(t) {
   const cwd = mkdtempSync(join(tmpdir(), 'pi extension integration '));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
   writeFileSync(join(cwd, 'app.py'), 'print(1)');
-  const hooks = {}, tools = {}, entries = [], messages = [], flags = { 'delivery-strict': true };
+  const hooks = {}, commands = {}, tools = {}, entries = [], messages = [], flags = { 'delivery-strict': true };
   const pi = {
+    registerCommand(name, command) { commands[name] = command; },
     registerFlag() {}, getFlag: name => flags[name],
     on(name, fn) { hooks[name] = fn; },
     registerTool(tool) { tools[tool.name] = tool; },
@@ -25,10 +26,10 @@ function fixture(t) {
     sendMessage(message) { messages.push(message); },
   };
   factory(pi);
-  const ctx = { cwd, hasUI: false, sessionManager: { getBranch: () => entries, getSessionId: () => 'integration-session' }, hasPendingMessages: () => false };
+  const ctx = { cwd, hasUI: false, aborted: 0, abort() { this.aborted++; }, sessionManager: { getEntries: () => entries, getBranch: () => entries, getSessionId: () => 'integration-session' }, hasPendingMessages: () => false };
   const call = (name, params = {}) => tools[name].execute('test-id', params, undefined, undefined, ctx);
   const plan = { goal: 'Working script', assumptions: [], artifacts: ['app.py'], steps: ['Implement', 'Verify'], acceptance: [{ requirement: 'Runs', checks: ['run'] }], checks: [{ id: 'run', kind: 'runtime', argv: [process.execPath, '-e', 'console.log("passed")'], timeoutSeconds: 5 }] };
-  return { cwd, ctx, hooks, entries, messages, flags, call, plan };
+  return { cwd, ctx, hooks, commands, entries, messages, flags, call, plan };
 }
 
 test('real extension loads, gates writes, executes checks and rejects stale evidence', options, async t => {
@@ -440,3 +441,52 @@ test('required validators force verification:required on an informational plan',
   assert.ok(state.plan.checks.some(c => c.id === 'required_oracle'));
 });
 
+
+test('session budget survives replan, input and branch restoration; only command resets', options, async t => {
+  const f = fixture(t);
+  f.flags['delivery-max-tools'] = '2';
+  f.hooks.agent_start({}, f.ctx);
+  await f.call('delivery_plan', f.plan);
+  assert.equal(f.hooks.tool_call({ toolName: 'delivery_status' }, f.ctx), undefined);
+  await f.call('delivery_plan', f.plan);
+  f.hooks.input({ source: 'user' });
+  f.hooks.session_tree({}, f.ctx);
+  assert.equal(f.hooks.tool_call({ toolName: 'delivery_status' }, f.ctx), undefined);
+  assert.equal(f.hooks.tool_call({ toolName: 'read' }, f.ctx).block, true);
+  f.hooks.agent_end({ messages: [] }, f.ctx);
+  assert.equal(f.messages.length, 1);
+  const stop = JSON.parse(f.messages[0].content);
+  assert.equal(stop.reason, 'tool-calls');
+  assert.deepEqual(stop.requirements, f.plan.acceptance);
+  assert.ok(f.ctx.aborted > 0);
+  f.commands['delivery-budget-reset'].handler('', f.ctx);
+  assert.equal(f.hooks.tool_call({ toolName: 'read' }, f.ctx), undefined);
+});
+
+test('elapsed budget aborts an active turn without a tool and stays stopped on restore', options, async t => {
+  const f = fixture(t);
+  f.flags['delivery-max-seconds'] = '1';
+  f.hooks.agent_start({}, f.ctx);
+  await new Promise(resolve => setTimeout(resolve, 1150));
+  assert.equal(f.ctx.aborted, 1);
+  assert.equal(JSON.parse(f.messages[0].content).reason, 'elapsed-time');
+  f.hooks.session_start({}, f.ctx);
+  f.hooks.agent_start({}, f.ctx);
+  assert.equal(f.messages.length, 1);
+  assert.equal(f.ctx.aborted, 2);
+  f.hooks.session_shutdown();
+});
+
+test('repair allowance persists across user follow-ups and stops automatic continuation', options, async t => {
+  const f = fixture(t);
+  f.flags['delivery-max-repairs'] = '1';
+  await f.call('delivery_plan', f.plan);
+  const event = { messages: [{ role: 'assistant', stopReason: 'stop' }] };
+  f.hooks.agent_end(event, f.ctx);
+  assert.equal(f.messages.length, 1);
+  f.hooks.input({ source: 'user' });
+  f.hooks.session_start({}, f.ctx);
+  f.hooks.agent_end(event, f.ctx);
+  assert.equal(f.messages.length, 2);
+  assert.equal(JSON.parse(f.messages[1].content).reason, 'repair-rounds');
+});
