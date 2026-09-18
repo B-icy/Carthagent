@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { serveDir } from '../lib/browser.mjs';
 import { runCommand } from '../lib/delivery.mjs';
 
 const artifacts = resolve('artifacts');
@@ -17,6 +18,7 @@ let log = '';
 driver.on('error', error => { driverError = error; });
 driver.stderr.on('data', chunk => { log = (log + chunk).slice(-4000); });
 const exited = new Promise(r => driver.once('close', r));
+let app;
 try {
   let ready = false;
   for (let i = 0; i < 50; i++) {
@@ -35,12 +37,23 @@ try {
   assert.equal(good.code, 0, good.output);
   assert.equal(JSON.parse(good.output).engine, 'firefox-webdriver');
   assert.equal(readFileSync(shot).subarray(1, 4).toString(), 'PNG');
+  app = await serveDir(fixture);
+  writeFileSync(join(fixture, 'app.mjs'), 'let count=0; setTimeout(()=>{document.querySelector("#out").textContent="ready"},300); document.querySelector("#go").onclick=()=>{count++; setTimeout(()=>{document.querySelector("#out").textContent="café ✓ "+count},300)};');
+  const liveArgs = [process.execPath, tool, '--endpoint', endpoint, '--url', app.url, '--wait-ms', '2000', '--assert-text', '#out:ready', '--click', '#go', '--assert-text', '#out:café ✓ 1'];
+  const live = await runCommand(liveArgs, { cwd: process.cwd(), timeoutSeconds: 30 });
+  assert.equal(live.code, 0, live.output);
   writeFileSync(join(fixture, 'app.mjs'), 'throw Error("Broken app")');
   const bad = await runCommand(argv, { cwd: process.cwd(), timeoutSeconds: 30 });
   assert.equal(bad.code, 1, bad.output);
   assert.match(bad.output, /expected/);
+  const failure = JSON.parse(bad.output);
+  assert.equal(failure.category, 'assertion');
+  assert.equal(failure.stepIndex, 0);
+  assert.equal(failure.selector, '#out');
+  assert.ok(bad.durationMs < 20000, 'assertion timeout is bounded');
   console.log('Real Firefox: module execution, click, Unicode text, screenshot and broken-module failure passed');
 } finally {
+  app?.close();
   driver.kill('SIGTERM');
   await exited;
   rmSync(fixture, { recursive: true, force: true });
