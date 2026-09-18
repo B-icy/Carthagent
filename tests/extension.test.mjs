@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { saveReport } from '../lib/reports.mjs';
+import { lockWorkspace, selectReport } from '../lib/workspace.mjs';
+import { saveReport, createReport } from '../lib/reports.mjs';
 
 // Load the project extension even without a global engine installation.
 const requirePi = createRequire(import.meta.url);
@@ -32,6 +33,26 @@ function fixture(t) {
   const plan = { goal: 'Working script', assumptions: [], artifacts: ['app.py'], steps: ['Implement', 'Verify'], acceptance: [{ requirement: 'Runs', checks: ['run'] }], checks: [{ id: 'run', kind: 'runtime', argv: [process.execPath, '-e', 'console.log("passed")'], timeoutSeconds: 5 }] };
   return { cwd, ctx, hooks, commands, entries, messages, flags, call, plan };
 }
+
+test('live extension refreshes same-run state and rejects superseded mutations and busy checks', async t => {
+  const f = fixture(t);
+  const planned = await f.call('delivery_plan', f.plan);
+  const path = JSON.parse(planned.content[0].text).report;
+  const disk = JSON.parse(readFileSync(path, 'utf8'));
+  disk.stepStatus = { step0: 'done' };
+  saveReport(path, disk);
+  await f.call('delivery_progress', { step: 1, status: 'active' });
+  assert.equal(JSON.parse(readFileSync(path, 'utf8')).stepStatus.step0, 'done');
+  const release = lockWorkspace(f.cwd);
+  await assert.rejects(f.call('delivery_check', { id: 'all' }), /Workspace busy/);
+  release();
+  const other = createReport(f.cwd, { status: 'implementing', plan: f.plan, evidence: {} });
+  selectReport(f.cwd, other.path);
+  await assert.rejects(f.call('delivery_progress', { step: 0, status: 'active' }), /superseded/);
+  f.hooks.agent_end({ messages: [] }, f.ctx);
+  assert.equal(f.messages.length, 0);
+  await f.call('delivery_plan', f.plan); // Explicit new work can supersede an idle run.
+});
 
 test('real extension loads, gates writes, executes checks and rejects stale evidence', options, async t => {
   const f = fixture(t);

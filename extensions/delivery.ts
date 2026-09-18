@@ -5,6 +5,7 @@ import { mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 
 import { basename, dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { lockWorkspace, selectReport, assertActiveReport } from '../lib/workspace.mjs';
 import { saveReport, reconcileReport } from '../lib/reports.mjs';
 import { evidenceIdentity, validatePlan, planD2WithProgress, fingerprint, runCommand, pendingChecks, restoreState, shouldContinue, localPath, createSerialQueue, validateRevision, bindRequiredChecks, loadRequiredChecks, updateStepStatus, verificationMode, looksInformational } from '../lib/delivery.mjs';
 import { formatGuidance, loadGuidanceProfiles, routeGuidance } from '../lib/guidance.mjs';
@@ -132,6 +133,21 @@ export default function delivery(pi: ExtensionAPI) {
   }
   function directory(ctx: ExtensionContext) {
     return localPath(ctx.cwd, join('.harness', ctx.sessionManager.getSessionId(), state.runId));
+  }
+  function refreshState(ctx: ExtensionContext) {
+    if (state) {
+      assertActiveReport(ctx.cwd, join(directory(ctx), 'report.json'));
+      state = reconcileReport(join(directory(ctx), 'report.json'), state);
+    }
+  }
+  async function workspaceOperation(ctx: ExtensionContext, operation: () => Promise<any>, replace = false) {
+    const release = lockWorkspace(ctx.cwd);
+    try {
+      if (replace) { if (state) state = reconcileReport(join(directory(ctx), 'report.json'), state); }
+      else refreshState(ctx);
+      return await operation();
+    }
+    finally { release(); }
   }
   function persist(ctx: ExtensionContext) {
     state.nudges = nudges;
@@ -341,7 +357,7 @@ export default function delivery(pi: ExtensionAPI) {
       checks: Type.Array(Type.Object({ id: Type.String({ pattern: '^[a-z][a-z0-9_-]{0,39}$' }), kind: Type.String({ description: 'test, runtime, or static' }), argv: strings(40), timeoutSeconds: Type.Integer({ minimum: 1, maximum: 300 }) }), { maxItems: 12 }),
     }),
     async execute(_id, params, _signal, _update, ctx) {
-      return exclusive(async () => {
+      return exclusive(() => workspaceOperation(ctx, async () => {
         if (configError) throw Error(configError);
         const plan = validatePlan(bindRequiredChecks(params, required), ctx.cwd);
         validateRevision(state, plan);
@@ -350,14 +366,16 @@ export default function delivery(pi: ExtensionAPI) {
         mkdirSync(dir, { recursive: true });
         writeFileSync(join(dir, 'plan.d2'), planD2WithProgress(plan, {}));
         persist(ctx);
+        selectReport(ctx.cwd, join(dir, 'report.json'));
         return text({ plan: join(dir, 'plan.d2'), report: join(dir, 'report.json'), next: 'Build a runnable slice, add regression tests, then delivery_check each check ID.' });
-      });
+      }, true));
     },
   });
   pi.registerTool({
     name: 'delivery_status', label: 'Delivery status', description: 'Show the current contract and failed/missing/stale check IDs.', parameters: Type.Object({}),
     async execute(_id, _params, _signal, _update, ctx) {
       if (!state) return text('No delivery contract.');
+      refreshState(ctx);
       let pending: string[] = [];
       try {
         pending = pendingChecks(state, fingerprint(ctx.cwd, ['.']));
@@ -374,21 +392,21 @@ export default function delivery(pi: ExtensionAPI) {
       status: Type.String({ description: 'active, done, failed, or pending' }),
     }),
     async execute(_id, params, _signal, _update, ctx) {
-      return exclusive(async () => {
+      return exclusive(() => workspaceOperation(ctx, async () => {
         if (!state) throw Error('Call delivery_plan first');
         updateStepStatus(state, params.step, params.status);
         const dir = directory(ctx);
         writeFileSync(join(dir, 'plan.d2'), planD2WithProgress(state.plan, state.stepStatus));
         persist(ctx);
         return text({ step: params.step, status: params.status, plan: join(dir, 'plan.d2') });
-      });
+      }));
     },
   });
   pi.registerTool({
     name: 'delivery_check', label: 'Run delivery check', description: 'Execute a declared check, or id="all" to run all checks sequentially. Records real exit status, deadline, logs and source fingerprint. Last 12,000 characters per check, full log capped at 8 MiB. Sibling delivery calls are queued safely; do not edit during checks.',
     parameters: Type.Object({ id: shortString() }),
     async execute(_id, params, signal, onUpdate, ctx) {
-      return exclusive(async () => {
+      return exclusive(() => workspaceOperation(ctx, async () => {
         if (!state) throw Error('Call delivery_plan first');
         const verification = verificationMode(state.plan);
         // Pre-verify gate: an informational plan has no checks by design. Return a
@@ -453,14 +471,14 @@ export default function delivery(pi: ExtensionAPI) {
           results.push(message);
         }
         return text(results);
-      });
+      }));
     },
   });
   pi.registerTool({
     name: 'delivery_finish', label: 'Finish delivery', description: 'Record review and handoff. verified requires all declared checks passing on current artifact hashes for verification:"required" contracts; informational/advisory contracts may verify once with recorded advisory evidence. blocked records an honest incomplete result without pretending success.',
     parameters: Type.Object({ status: Type.String({ description: 'verified or blocked' }), review: shortString(), launch: shortString(), limitations: Type.Array(shortString(), { maxItems: 20 }) }),
     async execute(_id, params, _signal, _update, ctx) {
-      return exclusive(async () => {
+      return exclusive(() => workspaceOperation(ctx, async () => {
         if (!state) throw Error('Call delivery_plan first');
         if (configError) throw Error(configError);
         if (!['verified', 'blocked'].includes(params.status)) throw Error('status must be verified or blocked');
@@ -491,12 +509,18 @@ export default function delivery(pi: ExtensionAPI) {
         state.handoff = { ...params, verification, advisory, advisoryFailures, fingerprint: hash, at: new Date().toISOString() };
         persist(ctx);
         return text({ status: state.status, verification, advisory, advisoryFailures, report: join(directory(ctx), 'report.json'), note: advisory ? 'Informational/advisory finish: recorded checks are context, not a delivery guarantee. Distinguish them from unperformed manual/visual review.' : 'Evidence covers declared checks, not a guarantee of correctness. Distinguish automated evidence from unperformed manual/visual review.' });
-      });
+      }));
     },
   });
   pi.on('agent_end', (event, ctx) => {
     clearTimeout(budgetTimer);
     if (ensureBudget(ctx)) return;
+    let release: (() => void) | undefined;
+    try {
+      release = lockWorkspace(ctx.cwd);
+      refreshState(ctx);
+    } catch { release?.(); return; } // Another operation/run owns continuation; never replay stale repairs.
+    try {
     const last = [...event.messages].reverse().find((m: any) => m.role === 'assistant') as any;
     let fresh = false, pending: string[] = [], failures: string[] = [];
     try {
@@ -514,5 +538,6 @@ export default function delivery(pi: ExtensionAPI) {
     if (state) persist(ctx);
     const specifics = [...(pending.length ? [`pending checks: ${pending.join(', ')}`] : []), ...failures].join('\n');
     pi.sendMessage({ customType: 'delivery-gate', display: true, content: `Delivery follow-up ${nudges}/2: implementation ended without current verified evidence.${specifics ? `\n${specifics}\n` : ''}Read the quoted output, repair the root cause it points to (do not rationalize a failing probe as an environment limitation without evidence), rerun the failing checks, then delivery_finish. If genuinely blocked, record status=blocked with specific limitations. Do not merely repeat a success claim.` }, { triggerTurn: true, deliverAs: 'followUp' });
+    } finally { release(); }
   });
 }

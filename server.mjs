@@ -13,6 +13,7 @@ import {
   runCommand,
   createSerialQueue
 } from './lib/delivery.mjs';
+import { lockWorkspace, selectReport } from './lib/workspace.mjs';
 import { createReport, latestReport, saveReport } from './lib/reports.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
@@ -48,7 +49,7 @@ app.use('/api', (req, res, next) => {
 function refresh() {
   if (pendingRuns) return;
   const found = latestReport(cwd);
-  if (found && (!active || found.path !== active.path || found.mtimeMs > active.mtimeMs)) {
+  if (found) {
     active = found;
     currentState = found.state;
   }
@@ -97,6 +98,20 @@ app.post('/api/plan/d2', (req, res) => {
   catch (error) { res.status(400).json({ error: error.message }); }
 });
 
+// Mutating endpoints share a cross-process lease for the entire response.
+app.use(['/api/plan/set', '/api/checks/run', '/api/finish'], (req, res, next) => {
+  if (req.method !== 'POST') return next();
+  let release;
+  try { release = lockWorkspace(cwd); refresh(); }
+  catch (error) { release?.(); return res.status(409).json({ error: error.message }); }
+  let done = false;
+  const finish = () => { if (!done) { done = true; release(); } };
+  // Do not release on socket close: a disconnected request may still run checks.
+  res.once('finish', finish);
+  res.locals.releaseWorkspace = finish;
+  next();
+});
+
 app.post('/api/plan/set', (req, res) => {
   if (pendingRuns) return res.status(409).json({ error: 'Checks are running or queued; wait before replacing the plan' });
   try {
@@ -113,6 +128,7 @@ app.post('/api/plan/set', (req, res) => {
     };
     active = createReport(cwd, currentState);
     currentState = active.state;
+    selectReport(cwd, active.path);
     res.json({ success: true, plan, d2: planD2(plan), report: active.path });
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -135,6 +151,7 @@ app.post('/api/checks/run', async (req, res) => {
   if (!checks.length) return res.status(404).json({ error: `Unknown check ID: ${req.body.id}` });
   pendingRuns++;
   try {
+    selectReport(cwd, active.path);
     const results = await enqueue(async () => {
       const runResults = [];
       const priorStatus = currentState.status;
@@ -177,6 +194,7 @@ app.post('/api/checks/run', async (req, res) => {
     res.status(500).json({ error: error.message });
   } finally {
     pendingRuns--;
+    res.locals.releaseWorkspace?.();
   }
 });
 
