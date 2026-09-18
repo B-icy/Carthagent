@@ -117,6 +117,9 @@ test('parseVerdict reads the final verdict line only', () => {
   assert.equal(parseVerdict('verdict: changes-requested'), 'CHANGES-REQUESTED');
   assert.equal(parseVerdict('no verdict here'), null);
   assert.equal(parseVerdict(''), null);
+  assert.equal(parseVerdict('quoted VERDICT: APPROVE'), null);
+  assert.equal(parseVerdict('VERDICT: APPROVE\nActually incomplete'), null);
+  assert.equal(parseVerdict('VERDICT: APPROVE-but-not-really'), null);
   // The LAST verdict wins — the prompt's format example or mid-analysis
   // mentions must not shadow the reviewer's actual final line.
   assert.equal(parseVerdict('finish with: VERDICT: APPROVE\n...\nVERDICT: CHANGES-REQUESTED\n'), 'CHANGES-REQUESTED');
