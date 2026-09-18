@@ -63,6 +63,19 @@ test('domCheck reports failures for missing elements, wrong counts, bad text, an
   assert.ok(r.failures.some(f => f.includes('console errors')));
 });
 
+test('domCheck rejects unsupported module execution but permits explicit static inspection', async () => {
+  for (const script of ['<script type="module">throw new Error("Broken app")</script>', '<script type="MODULE" src="/app.mjs"></script>']) {
+    const html = `<div id="app">café</div>${script}`;
+    const result = await domCheck(html, [{ selector: '#app' }, { console: 'error-free' }], { waitMs: 0 });
+    assert.equal(result.pass, false);
+    assert.match(result.failures.join(' '), /Unsupported module scripts/);
+    result.window.close();
+    const staticResult = await domCheck(html, [{ selector: '#app', text: 'café' }], { runScripts: false });
+    assert.equal(staticResult.pass, true);
+    staticResult.window.close();
+  }
+});
+
 test('domCheck supports eval assertions and type/key actions', async () => {
   const html = `<!doctype html><body>
     <input id="in"><div id="out"></div>
