@@ -4,8 +4,20 @@ The delivery extension supports opt-in execution limits on Windows, macOS,
 Linux and WSL. These are agent orchestration controls, not a security sandbox
 or a dollar/token billing cap.
 
-Launch the bundled engine directly with the extension and flags (from the
-repository root; the same single-line command works in PowerShell and POSIX shells):
+Normal pi2 launches accept `--max-tools`, `--max-seconds`, and `--max-repairs`
+for both TUI and headless mode. For example:
+
+```text
+node bin/pi2.mjs -p --max-tools 100 --max-seconds 900 --max-repairs 2 "Implement the requested change"
+```
+
+Invalid or missing values, and budget options combined with `--no-delivery`,
+fail before launching the engine. Use `/delivery-budget-status` to inspect
+usage, remaining allowance (null means unlimited), and stop reason without
+spending a tool call. The command displays a JSON status message.
+
+Alternatively launch the bundled engine directly with the extension and flags
+(from the repository root; works in PowerShell and POSIX shells):
 
 ```text
 node vendor/agent/cli.js -e extensions/delivery.ts --delivery-max-tools 100 --delivery-max-seconds 900 --delivery-max-repairs 2
@@ -34,7 +46,11 @@ is a snapshot, **not a fresh verification**. The delivery report is not falsely
 marked verified or overwritten; unfinished work remains unfinished.
 
 To authorize more work, explicitly run `/delivery-budget-reset` while the agent
-is idle. It creates a fresh budget using the current launch flags. This is a
+is idle. In headless mode a command-only invocation on a previously failed
+session may still exit 1 because the engine prints its last assistant error;
+the command's persisted reset is applied. Our offline subprocess regression
+checks the saved reset and subsequent tool execution rather than treating that
+exit code as proof that reset failed. It creates a fresh budget using the current launch flags. This is a
 user command, not a model tool. A genuinely new session also starts a new budget.
 Separate processes/sessions do not share a workspace-wide quota, and deliberate
 session-file edits or extension removal can bypass the limits.

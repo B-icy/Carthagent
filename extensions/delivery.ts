@@ -1,4 +1,4 @@
-import { budgetLimits, newBudget, budgetReason } from '../lib/budget.mjs';
+import { budgetLimits, newBudget, budgetReason, budgetSnapshot } from '../lib/budget.mjs';
 import { CONFIG_DIR_NAME, truncateTail, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import { mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
@@ -61,6 +61,11 @@ export default function delivery(pi: ExtensionAPI) {
     if (action === 'tool') { budget.tools++; saveBudget(); }
     if (action === 'repair') { budget.repairs++; saveBudget(); }
   }
+  pi.registerCommand('delivery-budget-status', { description: 'Show session budget usage, remaining allowance and stop reason', handler: (_args, ctx) => {
+    const content = JSON.stringify(budgetSnapshot(budget));
+    pi.sendMessage({ customType: 'delivery-budget-status', display: true, content }, { triggerTurn: false });
+    if (ctx.hasUI) ctx.ui.notify(content, 'info');
+  } });
   pi.registerCommand('delivery-budget-reset', { description: 'Explicitly authorize a fresh session budget with current configured limits', handler: (_args, ctx) => {
     clearTimeout(budgetTimer);
     budget = newBudget(budgetLimits(name => pi.getFlag(name)));
