@@ -5,7 +5,7 @@ import { mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 
 import { basename, dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { saveReport } from '../lib/reports.mjs';
+import { saveReport, reconcileReport } from '../lib/reports.mjs';
 import { evidenceIdentity, validatePlan, planD2WithProgress, fingerprint, runCommand, pendingChecks, restoreState, shouldContinue, localPath, createSerialQueue, validateRevision, bindRequiredChecks, loadRequiredChecks, updateStepStatus, verificationMode, looksInformational } from '../lib/delivery.mjs';
 import { formatGuidance, loadGuidanceProfiles, routeGuidance } from '../lib/guidance.mjs';
 
@@ -93,6 +93,7 @@ export default function delivery(pi: ExtensionAPI) {
     if (budget) budget = structuredClone(budget);
     budgetLimits(name => pi.getFlag(name));
     state = restoreState(ctx.sessionManager.getBranch());
+    if (state) state = reconcileReport(join(directory(ctx), 'report.json'), state);
     activeGuidance = (state?.guidanceProfiles || state?.plan?.guidanceProfiles || [])
       .map((id: string) => guidanceProfiles.find(profile => profile.id === id))
       .filter(Boolean);

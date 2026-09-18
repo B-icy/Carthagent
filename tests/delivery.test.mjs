@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync, utimesSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { checkDigest, fingerprint, validatePlan, planD2, pendingChecks, restoreState, runCommand, shouldContinue, localPath, createSerialQueue, validateRevision, turnBudgetExceeded, maxEvidenceFiles, maxEvidenceBytes, bindRequiredChecks, verificationMode, looksInformational, computePhase } from '../lib/delivery.mjs';
-import { createReport, latestReport, saveReport } from '../lib/reports.mjs';
+import { createReport, latestReport, saveReport, reconcileReport } from '../lib/reports.mjs';
 
 function fixture(t) {
   const cwd = mkdtempSync(join(tmpdir(), 'pi delivery spaces '));
@@ -168,6 +168,22 @@ test('report writes reject stale snapshots and upgrade legacy reports', t => {
   const legacy = { status: 'idle' };
   saveReport(legacyPath, legacy);
   assert.equal(legacy.storageVersion, 1);
+});
+
+test('same-run reconciliation adopts newer disk state and rejects corrupt identity or versions', t => {
+  const cwd = fixture(t);
+  const report = createReport(cwd, { status: 'implementing', evidence: {} });
+  const restored = structuredClone(report.state);
+  report.state.status = 'blocked';
+  saveReport(report.path, report.state);
+  assert.equal(reconcileReport(report.path, restored).status, 'blocked');
+  assert.equal(restored.status, 'implementing');
+  assert.equal(reconcileReport(join(cwd, 'missing.json'), restored), restored);
+  assert.throws(() => reconcileReport(report.path, { ...restored, runId: 'other' }), /identity mismatch/);
+  assert.throws(() => reconcileReport(report.path, { ...restored, storageVersion: 999 }), /regressed/);
+  assert.throws(() => reconcileReport(report.path, { ...restored, storageVersion: -1 }), /Invalid report/);
+  writeFileSync(report.path, '{broken');
+  assert.throws(() => reconcileReport(report.path, restored), SyntaxError);
 });
 
 test('simultaneous subprocess report writers cannot overwrite each other', async t => {

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { saveReport } from '../lib/reports.mjs';
 
 // Load the project extension even without a global engine installation.
 const requirePi = createRequire(import.meta.url);
@@ -64,6 +65,21 @@ test('terminal deliveries stop context reminders and repair turns across restore
     await f.call('delivery_plan', f.plan);
     assert.match(f.hooks.context({ messages: [] }).messages[0].content, /inspect current freshness/);
   }
+});
+
+test('session restoration adopts a newer same-run dashboard report without reviving repairs', options, async t => {
+  const f = fixture(t);
+  await f.call('delivery_plan', f.plan);
+  const disk = structuredClone(f.entries.at(-1).data);
+  disk.status = 'blocked';
+  const path = join(f.cwd, '.harness', 'integration-session', disk.runId, 'report.json');
+  saveReport(path, disk);
+  f.hooks.session_start({}, f.ctx);
+  assert.match((await f.call('delivery_status')).content[0].text, /blocked/);
+  f.hooks.agent_end({ messages: [{ role: 'assistant', stopReason: 'stop' }] }, f.ctx);
+  assert.equal(f.messages.length, 0);
+  await f.call('delivery_finish', { status: 'blocked', review: 'Restored', launch: 'none', limitations: ['fixture'] });
+  assert.ok(f.entries.at(-1).data.storageVersion > disk.storageVersion);
 });
 
 test('real extension serializes sibling checks without tool errors', options, async t => {
