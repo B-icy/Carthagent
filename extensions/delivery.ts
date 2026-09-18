@@ -1,3 +1,4 @@
+import { budgetLimits, newBudget, budgetReason } from '../lib/budget.mjs';
 import { CONFIG_DIR_NAME, truncateTail, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import { mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
@@ -32,6 +33,41 @@ Before concluding, adversarially review the implementation against each acceptan
 export default function delivery(pi: ExtensionAPI) {
   let state: any = null;
   let touched = false, nudges = 0;
+  let budget: any = null;
+  let budgetTimer: ReturnType<typeof setTimeout> | undefined;
+  const saveBudget = () => pi.appendEntry('delivery-budget-v1', structuredClone(budget));
+  function stopBudget(reason: string, ctx: ExtensionContext) {
+    clearTimeout(budgetTimer);
+    if (!budget.stopped) {
+      budget.stopped = reason;
+      saveBudget();
+      pi.sendMessage({ customType: 'delivery-budget-stop', display: true, content: JSON.stringify({
+        status: 'budget-exhausted', reason, budget,
+        requirements: state?.plan.acceptance || [], evidence: state?.evidence || {},
+        next: 'Review incomplete work. Use /delivery-budget-reset to explicitly authorize a new budget.'
+      }) }, { triggerTurn: false });
+    }
+    ctx.abort();
+    return { block: true, reason: `Delivery budget exhausted: ${reason}. User reset required.` };
+  }
+  function ensureBudget(ctx: ExtensionContext, action?: string) {
+    if (!budget) {
+      const limits = budgetLimits(name => pi.getFlag(name));
+      if (!Object.values(limits).some(Boolean)) return;
+      budget = newBudget(limits); saveBudget();
+    }
+    const reason = budgetReason(budget, action);
+    if (reason) return stopBudget(reason, ctx);
+    if (action === 'tool') { budget.tools++; saveBudget(); }
+    if (action === 'repair') { budget.repairs++; saveBudget(); }
+  }
+  pi.registerCommand('delivery-budget-reset', { description: 'Explicitly authorize a fresh session budget with current configured limits', handler: (_args, ctx) => {
+    clearTimeout(budgetTimer);
+    budget = newBudget(budgetLimits(name => pi.getFlag(name)));
+    saveBudget();
+    if (ctx.hasUI) ctx.ui.notify('Delivery budget reset', 'info');
+  } });
+  for (const name of ['tools', 'seconds', 'repairs']) pi.registerFlag(`delivery-max-${name}`, { description: `Session budget for ${name}; 0 disables this limit. Reset only with /delivery-budget-reset.`, type: 'string', default: '0' });
   const exclusive = createSerialQueue();
   const guidanceProfiles = loadGuidanceProfiles();
   let activeGuidance: any[] = [];
@@ -47,6 +83,10 @@ export default function delivery(pi: ExtensionAPI) {
   pi.registerFlag('delivery-turn-delay-ms', { description: 'Base delay after tool results in bounded runs, scaled by active context size to reduce provider rate-limit bursts (0 disables)', type: 'string', default: '0' });
   pi.registerFlag('delivery-tool-output-cap', { description: 'Maximum characters retained from each text tool result in bounded runs; preserves the beginning and end (0 disables)', type: 'string', default: '0' });
   function restore(ctx: ExtensionContext) {
+    clearTimeout(budgetTimer);
+    budget = [...ctx.sessionManager.getEntries()].reverse().find((e: any) => e.type === 'custom' && e.customType === 'delivery-budget-v1')?.data || null;
+    if (budget) budget = structuredClone(budget);
+    budgetLimits(name => pi.getFlag(name));
     state = restoreState(ctx.sessionManager.getBranch());
     activeGuidance = (state?.guidanceProfiles || state?.plan?.guidanceProfiles || [])
       .map((id: string) => guidanceProfiles.find(profile => profile.id === id))
@@ -95,6 +135,15 @@ export default function delivery(pi: ExtensionAPI) {
   }
   pi.on('session_start', (_event, ctx) => restore(ctx));
   pi.on('session_tree', (_event, ctx) => restore(ctx));
+  pi.on('session_shutdown', () => clearTimeout(budgetTimer));
+  pi.on('agent_start', (_event, ctx) => {
+    if (ensureBudget(ctx)) return;
+    clearTimeout(budgetTimer);
+    if (budget?.limits.seconds) {
+      budgetTimer = setTimeout(() => stopBudget('elapsed-time', ctx), Math.max(1, budget.startedAt + budget.limits.seconds * 1000 - Date.now()));
+      budgetTimer.unref();
+    }
+  });
   pi.on('input', event => {
     if (event.source !== 'extension') { nudges = 0; touched = false; }
     return { action: 'continue' };
@@ -121,6 +170,8 @@ export default function delivery(pi: ExtensionAPI) {
     return { messages: [...event.messages, { role: 'custom' as const, customType: 'delivery-context', content: `Delivery contract (evidence may be stale after edits):\n${JSON.stringify(summary)}\nUse delivery_status to inspect current freshness.`, display: false, timestamp: Date.now() }] };
   });
   pi.on('tool_call', (event, ctx) => {
+    const stopped = ensureBudget(ctx, 'tool');
+    if (stopped) return stopped;
     const input = event.input as Record<string, any> | undefined;
     if (
       event.toolName === 'edit' &&
@@ -438,6 +489,8 @@ export default function delivery(pi: ExtensionAPI) {
     },
   });
   pi.on('agent_end', (event, ctx) => {
+    clearTimeout(budgetTimer);
+    if (ensureBudget(ctx)) return;
     const last = [...event.messages].reverse().find((m: any) => m.role === 'assistant') as any;
     let fresh = false, pending: string[] = [], failures: string[] = [];
     try {
@@ -450,6 +503,7 @@ export default function delivery(pi: ExtensionAPI) {
       }
     } catch { /* explicit re-verification required */ }
     if (!shouldContinue({ state, touched, nudges, stopReason: last?.stopReason, pendingMessages: ctx.hasPendingMessages(), fresh })) return;
+    if (ensureBudget(ctx, 'repair')) return;
     nudges++;
     if (state) persist(ctx);
     const specifics = [...(pending.length ? [`pending checks: ${pending.join(', ')}`] : []), ...failures].join('\n');
