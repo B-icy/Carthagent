@@ -436,7 +436,7 @@ test('listSessions reads metadata newest-first and mostRecentSession picks the h
   assert.equal(list[1].firstMessage, 'first task');
   assert.equal(list[1].messageCount, 1);
   assert.equal(mostRecentSession('/unused', dir), list[0].path);
-  assert.equal(sessionDirFor('/home/u/proj', '/agent'), join('/agent', 'sessions', '--home-u-proj--'));
+  assert.equal(sessionDirFor('/home/u/proj', '/agent'), join('/agent', 'sessions', `--${resolve('/home/u/proj').replace(/^[/\\]/, '').replace(/[/\\:]/g, '-')}--`));
 });
 
 test('buildPiArgs forwards session selection but never --resume', () => {

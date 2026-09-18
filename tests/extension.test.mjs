@@ -6,27 +6,12 @@ import { fileURLToPath } from 'node:url';
 import { existsSync, realpathSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
-const candidates = [
-  process.env.PI2_CLI,
-  process.env.PI_CLI,
-  resolve(dirname(fileURLToPath(import.meta.url)), '../node_modules/@earendil-works/pi-coding-agent/dist/cli.js'),
-  resolve(dirname(fileURLToPath(import.meta.url)), '../node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js'),
-  ...[dirname(process.execPath), dirname(realpathSync(process.execPath))].flatMap(path => [
-    join(path, 'node_modules/@earendil-works/pi-coding-agent/dist/cli.js'),
-    join(path, 'node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js'),
-    join(path, '..', 'lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js'),
-    join(path, '..', 'lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js')
-  ])
-].filter(Boolean);
-const cli = candidates.find(existsSync);
-let factory;
-if (cli) {
-  const requirePi = createRequire(cli);
-  const { createJiti } = requirePi('jiti');
-  const jiti = createJiti(import.meta.url, { alias: { typebox: requirePi.resolve('typebox'), '@earendil-works/pi-coding-agent': join(dirname(cli), 'index.js') } });
-  factory = await jiti.import(resolve(dirname(fileURLToPath(import.meta.url)), '../extensions/delivery.ts'), { default: true });
-}
-const options = { skip: !cli && 'Pi not found: set PI2_CLI or PI_CLI to run extension integration tests' };
+// Load the project extension even without a global engine installation.
+const requirePi = createRequire(import.meta.url);
+const { createJiti } = requirePi('jiti');
+const jiti = createJiti(import.meta.url, { alias: { typebox: requirePi.resolve('typebox'), '@earendil-works/pi-coding-agent': fileURLToPath(new URL('../vendor/agent/index.js', import.meta.url)) } });
+const factory = await jiti.import(fileURLToPath(new URL('../extensions/delivery.ts', import.meta.url)), { default: true });
+const options = {};
 function fixture(t) {
   const cwd = mkdtempSync(join(tmpdir(), 'pi extension integration '));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
