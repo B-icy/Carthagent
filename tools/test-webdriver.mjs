@@ -51,6 +51,15 @@ try {
   assert.equal(failure.stepIndex, 0);
   assert.equal(failure.selector, '#out');
   assert.ok(bad.durationMs < 20000, 'assertion timeout is bounded');
+  assert.ok(failure.browserErrors.some(e => e.text.includes('Broken app')), bad.output);
+  for (const script of ['console.error("startup café")', 'throw Error("startup café")', 'Promise.reject(Error("startup café"))']) {
+    writeFileSync(join(fixture, 'index.html'), `<p id="ready">ready</p><script>${script}</script>`);
+    const result = await runCommand([process.execPath, tool, '--endpoint', endpoint, '--root', fixture, '--assert', '#ready'], { cwd: process.cwd(), timeoutSeconds: 30 });
+    assert.equal(result.code, 1, result.output);
+    const report = JSON.parse(result.output);
+    assert.equal(report.category, 'browser-errors');
+    assert.ok(report.browserErrors.some(e => e.text.includes('startup café')), result.output);
+  }
   console.log('Real Firefox: module execution, click, Unicode text, screenshot and broken-module failure passed');
 } finally {
   app?.close();
