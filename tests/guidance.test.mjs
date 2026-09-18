@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { formatGuidance, loadGuidanceProfiles, routeGuidance } from '../lib/guidance.mjs';
 import { planD2 } from '../lib/delivery.mjs';
+import { framePrompt, unframe } from '../lib/tui/framing.mjs';
 
 function project(t, dependencies = {}) {
   const cwd = mkdtempSync(join(tmpdir(), 'pi2 guidance '));
@@ -18,6 +19,24 @@ const plan = {
   acceptance: [{ requirement: 'Works', checks: ['test'] }],
   checks: [{ id: 'test', kind: 'test', argv: ['npm', 'test'], timeoutSeconds: 60 }]
 };
+
+test('routing ignores harness framing but preserves the complete original request', t => {
+  const cwd = project(t);
+  for (const request of [
+    'Increase dropped item lifetime to five minutes',
+    'Fix café spacing\n\nAdd an authenticated dashboard with a chart',
+    'Build a chart\n\n**Phase 1 — Inspect.** Keep this user text',
+  ]) {
+    const framed = framePrompt(request);
+    assert.equal(unframe(framed), request);
+    assert.deepEqual(routeGuidance(framed, { cwd }), routeGuidance(request, { cwd }));
+  }
+  assert.deepEqual(routeGuidance(framePrompt('Increase dropped item lifetime to five minutes'), { cwd }), []);
+  const ids = routeGuidance(framePrompt('Fix café spacing\n\nAdd an authenticated dashboard with a chart'), { cwd }).map(p => p.id);
+  assert.ok(ids.includes('authenticated-web'));
+  assert.ok(ids.includes('data-visualization'));
+  assert.equal(unframe('plain request'), null);
+});
 
 test('router activates the web foundation from project dependencies', t => {
   const profiles = routeGuidance('Fix the navigation spacing', { cwd: project(t, { next: '15.1.7' }) });
