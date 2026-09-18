@@ -125,7 +125,7 @@ test('review modes launch the real bundled engine without unknown flags', t => {
     });
     assert.equal(result.status, 0, result.stderr);
     assert.doesNotMatch(result.stderr, /Unknown option|Failed to load extension/);
-    assert.match(result.stdout + result.stderr, /No models matching/);
+    assert.match(result.stdout + result.stderr, /No models (matching|available)/);
   }
 });
 
