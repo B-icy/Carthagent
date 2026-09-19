@@ -89,7 +89,7 @@ test('dashboard rejects plan replacement and finish during checks and releases a
   const deadline = Date.now() + 4000;
   while (!existsSync(started) && Date.now() < deadline) await new Promise(r => setTimeout(r, 20));
   assert.ok(existsSync(started), 'check subprocess reached barrier');
-  const competing = spawnSync(process.execPath, [join(root, 'bin/carthagent.mjs'), 'check', 'all'], { cwd: server.cwd, encoding: 'utf8' });
+  const competing = spawnSync(process.execPath, [join(root, 'bin/ctg.mjs'), 'check', 'all'], { cwd: server.cwd, encoding: 'utf8' });
   assert.notEqual(competing.status, 0);
   assert.match(competing.stderr, /Workspace busy/);
   const replacement = { ...plan, goal: 'Replacement' };

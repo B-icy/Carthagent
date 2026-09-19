@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * carthagent CLI - Evidence-driven delivery & contract verification
+ * Carthagent CLI - Evidence-driven delivery & contract verification
  */
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
@@ -21,7 +21,7 @@ import { beginReview, parseFindings } from '../lib/review-state.mjs';
 import { latestReport, saveReport } from '../lib/reports.mjs';
 import { normalizeReviewMode, resolveReviewMode, loadCarthagentConfig, saveCarthagentConfig, carthagentConfigPath, reviewerPrompt, parseVerdict, resolveStickyDefaults } from '../lib/review.mjs';
 
-// Ensure carthagent operates completely isolated in its own agent directory (~/.carthagent/agent)
+// Ensure Carthagent operates completely isolated in its own agent directory (~/.carthagent/agent)
 // so it NEVER touches, reads, or piggybacks on any existing ~/.pi/agent installation.
 const defaultAgentDir = process.env.CARTHAGENT_AGENT_DIR || process.env.CARTHAGENT_CODING_AGENT_DIR || join(os.homedir(), '.carthagent', 'agent');
 if (!process.env.CARTHAGENT_CODING_AGENT_DIR && !process.env.CARTHAGENT_AGENT_DIR) {
@@ -42,12 +42,12 @@ const command = argv[0];
 
 function printHelp() {
   console.log(`
-\x1b[1m\x1b[36mcarthagent\x1b[0m \x1b[90m${version}\x1b[0m
+\x1b[1m\x1b[36mCarthagent\x1b[0m \x1b[90m${version}\x1b[0m \x1b[2m(ctg)\x1b[0m
 
 \x1b[1mUSAGE:\x1b[0m
-  carthagent                     Launch the interactive split-terminal delivery console
-  carthagent <task>              Open the console and immediately deliver <task>
-  carthagent <command> [options]
+  ctg                            Launch the interactive split-terminal delivery console
+  ctg <task>                     Open the console and immediately deliver <task>
+  ctg <command> [options]
 
 \x1b[1mCOMMANDS:\x1b[0m
   \x1b[32mtui\x1b[0m, \x1b[32mui\x1b[0m                 Interactive console: live run feed + live plan.d2 side panel
@@ -88,7 +88,7 @@ function printHelp() {
   --max-repairs <n>       Session automatic-repair budget (0 disables)
   --review <mode>         Self-review loop after major changes: ask|yes|no
                           (default: ~/.carthagent/config.json, else ask — /review in-session)
-  --isolate               Run with only carthagent's delivery extension (no other extensions/skills)
+  --isolate               Run with only Carthagent's delivery extension (no other extensions/skills)
   --no-strict             Don't require delivery_plan before write/edit tools
   --no-delivery           Run the console without the delivery extension
   --no-guide              Send prompts verbatim instead of auto-applying delivery framing
@@ -103,10 +103,10 @@ function printHelp() {
   up/down history/scroll · pgup/pgdn/wheel scroll focused pane · drag-select copies · ^t settings · ^n new session · x expand · ^c quit
 
 \x1b[1mEXAMPLES:\x1b[0m
-  carthagent
-  carthagent "Build a task CLI with tests"
-  carthagent --model sonnet --theme opencode "Fix the failing tests in src/"
-  carthagent --validators validators.json "Migrate the schema"
+  ctg
+  ctg "Build a task CLI with tests"
+  ctg --model sonnet --theme opencode "Fix the failing tests in src/"
+  ctg --validators validators.json "Migrate the schema"
 `);
 }
 
@@ -282,7 +282,7 @@ async function runWorkspaceChecks() {
 async function handleValidate() {
   const filePath = argv[1];
   if (!filePath) {
-    console.error('Usage: carthagent validate <path-to-plan.json>');
+    console.error('Usage: ctg validate <path-to-plan.json>');
     process.exit(1);
   }
   try {
@@ -322,7 +322,7 @@ async function handleLogin() {
 }
 
 function handleServe() {
-  console.log('\x1b[1m[carthagent]\x1b[0m Launching Evidence-Driven Delivery server...');
+  console.log('\x1b[1m[Carthagent]\x1b[0m Launching Evidence-Driven Delivery server...');
   const serverScript = join(root, 'server.mjs');
   const child = spawn(process.execPath, [serverScript], {
     stdio: 'inherit',
@@ -338,7 +338,7 @@ function handleServe() {
 }
 
 function handleTest() {
-  console.log('\x1b[1m[carthagent]\x1b[0m Running unit test suite...');
+  console.log('\x1b[1m[Carthagent]\x1b[0m Running unit test suite...');
   const child = spawn(process.execPath, ['--test', 'tests/*.test.mjs'], {
     stdio: 'inherit',
     cwd: root,
@@ -348,10 +348,10 @@ function handleTest() {
 }
 
 /**
- * `carthagent review` — self-review control surface:
- *   carthagent review              show the effective default and where it's set
- *   carthagent review ask|yes|no   persist the default to ~/.carthagent/config.json
- *   carthagent review <pr>         run a detached fresh-context reviewer over a PR
+ * `ctg review` — self-review control surface:
+ *   ctg review              show the effective default and where it's set
+ *   ctg review ask|yes|no   persist the default to ~/.carthagent/config.json
+ *   ctg review <pr>         run a detached fresh-context reviewer over a PR
  */
 async function handleReview(args) {
   const ref = args[0];
@@ -359,9 +359,9 @@ async function handleReview(args) {
     const config = loadCarthagentConfig();
     console.log(`\x1b[1mself-review default:\x1b[0m \x1b[36m${resolveReviewMode(undefined, config)}\x1b[0m  (config: ${config.review ?? 'unset'} @ ${carthagentConfigPath()})`);
     console.log('\nusage:');
-    console.log('  carthagent review ask|yes|no   Set the default for all sessions');
-    console.log('  carthagent review <pr>         Fresh-context review of a pull request now');
-    console.log('  carthagent --review <mode>     Per-launch override · /review inside a session');
+    console.log('  ctg review ask|yes|no   Set the default for all sessions');
+    console.log('  ctg review <pr>         Fresh-context review of a pull request now');
+    console.log('  ctg --review <mode>     Per-launch override · /review inside a session');
     return;
   }
   const mode = normalizeReviewMode(ref);
@@ -507,12 +507,12 @@ switch (command) {
     console.log(version);
     break;
   case undefined:
-    // Bare `carthagent` → interactive split-terminal console
+    // Bare `ctg` → interactive split-terminal console
     handleTui([]);
     break;
   default:
     // pi-style: unknown first arg means the args ARE the task prompt
-    // e.g. `carthagent "Build a task CLI"` or `carthagent --model sonnet "Fix tests"`
+    // e.g. `ctg "Build a task CLI"` or `ctg --model sonnet "Fix tests"`
     if (command.startsWith('-') && !TUI_FLAGS[command] && !TUI_BOOL[command]) {
       console.error(`\x1b[31mUnknown command or flag:\x1b[0m ${command}`);
       printHelp();

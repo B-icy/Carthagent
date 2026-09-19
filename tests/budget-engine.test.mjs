@@ -33,7 +33,7 @@ for (const mode of ['tools', 'seconds', 'repairs']) test(`actual engine stops ${
   writeFileSync(join(agent, 'models.json'), JSON.stringify({ providers: { localtest: { baseUrl: `http://127.0.0.1:${server.address().port}/v1`, api: 'openai-completions', apiKey: 'dummy', models: [{ id: 'fixture', contextWindow: 128000, maxTokens: 1024 }] } } }));
   writeFileSync(join(cwd, 'input.txt'), 'café ✓');
   const session = join(cwd, 'session.jsonl');
-  const cli = fileURLToPath(new URL('../bin/carthagent.mjs', import.meta.url));
+  const cli = fileURLToPath(new URL('../bin/ctg.mjs', import.meta.url));
   let beforeRestore = -1;
   async function run(prompt) {
     const child = spawn(process.execPath, [cli, '-p', '--no-guide', '--provider', 'localtest', '--model', 'fixture', '--session', session, '--max-tools', mode === 'tools' ? '1' : '0', '--max-seconds', mode === 'seconds' ? '5' : '10', '--max-repairs', mode === 'repairs' ? '1' : '0', prompt], { cwd, env: { ...process.env, PI_OFFLINE: '1', CARTHAGENT_CODING_AGENT_DIR: agent, PI_CODING_AGENT_DIR: agent } });

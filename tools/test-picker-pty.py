@@ -11,7 +11,7 @@ root = Path(__file__).resolve().parent.parent
 with tempfile.TemporaryDirectory(prefix='carthagent picker ') as home:
     master, slave = pty.openpty()
     env = dict(os.environ, HOME=home, XDG_CONFIG_HOME=home)
-    child = subprocess.Popen(['node', str(root / 'bin/carthagent.mjs'), 'demo'], stdin=slave, stdout=slave, stderr=slave, cwd=home, env=env)
+    child = subprocess.Popen(['node', str(root / 'bin/ctg.mjs'), 'demo'], stdin=slave, stdout=slave, stderr=slave, cwd=home, env=env)
     os.close(slave)
     def collect(seconds=1):
         end = time.monotonic() + seconds

@@ -11,14 +11,14 @@ Carthagent is a delivery-focused AI coding console and CLI built on [pi](https:/
 Core CLI requires Node ≥ 22.19. Optional workflows need additional tools: Git and authenticated `gh` for PR review, Firefox/geckodriver for real-browser checks, and Python with the scenario dependencies for game graders. [pi](https://github.com/earendil-works/pi-coding-agent) is bundled inside the package, so one command installs everything:
 
 ```sh
-npm i -g github:B-icy/Carthagent && carthagent
+npm i -g github:B-icy/Carthagent && ctg
 ```
 
 Or from a clone:
 
 ```sh
 git clone https://github.com/B-icy/Carthagent && cd Carthagent
-npm ci && npm i -g .          # gives you `carthagent`; or just run `node bin/carthagent.mjs`
+npm ci && npm i -g .          # gives you `ctg`; or just run `node bin/ctg.mjs`
 ```
 
 ## Connect a provider
@@ -28,37 +28,37 @@ First run needs AI credentials. One store (`~/.carthagent/agent/auth.json`) cove
 **Subscription** (Claude Pro/Max, ChatGPT Plus/Pro, GitHub Copilot, xAI, OpenRouter, Radius):
 
 ```sh
-carthagent login          # opens pi's auth — run /login, pick a provider, /quit when done
+ctg login          # opens pi's auth — run /login, pick a provider, /quit when done
 ```
 
 You can also run `/login` (or `/auth`) from inside the console: it opens an in-console popup to pick a provider and auth method, then handles OAuth URLs, device codes, and API-key prompts inline — no terminal hand-off — and restarts the agent once connected.
 
-**API key** — export the env var, or run `carthagent login` and pick a key provider to store it:
+**API key** — export the env var, or run `ctg login` and pick a key provider to store it:
 
 ```sh
 export ANTHROPIC_API_KEY=sk-ant-...   # or OPENAI_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, XAI_API_KEY, ...
-carthagent
+ctg
 ```
 
 Multiple providers can be connected at once — credentials coexist in `~/.carthagent/agent/auth.json`. In the console, `^t` (settings) has a **provider** row above **model**: `←→` switches providers (and selects that provider's first model), while the model picker stays scoped to the chosen provider. `/login` adds another provider at any time.
 
-Full provider list: [pi providers docs](https://github.com/earendil-works/pi-coding-agent/blob/main/docs/providers.md). Override the default model with `--model <id>` (e.g. `carthagent --model sonnet`). Your last model choice (via `--model`, `/model`, or the `^t` settings picker) is saved to `~/.carthagent/config.json` and reused on the next launch — pass a flag to override it for that run.
+Full provider list: [pi providers docs](https://github.com/earendil-works/pi-coding-agent/blob/main/docs/providers.md). Override the default model with `--model <id>` (e.g. `ctg --model sonnet`). Your last model choice (via `--model`, `/model`, or the `^t` settings picker) is saved to `~/.carthagent/config.json` and reused on the next launch — pass a flag to override it for that run.
 
 ## Use it
 
 ```sh
-carthagent                    # interactive console (persistent pi session)
-carthagent "Build a task CLI" # console, with a task
-carthagent -p "..."           # headless run (auto when stdout isn't a TTY)
-carthagent demo               # scripted mock run — no provider needed
-carthagent status             # fingerprint, contract, pending checks
-carthagent check all          # run declared checks
-carthagent serve              # web dashboard (127.0.0.1, authenticated URL)
-carthagent test               # unit suite
-carthagent --help             # everything else
+ctg                           # interactive console (persistent pi session)
+ctg "Build a task CLI"        # console, with a task
+ctg -p "..."                  # headless run (auto when stdout isn't a TTY)
+ctg demo                      # scripted mock run — no provider needed
+ctg status                    # fingerprint, contract, pending checks
+ctg check all                 # run declared checks
+ctg serve                     # web dashboard (127.0.0.1, authenticated URL)
+ctg test                      # unit suite
+ctg --help                    # everything else
 ```
 
-Inside the console: `enter` send/steer · `esc` abort (again = force-restart pi, nothing is lost) · `^r` session picker · `tab`/`⇧tab` panes · `x` expand tool output · `^v` paste · `^t` settings · `^c` quit. Sessions persist under `~/.carthagent/agent/sessions/`; `carthagent -c` continues the last one, `-r` opens the picker.
+Inside the console: `enter` send/steer · `esc` abort (again = force-restart pi, nothing is lost) · `^r` session picker · `tab`/`⇧tab` panes · `x` expand tool output · `^v` paste · `^t` settings · `^c` quit. Sessions persist under `~/.carthagent/agent/sessions/`; `ctg -c` continues the last one, `-r` opens the picker.
 
 **Themes:** 21 AA-contrast-verified options — dark (`opencode`, `tokyonight`, `nebula`, `ember`, `forest`, `mono`, `obsidian`, `midnight`, `nord`, `solarized-dark`, `okabe-dark`, `contrast-dark`), light (`paper`, `daylight`, `solarized-light`, `okabe-light`, `contrast-light`), and adaptive (`solarized`, `okabe`, `contrast`, `system`) that follow `COLORFGBG` or `CARTHAGENT_THEME_MODE=light|dark`. Pick via `--theme`, `/theme`, or `^t`; the choice is saved to `~/.carthagent/config.json` and reused on the next launch. The dashboard has the same set behind a header picker (persisted in `localStorage`). `okabe-*` uses the colorblind-safe Okabe-Ito palette.
 
@@ -84,7 +84,7 @@ The discipline: evidence is bound to the run, contract revision, executable chec
 
 ## Self-review
 
-When a run finishes a substantial change (a verified delivery or file edits), carthagent can offer a review loop: the agent pushes a branch, opens a PR, and a **detached fresh-context reviewer** (`carthagent review <pr>` — a separate engine process with no shared context) inspects it. Findings come back to the working agent, which fixes, pushes, and re-reviews — stopping after 3 admitted attempts per PR in this workspace or `VERDICT: APPROVE`. The CLI persists round admission and structured snapshot-bound findings, excludes concurrent reviewers, and escalates exhausted attempts. Review commands reject malformed verdicts and changed source/PR-head snapshots, but read-only behavior is an instruction, not isolation. See [review guarantees and limits](docs/review-assurance.md).
+When a run finishes a substantial change (a verified delivery or file edits), Carthagent can offer a review loop: the agent pushes a branch, opens a PR, and a **detached fresh-context reviewer** (`ctg review <pr>` — a separate engine process with no shared context) inspects it. Findings come back to the working agent, which fixes, pushes, and re-reviews — stopping after 3 admitted attempts per PR in this workspace or `VERDICT: APPROVE`. The CLI persists round admission and structured snapshot-bound findings, excludes concurrent reviewers, and escalates exhausted attempts. Review commands reject malformed verdicts and changed source/PR-head snapshots, but read-only behavior is an instruction, not isolation. See [review guarantees and limits](docs/review-assurance.md).
 
 It's opt-in and tri-state, resolved as `--review <mode>` flag → `~/.carthagent/config.json` → `ask`:
 
@@ -95,10 +95,10 @@ It's opt-in and tri-state, resolved as `--review <mode>` flag → `~/.carthagent
 | `no` | Never offer |
 
 ```sh
-carthagent review            # show the effective default
-carthagent review yes        # persist a default for all sessions
-carthagent review 14         # run the fresh-context reviewer over a PR directly
-carthagent --review no       # per-launch override
+ctg review                   # show the effective default
+ctg review yes               # persist a default for all sessions
+ctg review 14                # run the fresh-context reviewer over a PR directly
+ctg --review no              # per-launch override
 ```
 
 Inside a session, `/review` starts a loop immediately and `/review ask|yes|no|status` manages the same default. The loop needs `git` + an authenticated `gh` — without them the agent reports and skips instead of simulating a review.
@@ -115,7 +115,7 @@ Everything below is config, not code:
 ## Bounded runs and browser evidence
 
 ```sh
-carthagent -p --max-tools 100 --max-seconds 900 --max-repairs 2 "Implement the requested change"
+ctg -p --max-tools 100 --max-seconds 900 --max-repairs 2 "Implement the requested change"
 ```
 
 Limits are opt-in, session-persistent cooperative controls—not dollar/token caps or hard process deadlines. Inspect with `/delivery-budget-status`; only an explicit `/delivery-budget-reset` starts a fresh allowance in the same session. See [session budgets](docs/budgets.md).

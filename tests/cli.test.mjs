@@ -9,7 +9,7 @@ import { createReport, latestReport } from '../lib/reports.mjs';
 import { buildPiArgs } from '../lib/pi.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const cli = join(root, 'bin', 'carthagent.mjs');
+const cli = join(root, 'bin', 'ctg.mjs');
 
 function fixture(t) {
   const cwd = mkdtempSync(join(tmpdir(), 'carthagent cli '));
@@ -79,7 +79,7 @@ test('review shows and persists the self-review default', t => {
   assert.equal(runEnv('review', 'bogus').status, 2);
 });
 
-/** Fake `gh` + fake engine CLI so `carthagent review <pr>` runs end-to-end offline. */
+/** Fake `gh` + fake engine CLI so `ctg review <pr>` runs end-to-end offline. */
 function reviewFixture(t, verdictLine) {
   const cwd = fixture(t);
   const bin = join(cwd, 'bin');
@@ -102,7 +102,7 @@ exit 0
   return { cwd, env };
 }
 
-test('carthagent review <pr> exits 0 when the fresh reviewer approves', t => {
+test('ctg review <pr> exits 0 when the fresh reviewer approves', t => {
   const { cwd, env } = reviewFixture(t, 'VERDICT: APPROVE');
   const result = spawnSync(process.execPath, [cli, 'review', '14'], { cwd, env, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
@@ -110,7 +110,7 @@ test('carthagent review <pr> exits 0 when the fresh reviewer approves', t => {
   assert.match(result.stdout, /VERDICT: APPROVE/);
 });
 
-test('carthagent review <pr> exits 1 on requested changes and 2 without a verdict', t => {
+test('ctg review <pr> exits 1 on requested changes and 2 without a verdict', t => {
   const { cwd, env } = reviewFixture(t, 'VERDICT: CHANGES-REQUESTED');
   const result = spawnSync(process.execPath, [cli, 'review', '14'], { cwd, env, encoding: 'utf8' });
   assert.equal(result.status, 1, result.stderr);

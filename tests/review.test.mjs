@@ -90,9 +90,9 @@ test('shouldOfferReview gates on mode, evidence of change and prior offers', () 
 });
 
 test('kickoff instructs the PR → fresh review → fixes loop with a round cap', () => {
-  const text = reviewKickoff('/abs/bin/carthagent.mjs');
+  const text = reviewKickoff('/abs/bin/ctg.mjs');
   assert.match(text, /gh pr create/);
-  assert.match(text, /node "\/abs\/bin\/carthagent\.mjs" review <pr-number-or-url>/);
+  assert.match(text, /node "\/abs\/bin\/ctg\.mjs" review <pr-number-or-url>/);
   assert.match(text, /VERDICT: APPROVE/);
   assert.match(text, /VERDICT: CHANGES-REQUESTED/);
   assert.match(text, /3 review rounds/);

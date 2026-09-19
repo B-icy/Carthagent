@@ -526,7 +526,7 @@
 
   async function loadStatus() {
     if (!token) {
-      byId('workspace').textContent = 'Open the authenticated URL printed by carthagent serve.';
+      byId('workspace').textContent = 'Open the authenticated URL printed by ctg serve.';
       return;
     }
     try { state = await api('/api/status'); render(); }

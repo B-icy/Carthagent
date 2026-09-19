@@ -14,7 +14,7 @@
     "evidence-driven-delivery"
   ],
   "bin": {
-    "carthagent": "./bin/carthagent.mjs"
+    "ctg": "./bin/ctg.mjs"
   },
   "repository": {
     "type": "git",
@@ -46,7 +46,7 @@
   "scripts": {
     "dev": "node server.mjs",
     "start": "node server.mjs",
-    "carthagent": "node bin/carthagent.mjs",
+    "ctg": "node bin/ctg.mjs",
     "check": "node tools/check-syntax.mjs",
     "typecheck": "tsc --noEmit --skipLibCheck --target ES2023 --module NodeNext --moduleResolution NodeNext --types node extensions/delivery.ts types/pi-coding-agent.d.ts",
     "lint": "eslint . && npm run typecheck",
