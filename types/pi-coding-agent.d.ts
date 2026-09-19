@@ -41,6 +41,8 @@ declare module '@earendil-works/pi-coding-agent' {
     on(event: string, handler: (...args: any[]) => any): void;
     registerTool(tool: ExtensionTool): void;
     registerCommand(name: string, command: ExtensionCommand): void;
+    registerProvider(name: string, config: unknown): void;
+    registerProvider(provider: unknown): void;
     appendEntry(customType: string, data: unknown): void;
     sendMessage(message: unknown, options?: unknown): void;
   }

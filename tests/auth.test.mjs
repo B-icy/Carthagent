@@ -8,6 +8,8 @@ import {
   authTypes,
   applyAuthEvent,
   filterLoginProviders,
+  loginAndRefresh,
+  loginProviderFocus,
   loginProviderList,
   loadAuthRuntime,
   newAuthState,
@@ -50,19 +52,32 @@ test('loginProviderList skips providers without a login method', () => {
   assert.deepEqual(rows[1].types, ['api_key']);
 });
 
-test('loginProviderList marks configured providers and sorts them first', () => {
+test('loginProviderList keeps stable product ordering regardless of connected state', () => {
   const runtime = fakeRuntime(
     [
       { id: 'zeta', name: 'Zeta', auth: { apiKey: {} } },
+      { id: 'openrouter', name: 'OpenRouter', auth: { apiKey: {} } },
+      { id: 'experiential-labs', name: 'Carthagent Cloud', auth: { apiKey: {} } },
+      { id: 'anthropic', name: 'Anthropic', auth: { apiKey: {} } },
       { id: 'alpha', name: 'Alpha', auth: { apiKey: {} } },
-      { id: 'beta', name: 'Beta', auth: { apiKey: {} } },
     ],
-    { beta: { configured: true } }
+    { zeta: { configured: true }, openrouter: { configured: true } }
   );
   const rows = loginProviderList(runtime);
-  assert.deepEqual(rows.map(r => r.id), ['beta', 'alpha', 'zeta']);
-  assert.equal(rows[0].configured, true);
+  assert.deepEqual(rows.map(r => r.id), ['experiential-labs', 'anthropic', 'openrouter', 'alpha', 'zeta']);
+  assert.equal(rows[0].recommended, true);
   assert.equal(rows[1].configured, false);
+  assert.equal(rows.at(-1).configured, true);
+});
+
+test('loginProviderFocus prefers the active provider without reordering rows', () => {
+  const rows = [
+    { id: 'experiential-labs', recommended: true },
+    { id: 'anthropic', recommended: false },
+  ];
+  assert.equal(loginProviderFocus(rows), 0);
+  assert.equal(loginProviderFocus(rows, 'anthropic'), 1);
+  assert.deepEqual(rows.map(row => row.id), ['experiential-labs', 'anthropic']);
 });
 
 test('loginProviderList tolerates a runtime that throws on auth status', () => {
@@ -114,11 +129,26 @@ test('newAuthState starts in the provider-picking phase', () => {
   assert.equal(state.busy, false);
 });
 
+test('loginAndRefresh exposes dynamic provider models immediately after login', async () => {
+  const calls = [];
+  const signal = new AbortController().signal;
+  const runtime = {
+    login: async (...args) => { calls.push(['login', ...args]); return { type: 'api_key', key: 'k' }; },
+    refresh: async options => { calls.push(['refresh', options]); },
+  };
+  const result = await loginAndRefresh(runtime, 'experiential-labs', 'api_key', { signal });
+  assert.equal(result.key, 'k');
+  assert.equal(calls[0][0], 'login');
+  assert.deepEqual(calls[1][1], { providers: ['experiential-labs'], allowNetwork: true, signal });
+});
+
 test('loadAuthRuntime lazily imports vendored engine and discovers OAuth/API providers', async () => {
   const runtime = await loadAuthRuntime();
   assert.ok(runtime && typeof runtime === 'object');
   const providers = loginProviderList(runtime);
-  assert.equal(providers.length, 40);
+  assert.equal(providers.length, 41);
+  assert.equal(providers[0].id, 'experiential-labs');
+  assert.equal(providers[0].recommended, true);
   const oauthProviders = providers.filter(p => p.types.includes('oauth')).map(p => p.id).sort();
   assert.deepEqual(oauthProviders, [
     'anthropic',

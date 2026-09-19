@@ -305,20 +305,11 @@ async function handleLogin() {
     console.error('login requires an interactive terminal — or set an API key env var (see README)');
     process.exit(1);
   }
-  const { locatePi } = await import('../lib/pi.mjs');
-  let piCmd;
-  try { piCmd = locatePi(); } catch (e) { console.error(e.message); process.exit(1); }
-  console.log('Opening auth setup — run \x1b[36m/login\x1b[0m to pick a provider (subscription OAuth or API key), then \x1b[36m/quit\x1b[0m when done.');
-  const child = spawn(piCmd.cmd, piCmd.args, {
-    stdio: 'inherit',
-    cwd,
-    env: {
-      ...process.env,
-      CARTHAGENT_CODING_AGENT_DIR: process.env.CARTHAGENT_CODING_AGENT_DIR || defaultAgentDir,
-      PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR || defaultAgentDir
-    }
-  });
-  child.on('exit', code => process.exit(code || 0));
+  // Use the same Carthagent provider picker as in-session /login and /auth.
+  // This keeps ordering, recommendation metadata, and credential storage from
+  // drifting between shell and TUI entry points.
+  const { runTui } = await import('../lib/tui/app.mjs');
+  await runTui({ autoFraming: false, openAuth: true, loginOnly: true });
 }
 
 function handleServe() {

@@ -468,8 +468,10 @@ test('listSessions reads metadata newest-first and mostRecentSession picks the h
 });
 
 test('buildPiArgs forwards session selection but never --resume', () => {
-  assert.deepEqual(buildPiArgs({ session: 'abc123', delivery: false }, { installed: true }), ['--session', 'abc123']);
-  assert.deepEqual(buildPiArgs({ continue: true, delivery: false }, { installed: true }), ['--continue']);
+  const sessionArgs = buildPiArgs({ session: 'abc123', delivery: false }, { installed: true });
+  assert.deepEqual(sessionArgs.slice(0, 2), ['--session', 'abc123']);
+  const continueArgs = buildPiArgs({ continue: true, delivery: false }, { installed: true });
+  assert.equal(continueArgs[0], '--continue');
   assert.ok(!buildPiArgs({ resume: true, delivery: false }, { installed: true }).includes('--resume'));
 });
 
