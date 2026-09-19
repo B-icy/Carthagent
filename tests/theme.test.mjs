@@ -55,13 +55,13 @@ for (const match of html.matchAll(/([^{}]+)\{([^}]*--[a-z-]+\s*:[^}]*)\}/g)) {
   const vars = {};
   for (const decl of body.matchAll(/(--[a-z0-9-]+)\s*:\s*(#[0-9a-fA-F]{6})\b/g)) vars[decl[1]] = decl[2].toLowerCase();
   for (const name of selector.split(',').map(s => s.trim())) {
-    const theme = name === ':root' ? 'obsidian' : name.match(/^\[data-theme="([^"]+)"\]$/)?.[1];
+    const theme = name === ':root' ? 'carthage' : name.match(/^\[data-theme="([^"]+)"\]$/)?.[1];
     if (theme) themes[theme] = { ...themes[theme], ...vars };
   }
 }
 
 test('every theme picker option has a matching theme block', () => {
-  const options = [...html.matchAll(/<option value="([^"]+)"/g)].map(m => m[1]).filter(v => v !== 'system');
+  const options = [...html.matchAll(/data-theme-value="([^"]+)"/g)].map(m => m[1]).filter(v => v !== 'system');
   assert.deepEqual(options.sort(), Object.keys(themes).sort());
 });
 

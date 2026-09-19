@@ -312,18 +312,19 @@ test('ansi helpers measure and clip styled text', () => {
   assert.equal(strip(truncate('\x1b[31mabcdef\x1b[0m', 3)), 'abc');
 });
 
-test('themes resolve by name and label, defaulting to opencode', () => {
+test('themes resolve by name and label, defaulting to carthage', () => {
   assert.equal(resolveThemeName('EMBER'), 'ember');
+  assert.equal(resolveThemeName('Carthage'), 'carthage');
   assert.equal(resolveThemeName('Opencode'), 'opencode');
   assert.equal(resolveThemeName('Tokyonight'), 'tokyonight');
-  assert.equal(resolveThemeName('nope'), 'opencode');
-  assert.equal(resolveThemeName(), 'opencode');
-  assert.ok(THEME_NAMES.includes('opencode') && THEME_NAMES.includes('tokyonight'));
-  // opencode-ripped default: dark bg, purple primary, cyan success.
-  const t = getTheme('opencode');
-  assert.equal(t.background, '#0f0f0f');
-  assert.equal(t.primary, '#a277ff');
-  assert.equal(t.success, '#61ffca');
+  assert.equal(resolveThemeName('nope'), 'carthage');
+  assert.equal(resolveThemeName(), 'carthage');
+  assert.ok(THEME_NAMES.includes('carthage') && THEME_NAMES.includes('opencode') && THEME_NAMES.includes('tokyonight'));
+  // Carthage default: dark Tyrian surfaces, legible gold primary, green success.
+  const t = getTheme();
+  assert.equal(t.background, '#120d1c');
+  assert.equal(t.primary, '#f2c66d');
+  assert.equal(t.success, '#76d6aa');
   // legacy aliases still resolve through the flattened palette.
   assert.ok(t.accent && t.ok && t.err && t.faint && t.muted);
   // light mode flattens {dark,light} pairs to the light variant.
