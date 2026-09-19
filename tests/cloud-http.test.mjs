@@ -44,7 +44,15 @@ test('HTTP device flow returns OAuth-style pending, token, account, and revoke r
   const tokens = await (await fetch(`${base}/v1/device/token`, json({ deviceCode: device.deviceCode }))).json();
   const accountResponse = await fetch(`${base}/v1/account`, { headers: { authorization: `Bearer ${tokens.accessToken}` } });
   assert.equal(accountResponse.status, 200);
-  assert.equal((await accountResponse.json()).balance.availableNanoUsd, 1_000_000_000);
+  const accountBody = await accountResponse.json();
+  assert.equal(accountBody.balance.availableNanoUsd, 1_000_000_000);
+  assert.equal(accountBody.email, 'api@example.com');
+  assert.equal(accountBody.grants[0].source, 'verified_trial');
+  const balance = await (await fetch(`${base}/v1/account/balance`, { headers: { authorization: `Bearer ${tokens.accessToken}` } })).json();
+  assert.equal(balance.grants[0].remainingNanoUsd, 1_000_000_000);
+  const sessions = await (await fetch(`${base}/v1/account/sessions`, { headers: { authorization: `Bearer ${tokens.accessToken}` } })).json();
+  assert.equal(sessions.currentSessionId, sessions.data[0].id);
+  assert.equal(sessions.data[0].client_name, 'test cli');
   assert.equal((await fetch(`${base}/v1/token/revoke`, { method: 'POST', headers: { authorization: `Bearer ${tokens.accessToken}` } })).status, 200);
   assert.equal((await fetch(`${base}/v1/account`, { headers: { authorization: `Bearer ${tokens.accessToken}` } })).status, 401);
 });
@@ -61,9 +69,25 @@ test('HTTP gateway exposes authenticated aliases and proxies a settled OpenAI-co
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('x-request-id'), 'exp-http-request');
   assert.deepEqual(await response.json(), { usage: { prompt_tokens: 12, completion_tokens: 3 } });
+  const usage = await (await fetch(`${base}/v1/account/usage`, { headers })).json();
+  assert.deepEqual(usage.data.map(item => ({ alias: item.alias, inputTokens: item.inputTokens, outputTokens: item.outputTokens })), [{ alias: 'carthagent-code', inputTokens: 12, outputTokens: 3 }]);
   const request = ledger.db.prepare('SELECT * FROM cloud_gateway_requests WHERE operation_key = ?').get('http-operation');
   assert.equal(request.state, 'settled');
   assert.equal(request.gateway_request_id, 'exp-http-request');
+});
+
+test('HTTP account sessions can be listed and revoked only by their account', async t => {
+  const { base, account, control } = await fixture(t);
+  const current = control.issueSession(account.accountId, undefined, 'current');
+  control.random = size => Buffer.alloc(size, 8);
+  const other = control.issueSession(account.accountId, undefined, 'other device');
+  const otherClaims = control.verifyAccessToken(other.accessToken);
+  const headers = { authorization: `Bearer ${current.accessToken}` };
+  const response = await fetch(`${base}/v1/account/sessions/${otherClaims.sid}`, { method: 'DELETE', headers });
+  assert.equal(response.status, 200);
+  assert.throws(() => control.verifyAccessToken(other.accessToken), /revoked_token/);
+  const missing = await fetch(`${base}/v1/account/sessions/not-found`, { method: 'DELETE', headers });
+  assert.equal(missing.status, 404);
 });
 
 test('HTTP gateway rejects exhausted credit before upstream dispatch', async t => {

@@ -59,6 +59,9 @@ function printHelp() {
   \x1b[32mhash\x1b[0m, \x1b[32mfingerprint\x1b[0m     Calculate workspace SHA-256 source freshness fingerprint
   \x1b[32mvalidate\x1b[0m <file.json> Validate acceptance contract against delivery schema
   \x1b[32mlogin\x1b[0m, \x1b[32mauth\x1b[0m             Connect an AI provider (interactive login)
+  \x1b[32maccount\x1b[0m               Show Cloud credit, plan, grants, and CLI sessions
+  \x1b[32mbilling\x1b[0m [checkout|portal] Open Cloud subscription billing
+  \x1b[32mlogout-cloud\x1b[0m [session] Revoke the current or named Cloud CLI session
   \x1b[32mserve\x1b[0m, \x1b[32mweb\x1b[0m, \x1b[32mstart\x1b[0m     Start the interactive web dashboard on port 3000
   \x1b[32mtest\x1b[0m                   Run core unit test suite
   \x1b[32meval\x1b[0m [args...]         Run evaluation harness (evaluate.mjs)
@@ -312,6 +315,68 @@ async function handleLogin() {
   await runTui({ autoFraming: false, openAuth: true, loginOnly: true });
 }
 
+async function cloudRuntime() {
+  const { loadAuthRuntime } = await import('../lib/tui/auth.mjs');
+  return loadAuthRuntime();
+}
+
+function cloudFailure(error) {
+  if (error.message === 'cloud_login_required') console.error('Carthagent Cloud is not signed in. Run `ctg login` and choose Carthagent Cloud.');
+  else console.error(`Carthagent Cloud: ${error.message}`);
+  process.exitCode = 1;
+}
+
+async function handleAccount() {
+  try {
+    const { formatCloudAccount, loadCloudAccount } = await import('../lib/tui/auth.mjs');
+    const account = await loadCloudAccount(await cloudRuntime());
+    console.log(formatCloudAccount(account));
+    const grants = Array.isArray(account.grants) ? account.grants : [];
+    if (grants.length) {
+      const { formatNanoUsd } = await import('../lib/cloud/client.mjs');
+      console.log('\nCredit grants:');
+      for (const grant of grants) console.log(`  ${formatNanoUsd(grant.remainingNanoUsd)} remaining of ${formatNanoUsd(grant.originalNanoUsd)} · ${grant.source}${grant.expiresAt ? ` · expires ${grant.expiresAt}` : ''}`);
+    }
+    const sessions = Array.isArray(account.sessions) ? account.sessions : [];
+    if (sessions.length) {
+      console.log('\nCLI sessions:');
+      for (const session of sessions) console.log(`  ${session.id} · ${session.revoked_at ? 'revoked' : 'active'} · ${session.client_name || 'Carthagent CLI'} · last used ${session.last_used_at || session.created_at}`);
+    }
+  } catch (error) { cloudFailure(error); }
+}
+
+async function handleBilling() {
+  const action = argv[1] || 'checkout';
+  if (!['checkout', 'portal'].includes(action)) { console.error('Usage: ctg billing [checkout|portal]'); process.exitCode = 1; return; }
+  try {
+    const { createCloudBillingLink } = await import('../lib/tui/auth.mjs');
+    const { openBrowser } = await import('../lib/cloud/client.mjs');
+    const result = await createCloudBillingLink(await cloudRuntime(), action);
+    const opened = await openBrowser(result.url).catch(() => false);
+    console.log(`${opened ? 'Opened' : 'Open'} ${result.url}`);
+  } catch (error) { cloudFailure(error); }
+}
+
+async function handleCloudLogout() {
+  try {
+    const runtime = await cloudRuntime();
+    const sessionId = argv[1];
+    if (sessionId) {
+      const { revokeCloudSession } = await import('../lib/tui/auth.mjs');
+      await revokeCloudSession(runtime, sessionId);
+      console.log(`Revoked Cloud session ${sessionId}.`);
+    } else {
+      const { CloudClient, cloudControlUrl } = await import('../lib/cloud/client.mjs');
+      if (!runtime.isUsingOAuth?.('experiential-labs')) throw new Error('cloud_login_required');
+      const accessToken = (await runtime.getAuth('experiential-labs'))?.auth?.apiKey;
+      if (!accessToken) throw new Error('cloud_login_required');
+      await new CloudClient({ baseUrl: cloudControlUrl() }).revokeCurrent({ accessToken });
+      await runtime.logout('experiential-labs');
+      console.log('Revoked and removed the current Carthagent Cloud session.');
+    }
+  } catch (error) { cloudFailure(error); }
+}
+
 function handleServe() {
   console.log('\x1b[1m[Carthagent]\x1b[0m Launching Evidence-Driven Delivery server...');
   const serverScript = join(root, 'server.mjs');
@@ -473,6 +538,16 @@ switch (command) {
   case 'login':
   case 'auth':
     handleLogin();
+    break;
+  case 'account':
+  case 'cloud':
+    handleAccount();
+    break;
+  case 'billing':
+    handleBilling();
+    break;
+  case 'logout-cloud':
+    handleCloudLogout();
     break;
   case 'serve':
   case 'web':

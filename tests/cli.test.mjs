@@ -62,10 +62,23 @@ test('check fails clearly when no delivery report exists', t => {
   assert.match(result.stderr, /No delivery report/);
 });
 
-test('guidance routing is not a user-facing command', t => {
+test('guidance routing is not a user-facing command and Cloud account commands are documented', t => {
   const result = run(fixture(t), '--help');
   assert.equal(result.status, 0, result.stderr);
   assert.doesNotMatch(result.stdout, /\broute\b|\bprofiles\b/);
+  assert.match(result.stdout, /account.*Cloud credit/);
+  assert.match(result.stdout, /billing.*checkout\|portal/);
+  assert.match(result.stdout, /logout-cloud/);
+});
+
+test('Cloud account commands fail closed when no browser session is stored', t => {
+  const cwd = fixture(t);
+  const env = { ...process.env, CARTHAGENT_CODING_AGENT_DIR: join(cwd, 'agent'), PI_CODING_AGENT_DIR: join(cwd, 'agent') };
+  for (const args of [['account'], ['billing'], ['logout-cloud']]) {
+    const result = spawnSync(process.execPath, [cli, ...args], { cwd, env, encoding: 'utf8' });
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stderr, /not signed in/);
+  }
 });
 
 test('review shows and persists the self-review default', t => {

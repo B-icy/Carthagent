@@ -7,7 +7,10 @@ import {
   authTypeLabel,
   authTypes,
   applyAuthEvent,
+  createCloudBillingLink,
   filterLoginProviders,
+  formatCloudAccount,
+  loadCloudAccount,
   loginAndRefresh,
   loginProviderFocus,
   loginProviderList,
@@ -37,6 +40,7 @@ test('authTypes reports advertised methods, subscription first', () => {
 
 test('authTypeLabel names the two login methods', () => {
   assert.equal(authTypeLabel('oauth'), 'subscription (OAuth)');
+  assert.equal(authTypeLabel('oauth', 'experiential-labs'), 'browser sign-in');
   assert.equal(authTypeLabel('api_key'), 'API key');
 });
 
@@ -57,7 +61,7 @@ test('loginProviderList keeps stable product ordering regardless of connected st
     [
       { id: 'zeta', name: 'Zeta', auth: { apiKey: {} } },
       { id: 'openrouter', name: 'OpenRouter', auth: { apiKey: {} } },
-      { id: 'experiential-labs', name: 'Carthagent Cloud', auth: { apiKey: {} } },
+      { id: 'experiential-labs', name: 'Carthagent Cloud', auth: { oauth: {}, apiKey: {} } },
       { id: 'anthropic', name: 'Anthropic', auth: { apiKey: {} } },
       { id: 'alpha', name: 'Alpha', auth: { apiKey: {} } },
     ],
@@ -66,6 +70,7 @@ test('loginProviderList keeps stable product ordering regardless of connected st
   const rows = loginProviderList(runtime);
   assert.deepEqual(rows.map(r => r.id), ['experiential-labs', 'anthropic', 'openrouter', 'alpha', 'zeta']);
   assert.equal(rows[0].recommended, true);
+  assert.deepEqual(rows[0].types, ['oauth', 'api_key']);
   assert.equal(rows[1].configured, false);
   assert.equal(rows.at(-1).configured, true);
 });
@@ -142,6 +147,28 @@ test('loginAndRefresh exposes dynamic provider models immediately after login', 
   assert.deepEqual(calls[1][1], { providers: ['experiential-labs'], allowNetwork: true, signal });
 });
 
+test('Cloud account helpers use the runtime OAuth credential for account and billing actions', async () => {
+  const calls = [];
+  const runtime = {
+    isUsingOAuth: id => id === 'experiential-labs',
+    getAuth: async () => ({ auth: { apiKey: 'access-token' } }),
+  };
+  const fetchImpl = async (url, options) => {
+    calls.push({ url, options });
+    return new Response(JSON.stringify(url.endsWith('/account')
+      ? { accountId: 'acct', balance: { availableNanoUsd: 1_000_000_000 }, subscription: { status: 'none' }, sessions: [] }
+      : { url: 'https://stripe.test' }), { status: 200 });
+  };
+  const env = { CARTHAGENT_CLOUD_URL: 'https://cloud.test' };
+  const account = await loadCloudAccount(runtime, { env, fetchImpl });
+  const billing = await createCloudBillingLink(runtime, 'checkout', { env, fetchImpl });
+  assert.equal(account.accountId, 'acct');
+  assert.equal(billing.url, 'https://stripe.test');
+  assert.ok(calls.every(call => call.options.headers.authorization === 'Bearer access-token'));
+  assert.match(formatCloudAccount(account), /Credit: \$1\.00/);
+  await assert.rejects(loadCloudAccount({ isUsingOAuth: () => false }, { env, fetchImpl }), /cloud_login_required/);
+});
+
 test('loadAuthRuntime lazily imports vendored engine and discovers OAuth/API providers', async () => {
   const runtime = await loadAuthRuntime();
   assert.ok(runtime && typeof runtime === 'object');
@@ -152,6 +179,7 @@ test('loadAuthRuntime lazily imports vendored engine and discovers OAuth/API pro
   const oauthProviders = providers.filter(p => p.types.includes('oauth')).map(p => p.id).sort();
   assert.deepEqual(oauthProviders, [
     'anthropic',
+    'experiential-labs',
     'github-copilot',
     'kimi-coding',
     'openai-codex',
