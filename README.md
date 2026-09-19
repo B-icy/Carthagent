@@ -38,6 +38,8 @@ ctg --provider experiential-labs --model <model-id>
 
 `EXP_GATEWAY_URL` may override the gateway origin for preview or staging. Carthagent discovers the account's model identities from `GET /v1/models`; the endpoint does not provide capability or pricing metadata, so Carthagent does not infer those fields.
 
+The embeddable Cloud service also includes a hosted request authority for `GET /v1/models`, `POST /v1/chat/completions`, and `POST /v1/responses`. Operators publish immutable customer-pricing versions and versioned Carthagent aliases in the control plane. Every request receives a bounded output limit and atomically reserves its maximum customer charge before Experiential dispatch. Settlement requires authoritative gateway request and physical-attempt identities plus measured token usage; known pre-dispatch failures release the hold, while ambiguous transport or accounting outcomes retain it for reconciliation instead of guessing a charge.
+
 **Direct provider API key** — export the provider's env var, or choose it in the shared login picker to store it:
 
 ```sh
