@@ -5,13 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Carthagent — Delivery Control</title>
   <meta name="description" content="Evidence-driven software delivery, from plan to proof">
-  <meta name="theme-color" content="#0d1714">
+  <meta name="theme-color" content="#171021">
   <meta property="og:title" content="Carthagent">
   <meta property="og:description" content="Evidence-driven software delivery, from plan to proof">
   <script>
     (() => {
       const param = new URLSearchParams(location.search).get('theme');
-      const chosen = param || localStorage.getItem('carthagent-theme') || 'system';
+      const chosen = param || localStorage.getItem('carthagent-theme') || 'carthage';
       if (param) localStorage.setItem('carthagent-theme', param);
       const dark = typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
       document.documentElement.dataset.theme = chosen === 'system' ? (dark ? 'obsidian' : 'paper') : chosen;
@@ -27,7 +27,15 @@
     }
     /* Every theme must define the full token set; tests/theme.test.mjs verifies
        presence plus WCAG AA contrast (4.5:1 text, 3:1 UI components). */
-    :root, [data-theme="obsidian"] {
+    :root, [data-theme="carthage"] {
+      color-scheme: dark;
+      --bg: #120d1c; --chrome: #171021; --panel: #1d1429; --panel-2: #261a35; --sunken: #0d0914;
+      --border: #49385d; --border-strong: #67517f; --border-hover: #846c9e; --control-border: #9a86ae;
+      --text: #f7f1e5; --muted: #b8a9c9; --faint: #a99abb; --code: #ead9ff;
+      --accent: #f2c66d; --accent-ink: #211506; --accent-bg: #3b2c16; --hover-bg: #302140;
+      --success: #76d6aa; --warning: #f2c66d; --error: #ff969e;
+    }
+    [data-theme="obsidian"] {
       color-scheme: dark;
       --bg: #09110f; --chrome: #0d1714; --panel: #111d19; --panel-2: #172620; --sunken: #07100d;
       --border: #23382f; --border-strong: #365247; --border-hover: #527465; --control-border: #718f82;
@@ -205,8 +213,16 @@
     .gate.blocked { border-left-color: var(--error); }
     .doc-tabs { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 12px; }
     .doc-tab.active { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
-    .theme-select { width: auto; min-width: 150px; padding: 6px 8px; font-size: 12px; }
-    .button:focus-visible, .tab:focus-visible, .theme-select:focus-visible,
+    .theme-picker { position: relative; }
+    .theme-trigger { min-width: 164px; padding: 6px 10px; border: 1px solid var(--control-border); border-radius: 5px; background: var(--sunken); color: var(--text); text-align: left; font-size: 12px; }
+    .theme-trigger::after { content: "▾"; float: right; margin-left: 12px; color: var(--muted); }
+    .theme-menu { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; display: none; width: 230px; max-height: min(70vh, 430px); padding: 6px; overflow-y: auto; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--panel); box-shadow: 0 16px 42px color-mix(in srgb, black 38%, transparent); }
+    .theme-picker.open .theme-menu { display: grid; gap: 2px; }
+    .theme-group { padding: 7px 8px 3px; color: var(--faint); font: 10px var(--mono); letter-spacing: .11em; text-transform: uppercase; }
+    .theme-option { width: 100%; padding: 7px 9px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--text); text-align: left; font-size: 12px; }
+    .theme-option:hover, .theme-option:focus-visible { border-color: var(--border-hover); background: var(--hover-bg); color: var(--accent); outline: none; }
+    .theme-option[aria-selected="true"]::after { content: "✓"; float: right; color: var(--accent); }
+    .button:focus-visible, .tab:focus-visible, .theme-trigger:focus-visible,
     input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
     /* D2 flowchart (Plan tab): visual graph with a current-step highlight,
        a swirling ring around the active node, and a slow pulse on the arrow
@@ -257,24 +273,26 @@
       <div id="workspace" class="workspace">loading workspace</div>
       <div id="status" class="status">idle</div>
       <div id="header-hash" class="hash">—</div>
-      <select id="theme-select" class="theme-select" aria-label="Color theme">
-        <option value="system">System (auto)</option>
-        <optgroup label="Dark">
-          <option value="obsidian">Obsidian</option>
-          <option value="midnight">Midnight</option>
-          <option value="solarized-dark">Solarized Dark</option>
-          <option value="nord">Nord</option>
-          <option value="contrast-dark">High Contrast Dark</option>
-          <option value="okabe-dark">Okabe Dark (colorblind)</option>
-        </optgroup>
-        <optgroup label="Light">
-          <option value="paper">Paper</option>
-          <option value="daylight">Daylight</option>
-          <option value="solarized-light">Solarized Light</option>
-          <option value="contrast-light">High Contrast Light</option>
-          <option value="okabe-light">Okabe Light (colorblind)</option>
-        </optgroup>
-      </select>
+      <div id="theme-picker" class="theme-picker">
+        <button id="theme-trigger" class="theme-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">Carthage (default)</button>
+        <div id="theme-menu" class="theme-menu" role="listbox" aria-label="Color theme">
+          <button class="theme-option" type="button" role="option" data-theme-value="carthage">Carthage (default)</button>
+          <button class="theme-option" type="button" role="option" data-theme-value="system">System (auto)</button>
+          <div class="theme-group">Dark</div>
+          <button class="theme-option" type="button" role="option" data-theme-value="obsidian">Obsidian</button>
+          <button class="theme-option" type="button" role="option" data-theme-value="midnight">Midnight</button>
+          <button class="theme-option" type="button" role="option" data-theme-value="solarized-dark">Solarized Dark</button>
+          <button class="theme-option" type="button" role="option" data-theme-value="nord">Nord</button>
+          <button class="theme-option" type="button" role="option" data-theme-value="contrast-dark">High Contrast Dark</button>
+          <button class="theme-option" type="button" role="option" data-theme-value="okabe-dark">Okabe Dark (colorblind)</button>
+          <div class="theme-group">Light</div>
+          <button class="theme-option" type="button" role="option" data-theme-value="paper">Paper</button>
+          <button class="theme-option" type="button" role="option" data-theme-value="daylight">Daylight</button>
+          <button class="theme-option" type="button" role="option" data-theme-value="solarized-light">Solarized Light</button>
+          <button class="theme-option" type="button" role="option" data-theme-value="contrast-light">High Contrast Light</button>
+          <button class="theme-option" type="button" role="option" data-theme-value="okabe-light">Okabe Light (colorblind)</button>
+        </div>
+      </div>
       <button id="run-all-header" class="button primary">Run checks</button>
     </div>
   </header>
@@ -411,15 +429,51 @@
     return data;
   }
 
-  const themeSelect = byId('theme-select');
+  const themePicker = byId('theme-picker');
+  const themeTrigger = byId('theme-trigger');
+  const themeMenu = byId('theme-menu');
+  const themeOptions = [...themeMenu.querySelectorAll('[data-theme-value]')];
   const prefersDark = () => typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
-  themeSelect.value = document.documentElement.dataset.themeChoice || 'system';
-  themeSelect.addEventListener('change', () => {
-    localStorage.setItem('carthagent-theme', themeSelect.value);
-    document.documentElement.dataset.theme = themeSelect.value === 'system' ? (prefersDark() ? 'obsidian' : 'paper') : themeSelect.value;
+  const resolveDashboardTheme = value => value === 'system' ? (prefersDark() ? 'obsidian' : 'paper') : value;
+  const applyDashboardTheme = value => { document.documentElement.dataset.theme = resolveDashboardTheme(value); };
+  let committedTheme = document.documentElement.dataset.themeChoice || 'carthage';
+  const syncThemePicker = () => {
+    for (const option of themeOptions) option.setAttribute('aria-selected', String(option.dataset.themeValue === committedTheme));
+    themeTrigger.textContent = themeOptions.find(option => option.dataset.themeValue === committedTheme)?.textContent || 'Carthage (default)';
+  };
+  const closeThemePicker = (restore = true) => {
+    themePicker.classList.remove('open');
+    themeTrigger.setAttribute('aria-expanded', 'false');
+    if (restore) applyDashboardTheme(committedTheme);
+  };
+  syncThemePicker();
+  themeTrigger.addEventListener('click', () => {
+    const open = !themePicker.classList.contains('open');
+    themePicker.classList.toggle('open', open);
+    themeTrigger.setAttribute('aria-expanded', String(open));
+    if (open) themeOptions.find(option => option.dataset.themeValue === committedTheme)?.focus();
   });
+  for (const option of themeOptions) {
+    const preview = () => applyDashboardTheme(option.dataset.themeValue);
+    option.addEventListener('mouseenter', preview);
+    option.addEventListener('focus', preview);
+    option.addEventListener('click', () => {
+      committedTheme = option.dataset.themeValue;
+      localStorage.setItem('carthagent-theme', committedTheme);
+      document.documentElement.dataset.themeChoice = committedTheme;
+      syncThemePicker();
+      closeThemePicker(false);
+      applyDashboardTheme(committedTheme);
+      themeTrigger.focus();
+    });
+  }
+  themeMenu.addEventListener('mouseleave', () => applyDashboardTheme(committedTheme));
+  themePicker.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { closeThemePicker(); themeTrigger.focus(); }
+  });
+  document.addEventListener('click', event => { if (!themePicker.contains(event.target)) closeThemePicker(); });
   if (typeof matchMedia === 'function') matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
-    if (themeSelect.value === 'system') document.documentElement.dataset.theme = event.matches ? 'obsidian' : 'paper';
+    if (committedTheme === 'system') document.documentElement.dataset.theme = event.matches ? 'obsidian' : 'paper';
   });
 
   document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => {

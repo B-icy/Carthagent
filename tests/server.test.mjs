@@ -117,6 +117,13 @@ test('dashboard is self-contained and does not render API data with innerHTML', 
   assert.match(html, /@keyframes step-arrow/);
   assert.match(html, /step-active/);
   assert.match(html, /stepStatus/);
-  const rendered = await domCheck(html, [{ selector: '.shell' }, { selector: '.brand', text: /Carthagent/ }, { console: 'error-free' }]);
+  const rendered = await domCheck(html, [
+    { selector: '.shell' },
+    { selector: '.brand', text: /Carthagent/ },
+    { eval: 'document.documentElement.dataset.theme', expect: 'carthage' },
+    { eval: `(() => { const option = document.querySelector('[data-theme-value="paper"]'); option.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true })); return document.documentElement.dataset.theme; })()`, expect: 'paper' },
+    { action: 'click', selector: '[data-theme-value="carthage"]', then: { eval: 'localStorage.getItem("carthagent-theme")', expect: 'carthage' } },
+    { console: 'error-free' },
+  ]);
   assert.equal(rendered.pass, true, rendered.failures.join('\n'));
 });
