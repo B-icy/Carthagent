@@ -11,13 +11,13 @@ Carthagent is a delivery-focused AI coding console and CLI built on [pi](https:/
 Core CLI requires Node ≥ 22.19. Optional workflows need additional tools: Git and authenticated `gh` for PR review, Firefox/geckodriver for real-browser checks, and Python with the scenario dependencies for game graders. [pi](https://github.com/earendil-works/pi-coding-agent) is bundled inside the package, so one command installs everything:
 
 ```sh
-npm i -g github:B-icy/pi2 && carthagent
+npm i -g github:B-icy/Carthagent && carthagent
 ```
 
 Or from a clone:
 
 ```sh
-git clone https://github.com/B-icy/pi2 && cd pi2
+git clone https://github.com/B-icy/Carthagent && cd Carthagent
 npm ci && npm i -g .          # gives you `carthagent`; or just run `node bin/carthagent.mjs`
 ```
 

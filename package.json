@@ -18,10 +18,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/B-icy/pi2"
+    "url": "https://github.com/B-icy/Carthagent"
   },
-  "homepage": "https://github.com/B-icy/pi2#readme",
-  "bugs": "https://github.com/B-icy/pi2/issues",
+  "homepage": "https://github.com/B-icy/Carthagent#readme",
+  "bugs": "https://github.com/B-icy/Carthagent/issues",
   "files": [
     "bin",
     "docs",
