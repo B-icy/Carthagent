@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseD2, layoutD2, renderD2 } from '../lib/tui/d2.mjs';
-import { syncActiveModel, planSideWidth, makeKeyParser, matchSlash, slashCardDimensions, renderSlashCard, computeNodeStates, barRange, scrollCell } from '../lib/tui/app.mjs';
+import { syncActiveModel, planSideWidth, makeKeyParser, matchSlash, slashCardDimensions, renderSlashCard, computeNodeStates, barRange, scrollCell, isCloudCreditExhaustion } from '../lib/tui/app.mjs';
 import { UNICODE_GLYPHS, ASCII_GLYPHS, detectGlyphMode, resolveGlyphs } from '../lib/tui/glyphs.mjs';
 import { checkDigest, planD2, computePhase, freshChecks, PHASES } from '../lib/delivery.mjs';
 import { createFeed, resetFeed, applyEvent, summarizeArgs, renderFeed, hydrateFeed } from '../lib/tui/feed.mjs';
@@ -16,6 +16,13 @@ import { mkdtempSync, writeFileSync, rmSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+test('Cloud credit exhaustion is detected only for failed Cloud assistant messages', () => {
+  assert.equal(isCloudCreditExhaustion({ type: 'message_end', message: { role: 'assistant', provider: 'experiential-labs', stopReason: 'error', errorMessage: 'insufficient_quota' } }), true);
+  assert.equal(isCloudCreditExhaustion({ type: 'message_end', message: { role: 'assistant', stopReason: 'error', errorMessage: 'credit is exhausted' } }, 'experiential-labs/model'), true);
+  assert.equal(isCloudCreditExhaustion({ type: 'message_end', message: { role: 'assistant', provider: 'openai', stopReason: 'error', errorMessage: 'insufficient_quota' } }), false);
+  assert.equal(isCloudCreditExhaustion({ type: 'message_end', message: { role: 'assistant', provider: 'experiential-labs', stopReason: 'stop' } }), false);
+});
 
 test('slash card follows every selection down and back up', () => {
   const items = matchSlash('/');
@@ -574,9 +581,11 @@ test('matchSlash filters commands by prefix and closes on args', () => {
   assert.deepEqual(matchSlash('/se').map(c => c.name), ['/resume']);
   // '/q' matches /quit via alias
   assert.deepEqual(matchSlash('/q').map(c => c.name), ['/quit']);
-  // '/l' narrows to /login; '/auth' is its alias
-  assert.deepEqual(matchSlash('/l').map(c => c.name), ['/login']);
+  // '/l' includes login/logout-cloud; '/auth' is login's alias
+  assert.deepEqual(matchSlash('/l').map(c => c.name), ['/login', '/logout-cloud']);
   assert.deepEqual(matchSlash('/auth').map(c => c.name), ['/login']);
+  assert.deepEqual(matchSlash('/account').map(c => c.name), ['/account']);
+  assert.deepEqual(matchSlash('/cloud').map(c => c.name), ['/account']);
   // unknown prefix → empty
   assert.deepEqual(matchSlash('/xyz'), []);
   // a space (args mode) closes the popup

@@ -29,14 +29,18 @@ Run `ctg login`, or use `/login` (`/auth`) inside the console. All three entry p
 
 The popup handles OAuth URLs, device codes, and API-key prompts inline. An in-session login returns to the active workspace and refreshes the agent without discarding the transcript or editor state.
 
-**Carthagent Cloud / Experiential Labs** — use the hosted OpenAI-compatible gateway at `https://api.experientiallabs.ai/v1`. Paste an `xpl_` key through `ctg login`, or export it for headless/CI use:
+**Carthagent Cloud / Experiential Labs** — choosing the recommended Cloud row starts browser device authorization. Carthagent stores only the resulting short-lived access token and rotating refresh token in its isolated credential store; it does not ask users to paste a long-lived managed gateway key. After signing in:
 
 ```sh
-export EXPLABS_API_KEY=xpl_...
-ctg --provider experiential-labs --model <model-id>
+ctg account                    # credit, grants, plan, and CLI sessions
+ctg billing checkout           # Builder subscription checkout URL
+ctg billing portal             # Stripe customer portal URL
+ctg logout-cloud [session-id]  # revoke the current or a named CLI session
 ```
 
-`EXP_GATEWAY_URL` may override the gateway origin for preview or staging. Carthagent discovers the account's model identities from `GET /v1/models`; the endpoint does not provide capability or pricing metadata, so Carthagent does not infer those fields.
+Inside the console, `/account`, `/billing checkout`, `/billing portal`, and `/logout-cloud <session-id>` provide the same account controls without leaving the workspace. If Cloud credit is exhausted, the console offers billing and `/login`; direct Anthropic, OpenAI, OpenRouter, custom, and other BYOK providers remain available without an upsell.
+
+Operators and internal pilots may still provide `EXPLABS_API_KEY` through the environment for direct Experiential access; that key path remains separate from the public device flow. `CARTHAGENT_CLOUD_URL` may override the Carthagent account/control-plane origin, while `EXP_GATEWAY_URL` specifically overrides the direct Experiential model gateway origin for preview or staging. Browser-account requests use the Cloud authority at the control-plane origin; API-key requests continue to use Experiential directly. Carthagent discovers model identities from `GET /v1/models`; the endpoint does not provide capability or pricing metadata, so Carthagent does not infer those fields.
 
 The embeddable Cloud service also includes a hosted request authority for `GET /v1/models`, `POST /v1/chat/completions`, and `POST /v1/responses`. Operators publish immutable customer-pricing versions and versioned Carthagent aliases in the control plane. Every request receives a bounded output limit and atomically reserves its maximum customer charge before Experiential dispatch. Settlement requires authoritative gateway request and physical-attempt identities plus measured token usage; known pre-dispatch failures release the hold, while ambiguous transport or accounting outcomes retain it for reconciliation instead of guessing a charge.
 
@@ -60,6 +64,8 @@ ctg -p "..."                  # headless run (auto when stdout isn't a TTY)
 ctg demo                      # scripted mock run — no provider needed
 ctg status                    # fingerprint, contract, pending checks
 ctg check all                 # run declared checks
+ctg account                   # Cloud balance, plan, grants, and sessions
+ctg billing checkout          # Cloud Builder checkout URL
 ctg serve                     # web dashboard (127.0.0.1, authenticated URL)
 ctg test                      # unit suite
 ctg --help                    # everything else
