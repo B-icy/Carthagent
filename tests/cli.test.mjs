@@ -145,6 +145,12 @@ test('review rejects source mutation and invalid execution bounds', t => {
   }
 });
 
+test('buildPiArgs always loads the Experiential provider extension', () => {
+  const args = buildPiArgs({ isolate: true, delivery: false });
+  const extensionPaths = args.flatMap((arg, index) => arg === '-e' ? [args[index + 1]] : []);
+  assert.ok(extensionPaths.some(path => path.endsWith(join('extensions', 'experiential.ts'))));
+});
+
 test('review modes launch the real bundled engine without unknown flags', t => {
   const cwd = fixture(t);
   for (const review of ['ask', 'yes', 'no']) {

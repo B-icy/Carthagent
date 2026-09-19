@@ -25,15 +25,20 @@ npm ci && npm i -g .          # gives you `ctg`; or just run `node bin/ctg.mjs`
 
 First run needs AI credentials. One store (`~/.carthagent/agent/auth.json`) covers the console, headless runs, and the dashboard.
 
-**Subscription** (Claude Pro/Max, ChatGPT Plus/Pro, GitHub Copilot, xAI, OpenRouter, Radius):
+Run `ctg login`, or use `/login` (`/auth`) inside the console. All three entry points open the same provider picker. Carthagent Cloud, powered by the Experiential gateway, appears first as the recommended managed option, while Anthropic, OpenAI, OpenRouter, and the other direct providers remain immediately selectable. Connected providers are marked without changing the stable ordering.
+
+The popup handles OAuth URLs, device codes, and API-key prompts inline. An in-session login returns to the active workspace and refreshes the agent without discarding the transcript or editor state.
+
+**Carthagent Cloud / Experiential Labs** — use the hosted OpenAI-compatible gateway at `https://api.experientiallabs.ai/v1`. Paste an `xpl_` key through `ctg login`, or export it for headless/CI use:
 
 ```sh
-ctg login          # opens pi's auth — run /login, pick a provider, /quit when done
+export EXPLABS_API_KEY=xpl_...
+ctg --provider experiential-labs --model <model-id>
 ```
 
-You can also run `/login` (or `/auth`) from inside the console: it opens an in-console popup to pick a provider and auth method, then handles OAuth URLs, device codes, and API-key prompts inline — no terminal hand-off — and restarts the agent once connected.
+`EXP_GATEWAY_URL` may override the gateway origin for preview or staging. Carthagent discovers the account's model identities from `GET /v1/models`; the endpoint does not provide capability or pricing metadata, so Carthagent does not infer those fields.
 
-**API key** — export the env var, or run `ctg login` and pick a key provider to store it:
+**Direct provider API key** — export the provider's env var, or choose it in the shared login picker to store it:
 
 ```sh
 export ANTHROPIC_API_KEY=sk-ant-...   # or OPENAI_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, XAI_API_KEY, ...
