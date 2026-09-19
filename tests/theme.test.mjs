@@ -143,12 +143,12 @@ for (const [name, raw] of Object.entries(THEMES)) {
   }
 }
 
-test('detectTermMode reads COLORFGBG / PI2_THEME_MODE', () => {
+test('detectTermMode reads COLORFGBG / CARTHAGENT_THEME_MODE', () => {
   assert.equal(detectTermMode({}), 'dark');
   assert.equal(detectTermMode({ COLORFGBG: '15;0' }), 'dark');
   assert.equal(detectTermMode({ COLORFGBG: '0;15' }), 'light');
   assert.equal(detectTermMode({ COLORFGBG: '0;7' }), 'light');
-  assert.equal(detectTermMode({ COLORFGBG: '0;15', PI2_THEME_MODE: 'dark' }), 'dark');
+  assert.equal(detectTermMode({ COLORFGBG: '0;15', CARTHAGENT_THEME_MODE: 'dark' }), 'dark');
 });
 
 // Light themes: the d2 graph renderer uses the plain panel as the node fill

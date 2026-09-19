@@ -352,17 +352,17 @@ test('request guidance is injected behind the scenes and survives follow-ups', o
 
 test('blocked delivery succeeds and finishes cleanly even when evidence scope limit is exceeded', options, async t => {
   const f = fixture(t);
-  const oldEnv = process.env.PI2_MAX_FILES;
+  const oldEnv = process.env.CARTHAGENT_MAX_FILES;
   t.after(() => {
-    if (oldEnv === undefined) delete process.env.PI2_MAX_FILES;
-    else process.env.PI2_MAX_FILES = oldEnv;
+    if (oldEnv === undefined) delete process.env.CARTHAGENT_MAX_FILES;
+    else process.env.CARTHAGENT_MAX_FILES = oldEnv;
   });
 
   // Create plan
   await f.call('delivery_plan', f.plan);
 
   // Set tight file limit (1 file) and add a second file
-  process.env.PI2_MAX_FILES = '1';
+  process.env.CARTHAGENT_MAX_FILES = '1';
   writeFileSync(join(f.cwd, 'extra.txt'), 'extra');
 
   // delivery_status tolerates scope limit

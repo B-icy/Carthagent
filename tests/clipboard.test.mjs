@@ -39,7 +39,7 @@ test('writeClipboard resolves safely when tools are absent', async () => {
 
 test('writeClipboard pipes text to child stdin and resolves true', async () => {
   // Test piping using node command
-  const res = await writeClipboard('hello from pi2', {
+  const res = await writeClipboard('hello from carthagent', {
     commands: [[process.execPath, ['-e', 'process.stdin.resume(); process.stdin.on("data", () => process.exit(0))']]],
   });
   assert.equal(res, true);

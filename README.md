@@ -1,66 +1,70 @@
-# pi2 — evidence-driven delivery
+# Carthagent
 
-CLI and [pi](https://github.com/earendil-works/pi-coding-agent) package that turns "here's my code, trust me" into verified deliveries: the agent must declare an acceptance contract, run real checks, and re-prove them whenever source changes. `docs/workflow.svg` shows the flow; `docs/evaluation.md` has the honest trial history, failures included.
+> **Evidence-driven software delivery, from plan to proof.**
+
+Carthagent is a delivery-focused AI coding console and CLI built on [pi](https://github.com/earendil-works/pi-coding-agent). It turns “here’s my code, trust me” into an auditable delivery: the agent declares an acceptance contract, runs real checks, and re-proves them whenever source changes.
+
+`docs/workflow.svg` shows the flow; `docs/evaluation.md` has the honest trial history, failures included.
 
 ## Install
 
 Core CLI requires Node ≥ 22.19. Optional workflows need additional tools: Git and authenticated `gh` for PR review, Firefox/geckodriver for real-browser checks, and Python with the scenario dependencies for game graders. [pi](https://github.com/earendil-works/pi-coding-agent) is bundled inside the package, so one command installs everything:
 
 ```sh
-npm i -g github:B-icy/pi2 && pi2
+npm i -g github:B-icy/pi2 && carthagent
 ```
 
 Or from a clone:
 
 ```sh
 git clone https://github.com/B-icy/pi2 && cd pi2
-npm ci && npm i -g .          # gives you `pi2`; or just run `node bin/pi2.mjs`
+npm ci && npm i -g .          # gives you `carthagent`; or just run `node bin/carthagent.mjs`
 ```
 
 ## Connect a provider
 
-First run needs AI credentials. One store (`~/.pi2/agent/auth.json`) covers the console, headless runs, and the dashboard.
+First run needs AI credentials. One store (`~/.carthagent/agent/auth.json`) covers the console, headless runs, and the dashboard.
 
 **Subscription** (Claude Pro/Max, ChatGPT Plus/Pro, GitHub Copilot, xAI, OpenRouter, Radius):
 
 ```sh
-pi2 login          # opens pi's auth — run /login, pick a provider, /quit when done
+carthagent login          # opens pi's auth — run /login, pick a provider, /quit when done
 ```
 
 You can also run `/login` (or `/auth`) from inside the console: it opens an in-console popup to pick a provider and auth method, then handles OAuth URLs, device codes, and API-key prompts inline — no terminal hand-off — and restarts the agent once connected.
 
-**API key** — export the env var, or run `pi2 login` and pick a key provider to store it:
+**API key** — export the env var, or run `carthagent login` and pick a key provider to store it:
 
 ```sh
 export ANTHROPIC_API_KEY=sk-ant-...   # or OPENAI_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, XAI_API_KEY, ...
-pi2
+carthagent
 ```
 
-Multiple providers can be connected at once — credentials coexist in `~/.pi2/agent/auth.json`. In the console, `^t` (settings) has a **provider** row above **model**: `←→` switches providers (and selects that provider's first model), while the model picker stays scoped to the chosen provider. `/login` adds another provider at any time.
+Multiple providers can be connected at once — credentials coexist in `~/.carthagent/agent/auth.json`. In the console, `^t` (settings) has a **provider** row above **model**: `←→` switches providers (and selects that provider's first model), while the model picker stays scoped to the chosen provider. `/login` adds another provider at any time.
 
-Full provider list: [pi providers docs](https://github.com/earendil-works/pi-coding-agent/blob/main/docs/providers.md). Override the default model with `--model <id>` (e.g. `pi2 --model sonnet`). Your last model choice (via `--model`, `/model`, or the `^t` settings picker) is saved to `~/.pi2/config.json` and reused on the next launch — pass a flag to override it for that run.
+Full provider list: [pi providers docs](https://github.com/earendil-works/pi-coding-agent/blob/main/docs/providers.md). Override the default model with `--model <id>` (e.g. `carthagent --model sonnet`). Your last model choice (via `--model`, `/model`, or the `^t` settings picker) is saved to `~/.carthagent/config.json` and reused on the next launch — pass a flag to override it for that run.
 
 ## Use it
 
 ```sh
-pi2                    # interactive console (persistent pi session)
-pi2 "Build a task CLI" # console, with a task
-pi2 -p "..."           # headless run (auto when stdout isn't a TTY)
-pi2 demo               # scripted mock run — no provider needed
-pi2 status             # fingerprint, contract, pending checks
-pi2 check all          # run declared checks
-pi2 serve              # web dashboard (127.0.0.1, authenticated URL)
-pi2 test               # unit suite
-pi2 --help             # everything else
+carthagent                    # interactive console (persistent pi session)
+carthagent "Build a task CLI" # console, with a task
+carthagent -p "..."           # headless run (auto when stdout isn't a TTY)
+carthagent demo               # scripted mock run — no provider needed
+carthagent status             # fingerprint, contract, pending checks
+carthagent check all          # run declared checks
+carthagent serve              # web dashboard (127.0.0.1, authenticated URL)
+carthagent test               # unit suite
+carthagent --help             # everything else
 ```
 
-Inside the console: `enter` send/steer · `esc` abort (again = force-restart pi, nothing is lost) · `^r` session picker · `tab`/`⇧tab` panes · `x` expand tool output · `^v` paste · `^t` settings · `^c` quit. Sessions persist under `~/.pi2/agent/sessions/`; `pi2 -c` continues the last one, `-r` opens the picker.
+Inside the console: `enter` send/steer · `esc` abort (again = force-restart pi, nothing is lost) · `^r` session picker · `tab`/`⇧tab` panes · `x` expand tool output · `^v` paste · `^t` settings · `^c` quit. Sessions persist under `~/.carthagent/agent/sessions/`; `carthagent -c` continues the last one, `-r` opens the picker.
 
-**Themes:** 21 AA-contrast-verified options — dark (`opencode`, `tokyonight`, `nebula`, `ember`, `forest`, `mono`, `obsidian`, `midnight`, `nord`, `solarized-dark`, `okabe-dark`, `contrast-dark`), light (`paper`, `daylight`, `solarized-light`, `okabe-light`, `contrast-light`), and adaptive (`solarized`, `okabe`, `contrast`, `system`) that follow `COLORFGBG` or `PI2_THEME_MODE=light|dark`. Pick via `--theme`, `/theme`, or `^t`; the choice is saved to `~/.pi2/config.json` and reused on the next launch. The dashboard has the same set behind a header picker (persisted in `localStorage`). `okabe-*` uses the colorblind-safe Okabe-Ito palette.
+**Themes:** 21 AA-contrast-verified options — dark (`opencode`, `tokyonight`, `nebula`, `ember`, `forest`, `mono`, `obsidian`, `midnight`, `nord`, `solarized-dark`, `okabe-dark`, `contrast-dark`), light (`paper`, `daylight`, `solarized-light`, `okabe-light`, `contrast-light`), and adaptive (`solarized`, `okabe`, `contrast`, `system`) that follow `COLORFGBG` or `CARTHAGENT_THEME_MODE=light|dark`. Pick via `--theme`, `/theme`, or `^t`; the choice is saved to `~/.carthagent/config.json` and reused on the next launch. The dashboard has the same set behind a header picker (persisted in `localStorage`). `okabe-*` uses the colorblind-safe Okabe-Ito palette.
 
 Useful flags: `--model`, `--thinking`, `--validators <file>`, `--context <file>`, `--bash-cap <sec>`, `--review ask|yes|no`, `--isolate`, `--no-delivery`, `--no-guide`, `--ascii`, `--glyphs <mode>`, `-c`/`-r`/`--session`.
 
-**Glyphs:** icons, status dots, spinners and the D2 graph adapt to your terminal. `--glyphs auto` (default) keeps the Unicode set on terminals known to render it and falls back to an ASCII icon tier everywhere else, so tool icons, status marks and spinners never show up as `?` on limited fonts. Force one with `--ascii`, `--glyphs unicode|ascii`, or `PI2_GLYPHS=unicode|ascii` / `PI2_ASCII=1`.
+**Glyphs:** icons, status dots, spinners and the D2 graph adapt to your terminal. `--glyphs auto` (default) keeps the Unicode set on terminals known to render it and falls back to an ASCII icon tier everywhere else, so tool icons, status marks and spinners never show up as `?` on limited fonts. Force one with `--ascii`, `--glyphs unicode|ascii`, or `CARTHAGENT_GLYPHS=unicode|ascii` / `CARTHAGENT_ASCII=1`.
 
 ## How it works
 
@@ -80,9 +84,9 @@ The discipline: evidence is bound to the run, contract revision, executable chec
 
 ## Self-review
 
-When a run finishes a substantial change (a verified delivery or file edits), pi2 can offer a review loop: the agent pushes a branch, opens a PR, and a **detached fresh-context reviewer** (`pi2 review <pr>` — a separate engine process with no shared context) inspects it. Findings come back to the working agent, which fixes, pushes, and re-reviews — stopping after 3 admitted attempts per PR in this workspace or `VERDICT: APPROVE`. The CLI persists round admission and structured snapshot-bound findings, excludes concurrent reviewers, and escalates exhausted attempts. Review commands reject malformed verdicts and changed source/PR-head snapshots, but read-only behavior is an instruction, not isolation. See [review guarantees and limits](docs/review-assurance.md).
+When a run finishes a substantial change (a verified delivery or file edits), carthagent can offer a review loop: the agent pushes a branch, opens a PR, and a **detached fresh-context reviewer** (`carthagent review <pr>` — a separate engine process with no shared context) inspects it. Findings come back to the working agent, which fixes, pushes, and re-reviews — stopping after 3 admitted attempts per PR in this workspace or `VERDICT: APPROVE`. The CLI persists round admission and structured snapshot-bound findings, excludes concurrent reviewers, and escalates exhausted attempts. Review commands reject malformed verdicts and changed source/PR-head snapshots, but read-only behavior is an instruction, not isolation. See [review guarantees and limits](docs/review-assurance.md).
 
-It's opt-in and tri-state, resolved as `--review <mode>` flag → `~/.pi2/config.json` → `ask`:
+It's opt-in and tri-state, resolved as `--review <mode>` flag → `~/.carthagent/config.json` → `ask`:
 
 | Mode | Behavior |
 |---|---|
@@ -91,10 +95,10 @@ It's opt-in and tri-state, resolved as `--review <mode>` flag → `~/.pi2/config
 | `no` | Never offer |
 
 ```sh
-pi2 review            # show the effective default
-pi2 review yes        # persist a default for all sessions
-pi2 review 14         # run the fresh-context reviewer over a PR directly
-pi2 --review no       # per-launch override
+carthagent review            # show the effective default
+carthagent review yes        # persist a default for all sessions
+carthagent review 14         # run the fresh-context reviewer over a PR directly
+carthagent --review no       # per-launch override
 ```
 
 Inside a session, `/review` starts a loop immediately and `/review ask|yes|no|status` manages the same default. The loop needs `git` + an authenticated `gh` — without them the agent reports and skips instead of simulating a review.
@@ -103,7 +107,7 @@ Inside a session, `/review` starts a loop immediately and `/review ask|yes|no|st
 
 Everything below is config, not code:
 
-- **Required validators** — your tests, not the model's. `.pi2/delivery.json` (trusted project) or `--validators file.json`: `{"version":1,"checks":[{"id":"acceptance","kind":"test","argv":["pytest","-q"],"timeoutSeconds":90}]}`. They can't be omitted or overridden.
+- **Required validators** — your tests, not the model's. `.carthagent/delivery.json` (trusted project) or `--validators file.json`: `{"version":1,"checks":[{"id":"acceptance","kind":"test","argv":["pytest","-q"],"timeoutSeconds":90}]}`. They can't be omitted or overridden.
 - **Domain guidance** — add a JSON profile to `guidance/profiles/` (keywords/deps → planning/check/review requirements) and matching requests pick it up automatically.
 - **Extra context** — `--delivery-context notes.md` injects project/benchmark-specific instructions.
 - **Scenarios** — `scenarios/<name>/scenario.json` defines an evaluation domain; `node evaluate.mjs --task <name> --allow-live` runs it (dry-run with `--dry-run`; spends API credit otherwise).
@@ -111,7 +115,7 @@ Everything below is config, not code:
 ## Bounded runs and browser evidence
 
 ```sh
-pi2 -p --max-tools 100 --max-seconds 900 --max-repairs 2 "Implement the requested change"
+carthagent -p --max-tools 100 --max-seconds 900 --max-repairs 2 "Implement the requested change"
 ```
 
 Limits are opt-in, session-persistent cooperative controls—not dollar/token caps or hard process deadlines. Inspect with `/delivery-budget-status`; only an explicit `/delivery-budget-reset` starts a fresh allowance in the same session. See [session budgets](docs/budgets.md).

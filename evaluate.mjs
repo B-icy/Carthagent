@@ -18,7 +18,7 @@ const { values: args } = parseArgs({ options: {
   model: { type: 'string', default: 'mercury-2.5' }, provider: { type: 'string', default: 'inception' },
   thinking: { type: 'string', default: 'medium' },
   timeout: { type: 'string', default: '600' }, 'max-turns': { type: 'string', default: '100' }, 'max-cost': { type: 'string', default: '3' },
-  'pi2-cli': { type: 'string' }, 'pi-cli': { type: 'string' }, python: { type: 'string' }, 'seed-from': { type: 'string' }, 'allow-live': { type: 'boolean', default: false },
+  'carthagent-cli': { type: 'string' }, 'pi-cli': { type: 'string' }, python: { type: 'string' }, 'seed-from': { type: 'string' }, 'allow-live': { type: 'boolean', default: false },
   'dry-run': { type: 'boolean', default: false },
 } });
 if (!args['allow-live'] && !args['dry-run']) throw Error('Live calls spend API credit and generated code runs with your permissions. Use --allow-live explicitly (or --dry-run to preview the assembled run without calling a provider).');
@@ -30,7 +30,7 @@ const root = dirname(fileURLToPath(import.meta.url)), project = dirname(root);
 // when this package is nested inside a workspace, the venv and evidence
 // directories live in the parent project instead.
 const home = existsSync(join(root, 'scenarios')) ? root : project;
-const pi = (() => { try { return locatePi(args['pi2-cli'] || args['pi-cli']); } catch (e) { throw Error(`${e.message}`); } })();
+const pi = (() => { try { return locatePi(args['carthagent-cli'] || args['pi-cli']); } catch (e) { throw Error(`${e.message}`); } })();
 const scenarioName = args.scenario || args.task;
 const scenario = loadScenario(root, scenarioName);
 const findExecutable = name => {

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * pi2 CLI - Evidence-driven delivery & contract verification
+ * carthagent CLI - Evidence-driven delivery & contract verification
  */
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
@@ -19,16 +19,16 @@ import {
 import { lockWorkspace, selectReport } from '../lib/workspace.mjs';
 import { beginReview, parseFindings } from '../lib/review-state.mjs';
 import { latestReport, saveReport } from '../lib/reports.mjs';
-import { normalizeReviewMode, resolveReviewMode, loadPi2Config, savePi2Config, pi2ConfigPath, reviewerPrompt, parseVerdict, resolveStickyDefaults } from '../lib/review.mjs';
+import { normalizeReviewMode, resolveReviewMode, loadCarthagentConfig, saveCarthagentConfig, carthagentConfigPath, reviewerPrompt, parseVerdict, resolveStickyDefaults } from '../lib/review.mjs';
 
-// Ensure pi2 operates completely isolated in its own agent directory (~/.pi2/agent)
+// Ensure carthagent operates completely isolated in its own agent directory (~/.carthagent/agent)
 // so it NEVER touches, reads, or piggybacks on any existing ~/.pi/agent installation.
-const defaultAgentDir = process.env.PI2_AGENT_DIR || process.env.PI2_CODING_AGENT_DIR || join(os.homedir(), '.pi2', 'agent');
-if (!process.env.PI2_CODING_AGENT_DIR && !process.env.PI2_AGENT_DIR) {
-  process.env.PI2_CODING_AGENT_DIR = defaultAgentDir;
+const defaultAgentDir = process.env.CARTHAGENT_AGENT_DIR || process.env.CARTHAGENT_CODING_AGENT_DIR || join(os.homedir(), '.carthagent', 'agent');
+if (!process.env.CARTHAGENT_CODING_AGENT_DIR && !process.env.CARTHAGENT_AGENT_DIR) {
+  process.env.CARTHAGENT_CODING_AGENT_DIR = defaultAgentDir;
 }
 if (!process.env.PI_CODING_AGENT_DIR) {
-  process.env.PI_CODING_AGENT_DIR = process.env.PI2_CODING_AGENT_DIR || defaultAgentDir;
+  process.env.PI_CODING_AGENT_DIR = process.env.CARTHAGENT_CODING_AGENT_DIR || defaultAgentDir;
 }
 
 const __filename = fileURLToPath(import.meta.url);
@@ -42,12 +42,12 @@ const command = argv[0];
 
 function printHelp() {
   console.log(`
-\x1b[1m\x1b[36mpi2\x1b[0m \x1b[90m${version}\x1b[0m
+\x1b[1m\x1b[36mcarthagent\x1b[0m \x1b[90m${version}\x1b[0m
 
 \x1b[1mUSAGE:\x1b[0m
-  pi2                     Launch the interactive split-terminal delivery console
-  pi2 <task>              Open the console and immediately deliver <task>
-  pi2 <command> [options]
+  carthagent                     Launch the interactive split-terminal delivery console
+  carthagent <task>              Open the console and immediately deliver <task>
+  carthagent <command> [options]
 
 \x1b[1mCOMMANDS:\x1b[0m
   \x1b[32mtui\x1b[0m, \x1b[32mui\x1b[0m                 Interactive console: live run feed + live plan.d2 side panel
@@ -87,8 +87,8 @@ function printHelp() {
   --max-seconds <n>       Session elapsed-time budget (0 disables)
   --max-repairs <n>       Session automatic-repair budget (0 disables)
   --review <mode>         Self-review loop after major changes: ask|yes|no
-                          (default: ~/.pi2/config.json, else ask — /review in-session)
-  --isolate               Run with only pi2's delivery extension (no other extensions/skills)
+                          (default: ~/.carthagent/config.json, else ask — /review in-session)
+  --isolate               Run with only carthagent's delivery extension (no other extensions/skills)
   --no-strict             Don't require delivery_plan before write/edit tools
   --no-delivery           Run the console without the delivery extension
   --no-guide              Send prompts verbatim instead of auto-applying delivery framing
@@ -103,10 +103,10 @@ function printHelp() {
   up/down history/scroll · pgup/pgdn/wheel scroll focused pane · drag-select copies · ^t settings · ^n new session · x expand · ^c quit
 
 \x1b[1mEXAMPLES:\x1b[0m
-  pi2
-  pi2 "Build a task CLI with tests"
-  pi2 --model sonnet --theme opencode "Fix the failing tests in src/"
-  pi2 --validators validators.json "Migrate the schema"
+  carthagent
+  carthagent "Build a task CLI with tests"
+  carthagent --model sonnet --theme opencode "Fix the failing tests in src/"
+  carthagent --validators validators.json "Migrate the schema"
 `);
 }
 
@@ -153,7 +153,7 @@ function parseTuiArgs(list) {
 async function handleTui(list) {
   const opts = parseTuiArgs(list);
   // Sticky theme/model: explicit --theme/--model flags win, else fall back to
-  // the last choice persisted in ~/.pi2/config.json. Undefined lets the engine
+  // the last choice persisted in ~/.carthagent/config.json. Undefined lets the engine
   // apply its own default rather than forcing a stale id.
   const sticky = resolveStickyDefaults(opts);
   opts.theme = sticky.theme;
@@ -177,7 +177,7 @@ async function handleTui(list) {
       cwd: process.cwd(),
       env: {
         ...process.env,
-        PI2_CODING_AGENT_DIR: process.env.PI2_CODING_AGENT_DIR || defaultAgentDir,
+        CARTHAGENT_CODING_AGENT_DIR: process.env.CARTHAGENT_CODING_AGENT_DIR || defaultAgentDir,
         PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR || defaultAgentDir
       }
     });
@@ -282,7 +282,7 @@ async function runWorkspaceChecks() {
 async function handleValidate() {
   const filePath = argv[1];
   if (!filePath) {
-    console.error('Usage: pi2 validate <path-to-plan.json>');
+    console.error('Usage: carthagent validate <path-to-plan.json>');
     process.exit(1);
   }
   try {
@@ -314,7 +314,7 @@ async function handleLogin() {
     cwd,
     env: {
       ...process.env,
-      PI2_CODING_AGENT_DIR: process.env.PI2_CODING_AGENT_DIR || defaultAgentDir,
+      CARTHAGENT_CODING_AGENT_DIR: process.env.CARTHAGENT_CODING_AGENT_DIR || defaultAgentDir,
       PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR || defaultAgentDir
     }
   });
@@ -322,15 +322,15 @@ async function handleLogin() {
 }
 
 function handleServe() {
-  console.log('\x1b[1m[pi2]\x1b[0m Launching Evidence-Driven Delivery server...');
+  console.log('\x1b[1m[carthagent]\x1b[0m Launching Evidence-Driven Delivery server...');
   const serverScript = join(root, 'server.mjs');
   const child = spawn(process.execPath, [serverScript], {
     stdio: 'inherit',
     cwd: root,
     env: {
       ...process.env,
-      PI2_WORKSPACE: cwd,
-      PI2_CODING_AGENT_DIR: process.env.PI2_CODING_AGENT_DIR || defaultAgentDir,
+      CARTHAGENT_WORKSPACE: cwd,
+      CARTHAGENT_CODING_AGENT_DIR: process.env.CARTHAGENT_CODING_AGENT_DIR || defaultAgentDir,
       PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR || defaultAgentDir
     }
   });
@@ -338,7 +338,7 @@ function handleServe() {
 }
 
 function handleTest() {
-  console.log('\x1b[1m[pi2]\x1b[0m Running unit test suite...');
+  console.log('\x1b[1m[carthagent]\x1b[0m Running unit test suite...');
   const child = spawn(process.execPath, ['--test', 'tests/*.test.mjs'], {
     stdio: 'inherit',
     cwd: root,
@@ -348,26 +348,26 @@ function handleTest() {
 }
 
 /**
- * `pi2 review` — self-review control surface:
- *   pi2 review              show the effective default and where it's set
- *   pi2 review ask|yes|no   persist the default to ~/.pi2/config.json
- *   pi2 review <pr>         run a detached fresh-context reviewer over a PR
+ * `carthagent review` — self-review control surface:
+ *   carthagent review              show the effective default and where it's set
+ *   carthagent review ask|yes|no   persist the default to ~/.carthagent/config.json
+ *   carthagent review <pr>         run a detached fresh-context reviewer over a PR
  */
 async function handleReview(args) {
   const ref = args[0];
   if (!ref || ref === 'status') {
-    const config = loadPi2Config();
-    console.log(`\x1b[1mself-review default:\x1b[0m \x1b[36m${resolveReviewMode(undefined, config)}\x1b[0m  (config: ${config.review ?? 'unset'} @ ${pi2ConfigPath()})`);
+    const config = loadCarthagentConfig();
+    console.log(`\x1b[1mself-review default:\x1b[0m \x1b[36m${resolveReviewMode(undefined, config)}\x1b[0m  (config: ${config.review ?? 'unset'} @ ${carthagentConfigPath()})`);
     console.log('\nusage:');
-    console.log('  pi2 review ask|yes|no   Set the default for all sessions');
-    console.log('  pi2 review <pr>         Fresh-context review of a pull request now');
-    console.log('  pi2 --review <mode>     Per-launch override · /review inside a session');
+    console.log('  carthagent review ask|yes|no   Set the default for all sessions');
+    console.log('  carthagent review <pr>         Fresh-context review of a pull request now');
+    console.log('  carthagent --review <mode>     Per-launch override · /review inside a session');
     return;
   }
   const mode = normalizeReviewMode(ref);
   if (mode) {
-    savePi2Config({ review: mode });
-    console.log(`\x1b[32mself-review default → ${mode}\x1b[0m  (saved to ${pi2ConfigPath()})`);
+    saveCarthagentConfig({ review: mode });
+    console.log(`\x1b[32mself-review default → ${mode}\x1b[0m  (saved to ${carthagentConfigPath()})`);
     return;
   }
   if (ref.startsWith('-')) {
@@ -507,12 +507,12 @@ switch (command) {
     console.log(version);
     break;
   case undefined:
-    // Bare `pi2` → interactive split-terminal console
+    // Bare `carthagent` → interactive split-terminal console
     handleTui([]);
     break;
   default:
     // pi-style: unknown first arg means the args ARE the task prompt
-    // e.g. `pi2 "Build a task CLI"` or `pi2 --model sonnet "Fix tests"`
+    // e.g. `carthagent "Build a task CLI"` or `carthagent --model sonnet "Fix tests"`
     if (command.startsWith('-') && !TUI_FLAGS[command] && !TUI_BOOL[command]) {
       console.error(`\x1b[31mUnknown command or flag:\x1b[0m ${command}`);
       printHelp();

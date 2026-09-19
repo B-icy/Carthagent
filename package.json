@@ -1,26 +1,27 @@
 {
-  "name": "pi2",
+  "name": "carthagent",
   "version": "0.2.0",
   "private": true,
   "type": "module",
   "engines": {
     "node": ">=22.19.0"
   },
-  "description": "Phased software delivery with durable contracts and executable evidence",
+  "description": "Evidence-driven software delivery, from plan to proof",
   "keywords": [
-    "pi2",
-    "pi-package",
+    "carthagent",
+    "ai-agent",
+    "software-delivery",
     "evidence-driven-delivery"
   ],
   "bin": {
-    "pi2": "./bin/pi2.mjs"
+    "carthagent": "./bin/carthagent.mjs"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/B-icy/pi-evidence-driven-delivery"
+    "url": "https://github.com/B-icy/pi2"
   },
-  "homepage": "https://github.com/B-icy/pi-evidence-driven-delivery#readme",
-  "bugs": "https://github.com/B-icy/pi-evidence-driven-delivery/issues",
+  "homepage": "https://github.com/B-icy/pi2#readme",
+  "bugs": "https://github.com/B-icy/pi2/issues",
   "files": [
     "bin",
     "docs",
@@ -45,7 +46,7 @@
   "scripts": {
     "dev": "node server.mjs",
     "start": "node server.mjs",
-    "pi2": "node bin/pi2.mjs",
+    "carthagent": "node bin/carthagent.mjs",
     "check": "node tools/check-syntax.mjs",
     "typecheck": "tsc --noEmit --skipLibCheck --target ES2023 --module NodeNext --moduleResolution NodeNext --types node extensions/delivery.ts types/pi-coding-agent.d.ts",
     "lint": "eslint . && npm run typecheck",

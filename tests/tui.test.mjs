@@ -442,7 +442,7 @@ test('hydrateFeed unwraps framed prompts without badges', () => {
 });
 
 test('listSessions reads metadata newest-first and mostRecentSession picks the head', t => {
-  const dir = mkdtempSync(join(tmpdir(), 'pi2 sessions '));
+  const dir = mkdtempSync(join(tmpdir(), 'carthagent sessions '));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const mk = (file, id, userText, extra = []) => writeFileSync(join(dir, file), [
     JSON.stringify({ type: 'session', version: 3, id, timestamp: '2026-01-01T00:00:00Z', cwd: '/x' }),
@@ -628,10 +628,10 @@ test('renderSlashCard contains all rows strictly within bounding box without ove
 // ------------------------------------------------------------------ glyph tier
 
 test('detectGlyphMode honors explicit config and stays conservative on auto', () => {
-  assert.equal(detectGlyphMode({ PI2_GLYPHS: 'unicode' }, 'linux'), 'unicode');
-  assert.equal(detectGlyphMode({ PI2_GLYPHS: 'ascii' }, 'linux'), 'ascii');
-  assert.equal(detectGlyphMode({ PI2_ASCII: '1' }, 'linux'), 'ascii');
-  assert.equal(detectGlyphMode({ PI2_ASCII: '0' }, 'linux'), 'unicode');
+  assert.equal(detectGlyphMode({ CARTHAGENT_GLYPHS: 'unicode' }, 'linux'), 'unicode');
+  assert.equal(detectGlyphMode({ CARTHAGENT_GLYPHS: 'ascii' }, 'linux'), 'ascii');
+  assert.equal(detectGlyphMode({ CARTHAGENT_ASCII: '1' }, 'linux'), 'ascii');
+  assert.equal(detectGlyphMode({ CARTHAGENT_ASCII: '0' }, 'linux'), 'unicode');
   // Non-UTF-8 locale or dumb terminal can never carry the symbol set.
   assert.equal(detectGlyphMode({ LC_ALL: 'C' }, 'linux'), 'ascii');
   assert.equal(detectGlyphMode({ TERM: 'dumb', LANG: 'en_US.UTF-8' }, 'linux'), 'ascii');

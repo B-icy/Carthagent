@@ -5,12 +5,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   REVIEW_MODES, normalizeReviewMode, resolveReviewMode,
-  loadPi2Config, savePi2Config, resolveStickyDefaults, shouldOfferReview,
+  loadCarthagentConfig, saveCarthagentConfig, resolveStickyDefaults, shouldOfferReview,
   reviewKickoff, reviewerPrompt, parseVerdict,
 } from '../lib/review.mjs';
 
 function configFixture(t) {
-  const dir = mkdtempSync(join(tmpdir(), 'pi2 review config '));
+  const dir = mkdtempSync(join(tmpdir(), 'carthagent review config '));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return join(dir, 'config.json');
 }
@@ -24,34 +24,34 @@ test('review modes normalize strictly to ask|yes|no', () => {
 
 test('config persists atomically and merges patches', t => {
   const path = configFixture(t);
-  assert.deepEqual(loadPi2Config(path), {});
-  savePi2Config({ review: 'yes' }, path);
-  savePi2Config({ other: 1 }, path);
-  const config = loadPi2Config(path);
+  assert.deepEqual(loadCarthagentConfig(path), {});
+  saveCarthagentConfig({ review: 'yes' }, path);
+  saveCarthagentConfig({ other: 1 }, path);
+  const config = loadCarthagentConfig(path);
   assert.equal(config.review, 'yes');
   assert.equal(config.other, 1);
   writeFileSync(path, 'not json');
-  assert.deepEqual(loadPi2Config(path), {});
+  assert.deepEqual(loadCarthagentConfig(path), {});
 });
 
 test('resolveReviewMode precedence: explicit flag > config > ask default', t => {
   const path = configFixture(t);
-  assert.equal(resolveReviewMode(undefined, loadPi2Config(path)), 'ask');
-  savePi2Config({ review: 'no' }, path);
-  assert.equal(resolveReviewMode(undefined, loadPi2Config(path)), 'no');
-  assert.equal(resolveReviewMode('yes', loadPi2Config(path)), 'yes');
-  assert.equal(resolveReviewMode('garbage', loadPi2Config(path)), 'no');
+  assert.equal(resolveReviewMode(undefined, loadCarthagentConfig(path)), 'ask');
+  saveCarthagentConfig({ review: 'no' }, path);
+  assert.equal(resolveReviewMode(undefined, loadCarthagentConfig(path)), 'no');
+  assert.equal(resolveReviewMode('yes', loadCarthagentConfig(path)), 'yes');
+  assert.equal(resolveReviewMode('garbage', loadCarthagentConfig(path)), 'no');
 });
 
 test('resolveStickyDefaults: flag > config > undefined (built-in default)', t => {
   const path = configFixture(t);
-  const cfg = loadPi2Config(path);
+  const cfg = loadCarthagentConfig(path);
   // nothing set → falls through to the engine's own defaults
   assert.deepEqual(resolveStickyDefaults({}, cfg), { theme: undefined, model: undefined });
   assert.deepEqual(resolveStickyDefaults({ theme: 'ember', model: 'sonnet' }, cfg), { theme: 'ember', model: 'sonnet' });
   // config fills in only the keys the flag leaves empty
-  savePi2Config({ theme: 'nord', model: 'anthropic/opus' }, path);
-  const cfg2 = loadPi2Config(path);
+  saveCarthagentConfig({ theme: 'nord', model: 'anthropic/opus' }, path);
+  const cfg2 = loadCarthagentConfig(path);
   assert.deepEqual(resolveStickyDefaults({}, cfg2), { theme: 'nord', model: 'anthropic/opus' });
   assert.deepEqual(resolveStickyDefaults({ theme: 'mono' }, cfg2), { theme: 'mono', model: 'anthropic/opus' });
   assert.deepEqual(resolveStickyDefaults({ model: 'sonnet' }, cfg2), { theme: 'nord', model: 'sonnet' });
@@ -62,16 +62,16 @@ test('resolveStickyDefaults: flag > config > undefined (built-in default)', t =>
 test('sticky theme/model round-trip through the config file', t => {
   const path = configFixture(t);
   // simulate the TUI persisting a theme, then a model, then loading on next launch
-  savePi2Config({ theme: 'tokyonight' }, path);
-  savePi2Config({ model: 'openrouter/inkling' }, path);
-  const cfg = loadPi2Config(path);
+  saveCarthagentConfig({ theme: 'tokyonight' }, path);
+  saveCarthagentConfig({ model: 'openrouter/inkling' }, path);
+  const cfg = loadCarthagentConfig(path);
   assert.equal(cfg.theme, 'tokyonight');
   assert.equal(cfg.model, 'openrouter/inkling');
   assert.equal(resolveStickyDefaults({}, cfg).theme, 'tokyonight');
   assert.equal(resolveStickyDefaults({}, cfg).model, 'openrouter/inkling');
   // a stale review setting coexists with the new keys
-  savePi2Config({ review: 'yes' }, path);
-  const merged = loadPi2Config(path);
+  saveCarthagentConfig({ review: 'yes' }, path);
+  const merged = loadCarthagentConfig(path);
   assert.equal(merged.review, 'yes');
   assert.equal(merged.theme, 'tokyonight');
 });
@@ -90,9 +90,9 @@ test('shouldOfferReview gates on mode, evidence of change and prior offers', () 
 });
 
 test('kickoff instructs the PR → fresh review → fixes loop with a round cap', () => {
-  const text = reviewKickoff('/abs/bin/pi2.mjs');
+  const text = reviewKickoff('/abs/bin/carthagent.mjs');
   assert.match(text, /gh pr create/);
-  assert.match(text, /node "\/abs\/bin\/pi2\.mjs" review <pr-number-or-url>/);
+  assert.match(text, /node "\/abs\/bin\/carthagent\.mjs" review <pr-number-or-url>/);
   assert.match(text, /VERDICT: APPROVE/);
   assert.match(text, /VERDICT: CHANGES-REQUESTED/);
   assert.match(text, /3 review rounds/);

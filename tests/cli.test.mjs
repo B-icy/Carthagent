@@ -9,10 +9,10 @@ import { createReport, latestReport } from '../lib/reports.mjs';
 import { buildPiArgs } from '../lib/pi.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const cli = join(root, 'bin', 'pi2.mjs');
+const cli = join(root, 'bin', 'carthagent.mjs');
 
 function fixture(t) {
-  const cwd = mkdtempSync(join(tmpdir(), 'pi2 cli '));
+  const cwd = mkdtempSync(join(tmpdir(), 'carthagent cli '));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
   writeFileSync(join(cwd, 'app.mjs'), 'console.log("app")\n');
   return cwd;
@@ -70,7 +70,7 @@ test('guidance routing is not a user-facing command', t => {
 
 test('review shows and persists the self-review default', t => {
   const cwd = fixture(t);
-  const env = { ...process.env, PI2_CONFIG: join(cwd, 'config.json') };
+  const env = { ...process.env, CARTHAGENT_CONFIG: join(cwd, 'config.json') };
   const runEnv = (...args) => spawnSync(process.execPath, [cli, ...args], { cwd, env, encoding: 'utf8' });
   assert.match(runEnv('review').stdout, /self-review default:.*ask/);
   assert.equal(runEnv('review', 'no').status, 0);
@@ -79,7 +79,7 @@ test('review shows and persists the self-review default', t => {
   assert.equal(runEnv('review', 'bogus').status, 2);
 });
 
-/** Fake `gh` + fake engine CLI so `pi2 review <pr>` runs end-to-end offline. */
+/** Fake `gh` + fake engine CLI so `carthagent review <pr>` runs end-to-end offline. */
 function reviewFixture(t, verdictLine) {
   const cwd = fixture(t);
   const bin = join(cwd, 'bin');
@@ -97,12 +97,12 @@ exit 0
   }
   const reviewer = join(cwd, 'reviewer.mjs');
   writeFileSync(reviewer, `const prompt = process.argv.at(-1); const snapshot = /snapshot:"([a-f0-9]+)"/.exec(prompt)?.[1]; const head = /head:"([a-f0-9]+)"/.exec(prompt)?.[1]; console.log('fixture findings'); console.log('REVIEW_JSON: ' + JSON.stringify({version:1,snapshot,head,findings:${JSON.stringify(verdictLine.includes('CHANGES-REQUESTED') ? [{file:'app.mjs',line:1,severity:'blocking',issue:'fixture issue',fix:'fixture fix'}] : [])}})); console.log('${verdictLine}');\n`);
-  const env = { ...process.env, PI2_CONFIG: join(cwd, 'config.json'), PI2_CLI: reviewer, PATH: `${bin}${delimiter}${process.env.PATH}` };
+  const env = { ...process.env, CARTHAGENT_CONFIG: join(cwd, 'config.json'), CARTHAGENT_CLI: reviewer, PATH: `${bin}${delimiter}${process.env.PATH}` };
   if (process.platform === 'win32') env.NODE_OPTIONS = `${env.NODE_OPTIONS || ''} --require ${JSON.stringify(join(cwd, 'gh-preload.cjs'))}`;
   return { cwd, env };
 }
 
-test('pi2 review <pr> exits 0 when the fresh reviewer approves', t => {
+test('carthagent review <pr> exits 0 when the fresh reviewer approves', t => {
   const { cwd, env } = reviewFixture(t, 'VERDICT: APPROVE');
   const result = spawnSync(process.execPath, [cli, 'review', '14'], { cwd, env, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
@@ -110,7 +110,7 @@ test('pi2 review <pr> exits 0 when the fresh reviewer approves', t => {
   assert.match(result.stdout, /VERDICT: APPROVE/);
 });
 
-test('pi2 review <pr> exits 1 on requested changes and 2 without a verdict', t => {
+test('carthagent review <pr> exits 1 on requested changes and 2 without a verdict', t => {
   const { cwd, env } = reviewFixture(t, 'VERDICT: CHANGES-REQUESTED');
   const result = spawnSync(process.execPath, [cli, 'review', '14'], { cwd, env, encoding: 'utf8' });
   assert.equal(result.status, 1, result.stderr);
@@ -150,7 +150,7 @@ test('review modes launch the real bundled engine without unknown flags', t => {
   for (const review of ['ask', 'yes', 'no']) {
     const result = spawnSync(process.execPath, [join(root, 'vendor/agent/cli.js'),
       '--offline', ...buildPiArgs({ review, isolate: true }),
-      '--list-models', 'pi2-no-such-model-123'], {
+      '--list-models', 'carthagent-no-such-model-123'], {
       cwd, encoding: 'utf8', timeout: 15000,
       env: { ...process.env, PI_CODING_AGENT_DIR: join(cwd, 'agent') },
     });

@@ -8,7 +8,7 @@ import { planD2 } from '../lib/delivery.mjs';
 import { framePrompt, unframe } from '../lib/tui/framing.mjs';
 
 function project(t, dependencies = {}) {
-  const cwd = mkdtempSync(join(tmpdir(), 'pi2 guidance '));
+  const cwd = mkdtempSync(join(tmpdir(), 'carthagent guidance '));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
   writeFileSync(join(cwd, 'package.json'), JSON.stringify({ dependencies }));
   return cwd;

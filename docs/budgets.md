@@ -4,11 +4,11 @@ The delivery extension supports opt-in execution limits on Windows, macOS,
 Linux and WSL. These are agent orchestration controls, not a security sandbox
 or a dollar/token billing cap.
 
-Normal pi2 launches accept `--max-tools`, `--max-seconds`, and `--max-repairs`
+Normal carthagent launches accept `--max-tools`, `--max-seconds`, and `--max-repairs`
 for both TUI and headless mode. For example:
 
 ```text
-node bin/pi2.mjs -p --max-tools 100 --max-seconds 900 --max-repairs 2 "Implement the requested change"
+node bin/carthagent.mjs -p --max-tools 100 --max-seconds 900 --max-repairs 2 "Implement the requested change"
 ```
 
 Invalid or missing values, and budget options combined with `--no-delivery`,

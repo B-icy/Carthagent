@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { serveDir, domCheck } from '../lib/browser.mjs';
 
 function fixture(t, html = '<!doctype html><div id="app">hello</div>') {
-  const dir = mkdtempSync(join(tmpdir(), 'pi2 browser '));
+  const dir = mkdtempSync(join(tmpdir(), 'carthagent browser '));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   writeFileSync(join(dir, 'index.html'), html);
   return dir;

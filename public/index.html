@@ -3,15 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>pi2</title>
-  <meta name="description" content="One-prompt software delivery with durable contracts, executable evidence, and automated validation">
-  <meta property="og:title" content="pi2">
-  <meta property="og:description" content="One-prompt software delivery with durable contracts, executable evidence, and automated validation">
+  <title>Carthagent — Delivery Control</title>
+  <meta name="description" content="Evidence-driven software delivery, from plan to proof">
+  <meta name="theme-color" content="#0d1714">
+  <meta property="og:title" content="Carthagent">
+  <meta property="og:description" content="Evidence-driven software delivery, from plan to proof">
   <script>
     (() => {
       const param = new URLSearchParams(location.search).get('theme');
-      const chosen = param || localStorage.getItem('pi2-theme') || 'system';
-      if (param) localStorage.setItem('pi2-theme', param);
+      const chosen = param || localStorage.getItem('carthagent-theme') || 'system';
+      if (param) localStorage.setItem('carthagent-theme', param);
       const dark = typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
       document.documentElement.dataset.theme = chosen === 'system' ? (dark ? 'obsidian' : 'paper') : chosen;
       document.documentElement.dataset.themeChoice = chosen;
@@ -19,18 +20,20 @@
   </script>
   <style>
     :root {
-      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --mono: "IBM Plex Mono", "Cascadia Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --sans: "Avenir Next", Avenir, Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --brand-copper: #d98951;
+      --brand-mint: #61d6a5;
     }
     /* Every theme must define the full token set; tests/theme.test.mjs verifies
        presence plus WCAG AA contrast (4.5:1 text, 3:1 UI components). */
     :root, [data-theme="obsidian"] {
       color-scheme: dark;
-      --bg: #0f0f0f; --chrome: #141414; --panel: #161616; --panel-2: #1d1d1d; --sunken: #0b0b0b;
-      --border: #2c2c2c; --border-strong: #3d3d3d; --border-hover: #565656; --control-border: #6f6f6f;
-      --text: #e8e8e8; --muted: #9a9a9a; --faint: #808080; --code: #c9c9c9;
-      --accent: #a78bff; --accent-ink: #130e1f; --accent-bg: #2a2140; --hover-bg: #242424;
-      --success: #5fd4a4; --warning: #ffc078; --error: #ff7d7d;
+      --bg: #09110f; --chrome: #0d1714; --panel: #111d19; --panel-2: #172620; --sunken: #07100d;
+      --border: #23382f; --border-strong: #365247; --border-hover: #527465; --control-border: #718f82;
+      --text: #edf4ef; --muted: #a5b7ad; --faint: #82968c; --code: #d5e1da;
+      --accent: #e1955f; --accent-ink: #22130a; --accent-bg: #3a2418; --hover-bg: #1b2c26;
+      --success: #61d6a5; --warning: #f0bd69; --error: #ff8585;
     }
     [data-theme="midnight"] {
       color-scheme: dark;
@@ -113,16 +116,18 @@
       --success: #00795b; --warning: #8a6300; --error: #a3537f;
     }
     * { box-sizing: border-box; }
-    body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); font: 14px/1.5 var(--sans); }
+    body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 15% -10%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 34%), var(--bg); color: var(--text); font: 14px/1.5 var(--sans); }
     button, input, textarea, select { font: inherit; }
     button { cursor: pointer; }
     code, pre, textarea.code { font-family: var(--mono); }
     .shell { min-height: 100vh; display: grid; grid-template-rows: auto auto 1fr; }
-    header { border-bottom: 1px solid var(--border); background: var(--chrome); }
-    .header-row { max-width: 1440px; margin: 0 auto; min-height: 58px; padding: 0 24px; display: flex; align-items: center; gap: 20px; }
-    .brand { display: flex; align-items: baseline; gap: 9px; min-width: 0; }
-    .brand strong { font: 600 16px var(--mono); }
-    .brand span { color: var(--muted); font-size: 12px; }
+    header { border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--chrome) 94%, transparent); backdrop-filter: blur(14px); }
+    .header-row { max-width: 1440px; margin: 0 auto; min-height: 64px; padding: 0 24px; display: flex; align-items: center; gap: 20px; }
+    .brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
+    .brand-mark { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--border-strong); border-radius: 9px; background: linear-gradient(145deg, color-mix(in srgb, var(--accent) 28%, var(--panel)), var(--sunken)); color: var(--accent); font: 700 17px/1 var(--mono); box-shadow: inset 0 1px 0 color-mix(in srgb, white 10%, transparent), 0 8px 24px color-mix(in srgb, black 24%, transparent); }
+    .brand-copy { display: grid; line-height: 1.05; }
+    .brand strong { font: 700 16px var(--sans); letter-spacing: .015em; }
+    .brand span { color: var(--muted); font: 10px var(--mono); letter-spacing: .12em; text-transform: uppercase; }
     .workspace { color: var(--muted); font: 12px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
     .status { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font: 12px var(--mono); }
     .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
@@ -144,7 +149,7 @@
     .span-7 { grid-column: span 7; }
     .span-8 { grid-column: span 8; }
     .span-12 { grid-column: span 12; }
-    .card { border: 1px solid var(--border); background: var(--panel); border-radius: 7px; padding: 18px; min-width: 0; }
+    .card { border: 1px solid var(--border); background: linear-gradient(155deg, color-mix(in srgb, var(--panel) 98%, var(--accent) 2%), var(--panel)); border-radius: 10px; padding: 18px; min-width: 0; box-shadow: 0 14px 40px color-mix(in srgb, black 12%, transparent); }
     .card h2, .card h3 { margin: 0; font-weight: 600; }
     .card h2 { font-size: 14px; }
     .card h3 { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; }
@@ -248,7 +253,7 @@
 <div class="shell">
   <header>
     <div class="header-row">
-      <div class="brand"><strong>pi2</strong><span>delivery harness</span></div>
+      <div class="brand"><span class="brand-mark" aria-hidden="true">C</span><span class="brand-copy"><strong>Carthagent</strong><span>plan · prove · deliver</span></span></div>
       <div id="workspace" class="workspace">loading workspace</div>
       <div id="status" class="status">idle</div>
       <div id="header-hash" class="hash">—</div>
@@ -287,7 +292,7 @@
       <div class="grid">
         <div class="card span-8">
           <div class="section-head"><h2 id="goal">No active delivery</h2><span id="report" class="subtle"></span></div>
-          <div id="overview-empty" class="empty">Start a delivery in pi2 or define a plan in the Plan tab.</div>
+          <div id="overview-empty" class="empty">Start a delivery in Carthagent or define a plan in the Plan tab.</div>
           <div id="overview-content" hidden>
             <h3>Steps</h3>
             <ol id="steps" class="list"></ol>
@@ -380,10 +385,10 @@
   const query = new URLSearchParams(location.search);
   const suppliedToken = query.get('token');
   if (suppliedToken) {
-    sessionStorage.setItem('pi2-token', suppliedToken);
+    sessionStorage.setItem('carthagent-token', suppliedToken);
     history.replaceState(null, '', location.pathname);
   }
-  const token = suppliedToken || sessionStorage.getItem('pi2-token') || '';
+  const token = suppliedToken || sessionStorage.getItem('carthagent-token') || '';
   let state = { status: 'idle', plan: null, evidence: {}, pendingChecks: [], currentFingerprint: '' };
 
   const byId = id => document.getElementById(id);
@@ -400,7 +405,7 @@
     element.className = `message ${type}`.trim();
   };
   async function api(path, options = {}) {
-    const response = await fetch(path, { ...options, headers: { 'content-type': 'application/json', 'x-pi2-token': token, ...(options.headers || {}) } });
+    const response = await fetch(path, { ...options, headers: { 'content-type': 'application/json', 'x-carthagent-token': token, ...(options.headers || {}) } });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`);
     return data;
@@ -410,7 +415,7 @@
   const prefersDark = () => typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
   themeSelect.value = document.documentElement.dataset.themeChoice || 'system';
   themeSelect.addEventListener('change', () => {
-    localStorage.setItem('pi2-theme', themeSelect.value);
+    localStorage.setItem('carthagent-theme', themeSelect.value);
     document.documentElement.dataset.theme = themeSelect.value === 'system' ? (prefersDark() ? 'obsidian' : 'paper') : themeSelect.value;
   });
   if (typeof matchMedia === 'function') matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
@@ -521,7 +526,7 @@
 
   async function loadStatus() {
     if (!token) {
-      byId('workspace').textContent = 'Open the authenticated URL printed by pi2 serve.';
+      byId('workspace').textContent = 'Open the authenticated URL printed by carthagent serve.';
       return;
     }
     try { state = await api('/api/status'); render(); }

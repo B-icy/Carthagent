@@ -203,18 +203,18 @@ test('simultaneous subprocess report writers cannot overwrite each other', async
   assert.equal(saved.storageVersion, 3);
 });
 
-test('fingerprint respects maxEvidenceFiles and PI2_MAX_FILES override', t => {
+test('fingerprint respects maxEvidenceFiles and CARTHAGENT_MAX_FILES override', t => {
   const cwd = fixture(t);
-  const oldEnv = process.env.PI2_MAX_FILES;
+  const oldEnv = process.env.CARTHAGENT_MAX_FILES;
   t.after(() => {
-    if (oldEnv === undefined) delete process.env.PI2_MAX_FILES;
-    else process.env.PI2_MAX_FILES = oldEnv;
+    if (oldEnv === undefined) delete process.env.CARTHAGENT_MAX_FILES;
+    else process.env.CARTHAGENT_MAX_FILES = oldEnv;
   });
 
   assert.equal(maxEvidenceFiles(), 25000);
   assert.equal(maxEvidenceBytes(), 256 * 1024 * 1024);
 
-  process.env.PI2_MAX_FILES = '3';
+  process.env.CARTHAGENT_MAX_FILES = '3';
   assert.equal(maxEvidenceFiles(), 3);
 
   // 1 file (app.py) passes
@@ -227,13 +227,13 @@ test('fingerprint respects maxEvidenceFiles and PI2_MAX_FILES override', t => {
   assert.throws(() => fingerprint(cwd, ['.']), /Evidence scope exceeds 3 files/);
 });
 
-test('fingerprint omits .pi and .pi2 directory trees', t => {
+test('fingerprint omits .pi and .carthagent directory trees', t => {
   const cwd = fixture(t);
   const hashBefore = fingerprint(cwd, ['.']);
   mkdirSync(join(cwd, '.pi'), { recursive: true });
   writeFileSync(join(cwd, '.pi', 'data.json'), '{"ignore": true}');
-  mkdirSync(join(cwd, '.pi2'), { recursive: true });
-  writeFileSync(join(cwd, '.pi2', 'data.json'), '{"ignore": true}');
+  mkdirSync(join(cwd, '.carthagent'), { recursive: true });
+  writeFileSync(join(cwd, '.carthagent', 'data.json'), '{"ignore": true}');
   const hashAfter = fingerprint(cwd, ['.']);
   assert.equal(hashBefore, hashAfter);
 });

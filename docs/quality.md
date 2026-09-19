@@ -16,7 +16,7 @@ cleanup patterns. No formatting rewrite is required.
 ## Every implementation and evaluation
 
 1. Discover repository instructions and configured lint, format, type, test and
-   production-build commands. Use the target repository's conventions, not pi2's
+   production-build commands. Use the target repository's conventions, not carthagent's
    style by default. Do not weaken existing validators.
 2. Run those gates and focused behavior/failure-path regressions. Report missing
    gates and pre-existing debt explicitly; do not silently call them passing.

@@ -1,6 +1,6 @@
 # Review assurance
 
-`pi2 review <pr>` launches one fresh reviewer, with a default 300-second subprocess timeout. `--timeout` accepts integers from 1 through 300. PR metadata lookups each have their own 30-second deadline; this is not a whole-command 300-second deadline.
+`carthagent review <pr>` launches one fresh reviewer, with a default 300-second subprocess timeout. `--timeout` accepts integers from 1 through 300. PR metadata lookups each have their own 30-second deadline; this is not a whole-command 300-second deadline.
 
 Approval requires successful execution, a valid final verdict line and preceding single-line `REVIEW_JSON` object (version 1, matching snapshot/head, findings with file, positive line, blocking/nonblocking severity, issue and fix), unchanged local source fingerprint, and the same remote PR head before and after review. Missing head identity fails closed. The source fingerprint has the same exclusions as delivery evidence; it is not a filesystem sandbox. Changes made and reverted during review cannot be detected by endpoint comparison.
 
