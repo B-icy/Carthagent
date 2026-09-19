@@ -32,7 +32,7 @@ Read this before implementing any task that targets Node.js, a browser, or a TS/
 - **`node:test`** (built-in): `import { test } from 'node:test'; import assert from 'node:assert';`. Run with `node --test tests/`. No install needed.
 - **`vitest` / `jest`**: check `package.json` for the test script and the test file pattern (`*.test.ts`, `*.spec.ts`, `*.test.mjs`). Don't add a second test framework — use what the project already has.
 - **DOM testing**: use `jsdom` or `happy-dom` for headless DOM; don't fake `document`/`window` manually. For real browser testing, use Playwright/Puppeteer if installed.
-- **Browser checks**: pi2 ships a self-contained check tool (path injected into the delivery guidance). Declare it as a `runtime` check in `delivery_plan` — it serves the workspace over HTTP, runs jsdom assertions with real inline-script execution (clicks, text, selectors, console-error detection), and captures a real Firefox screenshot into `artifacts/` when Firefox is installed. No browser download needed.
+- **Browser checks**: carthagent ships a self-contained check tool (path injected into the delivery guidance). Declare it as a `runtime` check in `delivery_plan` — it serves the workspace over HTTP, runs jsdom assertions with real inline-script execution (clicks, text, selectors, console-error detection), and captures a real Firefox screenshot into `artifacts/` when Firefox is installed. No browser download needed.
 - **Async tests**: always `await` promises in tests. An unhandled rejection in a test can pass silently if the test framework doesn't track it. Use `assert.rejects` / `assert.resolves` for error paths.
 
 ## Common pitfalls

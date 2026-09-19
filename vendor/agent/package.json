@@ -1,14 +1,14 @@
 {
-  "name": "pi2-engine",
+  "name": "carthagent-engine",
   "version": "0.2.0",
-  "description": "Baked-in agent engine for pi2",
+  "description": "Baked-in agent engine for Carthagent",
   "type": "module",
   "piConfig": {
-    "name": "pi2",
-    "configDir": ".pi2"
+    "name": "carthagent",
+    "configDir": ".carthagent"
   },
   "main": "./index.js",
   "bin": {
-    "pi2-engine": "./cli.js"
+    "carthagent-engine": "./cli.js"
   }
 }

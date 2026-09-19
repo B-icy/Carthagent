@@ -4,7 +4,7 @@
  * its bundled exports when loading extensions; pulling the whole bundle into a
  * unit test is unnecessary — only these pure helpers are imported.
  */
-export const CONFIG_DIR_NAME = '.pi2';
+export const CONFIG_DIR_NAME = '.carthagent';
 
 /** Keep the tail of `content` within maxLines/maxBytes, like the engine does. */
 export function truncateTail(content, { maxLines = 2000, maxBytes = 51200 } = {}) {

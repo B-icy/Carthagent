@@ -17,9 +17,9 @@ import { lockWorkspace, selectReport } from './lib/workspace.mjs';
 import { createReport, latestReport, saveReport } from './lib/reports.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
-const cwd = resolve(process.env.PI2_WORKSPACE || process.cwd());
-const port = Number(process.env.PI2_PORT) || 3000;
-const token = process.env.PI2_SERVER_TOKEN || randomBytes(24).toString('hex');
+const cwd = resolve(process.env.CARTHAGENT_WORKSPACE || process.cwd());
+const port = Number(process.env.CARTHAGENT_PORT) || 3000;
+const token = process.env.CARTHAGENT_SERVER_TOKEN || randomBytes(24).toString('hex');
 const app = express();
 const enqueue = createSerialQueue();
 // Include queued requests: their check definitions belong to the active plan.
@@ -37,7 +37,7 @@ app.use((req, res, next) => {
 });
 app.use(express.json({ limit: '1mb' }));
 app.use('/api', (req, res, next) => {
-  const supplied = req.get('x-pi2-token') || '';
+  const supplied = req.get('x-carthagent-token') || '';
   const expected = Buffer.from(token);
   const received = Buffer.from(supplied);
   if (expected.length !== received.length || !timingSafeEqual(expected, received)) return res.status(401).json({ error: 'Unauthorized' });
@@ -244,6 +244,6 @@ app.use((req, res, next) => {
 });
 
 app.listen(port, '127.0.0.1', () => {
-  console.log(`pi2 dashboard: http://127.0.0.1:${port}/?token=${token}`);
+  console.log(`carthagent dashboard: http://127.0.0.1:${port}/?token=${token}`);
   console.log(`workspace: ${cwd}`);
 });

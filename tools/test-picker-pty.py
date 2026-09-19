@@ -8,10 +8,10 @@ import time
 from pathlib import Path
 
 root = Path(__file__).resolve().parent.parent
-with tempfile.TemporaryDirectory(prefix='pi2 picker ') as home:
+with tempfile.TemporaryDirectory(prefix='carthagent picker ') as home:
     master, slave = pty.openpty()
     env = dict(os.environ, HOME=home, XDG_CONFIG_HOME=home)
-    child = subprocess.Popen(['node', str(root / 'bin/pi2.mjs'), 'demo'], stdin=slave, stdout=slave, stderr=slave, cwd=home, env=env)
+    child = subprocess.Popen(['node', str(root / 'bin/ctg.mjs'), 'demo'], stdin=slave, stdout=slave, stderr=slave, cwd=home, env=env)
     os.close(slave)
     def collect(seconds=1):
         end = time.monotonic() + seconds
@@ -24,9 +24,9 @@ with tempfile.TemporaryDirectory(prefix='pi2 picker ') as home:
         collect(2)
         os.write(master, b'/mod\r')
         assert 'Select model' in collect(), 'single Enter did not open model picker'
-        os.write(master, b'pi2-demo-2\r')
+        os.write(master, b'carthagent-demo-2\r')
         output = collect()
-        assert 'model' in output and 'pi2-demo-2' in output, 'model selection did not apply'
+        assert 'model' in output and 'carthagent-demo-2' in output, 'model selection did not apply'
         os.write(master, b'/mod\t')
         output = collect()
         assert 'Select model' not in output, 'Tab unexpectedly opened picker'
