@@ -22,7 +22,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const root = join(__dirname, '..');
 
-/** Minimal stand-in for pi's ModelRuntime. */
+/** Minimal stand-in for the engine's ModelRuntime. */
 function fakeRuntime(providers, status = {}) {
   return {
     getProviders: () => providers,

@@ -79,7 +79,7 @@ function printHelp() {
                           solarized-dark | solarized-light | solarized |
                           okabe-dark | okabe-light | okabe |
                           contrast-dark | contrast-light | contrast | system
-  --agent-cli, --pi-cli   Explicit path to agent entrypoint
+  --agent-cli, --engine-cli   Explicit path to agent entrypoint
   --session <path|id>     Resume a specific session file or partial session id
   --continue, -c          Resume the most recent session for this directory
   --resume, -r            Open the session picker at startup (TUI only)
@@ -119,7 +119,7 @@ import { validateBudgetOptions } from '../lib/budget.mjs';
 
 const TUI_FLAGS = {
   '--provider': 'provider', '--model': 'model', '--thinking': 'thinking', '--theme': 'theme',
-  '--pi-cli': 'piCli', '--agent-cli': 'piCli', '--validators': 'validators', '--context': 'context', '--bash-cap': 'bashCap',
+  '--engine-cli': 'engineCli', '--agent-cli': 'engineCli', '--validators': 'validators', '--context': 'context', '--bash-cap': 'bashCap',
   '--max-tools': 'maxTools', '--max-seconds': 'maxSeconds', '--max-repairs': 'maxRepairs',
   '--session': 'session', '--review': 'review', '--glyphs': 'glyphs',
 };
@@ -166,16 +166,16 @@ async function handleTui(list) {
   if (opts.print || !process.stdout.isTTY) {
     // The session picker needs a TTY — headless -r continues the most recent.
     if (opts.resume) { opts.resume = false; opts.continue = true; }
-    const { locatePi, buildPiArgs } = await import('../lib/tui/app.mjs');
+    const { locateEngine, buildEngineArgs } = await import('../lib/tui/app.mjs');
     const { shouldFrame, framePrompt } = await import('../lib/tui/framing.mjs');
-    let piCmd;
-    try { piCmd = locatePi(opts.piCli); } catch (e) { console.error(e.message); process.exit(1); }
+    let engineCmd;
+    try { engineCmd = locateEngine(opts.engineCli); } catch (e) { console.error(e.message); process.exit(1); }
     if (!opts.prompt) { console.error('non-interactive mode requires a prompt'); process.exit(1); }
     const framingOn = (opts.autoFraming ?? true);
     const prompt = shouldFrame(opts.prompt, { enabled: framingOn, delivery: opts.delivery !== false })
       ? framePrompt(opts.prompt) : opts.prompt;
-    const args = [...piCmd.args, '-p', ...buildPiArgs({ isolate: true, ...opts }), '--', prompt];
-    const child = spawn(piCmd.cmd, args, {
+    const args = [...engineCmd.args, '-p', ...buildEngineArgs({ isolate: true, ...opts }), '--', prompt];
+    const child = spawn(engineCmd.cmd, args, {
       stdio: 'inherit',
       cwd: process.cwd(),
       env: {
@@ -440,13 +440,13 @@ async function handleReview(args) {
  * 2 = infrastructure failure (gh, engine, timeout).
  */
 async function runReview(prRef, rest) {
-  let timeoutSeconds = 300, piCli;
+  let timeoutSeconds = 300, engineCli;
   for (let i = 0; i < rest.length; i++) {
     if (rest[i] === '--timeout') {
       timeoutSeconds = Number(rest[++i]);
       if (!Number.isInteger(timeoutSeconds) || timeoutSeconds < 1 || timeoutSeconds > 300) { console.error('Review timeout must be an integer from 1 to 300'); process.exit(2); }
     }
-    else if (rest[i] === '--agent-cli' || rest[i] === '--pi-cli') piCli = rest[++i];
+    else if (rest[i] === '--agent-cli' || rest[i] === '--engine-cli') engineCli = rest[++i];
     else { console.error(`\x1b[31mUnknown option:\x1b[0m ${rest[i]}`); process.exit(2); }
   }
   const view = await runCommand(['gh', 'pr', 'view', prRef, '--json', 'title,url,headRefName,baseRefName,headRefOid'], { cwd, timeoutSeconds: 30 });
@@ -458,9 +458,9 @@ async function runReview(prRef, rest) {
   let meta = {};
   try { meta = JSON.parse(view.output); } catch { }
   if (!/^[a-f0-9]{40,64}$/i.test(meta.headRefOid || '')) { console.error('PR head identity unavailable'); process.exit(2); }
-  const { locatePi } = await import('../lib/pi.mjs');
-  let piCmd;
-  try { piCmd = locatePi(piCli); } catch (e) { console.error(e.message); process.exit(2); }
+  const { locateEngine } = await import('../lib/engine.mjs');
+  let engineCmd;
+  try { engineCmd = locateEngine(engineCli); } catch (e) { console.error(e.message); process.exit(2); }
   const snapshot = fingerprint(cwd, ['.']);
   let round;
   try { round = beginReview(cwd, meta.url || String(prRef), snapshot, meta.headRefOid); }
@@ -469,7 +469,7 @@ async function runReview(prRef, rest) {
   const prompt = reviewerPrompt({ prRef, cwd, meta }) + `\nImmediately before the final VERDICT line emit one single-line REVIEW_JSON: object with version:1, snapshot:${JSON.stringify(snapshot)}, head:${JSON.stringify(meta.headRefOid)}, findings:[{file,line,severity,issue,fix}]. Severity must be blocking or nonblocking; line is a positive integer. Approval requires no blocking findings. No markdown fences.`;
   const logPath = join(cwd, '.harness', 'reviews', `review-${Date.now()}.log`);
   const result = await runCommand(
-    [piCmd.cmd, ...piCmd.args, '-p', '--no-extensions', '--no-skills', '--no-prompt-templates', '--', prompt],
+    [engineCmd.cmd, ...engineCmd.args, '-p', '--no-extensions', '--no-skills', '--no-prompt-templates', '--', prompt],
     { cwd, timeoutSeconds, logPath }
   );
   if (result.output.trim()) process.stdout.write(result.output.trim() + '\n');
@@ -577,7 +577,7 @@ switch (command) {
     handleTui([]);
     break;
   default:
-    // pi-style: unknown first arg means the args ARE the task prompt
+    // engine-style: unknown first arg means the args ARE the task prompt
     // e.g. `ctg "Build a task CLI"` or `ctg --model sonnet "Fix tests"`
     if (command.startsWith('-') && !TUI_FLAGS[command] && !TUI_BOOL[command]) {
       console.error(`\x1b[31mUnknown command or flag:\x1b[0m ${command}`);

@@ -7,7 +7,7 @@ import { checkDigest, fingerprint, validatePlan, planD2, pendingChecks, restoreS
 import { createReport, latestReport, saveReport, reconcileReport } from '../lib/reports.mjs';
 
 function fixture(t) {
-  const cwd = mkdtempSync(join(tmpdir(), 'pi delivery spaces '));
+  const cwd = mkdtempSync(join(tmpdir(), 'carthagent delivery spaces '));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
   writeFileSync(join(cwd, 'app.py'), 'print(1)');
   return cwd;

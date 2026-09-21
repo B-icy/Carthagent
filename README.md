@@ -2,13 +2,13 @@
 
 > **Evidence-driven software delivery, from plan to proof.**
 
-Carthagent is a delivery-focused AI coding console and CLI built on [pi](https://github.com/earendil-works/pi-coding-agent). It turns “here’s my code, trust me” into an auditable delivery: the agent declares an acceptance contract, runs real checks, and re-proves them whenever source changes.
+Carthagent is a delivery-focused AI coding console and CLI built on a bundled delivery engine. It turns “here’s my code, trust me” into an auditable delivery: the agent declares an acceptance contract, runs real checks, and re-proves them whenever source changes.
 
 `docs/workflow.svg` shows the flow; `docs/evaluation.md` has the honest trial history, failures included.
 
 ## Install
 
-Core CLI requires Node ≥ 22.19. Optional workflows need additional tools: Git and authenticated `gh` for PR review, Firefox/geckodriver for real-browser checks, and Python with the scenario dependencies for game graders. [pi](https://github.com/earendil-works/pi-coding-agent) is bundled inside the package, so one command installs everything:
+Core CLI requires Node ≥ 22.19. Optional workflows need additional tools: Git and authenticated `gh` for PR review, Firefox/geckodriver for real-browser checks, and Python with the scenario dependencies for game graders. The engine is bundled inside the package, so one command installs everything:
 
 ```sh
 npm i -g github:B-icy/Carthagent && ctg
@@ -53,12 +53,12 @@ ctg
 
 Multiple providers can be connected at once — credentials coexist in `~/.carthagent/agent/auth.json`. In the console, `^t` (settings) has a **provider** row above **model**: `←→` switches providers (and selects that provider's first model), while the model picker stays scoped to the chosen provider. `/login` adds another provider at any time.
 
-Full provider list: [pi providers docs](https://github.com/earendil-works/pi-coding-agent/blob/main/docs/providers.md). Override the default model with `--model <id>` (e.g. `ctg --model sonnet`). Your last model choice (via `--model`, `/model`, or the `^t` settings picker) is saved to `~/.carthagent/config.json` and reused on the next launch — pass a flag to override it for that run.
+Full provider list: [provider docs](https://github.com/earendil-works/pi-coding-agent/blob/main/docs/providers.md). Override the default model with `--model <id>` (e.g. `ctg --model sonnet`). Your last model choice (via `--model`, `/model`, or the `^t` settings picker) is saved to `~/.carthagent/config.json` and reused on the next launch — pass a flag to override it for that run.
 
 ## Use it
 
 ```sh
-ctg                           # interactive console (persistent pi session)
+ctg                           # interactive console (persistent engine session)
 ctg "Build a task CLI"        # console, with a task
 ctg -p "..."                  # headless run (auto when stdout isn't a TTY)
 ctg demo                      # scripted mock run — no provider needed
@@ -71,7 +71,7 @@ ctg test                      # unit suite
 ctg --help                    # everything else
 ```
 
-Inside the console: `enter` send/steer · `esc` abort (again = force-restart pi, nothing is lost) · `^r` session picker · `tab`/`⇧tab` panes · `x` expand tool output · `^v` paste · `^t` settings · `^c` quit. Sessions persist under `~/.carthagent/agent/sessions/`; `ctg -c` continues the last one, `-r` opens the picker.
+Inside the console: `enter` send/steer · `esc` abort (again = force-restart the engine, nothing is lost) · `^r` session picker · `tab`/`⇧tab` panes · `x` expand tool output · `^v` paste · `^t` settings · `^c` quit. Sessions persist under `~/.carthagent/agent/sessions/`; `ctg -c` continues the last one, `-r` opens the picker.
 
 **Themes:** 22 AA-contrast-verified options — the default purple-and-gold `carthage` palette; dark (`opencode`, `tokyonight`, `nebula`, `ember`, `forest`, `mono`, `obsidian`, `midnight`, `nord`, `solarized-dark`, `okabe-dark`, `contrast-dark`); light (`paper`, `daylight`, `solarized-light`, `okabe-light`, `contrast-light`); and adaptive (`solarized`, `okabe`, `contrast`, `system`) themes that follow `COLORFGBG` or `CARTHAGENT_THEME_MODE=light|dark`. Pick via `--theme`, `/theme`, or `^t`; moving through the picker previews each colorway before Enter commits it. The choice is saved to `~/.carthagent/config.json` and reused on the next launch. The dashboard picker also previews themes on hover and persists the selected theme in `localStorage`. `okabe-*` uses the colorblind-safe Okabe-Ito palette.
 
@@ -81,7 +81,7 @@ Useful flags: `--model`, `--thinking`, `--validators <file>`, `--context <file>`
 
 ## How it works
 
-`extensions/delivery.ts` wires five tools into pi (`lib/delivery.mjs` has the mechanics):
+`extensions/delivery.ts` wires five tools into the engine (`lib/delivery.mjs` has the mechanics):
 
 | Tool | What it does |
 |---|---|
@@ -145,6 +145,6 @@ python3 -m pip install -r scenarios/game/requirements.txt && npm run test:python
 node evaluate.mjs --task cli --mode both --allow-live   # live A/B eval — spends API credit
 ```
 
-Tests cover contract validation, stale evidence, required validators, timeouts/cancellation, compaction, actual-engine session budgets, report conflicts, and dashboard auth. Native CI covers Windows/macOS/Linux on Node 22/24; a separate Linux job runs real Firefox. WSL JS/browser evidence is local and separate; WSL Python validation remains unperformed successfully. This does not establish all terminals or browsers as supported/tested. `PI_CLI` points the suite at a non-standard pi location.
+Tests cover contract validation, stale evidence, required validators, timeouts/cancellation, compaction, actual-engine session budgets, report conflicts, and dashboard auth. Native CI covers Windows/macOS/Linux on Node 22/24; a separate Linux job runs real Firefox. WSL JS/browser evidence is local and separate; WSL Python validation remains unperformed successfully. This does not establish all terminals or browsers as supported/tested. `PI_CLI` points the suite at a non-standard engine location.
 
 See [repository quality gates](docs/quality.md) and [controlled evaluation readiness](docs/evaluation-readiness.md). Review admission is persistently bounded locally; delivery operations now share a workspace lock and explicit active-run pointer with same-run live reconciliation. See [coordination and recovery](docs/workspace-coordination.md) for limits and interrupted-lock handling. No controlled paid comparison yet establishes lower cost or fewer interventions for complete web deliveries.
