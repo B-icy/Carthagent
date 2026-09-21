@@ -171,6 +171,11 @@ async function handleTui(list) {
     let engineCmd;
     try { engineCmd = locateEngine(opts.engineCli); } catch (e) { console.error(e.message); process.exit(1); }
     if (!opts.prompt) { console.error('non-interactive mode requires a prompt'); process.exit(1); }
+    const { hasConfiguredProvider } = await import('../lib/tui/auth.mjs');
+    if (!hasConfiguredProvider()) {
+      console.error('No AI provider connected. Run `ctg login` to connect one (Carthagent Cloud is recommended), or set an API key env var (e.g. ANTHROPIC_API_KEY).');
+      process.exit(1);
+    }
     const framingOn = (opts.autoFraming ?? true);
     const prompt = shouldFrame(opts.prompt, { enabled: framingOn, delivery: opts.delivery !== false })
       ? framePrompt(opts.prompt) : opts.prompt;
