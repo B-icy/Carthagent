@@ -125,6 +125,8 @@ Everything below is config, not code:
 - **Extra context** — `--delivery-context notes.md` injects project/benchmark-specific instructions.
 - **Scenarios** — `scenarios/<name>/scenario.json` defines an evaluation domain; `node evaluate.mjs --task <name> --allow-live` runs it (dry-run with `--dry-run`; spends API credit otherwise).
 
+See [extending Carthagent](docs/extending.md) for how to author guidance profiles, prompt templates, skills, providers, and extensions.
+
 ## Bounded runs and browser evidence
 
 ```sh
