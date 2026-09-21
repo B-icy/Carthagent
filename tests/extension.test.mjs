@@ -9,17 +9,17 @@ import { lockWorkspace, selectReport } from '../lib/workspace.mjs';
 import { saveReport, createReport } from '../lib/reports.mjs';
 
 // Load the project extension even without a global engine installation.
-const requirePi = createRequire(import.meta.url);
-const { createJiti } = requirePi('jiti');
-const jiti = createJiti(import.meta.url, { alias: { typebox: requirePi.resolve('typebox'), '@earendil-works/pi-coding-agent': fileURLToPath(new URL('../vendor/agent/index.js', import.meta.url)) } });
+const requireEngine = createRequire(import.meta.url);
+const { createJiti } = requireEngine('jiti');
+const jiti = createJiti(import.meta.url, { alias: { typebox: requireEngine.resolve('typebox'), '@earendil-works/pi-coding-agent': fileURLToPath(new URL('../vendor/agent/index.js', import.meta.url)) } });
 const factory = await jiti.import(fileURLToPath(new URL('../extensions/delivery.ts', import.meta.url)), { default: true });
 const options = {};
 function fixture(t) {
-  const cwd = mkdtempSync(join(tmpdir(), 'pi extension integration '));
+  const cwd = mkdtempSync(join(tmpdir(), 'engine extension integration '));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
   writeFileSync(join(cwd, 'app.py'), 'print(1)');
   const hooks = {}, commands = {}, tools = {}, entries = [], messages = [], flags = { 'delivery-strict': true };
-  const pi = {
+  const engine = {
     registerCommand(name, command) { commands[name] = command; },
     registerFlag() {}, getFlag: name => flags[name],
     on(name, fn) { hooks[name] = fn; },
@@ -27,7 +27,7 @@ function fixture(t) {
     appendEntry(customType, data) { entries.push({ type: 'custom', customType, data }); },
     sendMessage(message) { messages.push(message); },
   };
-  factory(pi);
+  factory(engine);
   const ctx = { cwd, hasUI: false, aborted: 0, abort() { this.aborted++; }, sessionManager: { getEntries: () => entries, getBranch: () => entries, getSessionId: () => 'integration-session' }, hasPendingMessages: () => false };
   const call = (name, params = {}) => tools[name].execute('test-id', params, undefined, undefined, ctx);
   const plan = { goal: 'Working script', assumptions: [], artifacts: ['app.py'], steps: ['Implement', 'Verify'], acceptance: [{ requirement: 'Runs', checks: ['run'] }], checks: [{ id: 'run', kind: 'runtime', argv: [process.execPath, '-e', 'console.log("passed")'], timeoutSeconds: 5 }] };

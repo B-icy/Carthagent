@@ -11,14 +11,14 @@ import { existsSync, mkdirSync, copyFileSync, cpSync, realpathSync, readdirSync,
 import { randomUUID } from 'node:crypto';
 import { atomicJson, runCommand, turnBudgetExceeded } from './lib/delivery.mjs';
 import { loadScenario, expandPlaceholders } from './lib/scenarios.mjs';
-import { locatePi } from './lib/pi.mjs';
+import { locateEngine } from './lib/engine.mjs';
 
 const { values: args } = parseArgs({ options: {
   mode: { type: 'string', default: 'both' }, task: { type: 'string', default: 'cli' }, scenario: { type: 'string' },
   model: { type: 'string', default: 'mercury-2.5' }, provider: { type: 'string', default: 'inception' },
   thinking: { type: 'string', default: 'medium' },
   timeout: { type: 'string', default: '600' }, 'max-turns': { type: 'string', default: '100' }, 'max-cost': { type: 'string', default: '3' },
-  'carthagent-cli': { type: 'string' }, 'pi-cli': { type: 'string' }, python: { type: 'string' }, 'seed-from': { type: 'string' }, 'allow-live': { type: 'boolean', default: false },
+  'carthagent-cli': { type: 'string' }, 'engine-cli': { type: 'string' }, python: { type: 'string' }, 'seed-from': { type: 'string' }, 'allow-live': { type: 'boolean', default: false },
   'dry-run': { type: 'boolean', default: false },
 } });
 if (!args['allow-live'] && !args['dry-run']) throw Error('Live calls spend API credit and generated code runs with your permissions. Use --allow-live explicitly (or --dry-run to preview the assembled run without calling a provider).');
@@ -30,7 +30,7 @@ const root = dirname(fileURLToPath(import.meta.url)), project = dirname(root);
 // when this package is nested inside a workspace, the venv and evidence
 // directories live in the parent project instead.
 const home = existsSync(join(root, 'scenarios')) ? root : project;
-const pi = (() => { try { return locatePi(args['carthagent-cli'] || args['pi-cli']); } catch (e) { throw Error(`${e.message}`); } })();
+const engine = (() => { try { return locateEngine(args['carthagent-cli'] || args['engine-cli']); } catch (e) { throw Error(`${e.message}`); } })();
 const scenarioName = args.scenario || args.task;
 const scenario = loadScenario(root, scenarioName);
 const findExecutable = name => {
@@ -76,7 +76,7 @@ const runtimeInfo = [
 ].filter(Boolean).join(' ');
 const environment = `Evaluation execution context:
 The current working directory is the isolated product workspace. Write product files with workspace-relative paths such as README.md or src/index.ts; do not prefix them with the current directory or recreate an absolute path as nested folders. ${runtimeInfo} Invoke these exact executable paths and quote them in shell commands. Absolute paths in this context identify external tools and are valid as-is; do not hunt for them.
-Set a bounded timeout on every shell command and never run filesystem-wide searches (find /, ls -R from the root, find of whole drives): one hung command can consume the entire time budget. Do not touch files outside this work directory or run nested pi agents. No network installs or deployment.
+Set a bounded timeout on every shell command and never run filesystem-wide searches (find /, ls -R from the root, find of whole drives): one hung command can consume the entire time budget. Do not touch files outside this work directory or run nested engine agents. No network installs or deployment.
 You have at most ${args['max-turns']} productive model turns (recovered provider connection errors do not consume that budget) and ${args.timeout} seconds; reserve time for verification. If declared checks pass with budget unused, re-check every user requirement and finish missing behavior rather than stopping at the first passing slice. Generated logs/screenshots go in artifacts/.
 ${expandPlaceholders(scenario.setup, vars({ cwd: '<the isolated product workspace>' }))}`;
 const environmentPath = join(base, 'execution-context.md');
@@ -125,7 +125,7 @@ for (const mode of args.mode === 'both' ? ['baseline', 'custom'] : [args.mode]) 
     mkdirSync(cwd, { recursive: true });
     copySeeds(cwd);
   }
-  const flags = [...pi.args, '--offline', '--mode', 'json', '--no-session', '--no-approve', '--no-context-files', '--no-extensions', '--no-skills', '--no-prompt-templates', '--no-themes', '--provider', args.provider, '--model', args.model, '--thinking', args.thinking, '--append-system-prompt', environmentPath];
+  const flags = [...engine.args, '--offline', '--mode', 'json', '--no-session', '--no-approve', '--no-context-files', '--no-extensions', '--no-skills', '--no-prompt-templates', '--no-themes', '--provider', args.provider, '--model', args.model, '--thinking', args.thinking, '--append-system-prompt', environmentPath];
   if (mode === 'custom') {
     const manifest = join(base, 'required-validators.json');
     if (!args['dry-run']) atomicJson(manifest, { version: 1, checks: scenarioChecks(scenario.developmentChecks, cwd) });
@@ -160,12 +160,12 @@ for (const mode of args.mode === 'both' ? ['baseline', 'custom'] : [args.mode]) 
   console.log(`Starting ${mode} ${scenarioName} with ${args.provider}/${args.model}; ${cwd}`);
   if (args['dry-run']) {
     console.log(JSON.stringify({
-      mode, cwd, spawn: [pi.cmd, ...flags], seeds: scenario.seeds.map(s => s.to),
+      mode, cwd, spawn: [engine.cmd, ...flags], seeds: scenario.seeds.map(s => s.to),
       ...(mode === 'custom' ? { requiredValidators: scenarioChecks(scenario.developmentChecks, cwd) } : {}),
     }, null, 2));
     continue;
   }
-  const result = await runCommand([pi.cmd, ...flags], {
+  const result = await runCommand([engine.cmd, ...flags], {
     cwd, timeoutSeconds: Number(args.timeout), signal: controller.signal, logPath: join(base, `${mode}-events.jsonl`),
     onOutput(chunk) {
       buffer += chunk;

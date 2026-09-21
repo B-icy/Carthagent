@@ -6,7 +6,7 @@ import { dirname, join, resolve, delimiter } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { createReport, latestReport } from '../lib/reports.mjs';
-import { buildPiArgs } from '../lib/pi.mjs';
+import { buildEngineArgs } from '../lib/engine.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const cli = join(root, 'bin', 'ctg.mjs');
@@ -158,8 +158,8 @@ test('review rejects source mutation and invalid execution bounds', t => {
   }
 });
 
-test('buildPiArgs always loads the Experiential provider extension', () => {
-  const args = buildPiArgs({ isolate: true, delivery: false });
+test('buildEngineArgs always loads the Experiential provider extension', () => {
+  const args = buildEngineArgs({ isolate: true, delivery: false });
   const extensionPaths = args.flatMap((arg, index) => arg === '-e' ? [args[index + 1]] : []);
   assert.ok(extensionPaths.some(path => path.endsWith(join('extensions', 'experiential.ts'))));
 });
@@ -168,7 +168,7 @@ test('review modes launch the real bundled engine without unknown flags', t => {
   const cwd = fixture(t);
   for (const review of ['ask', 'yes', 'no']) {
     const result = spawnSync(process.execPath, [join(root, 'vendor/agent/cli.js'),
-      '--offline', ...buildPiArgs({ review, isolate: true }),
+      '--offline', ...buildEngineArgs({ review, isolate: true }),
       '--list-models', 'carthagent-no-such-model-123'], {
       cwd, encoding: 'utf8', timeout: 15000,
       env: { ...process.env, PI_CODING_AGENT_DIR: join(cwd, 'agent') },

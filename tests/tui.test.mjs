@@ -8,7 +8,7 @@ import { createFeed, resetFeed, applyEvent, summarizeArgs, renderFeed, hydrateFe
 import { strip, width, wrap, truncate, hasTruecolor, sliceCols, inverseCols, mix, fg } from '../lib/tui/ansi.mjs';
 import { getTheme, resolveThemeName, flattenTheme, THEME_NAMES } from '../lib/tui/theme.mjs';
 import { framePrompt, shouldFrame, unframe, frameHint, FRAME_HINTS } from '../lib/tui/framing.mjs';
-import { listSessions, mostRecentSession, sessionDirFor, buildPiArgs } from '../lib/pi.mjs';
+import { listSessions, mostRecentSession, sessionDirFor, buildEngineArgs } from '../lib/engine.mjs';
 import { loadScenario, listScenarios, expandPlaceholders } from '../lib/scenarios.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
@@ -348,9 +348,9 @@ test('framing expands the delivery template behind the scenes', () => {
   // fallback: empty template returns the task
   assert.equal(framePrompt('build a cli', ''), 'build a cli');
   assert.equal(framePrompt('task', 'Do $@ now'), 'Do task now');
-  assert.deepEqual(FRAME_HINTS, ['Message pi…']);
-  assert.equal(frameHint(0), 'Message pi…');
-  assert.equal(frameHint(500), 'Message pi…');
+  assert.deepEqual(FRAME_HINTS, ['Message carthagent…']);
+  assert.equal(frameHint(0), 'Message carthagent…');
+  assert.equal(frameHint(500), 'Message carthagent…');
 });
 
 test('shouldFrame gates framing to substantial prompts', () => {
@@ -474,17 +474,17 @@ test('listSessions reads metadata newest-first and mostRecentSession picks the h
   assert.equal(sessionDirFor('/home/u/proj', '/agent'), join('/agent', 'sessions', `--${resolve('/home/u/proj').replace(/^[/\\]/, '').replace(/[/\\:]/g, '-')}--`));
 });
 
-test('buildPiArgs forwards session selection but never --resume', () => {
-  const sessionArgs = buildPiArgs({ session: 'abc123', delivery: false }, { installed: true });
+test('buildEngineArgs forwards session selection but never --resume', () => {
+  const sessionArgs = buildEngineArgs({ session: 'abc123', delivery: false }, { installed: true });
   assert.deepEqual(sessionArgs.slice(0, 2), ['--session', 'abc123']);
-  const continueArgs = buildPiArgs({ continue: true, delivery: false }, { installed: true });
+  const continueArgs = buildEngineArgs({ continue: true, delivery: false }, { installed: true });
   assert.equal(continueArgs[0], '--continue');
-  assert.ok(!buildPiArgs({ resume: true, delivery: false }, { installed: true }).includes('--resume'));
+  assert.ok(!buildEngineArgs({ resume: true, delivery: false }, { installed: true }).includes('--resume'));
 });
 
-test('buildPiArgs keeps console review policy out of engine arguments', () => {
+test('buildEngineArgs keeps console review policy out of engine arguments', () => {
   for (const review of ['ask', 'yes', 'no', undefined]) {
-    assert.ok(!buildPiArgs({ review }).includes('--delivery-review'));
+    assert.ok(!buildEngineArgs({ review }).includes('--delivery-review'));
   }
 });
 
