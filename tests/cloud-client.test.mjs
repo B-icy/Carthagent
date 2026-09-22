@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CloudClient, cloudControlUrl, cloudManagedUsageRecovery, formatCloudAccount, formatNanoUsd, oauthCredentials, openBrowser } from '../lib/cloud/client.mjs';
+import { CloudClient, cloudControlUrl, cloudManagedUsageRecovery, formatCloudAccount, formatCloudUsage, formatNanoUsd, oauthCredentials, openBrowser } from '../lib/cloud/client.mjs';
 
 function response(status, body) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -74,13 +74,16 @@ test('Cloud client sends account, billing, and session requests with bearer auth
   const requests = [];
   const client = new CloudClient({ baseUrl: 'https://cloud.test', fetchImpl: async (url, options) => {
     requests.push({ url, options });
-    return response(200, url.endsWith('/account') ? { accountId: 'a', balance: { availableNanoUsd: 1_000_000_000 }, subscription: { status: 'active' }, sessions: [] } : { url: 'https://stripe.test' });
+    return response(200, url.includes('/account/usage') ? { accountId: 'a', data: [] } : url.endsWith('/account') ? { accountId: 'a', balance: { availableNanoUsd: 1_000_000_000 }, subscription: { status: 'active' }, sessions: [] } : { url: 'https://stripe.test' });
   } });
   const account = await client.account({ accessToken: 'access' });
+  const usage = await client.usage({ accessToken: 'access', limit: 500 });
   await client.checkout({ accessToken: 'access', successUrl: 'https://return', cancelUrl: 'https://return' });
   await client.portal({ accessToken: 'access', returnUrl: 'https://return' });
   await client.revokeSession({ accessToken: 'access', sessionId: 'session/1' });
   assert.equal(account.accountId, 'a');
+  assert.deepEqual(usage.data, []);
+  assert.match(requests[1].url, /\/v1\/account\/usage\?limit=200$/);
   assert.ok(requests.every(item => item.options.headers.authorization === 'Bearer access'));
   assert.match(requests.at(-1).url, /session%2F1$/);
 });
@@ -100,6 +103,15 @@ test('OAuth and account formatters keep token expiration and account UX determin
   assert.match(managed, /Managed monthly: \$6\.75 available of \$8\.00 \(\$0\.25 reserved\)/);
   assert.match(managed, /Managed daily: \$0\.30 available of \$0\.50 \(\$0\.05 reserved\)/);
   assert.match(managed, /Daily reset: 2027-01-02T00:00:00\.000Z/);
+  const usage = { data: [
+    { createdAt: '2027-01-01T12:00:00.000Z', alias: 'gpt-5.6-luna', inputTokens: 1200, outputTokens: 34 },
+    { createdAt: '2027-01-01T11:00:00.000Z', alias: 'gpt-5.6-luna', inputTokens: 800, outputTokens: 6 },
+  ] };
+  assert.match(formatCloudUsage(usage), /2 recent settled requests\): 2,000 input · 40 output tokens/);
+  assert.match(formatCloudUsage(usage), /gpt-5\.6-luna · 1,200 in · 34 out/);
+  assert.match(formatCloudAccount({ accountId: 'acct', balance: { availableNanoUsd: 1_000_000_000 }, subscription: { status: 'none' }, sessions: [] }, { usage }), /Ship usage \(2 recent settled requests\)/);
+  assert.equal(formatCloudUsage({ data: [] }), 'Ship usage: no settled requests yet');
+  assert.match(formatCloudUsage(usage, { account: { balance: { availableNanoUsd: 1_000_000_000 }, subscription: { status: 'none' } } }), /Carthagent Ship · Free[\s\S]*Credit: \$1\.00 available/);
 });
 
 test('managed usage recovery distinguishes daily, monthly, subscription, and credit paths', () => {

@@ -13,6 +13,8 @@ import {
   formatCloudAccount,
   hasConfiguredProvider,
   loadCloudAccount,
+  loadCloudAccountUsage,
+  loadCloudUsage,
   loginAndRefresh,
   loginProviderFocus,
   loginProviderList,
@@ -178,14 +180,21 @@ test('Cloud account helpers use the runtime OAuth credential for account and bil
   };
   const fetchImpl = async (url, options) => {
     calls.push({ url, options });
-    return new Response(JSON.stringify(url.endsWith('/account')
-      ? { accountId: 'acct', balance: { availableNanoUsd: 1_000_000_000 }, subscription: { status: 'none' }, sessions: [] }
-      : { url: 'https://stripe.test' }), { status: 200 });
+    return new Response(JSON.stringify(url.includes('/account/usage')
+      ? { accountId: 'acct', data: [{ alias: 'gpt-5.6-luna', inputTokens: 2, outputTokens: 3, createdAt: '2027-01-01T00:00:00.000Z' }] }
+      : url.endsWith('/account')
+        ? { accountId: 'acct', balance: { availableNanoUsd: 1_000_000_000 }, subscription: { status: 'none' }, sessions: [] }
+        : { url: 'https://stripe.test' }), { status: 200 });
   };
   const env = { CARTHAGENT_CLOUD_URL: 'https://cloud.test' };
   const account = await loadCloudAccount(runtime, { env, fetchImpl });
+  const usage = await loadCloudUsage(runtime, { env, fetchImpl });
+  const combined = await loadCloudAccountUsage(runtime, { env, fetchImpl });
   const billing = await createCloudBillingLink(runtime, 'checkout', { env, fetchImpl });
   assert.equal(account.accountId, 'acct');
+  assert.equal(usage.data[0].inputTokens, 2);
+  assert.equal(combined.account.accountId, 'acct');
+  assert.equal(combined.usage.data[0].outputTokens, 3);
   assert.equal(billing.url, 'https://stripe.test');
   assert.ok(calls.every(call => call.options.headers.authorization === 'Bearer access-token'));
   assert.match(formatCloudAccount(account), /Credit: \$1\.00/);

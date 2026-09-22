@@ -594,6 +594,7 @@ test('matchSlash filters commands by prefix and closes on args', () => {
   assert.deepEqual(matchSlash('/auth').map(c => c.name), ['/login']);
   assert.deepEqual(matchSlash('/account').map(c => c.name), ['/account']);
   assert.deepEqual(matchSlash('/cloud').map(c => c.name), ['/account']);
+  assert.deepEqual(matchSlash('/usa').map(c => c.name), ['/usage']);
   // unknown prefix → empty
   assert.deepEqual(matchSlash('/xyz'), []);
   // a space (args mode) closes the popup
