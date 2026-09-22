@@ -405,6 +405,11 @@ test('computePhase derives the rail tracker state', () => {
   assert.equal(computePhase({ plan, evidence: {}, status: 'verifying' }, 'h1', true).phase, 'verify');
   const fresh = { runId: 'run-a', revision: 1, plan, evidence: { tests: { runId: 'run-a', revision: 1, passed: true, fingerprint: 'h1', checkDigest: checkDigest(plan.checks[0]) } }, status: 'implementing' };
   assert.equal(computePhase(fresh, 'h1').phase, 'review');
+  assert.equal(computePhase({ ...fresh, status: 'verifying' }, 'h1').phase, 'review');
+  assert.equal(computePhase({ ...fresh, status: 'verifying' }, 'h1', true).phase, 'verify');
+  const readyNodes = computeNodeStates({ ...fresh, status: 'verifying' }, false, null, 'h1').states;
+  assert.equal(readyNodes.get('verify'), 'done');
+  assert.equal(readyNodes.get('review'), 'active');
   assert.deepEqual(freshChecks(fresh, 'h1'), { fresh: 1, total: 1 });
   assert.deepEqual(freshChecks(fresh, 'h2'), { fresh: 0, total: 1 });
   assert.equal(computePhase({ ...fresh, status: 'verified' }, 'h1').phase, 'deliver');

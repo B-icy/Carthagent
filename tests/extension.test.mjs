@@ -74,7 +74,7 @@ test('terminal deliveries stop context reminders and repair turns across restore
   for (const status of ['verified', 'blocked']) {
     const f = fixture(t);
     await f.call('delivery_plan', f.plan);
-    assert.match(f.hooks.context({ messages: [] }).messages[0].content, /inspect current freshness/);
+    assert.match(f.hooks.context({ messages: [] }).messages[0].content, /Inspect freshness with delivery_status once/);
     await f.call('delivery_check', { id: 'all' });
     await f.call('delivery_finish', { status, review: 'Reviewed', launch: 'python app.py', limitations: status === 'blocked' ? ['External prerequisite unavailable'] : [] });
     for (const restore of [false, true]) {
@@ -84,7 +84,7 @@ test('terminal deliveries stop context reminders and repair turns across restore
       assert.equal(f.messages.length, 0);
     }
     await f.call('delivery_plan', f.plan);
-    assert.match(f.hooks.context({ messages: [] }).messages[0].content, /inspect current freshness/);
+    assert.match(f.hooks.context({ messages: [] }).messages[0].content, /Inspect freshness with delivery_status once/);
   }
 });
 
@@ -101,6 +101,38 @@ test('session restoration adopts a newer same-run dashboard report without reviv
   assert.equal(f.messages.length, 0);
   await f.call('delivery_finish', { status: 'blocked', review: 'Restored', launch: 'none', limitations: ['fixture'] });
   assert.ok(f.entries.at(-1).data.storageVersion > disk.storageVersion);
+});
+
+test('fresh passing evidence advertises delivery_finish and repeated unchanged status polling is blocked', options, async t => {
+  const f = fixture(t);
+  await f.call('delivery_plan', f.plan);
+  const checked = JSON.parse((await f.call('delivery_check', { id: 'all' })).content[0].text);
+  assert.equal(checked.readyToFinish, true);
+  assert.match(checked.next, /delivery_finish/);
+
+  const status = JSON.parse((await f.call('delivery_status')).content[0].text);
+  assert.equal(status.status, 'verifying', 'explicit finish is still required');
+  assert.deepEqual(status.pendingChecks, []);
+  assert.equal(status.readyToFinish, true);
+  assert.match(status.next, /Do not call delivery_status again/);
+
+  for (let i = 0; i < 3; i++) {
+    assert.equal(f.hooks.tool_call({ toolName: 'delivery_status' }, f.ctx), undefined);
+  }
+  const blocked = f.hooks.tool_call({ toolName: 'delivery_status' }, f.ctx);
+  assert.equal(blocked.block, true);
+  assert.match(blocked.reason, /Repeated unchanged delivery_status/);
+  assert.equal(f.hooks.tool_call({ toolName: 'delivery_status' }, f.ctx).block, true, 'blocked retries stay blocked');
+  const workspaceChange = join(f.cwd, 'workspace-change.txt');
+  writeFileSync(workspaceChange, 'changed');
+  assert.equal(f.hooks.tool_call({ toolName: 'delivery_status' }, f.ctx), undefined, 'workspace changes permit a fresh read');
+  rmSync(workspaceChange);
+
+  // A productive delivery action resets the guard; explicit finish remains the
+  // only transition to verified.
+  assert.equal(f.hooks.tool_call({ toolName: 'delivery_finish' }, f.ctx), undefined);
+  await f.call('delivery_finish', { status: 'verified', review: 'Reviewed fresh evidence.', launch: 'python app.py', limitations: [] });
+  assert.equal(f.entries.at(-1).data.status, 'verified');
 });
 
 test('real extension serializes sibling checks without tool errors', options, async t => {

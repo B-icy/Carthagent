@@ -28,13 +28,15 @@ For substantial implementation work, inspect the repository and installed librar
 Pressure-test the plan before writing code: review it against every explicit requirement in the user's prompt, verify uncertain APIs with installed source or a tiny executable probe, and confirm the checks can actually detect failure. If the plan is weak or incomplete, call delivery_plan again to fix it — the plan is a living contract, not a one-time artifact.
 Implement a runnable slice early, then complete the agreed behavior in small coherent steps. Mark progress with delivery_progress as each step finishes so the plan panel stays current. Don't stop at a scaffold. Verify uncertain APIs with installed source or a tiny executable probe; never invent library methods or assume assets exist. Separate testable logic from rendering/services. Include error handling, dependencies, launch instructions, and regression tests. Exercise actual interaction paths in fresh subprocesses with the normal environment, not only compilation or internal function calls. Include non-ASCII text, paths with spaces, and invalid data where applicable. On Windows, stdout may use a legacy code page (e.g. cp1252): use ASCII-escaped JSON or configure the application's UTF-8 output; don't hide failures by changing only the test environment. For visual work, capture and inspect a screenshot if your model supports images; otherwise explicitly disclose that visual review is unperformed.
 After creating a file, prefer focused edit calls over repeatedly rewriting the full file. Whole-file rewrites bloat model context, increase provider rate-limit risk, and can accidentally remove previously working behavior. If development reveals a wrong assumption or a step can't be completed as planned, call delivery_plan again to adjust the contract — update steps and checks to match reality, but never silently drop original acceptance criteria.
-Use a few meaningful check suites (usually 2–4), not one command per criterion: multiple acceptance criteria can share a suite. When user-owned required validators already cover a requirement, do not duplicate them with shallow model-authored checks; add only focused checks for logic they do not cover. Scope honestly: enumerate every explicit requirement in the user's prompt and back each core requirement with an acceptance criterion and a real check. Narrow contracts that omit core requirements make 'verified' a scope failure, not a smaller task; if budget remains once checks pass, implement and verify the missing requirements instead of stopping at the first passing slice. Run delivery_check with id="all" to execute every declared check sequentially. It executes the argv with a deadline, records logs and fingerprints the entire working project (excluding dependencies, caches and generated artifacts), so omitting a source file cannot hide stale evidence. Artifact roots must contain product source/tests/config/docs, never only artifacts/. Use ["."] for the project. Do not edit during checks; run dependent tools in separate batches. Use artifacts/ for generated screenshots/build output; .harness/ is reserved for harness logs. Re-run checks after final edits.
+Use a few meaningful check suites (usually 2–4), not one command per criterion: multiple acceptance criteria can share a suite. When user-owned required validators already cover a requirement, do not duplicate them with shallow model-authored checks; add only focused checks for logic they do not cover. Scope honestly: enumerate every explicit requirement in the user's prompt and back each core requirement with an acceptance criterion and a real check. Narrow contracts that omit core requirements make 'verified' a scope failure, not a smaller task; if budget remains once checks pass, implement and verify the missing requirements instead of stopping at the first passing slice. Run delivery_check with id="all" to execute every declared check sequentially. It executes the argv with a deadline, records logs and fingerprints the entire working project (excluding dependencies, caches and generated artifacts), so omitting a source file cannot hide stale evidence. Artifact roots must contain product source/tests/config/docs, never only artifacts/. Use ["."] for the project. Do not edit during checks; run dependent tools in separate batches. Use artifacts/ for generated screenshots/build output; .harness/ is reserved for harness logs. Re-run checks after final edits. When delivery_status reports readyToFinish:true, stop polling: adversarially review the result and call delivery_finish. Repeating an unchanged delivery_status is not progress and is blocked after a small number of calls.
 Before concluding, adversarially review the implementation against each acceptance criterion and call delivery_finish with the review, launch command and honest limitations. Failed, missing or stale checks cannot produce verified status. If genuinely blocked, use status=blocked with the reason; do not weaken tests to manufacture success. Phased delivery means steady progress across many tool calls within the run, not a single response. No automatic deployments or unrequested destructive changes.`;
 
 export default function delivery(pi: ExtensionAPI) {
   let state: any = null;
   let touched = false, nudges = 0;
   let budget: any = null;
+  let statusPollKey = '', statusPollRepeats = 0;
+  const resetStatusPolls = () => { statusPollKey = ''; statusPollRepeats = 0; };
   let budgetTimer: ReturnType<typeof setTimeout> | undefined;
   const saveBudget = () => pi.appendEntry('delivery-budget-v1', structuredClone(budget));
   function stopBudget(reason: string, ctx: ExtensionContext) {
@@ -100,6 +102,7 @@ export default function delivery(pi: ExtensionAPI) {
       .filter(Boolean);
     touched = false;
     nudges = state?.nudges ?? 0;
+    resetStatusPolls();
     required = [];
     extraGuidance = '';
     configError = '';
@@ -167,7 +170,7 @@ export default function delivery(pi: ExtensionAPI) {
     }
   });
   pi.on('input', event => {
-    if (event.source !== 'extension') { nudges = 0; touched = false; }
+    if (event.source !== 'extension') { nudges = 0; touched = false; resetStatusPolls(); }
     return { action: 'continue' };
   });
   pi.on('before_agent_start', (event, ctx) => {
@@ -189,11 +192,33 @@ export default function delivery(pi: ExtensionAPI) {
     if (!state || ['verified', 'blocked'].includes(state.status)) return;
     // Re-injected after compaction without replacing Pi's summary or pruning user messages.
     const summary = { goal: state.plan.goal, status: state.status, acceptance: state.plan.acceptance, steps: state.plan.steps, artifacts: state.plan.artifacts, checks: state.plan.checks, evidence: Object.fromEntries(Object.entries(state.evidence).map(([id, e]: any) => [id, { passed: e.passed, fingerprint: e.fingerprint, code: e.code, outputTail: e.outputTail ? e.outputTail.slice(-400) : undefined }])) };
-    return { messages: [...event.messages, { role: 'custom' as const, customType: 'delivery-context', content: `Delivery contract (evidence may be stale after edits):\n${JSON.stringify(summary)}\nUse delivery_status to inspect current freshness.`, display: false, timestamp: Date.now() }] };
+    return { messages: [...event.messages, { role: 'custom' as const, customType: 'delivery-context', content: `Delivery contract (evidence may be stale after edits):\n${JSON.stringify(summary)}\nInspect freshness with delivery_status once when needed. If it reports readyToFinish:true, call delivery_finish; do not poll unchanged status.`, display: false, timestamp: Date.now() }] };
   });
   pi.on('tool_call', (event, ctx) => {
     const stopped = ensureBudget(ctx, 'tool');
     if (stopped) return stopped;
+    if (event.toolName === 'delivery_status') {
+      let key = '';
+      if (state) {
+        try {
+          refreshState(ctx);
+          const hash = fingerprint(ctx.cwd, ['.']);
+          key = JSON.stringify({ runId: state.runId, revision: state.revision, status: state.status, pending: pendingChecks(state, hash), hash });
+        } catch (err: any) {
+          key = JSON.stringify({ runId: state?.runId, revision: state?.revision, status: state?.status, error: err?.message || String(err) });
+        }
+      }
+      if (key && key === statusPollKey) {
+        // Keep blocked retries blocked, but recompute the key first so a real
+        // report/workspace change automatically permits a fresh status read.
+        if (statusPollRepeats >= 3) {
+          return { block: true, reason: 'Repeated unchanged delivery_status calls are blocked. Use the last result: call delivery_finish when readyToFinish is true; otherwise edit, run delivery_check, or report status=blocked. Do not poll again until state or workspace changes.' };
+        }
+        statusPollRepeats++;
+      } else { statusPollKey = key; statusPollRepeats = key ? 1 : 0; }
+    } else if (event.toolName.startsWith('delivery_') || ['write', 'edit'].includes(event.toolName)) {
+      resetStatusPolls();
+    }
     const input = event.input as Record<string, any> | undefined;
     if (
       event.toolName === 'edit' &&
@@ -372,17 +397,25 @@ export default function delivery(pi: ExtensionAPI) {
     },
   });
   pi.registerTool({
-    name: 'delivery_status', label: 'Delivery status', description: 'Show the current contract and failed/missing/stale check IDs.', parameters: Type.Object({}),
+    name: 'delivery_status', label: 'Delivery status', description: 'Show failed/missing/stale checks and the next action. If readyToFinish is true, call delivery_finish instead of polling again.', parameters: Type.Object({}),
     async execute(_id, _params, _signal, _update, ctx) {
       if (!state) return text('No delivery contract.');
       refreshState(ctx);
       let pending: string[] = [];
+      let freshnessKnown = true;
       try {
         pending = pendingChecks(state, fingerprint(ctx.cwd, ['.']));
       } catch (err: any) {
+        freshnessKnown = false;
         pending = [`[scope error: ${err.message}]`];
       }
-      return text({ ...state, pendingChecks: pending });
+      const readyToFinish = freshnessKnown && verificationMode(state.plan) === 'required' && pending.length === 0;
+      const next = readyToFinish
+        ? 'All required checks are fresh and passing. Adversarially review the acceptance criteria, then call delivery_finish with status="verified". Do not call delivery_status again unless the workspace changes.'
+        : pending.length
+          ? `Run delivery_check for pending checks: ${pending.join(', ')}; repair failures before finishing.`
+          : 'Review the contract and call delivery_finish when the requested work is complete.';
+      return text({ ...state, pendingChecks: pending, readyToFinish, next });
     },
   });
   pi.registerTool({
@@ -470,7 +503,18 @@ export default function delivery(pi: ExtensionAPI) {
           if (!passed && verification === 'required') throw Error(JSON.stringify(message, null, 2));
           results.push(message);
         }
-        return text(results);
+        let finalHash: string | null = null;
+        let pending: string[] = [];
+        let freshnessError = '';
+        try {
+          finalHash = fingerprint(ctx.cwd, ['.']);
+          pending = pendingChecks(state, finalHash);
+        } catch (err: any) {
+          freshnessError = err?.message || String(err);
+          pending = [`[scope error: ${freshnessError}]`];
+        }
+        const readyToFinish = verification === 'required' && pending.length === 0 && finalHash !== null;
+        return text({ results, pendingChecks: pending, readyToFinish, next: readyToFinish ? 'All required checks are fresh and passing. Adversarially review the acceptance criteria, then call delivery_finish with status="verified". Do not call delivery_status first.' : freshnessError ? 'Evidence freshness could not be established. Call delivery_finish with status="blocked" and the scope limitation.' : 'Repair or run the remaining checks before delivery_finish.' });
       }));
     },
   });
