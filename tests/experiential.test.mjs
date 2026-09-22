@@ -5,8 +5,10 @@ import {
   EXPERIENTIAL_PROVIDER_ID,
   cloudGatewayUrl,
   cloudOAuth,
+  createCloudOperationIdentity,
   experientialBaseUrl,
   isCloudAccessToken,
+  managedCloudRequestOptions,
   experientialProviderConfig,
   parseExperientialModels,
   registerExperientialProvider,
@@ -28,6 +30,34 @@ test('Experiential provider uses the hosted gateway and canonical environment va
   assert.equal(config.api, 'openai-completions');
   assert.equal(typeof config.streamSimple, 'function');
   assert.equal(config.oauth.name, 'Carthagent Cloud account');
+});
+
+test('Managed Cloud operations share one identity across metadata, HTTP headers, and SDK retries', async () => {
+  let ids = 0;
+  const payloads = [];
+  const options = managedCloudRequestOptions({
+    requestHeaders: { 'X-Test': 'preserved' },
+    onPayload: async payload => {
+      payloads.push(payload);
+      return { ...payload, metadata: { inherited: 'yes' } };
+    },
+  }, () => `operation-${++ids}`);
+
+  assert.equal(ids, 1);
+  assert.deepEqual(options.requestHeaders, {
+    'X-Test': 'preserved',
+    'Idempotency-Key': 'operation-1',
+    'X-Client-Request-Id': 'operation-1',
+  });
+  const body = await options.onPayload({ model: 'carthagent-code', messages: [] }, { id: 'carthagent-code' });
+  assert.equal(payloads.length, 1);
+  assert.deepEqual(body.metadata, { inherited: 'yes', operation_key: 'operation-1' });
+
+  // The OpenAI SDK receives the same immutable request options object on every
+  // retry; creating a later operation is the only thing that advances the ID.
+  assert.equal(options.requestHeaders['Idempotency-Key'], 'operation-1');
+  assert.equal(createCloudOperationIdentity(() => `operation-${++ids}`), 'operation-2');
+  assert.throws(() => createCloudOperationIdentity(() => ''), /identity is invalid/);
 });
 
 test('Experiential model parsing is identity-only, sorted, and deduplicated', () => {
