@@ -325,9 +325,12 @@ async function cloudRuntime() {
   return loadAuthRuntime();
 }
 
-function cloudFailure(error) {
+async function cloudFailure(error) {
   if (error.message === 'cloud_login_required') console.error('Carthagent Cloud is not signed in. Run `ctg login` and choose Carthagent Cloud.');
-  else console.error(`Carthagent Cloud: ${error.message}`);
+  else {
+    const { cloudManagedUsageRecovery } = await import('../lib/cloud/client.mjs');
+    console.error(cloudManagedUsageRecovery(error) || `Carthagent Cloud: ${error.message}`);
+  }
   process.exitCode = 1;
 }
 
@@ -347,7 +350,7 @@ async function handleAccount() {
       console.log('\nCLI sessions:');
       for (const session of sessions) console.log(`  ${session.id} · ${session.revoked_at ? 'revoked' : 'active'} · ${session.client_name || 'Carthagent CLI'} · last used ${session.last_used_at || session.created_at}`);
     }
-  } catch (error) { cloudFailure(error); }
+  } catch (error) { await cloudFailure(error); }
 }
 
 async function handleBilling() {
@@ -359,7 +362,7 @@ async function handleBilling() {
     const result = await createCloudBillingLink(await cloudRuntime(), action);
     const opened = await openBrowser(result.url).catch(() => false);
     console.log(`${opened ? 'Opened' : 'Open'} ${result.url}`);
-  } catch (error) { cloudFailure(error); }
+  } catch (error) { await cloudFailure(error); }
 }
 
 async function handleCloudLogout() {
@@ -379,7 +382,7 @@ async function handleCloudLogout() {
       await runtime.logout('experiential-labs');
       console.log('Revoked and removed the current Carthagent Cloud session.');
     }
-  } catch (error) { cloudFailure(error); }
+  } catch (error) { await cloudFailure(error); }
 }
 
 function handleServe() {

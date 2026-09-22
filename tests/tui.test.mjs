@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseD2, layoutD2, renderD2 } from '../lib/tui/d2.mjs';
-import { syncActiveModel, planSideWidth, makeKeyParser, matchSlash, slashCardDimensions, renderSlashCard, computeNodeStates, barRange, scrollCell, isCloudCreditExhaustion } from '../lib/tui/app.mjs';
+import { syncActiveModel, planSideWidth, makeKeyParser, matchSlash, slashCardDimensions, renderSlashCard, computeNodeStates, barRange, scrollCell, cloudManagedUsageNotice, isCloudCreditExhaustion } from '../lib/tui/app.mjs';
 import { UNICODE_GLYPHS, ASCII_GLYPHS, detectGlyphMode, resolveGlyphs } from '../lib/tui/glyphs.mjs';
 import { checkDigest, planD2, computePhase, freshChecks, PHASES } from '../lib/delivery.mjs';
 import { createFeed, resetFeed, applyEvent, summarizeArgs, renderFeed, hydrateFeed } from '../lib/tui/feed.mjs';
@@ -17,10 +17,13 @@ import { tmpdir } from 'node:os';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-test('Cloud credit exhaustion is detected only for failed Cloud assistant messages', () => {
+test('Cloud managed-usage exhaustion is detected only for failed Cloud assistant messages', () => {
   assert.equal(isCloudCreditExhaustion({ type: 'message_end', message: { role: 'assistant', provider: 'experiential-labs', stopReason: 'error', errorMessage: 'insufficient_quota' } }), true);
   assert.equal(isCloudCreditExhaustion({ type: 'message_end', message: { role: 'assistant', stopReason: 'error', errorMessage: 'credit is exhausted' } }, 'experiential-labs/model'), true);
-  assert.equal(isCloudCreditExhaustion({ type: 'message_end', message: { role: 'assistant', provider: 'openai', stopReason: 'error', errorMessage: 'insufficient_quota' } }), false);
+  assert.match(cloudManagedUsageNotice({ type: 'message_end', message: { role: 'assistant', provider: 'experiential-labs', stopReason: 'error', errorMessage: '429: {"error":{"code":"daily_limit_reached"}}' } }), /00:00 UTC/);
+  assert.match(cloudManagedUsageNotice({ type: 'message_end', message: { role: 'assistant', provider: 'experiential-labs', stopReason: 'error', errorMessage: 'monthly_allowance_exhausted' } }), /billing portal/);
+  assert.match(cloudManagedUsageNotice({ type: 'message_end', message: { role: 'assistant', provider: 'experiential-labs', stopReason: 'error', errorMessage: 'subscription_inactive' } }), /subscription is inactive/);
+  assert.equal(isCloudCreditExhaustion({ type: 'message_end', message: { role: 'assistant', provider: 'openai', stopReason: 'error', errorMessage: 'daily_limit_reached' } }), false);
   assert.equal(isCloudCreditExhaustion({ type: 'message_end', message: { role: 'assistant', provider: 'experiential-labs', stopReason: 'stop' } }), false);
 });
 
