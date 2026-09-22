@@ -83,7 +83,7 @@ test('loginProviderList keeps stable product ordering regardless of connected st
     [
       { id: 'zeta', name: 'Zeta', auth: { apiKey: {} } },
       { id: 'openrouter', name: 'OpenRouter', auth: { apiKey: {} } },
-      { id: 'experiential-labs', name: 'Carthagent Cloud', auth: { oauth: {}, apiKey: {} } },
+      { id: 'experiential-labs', name: 'Carthagent Ship', auth: { oauth: {}, apiKey: {} } },
       { id: 'anthropic', name: 'Anthropic', auth: { apiKey: {} } },
       { id: 'alpha', name: 'Alpha', auth: { apiKey: {} } },
     ],

@@ -25,11 +25,11 @@ npm ci && npm i -g .          # gives you `ctg`; or just run `node bin/ctg.mjs`
 
 First run needs AI credentials. One store (`~/.carthagent/agent/auth.json`) covers the console, headless runs, and the dashboard.
 
-Run `ctg login`, or use `/login` (`/auth`) inside the console. All three entry points open the same provider picker. Carthagent Cloud, powered by the Experiential gateway, appears first as the recommended managed option, while Anthropic, OpenAI, OpenRouter, and the other direct providers remain immediately selectable. Connected providers are marked without changing the stable ordering.
+Run `ctg login`, or use `/login` (`/auth`) inside the console. All three entry points open the same provider picker. Carthagent Ship, powered by the Experiential gateway, appears first as the recommended managed option, while Anthropic, OpenAI, OpenRouter, and the other direct providers remain immediately selectable. Connected providers are marked without changing the stable ordering.
 
 The popup handles OAuth URLs, device codes, and API-key prompts inline. An in-session login returns to the active workspace and refreshes the agent without discarding the transcript or editor state.
 
-**Carthagent Cloud / Experiential Labs** — choosing the recommended Cloud row starts browser device authorization. Carthagent stores only the resulting short-lived access token and rotating refresh token in its isolated credential store; it does not ask users to paste a long-lived managed gateway key. After signing in:
+**Carthagent Ship / Experiential Labs** — choosing the recommended Ship row starts browser device authorization. Carthagent stores only the resulting short-lived access token and rotating refresh token in its isolated credential store; it does not ask users to paste a long-lived managed gateway key. After signing in:
 
 ```sh
 ctg account                    # credit, grants, plan, and CLI sessions
@@ -38,7 +38,7 @@ ctg billing portal             # Stripe customer portal URL
 ctg logout-cloud [session-id]  # revoke the current or a named CLI session
 ```
 
-Inside the console, `/account`, `/billing checkout`, `/billing portal`, and `/logout-cloud <session-id>` provide the same account controls without leaving the workspace. If Cloud credit is exhausted, the console offers billing and `/login`; direct Anthropic, OpenAI, OpenRouter, custom, and other BYOK providers remain available without an upsell.
+Inside the console, `/account`, `/billing checkout`, `/billing portal`, and `/logout-cloud <session-id>` provide the same account controls without leaving the workspace. If Ship credit is exhausted, the console offers billing and `/login`; direct Anthropic, OpenAI, OpenRouter, custom, and other BYOK providers remain available without an upsell.
 
 Operators and internal pilots may still provide `EXPLABS_API_KEY` through the environment for direct Experiential access; that key path remains separate from the public device flow. `CARTHAGENT_CLOUD_URL` may override the Carthagent account/control-plane origin, while `EXP_GATEWAY_URL` specifically overrides the direct Experiential model gateway origin for preview or staging. Browser-account requests use the Cloud authority at the control-plane origin; API-key requests continue to use Experiential directly. Carthagent discovers model identities from `GET /v1/models`; the endpoint does not provide capability or pricing metadata, so Carthagent does not infer those fields.
 
@@ -64,8 +64,8 @@ ctg -p "..."                  # headless run (auto when stdout isn't a TTY)
 ctg demo                      # scripted mock run — no provider needed
 ctg status                    # fingerprint, contract, pending checks
 ctg check all                 # run declared checks
-ctg account                   # Cloud balance, plan, grants, and sessions
-ctg billing checkout          # Cloud Builder checkout URL
+ctg account                   # Ship balance, plan, grants, and sessions
+ctg billing checkout          # Ship Builder checkout URL
 ctg serve                     # web dashboard (127.0.0.1, authenticated URL)
 ctg test                      # unit suite
 ctg --help                    # everything else

@@ -60,9 +60,9 @@ function printHelp() {
   \x1b[32mhash\x1b[0m, \x1b[32mfingerprint\x1b[0m     Calculate workspace SHA-256 source freshness fingerprint
   \x1b[32mvalidate\x1b[0m <file.json> Validate acceptance contract against delivery schema
   \x1b[32mlogin\x1b[0m, \x1b[32mauth\x1b[0m             Connect an AI provider (interactive login)
-  \x1b[32maccount\x1b[0m               Show Cloud credit, plan, grants, and CLI sessions
-  \x1b[32mbilling\x1b[0m [checkout|portal] Open Cloud subscription billing
-  \x1b[32mlogout-cloud\x1b[0m [session] Revoke the current or named Cloud CLI session
+  \x1b[32maccount\x1b[0m               Show Ship credit, plan, grants, and CLI sessions
+  \x1b[32mbilling\x1b[0m [checkout|portal] Open Ship subscription billing
+  \x1b[32mlogout-cloud\x1b[0m [session] Revoke the current or named Ship CLI session
   \x1b[32mserve\x1b[0m, \x1b[32mweb\x1b[0m, \x1b[32mstart\x1b[0m     Start the interactive web dashboard on port 3000
   \x1b[32mtest\x1b[0m                   Run core unit test suite
   \x1b[32meval\x1b[0m [args...]         Run evaluation harness (evaluate.mjs)
@@ -194,7 +194,7 @@ async function handleTui(list) {
     if (!opts.prompt) { console.error('non-interactive mode requires a prompt'); process.exit(1); }
     const { hasConfiguredProvider, loadAuthRuntime } = await import('../lib/tui/auth.mjs');
     if (!hasConfiguredProvider()) {
-      console.error('No AI provider connected. Run `ctg login` to connect one (Carthagent Cloud is recommended), or set an API key env var (e.g. ANTHROPIC_API_KEY).');
+      console.error('No AI provider connected. Run `ctg login` to connect one (Carthagent Ship is recommended), or set an API key env var (e.g. ANTHROPIC_API_KEY).');
       process.exit(1);
     }
     // Refresh the dynamic Cloud catalog before the engine child reads its
@@ -351,10 +351,10 @@ async function cloudRuntime() {
 }
 
 async function cloudFailure(error) {
-  if (error.message === 'cloud_login_required') console.error('Carthagent Cloud is not signed in. Run `ctg login` and choose Carthagent Cloud.');
+  if (error.message === 'cloud_login_required') console.error('Carthagent Ship is not signed in. Run `ctg login` and choose Carthagent Ship.');
   else {
     const { cloudManagedUsageRecovery } = await import('../lib/cloud/client.mjs');
-    console.error(cloudManagedUsageRecovery(error) || `Carthagent Cloud: ${error.message}`);
+    console.error(cloudManagedUsageRecovery(error) || `Carthagent Ship: ${error.message}`);
   }
   process.exitCode = 1;
 }
@@ -397,7 +397,7 @@ async function handleCloudLogout() {
     if (sessionId) {
       const { revokeCloudSession } = await import('../lib/tui/auth.mjs');
       await revokeCloudSession(runtime, sessionId);
-      console.log(`Revoked Cloud session ${sessionId}.`);
+      console.log(`Revoked Ship session ${sessionId}.`);
     } else {
       const { CloudClient, cloudControlUrl } = await import('../lib/cloud/client.mjs');
       if ((await runtime.checkAuth?.('experiential-labs'))?.type !== 'oauth') throw new Error('cloud_login_required');
@@ -405,7 +405,7 @@ async function handleCloudLogout() {
       if (!accessToken) throw new Error('cloud_login_required');
       await new CloudClient({ baseUrl: cloudControlUrl() }).revokeCurrent({ accessToken });
       await runtime.logout('experiential-labs');
-      console.log('Revoked and removed the current Carthagent Cloud session.');
+      console.log('Revoked and removed the current Carthagent Ship session.');
     }
   } catch (error) { await cloudFailure(error); }
 }
