@@ -179,8 +179,29 @@ test('review modes launch the real bundled engine without unknown flags', t => {
   }
 });
 
-test('ctg --list-models renders identity-only Cloud metadata as unknown', t => {
-  const result = run(fixture(t), '--list-models', 'experiential-labs');
+test('ctg --list-models renders stored identity-only Cloud metadata as unknown', t => {
+  const cwd = fixture(t);
+  const agentDir = join(cwd, 'agent');
+  mkdirSync(agentDir, { recursive: true });
+  writeFileSync(join(agentDir, 'auth.json'), JSON.stringify({
+    'experiential-labs': { type: 'api_key', key: 'fixture-credential' },
+  }));
+  writeFileSync(join(agentDir, 'models-store.json'), JSON.stringify({
+    'experiential-labs': {
+      models: [{ id: 'carthagent-code', name: 'carthagent-code' }],
+      checkedAt: 1,
+    },
+  }));
+  const result = spawnSync(process.execPath, [cli, '--list-models', 'experiential-labs'], {
+    cwd,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      PI_OFFLINE: '1',
+      CARTHAGENT_CODING_AGENT_DIR: agentDir,
+      PI_CODING_AGENT_DIR: agentDir,
+    },
+  });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /experiential-labs\s+carthagent-code\s+\?\s+\?\s+\?\s+\?/);
   assert.doesNotMatch(result.stderr, /Cannot read properties|Failed to load extension/);
