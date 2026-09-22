@@ -306,6 +306,17 @@ test('informational plans are terminal and skip repair nudges', () => {
   assert.equal(shouldContinue({ ...args, state: { status: 'implementing', plan: plan() } }), true);
 });
 
+test('computePhase treats persisted verifying with fresh evidence as ready for review', () => {
+  const p = plan();
+  const state = {
+    runId: 'run-a', revision: 1, plan: p, status: 'verifying',
+    evidence: { smoke: { runId: 'run-a', revision: 1, passed: true, fingerprint: 'h', checkDigest: checkDigest(p.checks[0]) } },
+  };
+  assert.deepEqual(pendingChecks(state, 'h'), []);
+  assert.equal(computePhase(state, 'h').phase, 'review');
+  assert.equal(computePhase(state, 'h', true).phase, 'verify');
+});
+
 test('computePhase reaches review for check-free informational plans', () => {
   const informative = { goal: 'Q', artifacts: ['.'], steps: ['Answer'], acceptance: [], checks: [], verification: 'none' };
   const state = { plan: informative, evidence: {}, status: 'implementing', revision: 1 };
