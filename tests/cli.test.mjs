@@ -62,11 +62,11 @@ test('check fails clearly when no delivery report exists', t => {
   assert.match(result.stderr, /No delivery report/);
 });
 
-test('guidance routing is not a user-facing command and Cloud account commands are documented', t => {
+test('guidance routing is not a user-facing command and Ship account commands are documented', t => {
   const result = run(fixture(t), '--help');
   assert.equal(result.status, 0, result.stderr);
   assert.doesNotMatch(result.stdout, /\broute\b|\bprofiles\b/);
-  assert.match(result.stdout, /account.*Cloud credit/);
+  assert.match(result.stdout, /account.*Ship credit/);
   assert.match(result.stdout, /billing.*checkout\|portal/);
   assert.match(result.stdout, /logout-cloud/);
 });
