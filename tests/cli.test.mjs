@@ -179,6 +179,13 @@ test('review modes launch the real bundled engine without unknown flags', t => {
   }
 });
 
+test('ctg --list-models renders identity-only Cloud metadata as unknown', t => {
+  const result = run(fixture(t), '--list-models', 'experiential-labs');
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /experiential-labs\s+carthagent-code\s+\?\s+\?\s+\?\s+\?/);
+  assert.doesNotMatch(result.stderr, /Cannot read properties|Failed to load extension/);
+});
+
 test('vendored agent engine is bundled and loads ModelRuntime cleanly', async () => {
   const agentPath = join(root, 'vendor', 'agent', 'index.js');
   const agent = await import(pathToFileURL(agentPath).href);

@@ -82,14 +82,18 @@ test('Experiential model discovery authenticates with API-key or OAuth credentia
       return { ok: true, json: async () => ({ data: [{ id: 'coding' }] }) };
     },
   });
+  let published;
   const models = await config.refreshModels({
     allowNetwork: true,
     credential: { type: 'api_key', key: 'test-secret' },
     signal: new AbortController().signal,
+    publish: async value => { published = value; value.update?.(); return true; },
   });
   assert.deepEqual(models.map(model => model.id), ['coding']);
   assert.equal(requests[0].url, 'https://preview.test/v1/models');
   assert.equal(requests[0].options.headers.Authorization, 'Bearer test-secret');
+  assert.deepEqual(published.persist.models, [{ id: 'coding', name: 'coding' }]);
+  assert.deepEqual(config.models, [{ id: 'coding', name: 'coding' }]);
   assert.doesNotMatch(JSON.stringify(config), /test-secret/);
   await config.refreshModels({ allowNetwork: true, credential: { type: 'oauth', access: 'managed-test-access' }, signal: new AbortController().signal });
   assert.equal(requests[1].url, 'https://api.carthagent.xyz/v1/models');
@@ -127,7 +131,14 @@ test('Carthagent Cloud OAuth uses device authorization and rotating refresh toke
 test('Experiential discovery reuses stored identities offline and fails clearly online', async () => {
   const stored = [{ id: 'stored-model' }];
   const offline = experientialProviderConfig({ fetchImpl: () => { throw new Error('network called'); } });
-  assert.equal((await offline.refreshModels({ allowNetwork: false, stored })).at(0).id, 'stored-model');
+  let restored = false;
+  assert.equal((await offline.refreshModels({
+    allowNetwork: false,
+    stored,
+    publish: async value => { restored = true; value.update?.(); return true; },
+  })).at(0).id, 'stored-model');
+  assert.equal(restored, true);
+  assert.deepEqual(offline.models, [{ id: 'stored-model', name: 'stored-model' }]);
 
   const failing = experientialProviderConfig({ fetchImpl: async () => ({ ok: false, status: 401, text: async () => 'unauthorized' }) });
   await assert.rejects(

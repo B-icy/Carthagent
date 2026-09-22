@@ -47,6 +47,7 @@ function printHelp() {
 \x1b[1mUSAGE:\x1b[0m
   ctg                            Launch the interactive split-terminal delivery console
   ctg <task>                     Open the console and immediately deliver <task>
+  ctg --list-models [search]     List available provider models
   ctg <command> [options]
 
 \x1b[1mCOMMANDS:\x1b[0m
@@ -153,6 +154,26 @@ function parseTuiArgs(list) {
   return opts;
 }
 
+async function handleListModels(searchPattern) {
+  const { locateEngine, buildEngineArgs } = await import('../lib/tui/app.mjs');
+  const { loadAuthRuntime } = await import('../lib/tui/auth.mjs');
+  let engineCmd;
+  try { engineCmd = locateEngine(); } catch (error) { console.error(error.message); process.exit(1); }
+  await loadAuthRuntime();
+  const args = [...engineCmd.args, ...buildEngineArgs({ isolate: true, delivery: false }), '--list-models'];
+  if (searchPattern) args.push(searchPattern);
+  const child = spawn(engineCmd.cmd, args, {
+    stdio: 'inherit',
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      CARTHAGENT_CODING_AGENT_DIR: process.env.CARTHAGENT_CODING_AGENT_DIR || defaultAgentDir,
+      PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR || defaultAgentDir,
+    },
+  });
+  child.on('exit', code => process.exit(code || 0));
+}
+
 async function handleTui(list) {
   const opts = parseTuiArgs(list);
   // Sticky theme/model: explicit --theme/--model flags win, else fall back to
@@ -171,11 +192,15 @@ async function handleTui(list) {
     let engineCmd;
     try { engineCmd = locateEngine(opts.engineCli); } catch (e) { console.error(e.message); process.exit(1); }
     if (!opts.prompt) { console.error('non-interactive mode requires a prompt'); process.exit(1); }
-    const { hasConfiguredProvider } = await import('../lib/tui/auth.mjs');
+    const { hasConfiguredProvider, loadAuthRuntime } = await import('../lib/tui/auth.mjs');
     if (!hasConfiguredProvider()) {
       console.error('No AI provider connected. Run `ctg login` to connect one (Carthagent Cloud is recommended), or set an API key env var (e.g. ANTHROPIC_API_KEY).');
       process.exit(1);
     }
+    // Refresh the dynamic Cloud catalog before the engine child reads its
+    // persisted model store. This keeps headless/RPC discovery in sync with
+    // browser login without fabricating model metadata.
+    await loadAuthRuntime();
     const framingOn = (opts.autoFraming ?? true);
     const prompt = shouldFrame(opts.prompt, { enabled: framingOn, delivery: opts.delivery !== false })
       ? framePrompt(opts.prompt) : opts.prompt;
@@ -375,7 +400,7 @@ async function handleCloudLogout() {
       console.log(`Revoked Cloud session ${sessionId}.`);
     } else {
       const { CloudClient, cloudControlUrl } = await import('../lib/cloud/client.mjs');
-      if (!runtime.isUsingOAuth?.('experiential-labs')) throw new Error('cloud_login_required');
+      if ((await runtime.checkAuth?.('experiential-labs'))?.type !== 'oauth') throw new Error('cloud_login_required');
       const accessToken = (await runtime.getAuth('experiential-labs'))?.auth?.apiKey;
       if (!accessToken) throw new Error('cloud_login_required');
       await new CloudClient({ baseUrl: cloudControlUrl() }).revokeCurrent({ accessToken });
@@ -579,6 +604,9 @@ switch (command) {
   case '--version':
   case '-v':
     console.log(version);
+    break;
+  case '--list-models':
+    handleListModels(argv.slice(1).join(' '));
     break;
   case undefined:
     // Bare `ctg` → interactive split-terminal console
