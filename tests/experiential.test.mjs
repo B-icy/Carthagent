@@ -8,6 +8,7 @@ import {
   createCloudOperationIdentity,
   experientialBaseUrl,
   isCloudAccessToken,
+  isManagedCloudNonRetryableError,
   managedCloudRequestOptions,
   experientialProviderConfig,
   parseExperientialModels,
@@ -32,10 +33,11 @@ test('Experiential provider uses the hosted gateway and canonical environment va
   assert.equal(config.oauth.name, 'Carthagent Cloud account');
 });
 
-test('Managed Cloud operations share one identity across metadata, HTTP headers, and SDK retries', async () => {
+test('Managed Cloud operations share one identity and disable transport retries until replay exists', async () => {
   let ids = 0;
   const payloads = [];
   const options = managedCloudRequestOptions({
+    maxRetries: 7,
     requestHeaders: { 'X-Test': 'preserved' },
     onPayload: async payload => {
       payloads.push(payload);
@@ -44,6 +46,7 @@ test('Managed Cloud operations share one identity across metadata, HTTP headers,
   }, () => `operation-${++ids}`);
 
   assert.equal(ids, 1);
+  assert.equal(options.maxRetries, 0);
   assert.deepEqual(options.requestHeaders, {
     'X-Test': 'preserved',
     'Idempotency-Key': 'operation-1',
@@ -53,11 +56,74 @@ test('Managed Cloud operations share one identity across metadata, HTTP headers,
   assert.equal(payloads.length, 1);
   assert.deepEqual(body.metadata, { inherited: 'yes', operation_key: 'operation-1' });
 
-  // The OpenAI SDK receives the same immutable request options object on every
-  // retry; creating a later operation is the only thing that advances the ID.
   assert.equal(options.requestHeaders['Idempotency-Key'], 'operation-1');
   assert.equal(createCloudOperationIdentity(() => `operation-${++ids}`), 'operation-2');
   assert.throws(() => createCloudOperationIdentity(() => ''), /identity is invalid/);
+});
+
+test('Managed Cloud duplicate-operation errors are marked non-retryable', () => {
+  assert.equal(isManagedCloudNonRetryableError('idempotency_key_reused'), true);
+  assert.equal(isManagedCloudNonRetryableError('request_reconciliation_required'), true);
+  assert.equal(isManagedCloudNonRetryableError('500 server error'), false);
+});
+
+test('Managed Cloud transport makes one attempt while direct Experiential preserves configured retries', async () => {
+  const managedAccess = ['header', Buffer.from(JSON.stringify({ sub: 'account', sid: 'session', scope: 'gateway:invoke' })).toString('base64url'), 'signature'].join('.');
+  const model = {
+    id: 'gpt-5.6-luna',
+    name: 'GPT-5.6 Luna',
+    provider: 'experiential-labs',
+    api: 'openai-completions',
+    baseUrl: 'https://direct.test/v1',
+  };
+  const context = { messages: [{ role: 'user', content: 'hello', timestamp: Date.now() }] };
+  const response = () => new Response(JSON.stringify({ error: { message: 'retryable test failure' } }), {
+    status: 500,
+    headers: { 'content-type': 'application/json' },
+  });
+  const config = experientialProviderConfig({ env: { CARTHAGENT_CLOUD_URL: 'https://cloud.test' } });
+
+  const managedCalls = [];
+  const managed = await config.streamSimple(model, context, {
+    apiKey: managedAccess,
+    maxRetries: 2,
+    maxRetryDelayMs: 1,
+    fetch: async (url, init) => { managedCalls.push({ url, init }); return response(); },
+  }).result();
+  assert.equal(managed.stopReason, 'error');
+  assert.equal(managedCalls.length, 1);
+  assert.equal(managedCalls[0].url.startsWith('https://cloud.test/v1/'), true);
+  assert.equal(managedCalls[0].init.headers.has('idempotency-key'), true);
+
+  const duplicateCalls = [];
+  const duplicate = await config.streamSimple(model, context, {
+    apiKey: managedAccess,
+    maxRetries: 2,
+    maxRetryDelayMs: 1,
+    fetch: async (url, init) => {
+      duplicateCalls.push({ url, init });
+      return new Response(JSON.stringify({ error: { message: 'request_reconciliation_required', code: 'request_reconciliation_required' } }), {
+        status: 400,
+        headers: { 'content-type': 'application/json' },
+      });
+    },
+  }).result();
+  assert.equal(duplicate.stopReason, 'error');
+  assert.equal(duplicateCalls.length, 1);
+  assert.match(duplicate.errorMessage, /cannot safely replay this operation yet/i);
+  assert.match(duplicate.errorMessage, /request_reconciliation_required/i);
+
+  const directCalls = [];
+  const direct = await config.streamSimple(model, context, {
+    apiKey: 'direct-test-key',
+    maxRetries: 1,
+    maxRetryDelayMs: 1,
+    fetch: async (url, init) => { directCalls.push({ url, init }); return response(); },
+  }).result();
+  assert.equal(direct.stopReason, 'error');
+  assert.equal(directCalls.length, 2);
+  assert.equal(directCalls[0].url.startsWith('https://direct.test/v1/'), true);
+  assert.equal(directCalls[0].init.headers.has('idempotency-key'), false);
 });
 
 test('Experiential model parsing is identity-only, sorted, and deduplicated', () => {

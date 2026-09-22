@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
@@ -10,6 +11,7 @@ import {
   createCloudBillingLink,
   filterLoginProviders,
   formatCloudAccount,
+  hasConfiguredProvider,
   loadCloudAccount,
   loginAndRefresh,
   loginProviderFocus,
@@ -29,6 +31,26 @@ function fakeRuntime(providers, status = {}) {
     getProviderAuthStatus: id => status[id] || { configured: false },
   };
 }
+
+test('hasConfiguredProvider requires a usable credential, not an empty credential file', () => {
+  const agentDir = mkdtempSync(join(tmpdir(), 'carthagent-auth-check-'));
+  try {
+    assert.equal(hasConfiguredProvider({}, agentDir), false);
+    writeFileSync(join(agentDir, 'auth.json'), '{}');
+    writeFileSync(join(agentDir, 'models.json'), JSON.stringify({ providers: { custom: { baseUrl: 'https://example.test', models: [{ id: 'x' }] } } }));
+    assert.equal(hasConfiguredProvider({}, agentDir), false);
+
+    writeFileSync(join(agentDir, 'auth.json'), JSON.stringify({ openai: { type: 'api_key', key: 'stored-key' } }));
+    assert.equal(hasConfiguredProvider({}, agentDir), true);
+
+    writeFileSync(join(agentDir, 'auth.json'), '{ invalid json');
+    writeFileSync(join(agentDir, 'models.json'), JSON.stringify({ providers: { custom: { apiKey: 'configured-key' } } }));
+    assert.equal(hasConfiguredProvider({}, agentDir), true);
+    assert.equal(hasConfiguredProvider({ ANTHROPIC_API_KEY: ' env-key ' }, join(agentDir, 'missing')), true);
+  } finally {
+    rmSync(agentDir, { recursive: true, force: true });
+  }
+});
 
 test('authTypes reports advertised methods, subscription first', () => {
   assert.deepEqual(authTypes({ auth: { apiKey: {} } }), ['api_key']);
