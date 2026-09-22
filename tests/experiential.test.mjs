@@ -30,7 +30,7 @@ test('Experiential provider uses the hosted gateway and canonical environment va
   assert.equal(config.authHeader, true);
   assert.equal(config.api, 'openai-completions');
   assert.equal(typeof config.streamSimple, 'function');
-  assert.equal(config.oauth.name, 'Carthagent Cloud account');
+  assert.equal(config.oauth.name, 'Carthagent Ship account');
 });
 
 test('Managed Cloud operations share one identity and disable transport retries until replay exists', async () => {
@@ -166,7 +166,7 @@ test('Experiential model discovery authenticates with API-key or OAuth credentia
   assert.equal(requests[1].options.headers.Authorization, 'Bearer managed-test-access');
 });
 
-test('Carthagent Cloud OAuth uses device authorization and rotating refresh tokens', async () => {
+test('Carthagent Ship OAuth uses device authorization and rotating refresh tokens', async () => {
   const calls = [];
   let polls = 0;
   const opened = [];
@@ -219,7 +219,7 @@ test('registerExperientialProvider registers one shared provider definition', ()
   assert.equal(registerExperientialProvider(runtime), runtime);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].id, 'experiential-labs');
-  assert.equal(calls[0].config.name, 'Carthagent Cloud');
+  assert.equal(calls[0].config.name, 'Carthagent Ship');
 });
 
 test('ModelRuntime resolves EXPLABS_API_KEY without copying it into provider config', async () => {

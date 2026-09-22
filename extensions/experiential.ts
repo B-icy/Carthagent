@@ -2,7 +2,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { experientialProviderConfig, EXPERIENTIAL_PROVIDER_ID } from '../lib/providers/experiential.mjs';
 import { cloudManagedUsageRecovery } from '../lib/cloud/client.mjs';
 
-/** Register Carthagent Cloud for the bundled agent in TUI, RPC, and headless modes. */
+/** Register Carthagent Ship for the bundled agent in TUI, RPC, and headless modes. */
 export default function experiential(pi: ExtensionAPI) {
   pi.registerProvider(EXPERIENTIAL_PROVIDER_ID, experientialProviderConfig());
   pi.on('message_end', (event: any, ctx: any) => {
