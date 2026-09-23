@@ -8,17 +8,30 @@ Carthagent is a delivery-focused AI coding console and CLI built on a bundled de
 
 ## Install
 
-Core CLI requires Node ≥ 22.19. Optional workflows need additional tools: Git and authenticated `gh` for PR review, Firefox/geckodriver for real-browser checks, and Python with the scenario dependencies for game graders. The engine is bundled inside the package, so one command installs everything:
+Core CLI requires Node ≥ 22.19. Optional workflows need additional tools: Git and authenticated `gh` for PR review, Firefox/geckodriver for real-browser checks, and Python with the scenario dependencies for game graders. The engine is bundled inside the package.
+
+Install directly from GitHub:
 
 ```sh
-npm i -g github:B-icy/Carthagent && ctg
+npm install -g --install-links=true github:B-icy/Carthagent
+ctg
 ```
 
-Or from a clone:
+With npm 11, `--install-links=true` is required for this `github:` global install. Without it, npm can leave `ctg` linked to a temporary clone that is deleted after installation. To make the setting persistent for future GitHub installs:
+
+```sh
+npm config set install-links true --location=user
+npm install -g github:B-icy/Carthagent
+ctg
+```
+
+If installation succeeds but your shell cannot find `ctg`, restart the terminal and confirm that npm's global executable directory is on `PATH` (`$(npm prefix -g)/bin` on Linux/macOS; the directory shown by `npm prefix -g` on Windows).
+
+Or install from a clone:
 
 ```sh
 git clone https://github.com/B-icy/Carthagent && cd Carthagent
-npm ci && npm i -g .          # gives you `ctg`; or just run `node bin/ctg.mjs`
+npm ci && npm install -g .    # gives you `ctg`; or run `node bin/ctg.mjs`
 ```
 
 ## Connect a provider
