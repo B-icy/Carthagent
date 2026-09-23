@@ -25,11 +25,11 @@ npm ci && npm i -g .          # gives you `ctg`; or just run `node bin/ctg.mjs`
 
 First run needs AI credentials. One store (`~/.carthagent/agent/auth.json`) covers the console, headless runs, and the dashboard.
 
-Run `ctg login`, or use `/login` (`/auth`) inside the console. All three entry points open the same provider picker. Carthagent Ship, powered by the Experiential gateway, appears first as the recommended managed option, while Anthropic, OpenAI, OpenRouter, and the other direct providers remain immediately selectable. Connected providers are marked without changing the stable ordering.
+Run `ctg login`, or use `/login` (`/auth`) inside the console. All three entry points open the same provider picker. Carthagent Ship appears first as the recommended managed option, while Anthropic, OpenAI, OpenRouter, and the other direct providers remain immediately selectable. Connected providers are marked without changing the stable ordering.
 
 The popup handles OAuth URLs, device codes, and API-key prompts inline. An in-session login returns to the active workspace and refreshes the agent without discarding the transcript or editor state.
 
-**Carthagent Ship / Experiential Labs** — choosing the recommended Ship row starts browser device authorization. Carthagent stores only the resulting short-lived access token and rotating refresh token in its isolated credential store; it does not ask users to paste a long-lived managed gateway key. After signing in:
+**Carthagent Ship** — choosing the recommended Ship row starts browser device authorization. Carthagent stores only the resulting short-lived access token and rotating refresh token in its isolated credential store; it does not ask users to paste a long-lived managed gateway key. After signing in:
 
 ```sh
 ctg account                    # credit, grants, plan, and CLI sessions
@@ -40,9 +40,9 @@ ctg logout-cloud [session-id]  # revoke the current or a named CLI session
 
 Inside the console, `/account`, `/billing checkout`, `/billing portal`, and `/logout-cloud <session-id>` provide the same account controls without leaving the workspace. If Ship credit is exhausted, the console offers billing and `/login`; direct Anthropic, OpenAI, OpenRouter, custom, and other BYOK providers remain available without an upsell.
 
-Operators and internal pilots may still provide `EXPLABS_API_KEY` through the environment for direct Experiential access; that key path remains separate from the public device flow. `CARTHAGENT_CLOUD_URL` may override the Carthagent account/control-plane origin, while `EXP_GATEWAY_URL` specifically overrides the direct Experiential model gateway origin for preview or staging. Browser-account requests use the Cloud authority at the control-plane origin; API-key requests continue to use Experiential directly. Carthagent discovers model identities from `GET /v1/models`; the endpoint does not provide capability or pricing metadata, so Carthagent does not infer those fields.
+Operators and internal pilots may still provide `EXPLABS_API_KEY` through the environment for direct upstream access; that key path remains separate from the public device flow. `CARTHAGENT_CLOUD_URL` may override the Carthagent account/control-plane origin, while `EXP_GATEWAY_URL` specifically overrides the direct upstream model gateway origin for preview or staging. Browser-account requests use the Ship authority at the control-plane origin; API-key requests continue to use the configured upstream gateway directly. Carthagent discovers model identities from `GET /v1/models`; the endpoint does not provide capability or pricing metadata, so Carthagent does not infer those fields.
 
-The embeddable Cloud service also includes a hosted request authority for `GET /v1/models`, `POST /v1/chat/completions`, and `POST /v1/responses`. Operators publish immutable customer-pricing versions and versioned Carthagent aliases in the control plane. Every request receives a bounded output limit and atomically reserves its maximum customer charge before Experiential dispatch. Settlement requires authoritative gateway request and physical-attempt identities plus measured token usage; known pre-dispatch failures release the hold, while ambiguous transport or accounting outcomes retain it for reconciliation instead of guessing a charge.
+The embeddable Cloud service also includes a hosted request authority for `GET /v1/models`, `POST /v1/chat/completions`, and `POST /v1/responses`. Operators publish immutable customer-pricing versions and versioned Carthagent aliases in the control plane. Every request receives a bounded output limit and atomically reserves its maximum customer charge before upstream dispatch. Settlement requires authoritative gateway request and physical-attempt identities plus measured token usage; known pre-dispatch failures release the hold, while ambiguous transport or accounting outcomes retain it for reconciliation instead of guessing a charge.
 
 **Direct provider API key** — export the provider's env var, or choose it in the shared login picker to store it:
 

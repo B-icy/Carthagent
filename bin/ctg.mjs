@@ -155,23 +155,17 @@ function parseTuiArgs(list) {
 }
 
 async function handleListModels(searchPattern) {
-  const { locateEngine, buildEngineArgs } = await import('../lib/tui/app.mjs');
   const { loadAuthRuntime } = await import('../lib/tui/auth.mjs');
-  let engineCmd;
-  try { engineCmd = locateEngine(); } catch (error) { console.error(error.message); process.exit(1); }
-  await loadAuthRuntime();
-  const args = [...engineCmd.args, ...buildEngineArgs({ isolate: true, delivery: false }), '--list-models'];
-  if (searchPattern) args.push(searchPattern);
-  const child = spawn(engineCmd.cmd, args, {
-    stdio: 'inherit',
-    cwd: process.cwd(),
-    env: {
-      ...process.env,
-      CARTHAGENT_CODING_AGENT_DIR: process.env.CARTHAGENT_CODING_AGENT_DIR || defaultAgentDir,
-      PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR || defaultAgentDir,
-    },
-  });
-  child.on('exit', code => process.exit(code || 0));
+  const { modelMatchesQuery } = await import('../lib/tui/models.mjs');
+  const { providerDisplayName } = await import('../lib/providers/names.mjs');
+  const runtime = await loadAuthRuntime();
+  const models = runtime.getAvailableSnapshot()
+    .filter(model => !searchPattern || modelMatchesQuery({ ...model, full: `${model.provider}/${model.id}`, provider: providerDisplayName(model.provider) }, searchPattern))
+    .sort((a, b) => providerDisplayName(a.provider).localeCompare(providerDisplayName(b.provider)) || a.id.localeCompare(b.id));
+  for (const model of models) {
+    const fields = [providerDisplayName(model.provider), model.id, model.contextWindow, model.maxTokens, model.input, model.output];
+    console.log(fields.map(value => value == null ? '?' : value).join('  '));
+  }
 }
 
 async function handleTui(list) {
@@ -400,11 +394,12 @@ async function handleCloudLogout() {
       console.log(`Revoked Ship session ${sessionId}.`);
     } else {
       const { CloudClient, cloudControlUrl } = await import('../lib/cloud/client.mjs');
-      if ((await runtime.checkAuth?.('experiential-labs'))?.type !== 'oauth') throw new Error('cloud_login_required');
-      const accessToken = (await runtime.getAuth('experiential-labs'))?.auth?.apiKey;
+      const { CARTHAGENT_SHIP_PROVIDER_ID } = await import('../lib/providers/names.mjs');
+      if ((await runtime.checkAuth?.(CARTHAGENT_SHIP_PROVIDER_ID))?.type !== 'oauth') throw new Error('cloud_login_required');
+      const accessToken = (await runtime.getAuth(CARTHAGENT_SHIP_PROVIDER_ID))?.auth?.apiKey;
       if (!accessToken) throw new Error('cloud_login_required');
       await new CloudClient({ baseUrl: cloudControlUrl() }).revokeCurrent({ accessToken });
-      await runtime.logout('experiential-labs');
+      await runtime.logout(CARTHAGENT_SHIP_PROVIDER_ID);
       console.log('Revoked and removed the current Carthagent Ship session.');
     }
   } catch (error) { await cloudFailure(error); }

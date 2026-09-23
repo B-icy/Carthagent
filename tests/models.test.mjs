@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { cycleProvider, filterModelsByProvider, modelMatchesQuery, providerForModel, providersFromModels } from '../lib/tui/models.mjs';
 
 const MODELS = [
+  { provider: 'experiential-labs', id: 'gpt-5.6-luna', full: 'experiential-labs/gpt-5.6-luna', name: 'OpenAI · GPT-5.6 Luna' },
   { provider: 'deepseek', id: 'deepseek-chat', full: 'deepseek/deepseek-chat' },
   { provider: 'deepseek', id: 'deepseek-reasoner', full: 'deepseek/deepseek-reasoner' },
   { provider: 'openrouter', id: 'anthropic/claude', full: 'openrouter/anthropic/claude' },
@@ -11,7 +12,7 @@ const MODELS = [
 ];
 
 test('providersFromModels returns sorted unique providers', () => {
-  assert.deepEqual(providersFromModels(MODELS), ['deepseek', 'openrouter']);
+  assert.deepEqual(providersFromModels(MODELS), ['deepseek', 'experiential-labs', 'openrouter']);
   assert.deepEqual(providersFromModels([]), []);
   assert.deepEqual(providersFromModels(null), []);
 });
@@ -39,13 +40,15 @@ test('filterModelsByProvider scopes to a provider and matches a query', () => {
     ['deepseek/deepseek-v4.1-flash']
   );
   // no provider filter → all models
-  assert.equal(filterModelsByProvider(MODELS, '', '').length, 5);
+  assert.equal(filterModelsByProvider(MODELS, '', '').length, 6);
   // limit is applied
   assert.equal(filterModelsByProvider(MODELS, '', '', 2).length, 2);
 });
 
 test('modelMatchesQuery searches display names and treats punctuation as separators', () => {
   const model = MODELS.at(-1);
+  assert.equal(modelMatchesQuery(MODELS[0], 'cartha'), true);
+  assert.equal(modelMatchesQuery(MODELS[0], 'Carthagent Ship Luna'), true);
   assert.equal(modelMatchesQuery(model, 'DeepSeek 4.1 Flash'), true);
   assert.equal(modelMatchesQuery(model, 'deepseek v4 1'), true);
   assert.equal(modelMatchesQuery(model, 'V4.1 Pro'), false);

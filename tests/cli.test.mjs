@@ -192,7 +192,7 @@ test('ctg --list-models renders stored identity-only Cloud metadata as unknown',
       checkedAt: 1,
     },
   }));
-  const result = spawnSync(process.execPath, [cli, '--list-models', 'experiential-labs'], {
+  const result = spawnSync(process.execPath, [cli, '--list-models', 'Carthagent Ship'], {
     cwd,
     encoding: 'utf8',
     env: {
@@ -203,7 +203,8 @@ test('ctg --list-models renders stored identity-only Cloud metadata as unknown',
     },
   });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /experiential-labs\s+carthagent-code\s+\?\s+\?\s+\?\s+\?/);
+  assert.match(result.stdout, /Carthagent Ship\s+carthagent-code\s+\?\s+\?\s+\?\s+\?/);
+  assert.doesNotMatch(result.stdout, /experiential/i);
   assert.doesNotMatch(result.stderr, /Cannot read properties|Failed to load extension/);
 });
 
