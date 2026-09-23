@@ -11,7 +11,7 @@ import { saveReport, createReport } from '../lib/reports.mjs';
 // Load the project extension even without a global engine installation.
 const requireEngine = createRequire(import.meta.url);
 const { createJiti } = requireEngine('jiti');
-const jiti = createJiti(import.meta.url, { alias: { typebox: requireEngine.resolve('typebox'), '@earendil-works/pi-coding-agent': fileURLToPath(new URL('../vendor/agent/index.js', import.meta.url)) } });
+const jiti = createJiti(import.meta.url, { alias: { '@earendil-works/pi-coding-agent': fileURLToPath(new URL('../vendor/agent/index.js', import.meta.url)) } });
 const factory = await jiti.import(fileURLToPath(new URL('../extensions/delivery.ts', import.meta.url)), { default: true });
 const options = {};
 function fixture(t) {

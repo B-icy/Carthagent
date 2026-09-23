@@ -1,6 +1,5 @@
 import { budgetLimits, newBudget, budgetReason, budgetSnapshot } from '../lib/budget.mjs';
 import { CONFIG_DIR_NAME, truncateTail, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { Type } from 'typebox';
 import { mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -19,6 +18,18 @@ const BROWSER_CHECK_GUIDANCE = existsSync(BROWSER_CHECK)
 const text = (value: unknown) => {
   const output = truncateTail(typeof value === 'string' ? value : JSON.stringify(value, null, 2), { maxBytes: 48000, maxLines: 1000 });
   return { content: [{ type: 'text' as const, text: output.content + (output.truncated ? '\n[Output truncated; full check output is in the recorded log files.]' : '') }], details: {} };
+};
+type JsonSchema = Record<string, unknown>;
+const optionalSchemas = new WeakSet<JsonSchema>();
+const Type = {
+  String: (options: JsonSchema = {}): JsonSchema => ({ type: 'string', ...options }),
+  Integer: (options: JsonSchema = {}): JsonSchema => ({ type: 'integer', ...options }),
+  Array: (items: JsonSchema, options: JsonSchema = {}): JsonSchema => ({ type: 'array', items, ...options }),
+  Optional: (schema: JsonSchema): JsonSchema => { optionalSchemas.add(schema); return schema; },
+  Object: (properties: Record<string, JsonSchema>, options: JsonSchema = {}): JsonSchema => {
+    const required = Object.entries(properties).filter(([, schema]) => !optionalSchemas.has(schema)).map(([name]) => name);
+    return { type: 'object', ...(required.length ? { required } : {}), properties, ...options };
+  },
 };
 const shortString = () => Type.String({ minLength: 1, maxLength: 1200 });
 const strings = (maxItems = 20) => Type.Array(shortString(), { minItems: 1, maxItems });

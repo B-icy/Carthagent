@@ -221,9 +221,14 @@ test('loadAuthRuntime lazily imports vendored engine and discovers OAuth/API pro
   ]);
 });
 
-test('vendor engine does not depend on unbundled @earendil-works/chord', () => {
+test('vendor engine does not install redundant engine or schema packages', () => {
   const chunkPath = join(root, 'vendor', 'agent', 'chunks', 'chunk-JVUZSMYM.js');
   const content = readFileSync(chunkPath, 'utf8');
   assert.doesNotMatch(content, /from\s*['"]@earendil-works\/chord/);
   assert.match(content, /from\s*['"]\.\/chord-context\.js['"]/);
+  const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+  for (const name of ['@earendil-works/chord', 'typebox']) {
+    assert.equal(manifest.dependencies?.[name], undefined);
+    assert.equal(manifest.devDependencies?.[name], undefined);
+  }
 });
