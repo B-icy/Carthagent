@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, readFileSync, symlinkSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname, basename } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { captureDeliveryReview, recordDeliveryReview } from '../lib/delivery-review.mjs';
 import { evidenceIdentity, fingerprint, completionIssues, revisePlan } from '../lib/delivery.mjs';
@@ -54,6 +54,20 @@ test('review rejects modified receipts, stale coverage, and cancellation', async
   writeFileSync(capture.path, 'forged diff');
   assert.throws(() => recordDeliveryReview(state, cwd, params(capture.id)), /modified/);
   await assert.rejects(captureDeliveryReview(state, cwd, dir, AbortSignal.abort()), /cancelled/);
+});
+
+test('review accepts filesystem aliases of the Git root but rejects ancestor repositories', async t => {
+  const { cwd, state } = fixture(t);
+  const parent = mkdtempSync(join(tmpdir(), 'review-alias-'));
+  t.after(() => rmSync(parent, { recursive: true, force: true }));
+  const link = join(parent, 'alias');
+  symlinkSync(dirname(cwd), link, process.platform === 'win32' ? 'junction' : 'dir');
+  const alias = join(link, basename(cwd));
+  const capture = await captureDeliveryReview(state, alias, join(alias, '.harness', 'review'));
+  assert.match(capture.diff, /diff --git/);
+  const child = join(cwd, 'nested');
+  mkdirSync(child);
+  await assert.rejects(captureDeliveryReview(state, child, join(child, '.harness')), /workspace Git root/);
 });
 
 test('large diffs retain full receipt instead of silently using output tail', async t => {
