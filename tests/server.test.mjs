@@ -71,6 +71,29 @@ test('dashboard persists plans and executes checks in the selected workspace', a
   assert.deepEqual(body.pendingChecks, []);
 });
 
+test('dashboard preserves command evidence but rejects new-requirement coverage until rerun and records reviews', async t => {
+  const server = await serverFixture(t);
+  const post = (path, body) => fetch(`${server.url}/api/${path}`, json(server.token, body));
+  const plan = { goal: 'Review API', artifacts: ['.'], steps: ['Run'], acceptance: [{ requirement: 'Runs', checks: ['smoke'] }], checks: [{ id: 'smoke', kind: 'runtime', argv: [process.execPath, 'app.mjs'], timeoutSeconds: 10 }] };
+  assert.equal((await post('plan/set', { plan })).status, 200);
+  assert.equal((await post('checks/run', { id: 'all' })).status, 200);
+  assert.equal((await post('plan/revise', { reason: 'New boundary', patch: { acceptance: [...plan.acceptance, { requirement: 'Boundary behavior', checks: ['smoke'] }] } })).status, 200);
+  const status = await (await fetch(`${server.url}/api/status`, { headers: { 'x-carthagent-token': server.token } })).json();
+  assert.deepEqual(status.pendingChecks, []);
+  assert.deepEqual(status.completionIssues.unverifiedRequirements, ['Boundary behavior']);
+  assert.equal((await post('finish', { status: 'verified' })).status, 400);
+  assert.equal((await post('checks/run', { id: 'all' })).status, 200);
+  const inspected = await post('review', { action: 'inspect' });
+  assert.equal(inspected.status, 200);
+  const { result } = await inspected.json();
+  assert.equal((await post('review', { action: 'record', captureId: result.id, coverage: ['Runs', 'Boundary behavior'].map(requirement => ({ requirement, assertions: 'Fixture command exits zero' })), probes: ['node app.mjs: ok'], findings: [], limitations: ['Fixture coverage only'] })).status, 200);
+  const finished = await post('finish', { status: 'verified' });
+  assert.equal(finished.status, 200);
+  const { state } = await finished.json();
+  assert.equal(state.handoff.reviewEvidence.id, result.id);
+  assert.equal(state.handoff.evidence.smoke.executedRevision, state.revision);
+});
+
 test('dashboard rejects plan replacement and finish during checks and releases after failure', async t => {
   const server = await serverFixture(t);
   mkdirSync(join(server.cwd, 'artifacts'));
@@ -105,7 +128,41 @@ test('dashboard rejects plan replacement and finish during checks and releases a
   assert.equal((await post('plan/set', { plan: replacement })).status, 200);
   const after = await (await fetch(`${server.url}/api/status`, { headers: { 'x-carthagent-token': server.token } })).json();
   assert.equal(after.plan.goal, 'Replacement');
-  assert.deepEqual(after.evidence, {});
+  assert.equal(after.evidence.smoke.passed, false, 'replacing an active plan preserves failure history');
+  assert.equal(after.revision, status.revision + 1);
+});
+
+test('dashboard revisions preserve evidence and enforce output and step completion', async t => {
+  const server = await serverFixture(t);
+  const post = (path, body) => fetch(`${server.url}/api/${path}`, json(server.token, body));
+  const status = async () => (await fetch(`${server.url}/api/status`, { headers: { 'x-carthagent-token': server.token } })).json();
+  const plan = {
+    goal: 'Migration report', assumptions: [], artifacts: ['app.mjs'], steps: ['Run'],
+    outputs: ['artifacts/report.json'],
+    acceptance: [{ requirement: 'Runs', checks: ['smoke'] }],
+    checks: [{ id: 'smoke', kind: 'runtime', argv: [process.execPath, 'app.mjs'], timeoutSeconds: 10 }],
+  };
+  assert.equal((await post('plan/set', { plan })).status, 200);
+  assert.equal((await post('checks/run', { id: 'all' })).status, 200);
+  const before = await status();
+  for (const patch of [null, {}, [], 'invalid', { evidence: {} }]) {
+    assert.equal((await post('plan/revise', { reason: 'Invalid patch', patch })).status, 400);
+  }
+  assert.equal((await status()).revision, before.revision);
+  assert.equal((await post('plan/revise', { reason: 'Discovered old callers', patch: { assumptions: ['Preserve compatibility'] } })).status, 200);
+  const after = await status();
+  assert.equal(after.runId, before.runId);
+  assert.equal(after.revision, before.revision + 1);
+  assert.deepEqual(after.pendingChecks, []);
+  assert.equal((await post('finish', { status: 'verified' })).status, 400);
+  assert.equal((await post('plan/revise', { reason: 'Try dropping report', patch: { outputs: [] } })).status, 400);
+  mkdirSync(join(server.cwd, 'artifacts'));
+  writeFileSync(join(server.cwd, 'artifacts/report.json'), '{}');
+  assert.equal((await post('finish', { status: 'verified' })).status, 200);
+  assert.equal((await post('plan/revise', { reason: 'Review a discovered caller', patch: { steps: [{ id: 'review', title: 'Review caller', checks: ['smoke'] }] } })).status, 200);
+  assert.deepEqual((await status()).completionIssues.incompleteSteps, ['review']);
+  assert.equal((await post('finish', { status: 'verified' })).status, 400);
+  assert.equal((await post('plan/revise', { reason: 'Try dropping requirement', patch: { acceptance: [{ requirement: 'Less work', checks: ['smoke'] }] } })).status, 400);
 });
 
 test('dashboard is self-contained and does not render API data with innerHTML', async () => {

@@ -315,6 +315,7 @@ test('summarizeArgs gives concise tool summaries', () => {
   assert.match(summarizeArgs('write', { path: 'x', content: 'abcd' }), /x · 4B/);
   assert.equal(summarizeArgs('bash', { command: 'ls -la' }), 'ls -la');
   assert.equal(summarizeArgs('delivery_check', { id: 'all' }), 'id=all');
+  assert.equal(summarizeArgs('delivery_revise', { reason: 'Discovered another consumer' }), 'Discovered another consumer');
 });
 
 test('ansi helpers measure and clip styled text', () => {
@@ -409,6 +410,9 @@ test('computePhase derives the rail tracker state', () => {
   assert.equal(computePhase({ plan, evidence: {}, status: 'verifying' }, 'h1', true).phase, 'verify');
   const fresh = { runId: 'run-a', revision: 1, plan, evidence: { tests: { runId: 'run-a', revision: 1, passed: true, fingerprint: 'h1', checkDigest: checkDigest(plan.checks[0]) } }, status: 'implementing' };
   assert.equal(computePhase(fresh, 'h1').phase, 'review');
+  const structured = { ...fresh, plan: { ...plan, steps: [{ id: 'review', title: 'Review consumers' }] } };
+  assert.equal(computePhase(structured, 'h1').phase, 'build');
+  assert.equal(computePhase({ ...structured, stepStatus: { step0: 'done' } }, 'h1').phase, 'review');
   assert.equal(computePhase({ ...fresh, status: 'verifying' }, 'h1').phase, 'review');
   assert.equal(computePhase({ ...fresh, status: 'verifying' }, 'h1', true).phase, 'verify');
   const readyNodes = computeNodeStates({ ...fresh, status: 'verifying' }, false, null, 'h1').states;

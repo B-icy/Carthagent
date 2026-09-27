@@ -56,6 +56,18 @@ test('check executes declared argv and persists fresh evidence', t => {
   assert.equal(latestReport(cwd).state.evidence.smoke.passed, true);
 });
 
+test('structured headless mode forwards JSON events and status offers a parseable snapshot', t => {
+  assert.deepEqual(buildEngineArgs({ json: true, delivery: false }).slice(0, 2), ['--mode', 'json']);
+  assert.equal(buildEngineArgs({ delivery: false }).includes('--mode'), false);
+  const result = run(fixture(t), 'status', '--json');
+  assert.equal(result.status, 0, result.stderr);
+  const snapshot = JSON.parse(result.stdout);
+  assert.equal(snapshot.version, 1);
+  assert.equal(snapshot.state, null);
+  assert.equal(snapshot.completionIssues, null);
+  assert.match(snapshot.currentFingerprint, /^[a-f0-9]{64}$/);
+});
+
 test('check fails clearly when no delivery report exists', t => {
   const result = run(fixture(t), 'check');
   assert.equal(result.status, 1);

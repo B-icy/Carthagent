@@ -54,6 +54,16 @@ test('live extension refreshes same-run state and rejects superseded mutations a
   await f.call('delivery_plan', f.plan); // Explicit new work can supersede an idle run.
 });
 
+test('revision tool rejects malformed patches before merging current fields', async t => {
+  const f = fixture(t);
+  await f.call('delivery_plan', f.plan);
+  const before = f.entries.at(-1).data.revision;
+  for (const patch of [null, {}, [], 'invalid', { evidence: {} }]) {
+    await assert.rejects(f.call('delivery_revise', { reason: 'Invalid patch', patch }), /nonempty|Unknown/);
+  }
+  assert.equal(f.entries.at(-1).data.revision, before);
+});
+
 test('real extension loads, gates writes, executes checks and rejects stale evidence', options, async t => {
   const f = fixture(t);
   assert.equal(f.hooks.tool_call({ toolName: 'write' }).block, true);
@@ -558,6 +568,103 @@ test('repair allowance persists across user follow-ups and stops automatic conti
   f.hooks.agent_end(event, f.ctx);
   assert.equal(f.messages.length, 2);
   assert.equal(JSON.parse(f.messages[1].content).reason, 'repair-rounds');
+});
+
+test('revision tool preserves evidence, progress and discoveries across restore and compaction', async t => {
+  const f = fixture(t);
+  await f.call('delivery_plan', f.plan);
+  await f.call('delivery_progress', { step: 0, status: 'done' });
+  await f.call('delivery_check', { id: 'all' });
+  const original = structuredClone(f.entries.at(-1).data);
+  await f.call('delivery_revise', { reason: 'Discovered a second caller during repository inspection', patch: {
+    steps: ['Inspect second caller', ...f.plan.steps], assumptions: ['Keep the old caller compatible'],
+  } });
+  const revised = f.entries.at(-1).data;
+  assert.equal(revised.runId, original.runId);
+  assert.equal(revised.revision, original.revision + 1);
+  assert.equal(revised.evidence.run.revision, revised.revision);
+  assert.equal(revised.evidence.run.logPath, original.evidence.run.logPath);
+  assert.equal(revised.stepStatus.step1, 'done');
+  f.hooks.session_start({}, f.ctx);
+  const context = f.hooks.context({ messages: [] }).messages[0].content;
+  assert.match(context, /Keep the old caller compatible/);
+  assert.match(context, /Discovered a second caller/);
+  assert.match(context, /"step1":"done"/);
+  const status = JSON.parse((await f.call('delivery_status')).content[0].text);
+  assert.deepEqual(status.pendingChecks, []);
+  assert.equal(status.revisions, undefined, 'full snapshots stay in report, not status context');
+  assert.equal(status.revisionHistory.length, 1);
+  writeFileSync(join(f.cwd, 'app.py'), 'print(2)');
+  await f.call('delivery_revise', { reason: 'Implementation changed', patch: { goal: f.plan.goal } });
+  assert.deepEqual(JSON.parse((await f.call('delivery_status')).content[0].text).pendingChecks, ['run']);
+});
+
+test('repeated full plans cannot erase verification history to allow downgrades', async t => {
+  const f = fixture(t);
+  await f.call('delivery_plan', f.plan);
+  await f.call('delivery_check', { id: 'all' });
+  const changed = structuredClone(f.plan);
+  changed.checks[0].timeoutSeconds = 6;
+  await f.call('delivery_plan', changed);
+  assert.deepEqual(f.entries.at(-1).data.evidence, {});
+  await assert.rejects(f.call('delivery_plan', { ...f.plan, verification: 'none', acceptance: [], checks: [] }), /Cannot downgrade/);
+  await f.call('delivery_finish', { status: 'blocked', review: 'Need external decision', launch: 'n/a', limitations: ['Missing decision'] });
+  await assert.rejects(f.call('delivery_revise', { reason: 'Resume without tests', patch: { verification: 'none', acceptance: [], checks: [] } }), /Cannot downgrade/);
+});
+
+test('structured steps and promised outputs are enforced consistently by status and finish', async t => {
+  const f = fixture(t);
+  f.plan.steps = [
+    { id: 'build', title: 'Implement', checks: ['run'] },
+    { id: 'review', title: 'Review compatibility', dependsOn: ['build'] },
+  ];
+  f.plan.outputs = ['artifacts/report.json'];
+  await f.call('delivery_plan', f.plan);
+  await assert.rejects(f.call('delivery_progress', { step: 'review', status: 'active' }), /dependencies/);
+  const checked = JSON.parse((await f.call('delivery_check', { id: 'all' })).content[0].text);
+  assert.equal(checked.readyToFinish, false);
+  const finish = { status: 'verified', review: 'Reviewed', launch: 'n/a', limitations: [] };
+  await assert.rejects(f.call('delivery_finish', finish), /Incomplete steps/);
+  await f.call('delivery_progress', { step: 'build', status: 'done' });
+  await f.call('delivery_progress', { step: 'review', status: 'done' });
+  await assert.rejects(f.call('delivery_finish', finish), /Missing outputs: artifacts\/report.json/);
+  const { mkdirSync } = await import('node:fs');
+  mkdirSync(join(f.cwd, 'artifacts'));
+  writeFileSync(join(f.cwd, 'artifacts', 'report.json'), '{}');
+  await assert.rejects(f.call('delivery_finish', finish), /delivery_review/);
+  const capture = JSON.parse((await f.call('delivery_review', { action: 'inspect' })).content[0].text);
+  await f.call('delivery_review', { action: 'record', captureId: capture.id, coverage: [{ requirement: 'Runs', assertions: 'runtime command exits zero' }], probes: ['node runtime probe returned passed'], findings: [], limitations: ['No Git baseline in this fixture'] });
+  assert.equal(JSON.parse((await f.call('delivery_status')).content[0].text).readyToFinish, true);
+  await f.call('delivery_finish', finish);
+});
+
+test('all checks collects failures and independent successes rather than stopping at first failure', async t => {
+  const f = fixture(t);
+  f.plan.checks = [
+    { ...f.plan.checks[0], argv: [process.execPath, '-e', 'console.log("first failure"); process.exit(7)'] },
+    { ...f.plan.checks[0], id: 'second' },
+    { ...f.plan.checks[0], id: 'third', argv: [process.execPath, '-e', 'process.exit(9)'] },
+  ];
+  await f.call('delivery_plan', f.plan);
+  await assert.rejects(f.call('delivery_check', { id: 'all' }), /All requested checks ran/);
+  const evidence = f.entries.at(-1).data.evidence;
+  assert.equal(evidence.run.code, 7);
+  assert.equal(evidence.second.passed, true);
+  assert.equal(evidence.third.code, 9);
+});
+
+test('revision respects workspace supersession and user-owned validators', async t => {
+  const f = fixture(t);
+  const manifest = join(f.cwd, 'validators.json');
+  writeFileSync(manifest, JSON.stringify({ version: 1, checks: [{ id: 'oracle', kind: 'test', argv: [process.execPath, '-e', 'process.exit(9)'], timeoutSeconds: 5 }] }));
+  f.flags['delivery-validators'] = manifest;
+  f.hooks.session_start({}, f.ctx);
+  await f.call('delivery_plan', f.plan);
+  await f.call('delivery_revise', { reason: 'Try overriding validator', patch: { checks: [...f.plan.checks, { ...f.plan.checks[0], id: 'required_oracle' }] } });
+  assert.match(f.entries.at(-1).data.plan.checks.find(c => c.id === 'required_oracle').argv[2], /exit\(9\)/);
+  const other = createReport(f.cwd, { status: 'implementing', plan: f.plan, evidence: {} });
+  selectReport(f.cwd, other.path);
+  await assert.rejects(f.call('delivery_revise', { reason: 'Stale writer', patch: { goal: 'Changed' } }), /superseded/);
 });
 
 test('budget status command reports remaining allowance without consuming tools', options, t => {

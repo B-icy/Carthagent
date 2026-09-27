@@ -6,7 +6,8 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { lockWorkspace, selectReport, assertActiveReport } from '../lib/workspace.mjs';
 import { saveReport, reconcileReport } from '../lib/reports.mjs';
-import { evidenceIdentity, validatePlan, planD2WithProgress, fingerprint, runCommand, pendingChecks, restoreState, shouldContinue, localPath, createSerialQueue, validateRevision, bindRequiredChecks, loadRequiredChecks, updateStepStatus, verificationMode, looksInformational } from '../lib/delivery.mjs';
+import { evidenceIdentity, validatePlan, planD2WithProgress, fingerprint, runCommand, pendingChecks, restoreState, shouldContinue, localPath, createSerialQueue, validateRevision, bindRequiredChecks, loadRequiredChecks, updateStepStatus, verificationMode, looksInformational, revisePlan, completionIssues, planSteps, validatePlanPatch, pendingRequirements } from '../lib/delivery.mjs';
+import { captureDeliveryReview, recordDeliveryReview } from '../lib/delivery-review.mjs';
 import { formatGuidance, loadGuidanceProfiles, routeGuidance } from '../lib/guidance.mjs';
 
 const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url));
@@ -24,6 +25,8 @@ const optionalSchemas = new WeakSet<JsonSchema>();
 const Type = {
   String: (options: JsonSchema = {}): JsonSchema => ({ type: 'string', ...options }),
   Integer: (options: JsonSchema = {}): JsonSchema => ({ type: 'integer', ...options }),
+  Union: (schemas: JsonSchema[]): JsonSchema => ({ anyOf: schemas }),
+  Partial: (schema: JsonSchema): JsonSchema => { const copy = { ...schema }; delete copy.required; return copy; },
   Array: (items: JsonSchema, options: JsonSchema = {}): JsonSchema => ({ type: 'array', items, ...options }),
   Optional: (schema: JsonSchema): JsonSchema => { optionalSchemas.add(schema); return schema; },
   Object: (properties: Record<string, JsonSchema>, options: JsonSchema = {}): JsonSchema => {
@@ -33,14 +36,28 @@ const Type = {
 };
 const shortString = () => Type.String({ minLength: 1, maxLength: 1200 });
 const strings = (maxItems = 20) => Type.Array(shortString(), { minItems: 1, maxItems });
+const planFields = {
+  goal: shortString(), assumptions: Type.Array(shortString(), { maxItems: 20 }),
+  artifacts: strings(40), outputs: Type.Optional(Type.Array(shortString(), { maxItems: 40 })),
+  steps: Type.Array(Type.Union([shortString(), Type.Object({
+    id: Type.String({ pattern: '^[a-z][a-z0-9_-]{0,39}$' }), title: shortString(),
+    kind: Type.Optional(Type.String({ description: 'work (default) or regression; regression captures intentional behavioral failure and must have checks:[]' })),
+    dependsOn: Type.Optional(Type.Array(shortString(), { maxItems: 40 })),
+    checks: Type.Optional(Type.Array(shortString(), { maxItems: 24 })),
+  })]), { minItems: 1, maxItems: 40 }),
+  verification: Type.Optional(Type.String({ description: 'required (default) | advisory | none' })),
+  acceptance: Type.Array(Type.Object({ requirement: shortString(), checks: strings(24) }), { maxItems: 40 }),
+  checks: Type.Array(Type.Object({ id: Type.String({ pattern: '^[a-z][a-z0-9_-]{0,39}$' }), kind: Type.String({ description: 'test, runtime, or static' }), argv: strings(80), timeoutSeconds: Type.Integer({ minimum: 1, maximum: 300 }) }), { maxItems: 24 }),
+};
 const GUIDANCE = `Software delivery workflow (not required for questions or read-only reviews):
 Classify the ask before planning. Pure questions, explanations and read-only reviews are informational: either answer directly without delivery_plan, or — when a written contract helps — call delivery_plan with verification:"none" (no checks) or verification:"advisory" (optional checks whose failures are reported as context, never repaired). Reserve verification:"required" (the default) for tasks that change product files. Before running delivery_check, re-check the classification once more: a required plan may be reclassified to advisory/none only before any check has run, so decide before the verify loop. Informational plans finish cleanly with delivery_finish status="verified" and receive no repair nudges.
 For substantial implementation work, inspect the repository and installed library APIs first. Identify which domain skills or knowledge bases apply to this task — check the available skills list and read the matching skill before implementing. Use delivery_plan BEFORE implementation: capture assumptions, a small vertical-slice plan, artifact roots, acceptance criteria and real check commands. D2 is generated for the flowchart; use D2 for any additional flowcharts.
-Pressure-test the plan before writing code: review it against every explicit requirement in the user's prompt, verify uncertain APIs with installed source or a tiny executable probe, and confirm the checks can actually detect failure. If the plan is weak or incomplete, call delivery_plan again to fix it — the plan is a living contract, not a one-time artifact.
+Pressure-test the plan before writing code: review it against every explicit requirement in the user's prompt, verify uncertain APIs with installed source or a tiny executable probe, and confirm the checks can actually detect failure. If the plan is weak or incomplete, call delivery_revise with a reason and a partial plan patch to fix it — the plan is a living contract, not a one-time artifact. Unchanged checks retain evidence only while the workspace fingerprint is unchanged; source edits still require re-verification.
 Implement a runnable slice early, then complete the agreed behavior in small coherent steps. Mark progress with delivery_progress as each step finishes so the plan panel stays current. Don't stop at a scaffold. Verify uncertain APIs with installed source or a tiny executable probe; never invent library methods or assume assets exist. Separate testable logic from rendering/services. Include error handling, dependencies, launch instructions, and regression tests. Exercise actual interaction paths in fresh subprocesses with the normal environment, not only compilation or internal function calls. Include non-ASCII text, paths with spaces, and invalid data where applicable. On Windows, stdout may use a legacy code page (e.g. cp1252): use ASCII-escaped JSON or configure the application's UTF-8 output; don't hide failures by changing only the test environment. For visual work, capture and inspect a screenshot if your model supports images; otherwise explicitly disclose that visual review is unperformed.
-After creating a file, prefer focused edit calls over repeatedly rewriting the full file. Whole-file rewrites bloat model context, increase provider rate-limit risk, and can accidentally remove previously working behavior. If development reveals a wrong assumption or a step can't be completed as planned, call delivery_plan again to adjust the contract — update steps and checks to match reality, but never silently drop original acceptance criteria.
+After creating a file, prefer focused edit calls over repeatedly rewriting the full file. Whole-file rewrites bloat model context, increase provider rate-limit risk, and can accidentally remove previously working behavior. If development reveals a wrong assumption or a step can't be completed as planned, call delivery_revise to adjust the contract — update steps and checks to match reality, but never silently drop original acceptance criteria. For multi-package work use structured steps {id,title,dependsOn:[],checks:[]} with stable IDs: dependencies gate progress and mapped checks must pass before done. Plan near-term slices in detail, leave later slices coarse, and refine them as dependencies become clear. Record architecture boundaries, affected callers, compatibility constraints, risky assumptions and rollback strategy in assumptions; resolve uncertainty with focused probes. Establish baseline failures, add a regression that fails before the fix, then run focused tests followed by integration and repository quality gates. Reopening a prerequisite resets downstream progress. Finish requires all structured steps done; string steps remain supported.
 Use a few meaningful check suites (usually 2–4), not one command per criterion: multiple acceptance criteria can share a suite. When user-owned required validators already cover a requirement, do not duplicate them with shallow model-authored checks; add only focused checks for logic they do not cover. Scope honestly: enumerate every explicit requirement in the user's prompt and back each core requirement with an acceptance criterion and a real check. Narrow contracts that omit core requirements make 'verified' a scope failure, not a smaller task; if budget remains once checks pass, implement and verify the missing requirements instead of stopping at the first passing slice. Run delivery_check with id="all" to execute every declared check sequentially. It executes the argv with a deadline, records logs and fingerprints the entire working project (excluding dependencies, caches and generated artifacts), so omitting a source file cannot hide stale evidence. Artifact roots must contain product source/tests/config/docs, never only artifacts/. Use ["."] for the project. Do not edit during checks; run dependent tools in separate batches. Use artifacts/ for generated screenshots/build output; .harness/ is reserved for harness logs. Re-run checks after final edits. When delivery_status reports readyToFinish:true, stop polling: adversarially review the result and call delivery_finish. Repeating an unchanged delivery_status is not progress and is blocked after a small number of calls.
-Before concluding, adversarially review the implementation against each acceptance criterion and call delivery_finish with the review, launch command and honest limitations. Failed, missing or stale checks cannot produce verified status. If genuinely blocked, use status=blocked with the reason; do not weaken tests to manufacture success. Phased delivery means steady progress across many tool calls within the run, not a single response. No automatic deployments or unrequested destructive changes.`;
+For a regression-first milestone use {id,title,kind:"regression",checks:[]}; capture an actual behavioral assertion failure (not an import or syntax failure) with bash before implementation and record its command/result in progress notes. Keep green suites on acceptance and the later integration milestone. Run focused intermediate gates rather than waiting until every package has changed. New or remapped acceptance criteria require new test executions even if old command evidence is still fresh; add assertions that would catch the newly required behavior.
+Before concluding a structured plan, call delivery_review action="inspect" to capture the final Git diff. Read the diff and any new files, challenge each criterion with concrete assertion coverage, and run additional boundary/metamorphic probes (for numbers: different magnitudes, signs, extremes, equivalent representations and permutation invariance, not only tiny happy-path examples). Fix findings, rerun checks, and inspect again after edits. Then call delivery_review action="record" with captureId, coverage:[{requirement,assertions}], probes:[command and observed result], findings:[] and limitations. Nonempty findings must be fixed or handed off blocked. The recorded review and exact check evidence are included in the harness handoff; don't invent provenance in a model-authored report. This traceable self-review is not independent proof. Finally call delivery_finish with the review, launch command and honest limitations. Failed, missing or stale checks cannot produce verified status. If genuinely blocked, use status=blocked with the reason; do not weaken tests to manufacture success. Phased delivery means steady progress across many tool calls within the run, not a single response. No automatic deployments or unrequested destructive changes.`;
 
 export default function delivery(pi: ExtensionAPI) {
   let state: any = null;
@@ -202,7 +219,7 @@ export default function delivery(pi: ExtensionAPI) {
     // Explicit checks/finish still validate evidence; a new plan restores context.
     if (!state || ['verified', 'blocked'].includes(state.status)) return;
     // Re-injected after compaction without replacing Pi's summary or pruning user messages.
-    const summary = { goal: state.plan.goal, status: state.status, acceptance: state.plan.acceptance, steps: state.plan.steps, artifacts: state.plan.artifacts, checks: state.plan.checks, evidence: Object.fromEntries(Object.entries(state.evidence).map(([id, e]: any) => [id, { passed: e.passed, fingerprint: e.fingerprint, code: e.code, outputTail: e.outputTail ? e.outputTail.slice(-400) : undefined }])) };
+    const summary = { goal: state.plan.goal, revision: state.revision, lastRevision: state.revisions?.at(-1)?.reason, assumptions: state.plan.assumptions, status: state.status, stepStatus: state.stepStatus, verification: verificationMode(state.plan), verificationStarted: state.verificationStarted, outputs: state.plan.outputs, requirementRevisions: state.requirementRevisions, reviewRecorded: Boolean(state.reviewEvidence), progressNotes: state.progressNotes?.slice(-5), acceptance: state.plan.acceptance, steps: state.plan.steps, artifacts: state.plan.artifacts, checks: state.plan.checks, evidence: Object.fromEntries(Object.entries(state.evidence).map(([id, e]: any) => [id, { passed: e.passed, fingerprint: e.fingerprint, code: e.code, outputTail: e.outputTail ? e.outputTail.slice(-400) : undefined }])) };
     return { messages: [...event.messages, { role: 'custom' as const, customType: 'delivery-context', content: `Delivery contract (evidence may be stale after edits):\n${JSON.stringify(summary)}\nInspect freshness with delivery_status once when needed. If it reports readyToFinish:true, call delivery_finish; do not poll unchanged status.`, display: false, timestamp: Date.now() }] };
   });
   pi.on('tool_call', (event, ctx) => {
@@ -384,27 +401,44 @@ export default function delivery(pi: ExtensionAPI) {
   });
 
   pi.registerTool({
-    name: 'delivery_plan', label: 'Delivery plan', description: 'Create/replace the acceptance contract and generate plan.d2. Replanning resets evidence; do not drop failing requirements. Paths are relative files/directories, not globs. Checks use executable argv (no implicit shell). Set verification:"none" for a pure informational answer, "advisory" for optional non-blocking evidence, or leave the default "required" for tasks that change product files.',
-    parameters: Type.Object({
-      goal: shortString(), assumptions: Type.Array(shortString(), { maxItems: 12 }),
-      artifacts: strings(30), steps: strings(12),
-      verification: Type.Optional(Type.String({ description: 'required (default) | advisory | none. none forbids checks/acceptance; advisory allows optional checks; required keeps strict evidence.' })),
-      acceptance: Type.Array(Type.Object({ requirement: shortString(), checks: strings(12) }), { maxItems: 20 }),
-      checks: Type.Array(Type.Object({ id: Type.String({ pattern: '^[a-z][a-z0-9_-]{0,39}$' }), kind: Type.String({ description: 'test, runtime, or static' }), argv: strings(40), timeoutSeconds: Type.Integer({ minimum: 1, maximum: 300 }) }), { maxItems: 12 }),
-    }),
+    name: 'delivery_plan', label: 'Delivery plan', description: 'Create an acceptance contract and generate plan.d2. Use delivery_revise for ongoing work; replacing an active plan is treated as a revision. After verified/blocked, this starts a new task. Paths are relative files/directories, not globs. Checks use executable argv (no implicit shell). Set verification:"none" for a pure informational answer, "advisory" for optional non-blocking evidence, or leave the default "required" for tasks that change product files.',
+    parameters: Type.Object(planFields),
     async execute(_id, params, _signal, _update, ctx) {
       return exclusive(() => workspaceOperation(ctx, async () => {
         if (configError) throw Error(configError);
-        const plan = validatePlan(bindRequiredChecks(params, required), ctx.cwd);
+        const plan = validatePlan(bindRequiredChecks({ ...params, verification: params.verification ?? 'required' }, required), ctx.cwd);
         validateRevision(state, plan);
-        state = { version: 1, runId: randomUUID(), revision: (state?.revision || 0) + 1, guidanceProfiles: activeGuidance.map(profile => profile.id), plan, evidence: {}, status: 'implementing', createdAt: new Date().toISOString(), stepStatus: {} };
+        if (state && !['verified', 'blocked'].includes(state.status)) {
+          let hash: string | undefined;
+          try { hash = fingerprint(ctx.cwd, ['.']); } catch { /* retain stale evidence without rebinding */ }
+          state = revisePlan(state, plan, { cwd: ctx.cwd, hash, reason: 'Active plan replaced via delivery_plan' });
+        } else {
+          state = { version: 1, runId: randomUUID(), revision: (state?.revision || 0) + 1, guidanceProfiles: activeGuidance.map(profile => profile.id), plan, evidence: {}, status: 'implementing', createdAt: new Date().toISOString(), stepStatus: {} };
+        }
         const dir = directory(ctx);
         mkdirSync(dir, { recursive: true });
-        writeFileSync(join(dir, 'plan.d2'), planD2WithProgress(plan, {}));
+        writeFileSync(join(dir, 'plan.d2'), planD2WithProgress(state.plan, state.stepStatus));
         persist(ctx);
         selectReport(ctx.cwd, join(dir, 'report.json'));
         return text({ plan: join(dir, 'plan.d2'), report: join(dir, 'report.json'), next: 'Build a runnable slice, add regression tests, then delivery_check each check ID.' });
       }, true));
+    },
+  });
+  pi.registerTool({
+    name: 'delivery_revise', label: 'Revise delivery plan',
+    description: 'Adapt the current task with a reason and partial plan patch. Omitted fields are preserved; supplied arrays replace that field. Keeps run identity, revision history and unambiguous step progress. Only unchanged checks on unchanged source retain fresh evidence. Cannot drop acceptance criteria or erase verification history, even when resuming blocked work.',
+    parameters: Type.Object({ reason: shortString(), patch: Type.Partial(Type.Object(planFields)) }),
+    async execute(_id, params, _signal, _update, ctx) {
+      return exclusive(() => workspaceOperation(ctx, async () => {
+        if (configError) throw Error(configError);
+        if (!state) throw Error('Call delivery_plan first');
+        let hash: string | undefined;
+        try { hash = fingerprint(ctx.cwd, ['.']); } catch { /* revisions remain possible at scope limits */ }
+        const bound = bindRequiredChecks({ ...state.plan, ...validatePlanPatch(params.patch) }, required);
+        state = revisePlan(state, bound, { cwd: ctx.cwd, reason: params.reason, hash });
+        persist(ctx);
+        return text({ revision: state.revision, report: join(directory(ctx), 'report.json'), stepStatus: state.stepStatus, pendingChecks: pendingChecks(state, hash), unverifiedRequirements: pendingRequirements(state, hash), next: 'Continue revised steps. New/remapped requirements need concrete assertions and new executions even if old command evidence is fresh. Inspect/record final review with delivery_review.' });
+      }));
     },
   });
   pi.registerTool({
@@ -414,31 +448,42 @@ export default function delivery(pi: ExtensionAPI) {
       refreshState(ctx);
       let pending: string[] = [];
       let freshnessKnown = true;
+      let issues: any = null;
       try {
-        pending = pendingChecks(state, fingerprint(ctx.cwd, ['.']));
+        const hash = fingerprint(ctx.cwd, ['.']);
+        pending = pendingChecks(state, hash);
+        issues = completionIssues(state, ctx.cwd, hash);
       } catch (err: any) {
         freshnessKnown = false;
         pending = [`[scope error: ${err.message}]`];
       }
-      const readyToFinish = freshnessKnown && verificationMode(state.plan) === 'required' && pending.length === 0;
+      const readyToFinish = freshnessKnown && issues && Object.values(issues).every((items: any) => items.length === 0);
       const next = readyToFinish
         ? 'All required checks are fresh and passing. Adversarially review the acceptance criteria, then call delivery_finish with status="verified". Do not call delivery_status again unless the workspace changes.'
         : pending.length
           ? `Run delivery_check for pending checks: ${pending.join(', ')}; repair failures before finishing.`
-          : 'Review the contract and call delivery_finish when the requested work is complete.';
-      return text({ ...state, pendingChecks: pending, readyToFinish, next });
+          : 'Complete outstanding steps/outputs and unverified requirements. For structured plans, use delivery_review action=inspect then action=record before delivery_finish.';
+      // History lives in report.json; do not flood model context with old snapshots.
+      const { revisions, ...current } = state;
+      return text({ ...current, revisionHistory: revisions?.map((r: any) => ({ revision: r.revision, reason: r.reason, at: r.at })), pendingChecks: pending, completionIssues: issues, readyToFinish, next });
     },
   });
   pi.registerTool({
     name: 'delivery_progress', label: 'Update step progress', description: 'Mark a plan step as active, done, or failed. Regenerates plan.d2 so the side panel stays current. Use as each step completes or hits a blocker.',
     parameters: Type.Object({
-      step: Type.Integer({ minimum: 0 }),
+      step: Type.Union([Type.Integer({ minimum: 0 }), shortString()]),
       status: Type.String({ description: 'active, done, failed, or pending' }),
+      note: Type.Optional(shortString()),
     }),
     async execute(_id, params, _signal, _update, ctx) {
       return exclusive(() => workspaceOperation(ctx, async () => {
         if (!state) throw Error('Call delivery_plan first');
-        updateStepStatus(state, params.step, params.status);
+        const step = planSteps(state.plan).find((s: any, i: number) => typeof params.step === 'string' ? s.id === params.step : i === params.step);
+        const hash = params.status === 'done' && step?.checks.length ? fingerprint(ctx.cwd, ['.']) : undefined;
+        updateStepStatus(state, params.step, params.status, hash);
+        if (params.note) {
+          state.progressNotes = [...(state.progressNotes || []), { step: step?.id, status: params.status, note: params.note, revision: state.revision, at: new Date().toISOString() }];
+        }
         const dir = directory(ctx);
         writeFileSync(join(dir, 'plan.d2'), planD2WithProgress(state.plan, state.stepStatus));
         persist(ctx);
@@ -461,10 +506,12 @@ export default function delivery(pi: ExtensionAPI) {
         const checks = params.id === 'all' ? state.plan.checks : state.plan.checks.filter((c: any) => c.id === params.id);
         if (!checks.length) throw Error('Unknown check ID. Use delivery_status or id="all".');
         const results = [];
+        const failures = [];
         for (const check of checks) {
           const identity = evidenceIdentity(state, check);
           if (signal?.aborted) throw Error('Check cancelled before execution');
           state.status = 'verifying';
+          state.verificationStarted = true;
           delete state.evidence[check.id];
           let before: string;
           try {
@@ -506,14 +553,15 @@ export default function delivery(pi: ExtensionAPI) {
             throw Error(`Post-check evidence scope error: ${err.message}. If the repository exceeds file limits, call delivery_finish with status="blocked" and specific limitations.`);
           }
           const passed = result.code === 0 && !result.timedOut && !result.cancelled && !result.outputLimit && before === after;
-          state.evidence[check.id] = { passed, ...identity, fingerprint: after, code: result.code, timedOut: result.timedOut, cancelled: result.cancelled, logPath: result.logPath, durationMs: result.durationMs, changedDuringCheck: before !== after, outputTail: result.output.slice(-1200) };
+          state.evidence[check.id] = { passed, ...identity, executedRevision: state.revision, fingerprint: after, code: result.code, timedOut: result.timedOut, cancelled: result.cancelled, logPath: result.logPath, durationMs: result.durationMs, changedDuringCheck: before !== after, outputTail: result.output.slice(-1200) };
           persist(ctx);
           const message = { id: check.id, advisory: verification !== 'required', ...state.evidence[check.id], outputTail: result.output };
           // Advisory checks are evidence for an informational answer: record the
           // real failure but do not force the repair loop.
-          if (!passed && verification === 'required') throw Error(JSON.stringify(message, null, 2));
+          if (!passed && verification === 'required') failures.push(message);
           results.push(message);
         }
+        if (failures.length) throw Error(JSON.stringify({ failures, next: 'All requested checks ran. Repair the failures or revise the plan based on findings; do not weaken acceptance criteria.' }, null, 2));
         let finalHash: string | null = null;
         let pending: string[] = [];
         let freshnessError = '';
@@ -524,8 +572,32 @@ export default function delivery(pi: ExtensionAPI) {
           freshnessError = err?.message || String(err);
           pending = [`[scope error: ${freshnessError}]`];
         }
-        const readyToFinish = verification === 'required' && pending.length === 0 && finalHash !== null;
-        return text({ results, pendingChecks: pending, readyToFinish, next: readyToFinish ? 'All required checks are fresh and passing. Adversarially review the acceptance criteria, then call delivery_finish with status="verified". Do not call delivery_status first.' : freshnessError ? 'Evidence freshness could not be established. Call delivery_finish with status="blocked" and the scope limitation.' : 'Repair or run the remaining checks before delivery_finish.' });
+        const issues = finalHash !== null ? completionIssues(state, ctx.cwd, finalHash) : null;
+        const readyToFinish = issues !== null && Object.values(issues).every((items: any) => items.length === 0);
+        return text({ results, pendingChecks: pending, completionIssues: issues, readyToFinish, next: readyToFinish ? 'All required checks are fresh and passing. Adversarially review the acceptance criteria, then call delivery_finish with status="verified". Do not call delivery_status first.' : freshnessError ? 'Evidence freshness could not be established. Call delivery_finish with status="blocked" and the scope limitation.' : verification !== 'required' ? 'Review the recorded advisory evidence and call delivery_finish; failures are context, not repair orders.' : 'Complete pending steps and outputs, and repair or run remaining checks before delivery_finish.' });
+      }));
+    },
+  });
+  pi.registerTool({
+    name: 'delivery_review', label: 'Review delivery evidence',
+    description: 'Required for structured delivery plans. inspect captures the actual Git diff and lists new files; read it and inspect new-file contents. record binds per-requirement assertion coverage, executed boundary probes and limitations to the unchanged snapshot. Unresolved findings block recording; repair or finish blocked. This is traceable self-review, not independent correctness proof.',
+    parameters: Type.Object({
+      action: Type.String({ description: 'inspect or record' }),
+      captureId: Type.Optional(shortString()),
+      coverage: Type.Optional(Type.Array(Type.Object({ requirement: shortString(), assertions: shortString() }), { maxItems: 64 })),
+      probes: Type.Optional(Type.Array(shortString(), { maxItems: 40 })),
+      findings: Type.Optional(Type.Array(shortString(), { maxItems: 40 })),
+      limitations: Type.Optional(Type.Array(shortString(), { maxItems: 20 })),
+    }),
+    async execute(_id, params, signal, _update, ctx) {
+      return exclusive(() => workspaceOperation(ctx, async () => {
+        if (!state) throw Error('Call delivery_plan first');
+        let result;
+        if (params.action === 'inspect') result = await captureDeliveryReview(state, ctx.cwd, directory(ctx), signal);
+        else if (params.action === 'record') { recordDeliveryReview(state, ctx.cwd, params); result = { recorded: true, next: 'If steps and outputs are complete, call delivery_finish. Review records model-authored assertions, not a correctness guarantee.' }; }
+        else throw Error('Review action must be inspect or record');
+        persist(ctx);
+        return text(result);
       }));
     },
   });
@@ -547,9 +619,8 @@ export default function delivery(pi: ExtensionAPI) {
             try { hash = fingerprint(ctx.cwd, ['.']); } catch { hash = null; }
           } else {
             hash = fingerprint(ctx.cwd, ['.']);
-            const missing = state.plan.artifacts.filter((p: string) => !existsSync(localPath(ctx.cwd, p)));
-            const pending = pendingChecks(state, hash);
-            if (missing.length || pending.length) throw Error(`Cannot verify. Missing artifacts: ${missing.join(', ')}. Failed/missing/stale checks: ${pending.join(', ')}`);
+            const issues = completionIssues(state, ctx.cwd, hash);
+            if (Object.values(issues).some((items: any) => items.length)) throw Error(`Cannot verify. Missing artifacts: ${issues.missingArtifacts.join(', ')}. Failed/missing/stale checks: ${issues.pendingChecks.join(', ')}. Missing outputs: ${issues.missingOutputs.join(', ')}. Incomplete steps: ${issues.incompleteSteps.join(', ')}. Unverified requirements: ${issues.unverifiedRequirements.join('; ')}. Review: ${issues.review.join('; ')}`);
           }
         } else {
           if (!params.limitations.length) throw Error('Blocked delivery requires an explicit limitation/reason');
@@ -561,7 +632,7 @@ export default function delivery(pi: ExtensionAPI) {
         }
         state.status = params.status;
         const advisoryFailures = Object.entries(state.evidence || {}).filter(([, e]: any) => !e.passed).map(([id]) => id);
-        state.handoff = { ...params, verification, advisory, advisoryFailures, fingerprint: hash, at: new Date().toISOString() };
+        state.handoff = { ...params, verification, advisory, advisoryFailures, fingerprint: hash, at: new Date().toISOString(), evidence: structuredClone(state.evidence), reviewEvidence: state.reviewEvidence ? structuredClone(state.reviewEvidence) : null };
         persist(ctx);
         return text({ status: state.status, verification, advisory, advisoryFailures, report: join(directory(ctx), 'report.json'), note: advisory ? 'Informational/advisory finish: recorded checks are context, not a delivery guarantee. Distinguish them from unperformed manual/visual review.' : 'Evidence covers declared checks, not a guarantee of correctness. Distinguish automated evidence from unperformed manual/visual review.' });
       }));

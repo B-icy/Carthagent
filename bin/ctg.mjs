@@ -12,6 +12,7 @@ import {
   fingerprint,
   evidenceIdentity,
   evidenceFresh,
+  completionIssues,
   validatePlan,
   planD2,
   runCommand
@@ -100,7 +101,9 @@ function printHelp() {
   --ascii                 Plain-ASCII glyphs (for fonts that render icons as ?)
   --glyphs <mode>         Glyph tier: auto (default) | unicode | ascii
   --demo                  Drive the console with a scripted mock run (no provider)
-  -p, --print             Headless passthrough: stream output without TUI
+  -p, --print             Headless passthrough: text output without TUI
+  --json                  Headless JSONL engine events (tool starts/results and messages)
+                          Also supported by ctg status --json for report snapshots
 
 \x1b[1mTUI KEYS:\x1b[0m
   enter send/steer · esc abort (again = force-restart agent) · ^r resume session · tab focus · shift+tab view
@@ -128,7 +131,7 @@ const TUI_BOOL = {
   '--isolate': ['isolate', true], '--no-strict': ['strict', false], '--strict': ['strict', true],
   '--no-delivery': ['delivery', false], '-p': ['print', true], '--print': ['print', true],
   '--no-guide': ['autoFraming', false], '--guide': ['autoFraming', true],
-  '--ascii': ['ascii', true],
+  '--ascii': ['ascii', true], '--json': ['json', true],
   '--demo': ['demo', true],
   '-c': ['continue', true], '--continue': ['continue', true],
   '-r': ['resume', true], '--resume': ['resume', true],
@@ -178,7 +181,7 @@ async function handleTui(list) {
   opts.model = sticky.model;
   if (opts.demo && !process.stdout.isTTY) { console.error('demo requires an interactive terminal'); process.exit(1); }
   // Headless passthrough: explicit --print, or stdout isn't a TTY
-  if (opts.print || !process.stdout.isTTY) {
+  if (opts.print || opts.json || !process.stdout.isTTY) {
     // The session picker needs a TTY — headless -r continues the most recent.
     if (opts.resume) { opts.resume = false; opts.continue = true; }
     const { locateEngine, buildEngineArgs } = await import('../lib/tui/app.mjs');
@@ -208,7 +211,8 @@ async function handleTui(list) {
         PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR || defaultAgentDir
       }
     });
-    child.on('exit', code => process.exit(code || 0));
+    child.on('error', error => { console.error(error.message); process.exitCode = 1; });
+    child.on('exit', (code, signal) => process.exit(code ?? (signal ? 1 : 0)));
     return;
   }
   const { runTui } = await import('../lib/tui/app.mjs');
@@ -218,6 +222,11 @@ async function handleTui(list) {
 async function handleStatus() {
   const currentFp = fingerprint(cwd, ['.']);
   const report = latestReport(cwd);
+  if (argv.includes('--json')) {
+    const state = report?.state;
+    console.log(JSON.stringify({ version: 1, workspace: cwd, currentFingerprint: currentFp, report: report?.path || null, state: state || null, completionIssues: state?.plan ? completionIssues(state, cwd, currentFp) : null }));
+    return;
+  }
   console.log(`\x1b[1mWorkspace:\x1b[0m     ${cwd}`);
   console.log(`\x1b[1mFingerprint:\x1b[0m   \x1b[36m${currentFp}\x1b[0m`);
   if (!report?.state?.plan) {
@@ -273,6 +282,8 @@ async function runWorkspaceChecks() {
   let allPassed = true;
   const priorStatus = state.status;
   state.status = 'verifying';
+  state.verificationStarted = true;
+  saveReport(report.path, state);
   for (const check of checks) {
     const before = fingerprint(cwd, ['.']);
     console.log(`\n\x1b[1m${check.id}\x1b[0m  ${check.argv.join(' ')}`);
@@ -287,6 +298,7 @@ async function runWorkspaceChecks() {
       passed,
       fingerprint: after,
       ...evidenceIdentity(state, check),
+      executedRevision: state.revision,
       code: result.code,
       timedOut: result.timedOut,
       cancelled: result.cancelled,
@@ -301,7 +313,8 @@ async function runWorkspaceChecks() {
     console.log(passed ? `\x1b[32mpassed\x1b[0m (${result.durationMs}ms)` : `\x1b[31mfailed\x1b[0m (exit ${result.code})`);
     allPassed &&= passed;
   }
-  state.status = allPassed && priorStatus === 'verified' ? 'verified' : 'implementing';
+  const complete = Object.values(completionIssues(state, cwd, fingerprint(cwd, ['.']))).every(items => items.length === 0);
+  state.status = allPassed && complete && priorStatus === 'verified' ? 'verified' : 'implementing';
   saveReport(report.path, state);
   if (!allPassed) process.exitCode = 1;
 }
