@@ -11,8 +11,13 @@ import {
   bindRequiredChecks,
   pendingChecks,
   runCommand,
-  createSerialQueue
+  createSerialQueue,
+  revisePlan,
+  validatePlanPatch,
+  completionIssues,
+  verificationMode
 } from './lib/delivery.mjs';
+import { captureDeliveryReview, recordDeliveryReview } from './lib/delivery-review.mjs';
 import { lockWorkspace, selectReport } from './lib/workspace.mjs';
 import { createReport, latestReport, saveReport } from './lib/reports.mjs';
 
@@ -68,9 +73,14 @@ app.get('/api/status', (req, res) => {
     const pending = currentState.plan ? pendingChecks(currentState, currentFingerprint) : [];
     res.json({
       status: currentState.status,
+      runId: currentState.runId,
+      revision: currentState.revision,
+      completionIssues: currentState.plan ? completionIssues(currentState, cwd, currentFingerprint) : null,
       plan: currentState.plan,
       evidence: currentState.evidence || {},
       stepStatus: currentState.stepStatus || {},
+      requirementRevisions: currentState.requirementRevisions || {},
+      reviewEvidence: currentState.reviewEvidence || null,
       review: currentState.review || currentState.handoff?.review || '',
       launch: currentState.launch || currentState.handoff?.launch || '',
       limitations: currentState.limitations || currentState.handoff?.limitations || [],
@@ -99,7 +109,7 @@ app.post('/api/plan/d2', (req, res) => {
 });
 
 // Mutating endpoints share a cross-process lease for the entire response.
-app.use(['/api/plan/set', '/api/checks/run', '/api/finish'], (req, res, next) => {
+app.use(['/api/plan/set', '/api/plan/revise', '/api/checks/run', '/api/review', '/api/finish'], (req, res, next) => {
   if (req.method !== 'POST') return next();
   let release;
   try { release = lockWorkspace(cwd); refresh(); }
@@ -115,24 +125,42 @@ app.use(['/api/plan/set', '/api/checks/run', '/api/finish'], (req, res, next) =>
 app.post('/api/plan/set', (req, res) => {
   if (pendingRuns) return res.status(409).json({ error: 'Checks are running or queued; wait before replacing the plan' });
   try {
-    const plan = validatePlan(req.body.plan, cwd);
-    currentState = {
-      version: 1,
-      runId: randomUUID(),
-      revision: (currentState.revision || 0) + 1,
-      status: 'implementing',
-      plan,
-      evidence: {},
-      stepStatus: {},
-      createdAt: new Date().toISOString()
-    };
-    active = createReport(cwd, currentState);
-    currentState = active.state;
+    const ongoing = currentState.plan && !['verified', 'blocked'].includes(currentState.status);
+    const required = ongoing ? currentState.plan.checks.filter(c => c.id.startsWith('required_')) : [];
+    const plan = validatePlan(bindRequiredChecks({ ...req.body.plan, verification: req.body.plan?.verification ?? 'required' }, required), cwd);
+    if (ongoing) {
+      currentState = revisePlan(currentState, plan, { cwd, hash: fingerprint(cwd, ['.']), reason: 'Active plan replaced via dashboard' });
+      persist();
+    } else {
+      currentState = {
+        version: 1,
+        runId: randomUUID(),
+        revision: (currentState.revision || 0) + 1,
+        status: 'implementing',
+        plan,
+        evidence: {},
+        stepStatus: {},
+        createdAt: new Date().toISOString()
+      };
+      active = createReport(cwd, currentState);
+      currentState = active.state;
+    }
     selectReport(cwd, active.path);
     res.json({ success: true, plan, d2: planD2(plan), report: active.path });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
+});
+
+app.post('/api/plan/revise', (req, res) => {
+  try {
+    if (!currentState.plan) throw Error('No active plan');
+    const required = currentState.plan.checks.filter(c => c.id.startsWith('required_'));
+    const plan = bindRequiredChecks({ ...currentState.plan, ...validatePlanPatch(req.body.patch) }, required);
+    currentState = revisePlan(currentState, plan, { cwd, hash: fingerprint(cwd, ['.']), reason: req.body.reason });
+    persist();
+    res.json({ success: true, revision: currentState.revision, report: active.path });
+  } catch (error) { res.status(400).json({ error: error.message }); }
 });
 
 app.post('/api/plan/bind-required', (req, res) => {
@@ -156,6 +184,7 @@ app.post('/api/checks/run', async (req, res) => {
       const runResults = [];
       const priorStatus = currentState.status;
       currentState.status = 'verifying';
+      currentState.verificationStarted = true;
       persist();
       for (const check of checks) {
         const before = fingerprint(cwd, ['.']);
@@ -169,6 +198,7 @@ app.post('/api/checks/run', async (req, res) => {
           passed: result.code === 0 && !result.timedOut && !result.cancelled && !result.outputLimit && before === after,
           fingerprint: after,
           ...evidenceIdentity(currentState, check),
+          executedRevision: currentState.revision,
           durationMs: result.durationMs,
           code: result.code,
           timedOut: result.timedOut,
@@ -183,8 +213,8 @@ app.post('/api/checks/run', async (req, res) => {
         persist();
         runResults.push({ id: check.id, ...evidence, output: result.output });
       }
-      const pending = pendingChecks(currentState, fingerprint(cwd, ['.']));
-      currentState.status = priorStatus === 'verified' && !pending.length ? 'verified' : 'implementing';
+      const complete = Object.values(completionIssues(currentState, cwd, fingerprint(cwd, ['.']))).every(items => items.length === 0);
+      currentState.status = priorStatus === 'verified' && complete ? 'verified' : 'implementing';
       persist();
       return runResults;
     });
@@ -198,6 +228,19 @@ app.post('/api/checks/run', async (req, res) => {
   }
 });
 
+app.post('/api/review', async (req, res) => {
+  try {
+    if (!currentState.plan) throw Error('No active plan');
+    let result;
+    if (req.body.action === 'inspect') result = await captureDeliveryReview(currentState, cwd, active.dir);
+    else if (req.body.action === 'record') result = recordDeliveryReview(currentState, cwd, req.body);
+    else throw Error('Review action must be inspect or record');
+    persist();
+    res.json({ success: true, result });
+  } catch (error) { res.status(400).json({ error: error.message }); }
+  finally { res.locals.releaseWorkspace?.(); }
+});
+
 app.post('/api/finish', (req, res) => {
   if (pendingRuns) return res.status(409).json({ error: 'Checks are running or queued; wait before finishing' });
   try {
@@ -206,8 +249,8 @@ app.post('/api/finish', (req, res) => {
     if (!['verified', 'blocked'].includes(status)) return res.status(400).json({ error: 'Status must be verified or blocked' });
     if (!currentState.plan) return res.status(400).json({ error: 'No active plan' });
     if (status === 'verified') {
-      const pending = pendingChecks(currentState, fingerprint(cwd, ['.']));
-      if (pending.length) return res.status(400).json({ error: `Checks are pending, failed, or stale: ${pending.join(', ')}` });
+      const issues = completionIssues(currentState, cwd, fingerprint(cwd, ['.']));
+      if (Object.values(issues).some(items => items.length)) return res.status(400).json({ error: `Cannot verify: ${JSON.stringify(issues)}` });
     } else if (!Array.isArray(limitations) || !limitations.length) {
       return res.status(400).json({ error: 'Blocked status requires a reason' });
     }
@@ -215,7 +258,7 @@ app.post('/api/finish', (req, res) => {
     currentState.review = review || '';
     currentState.launch = launch || '';
     currentState.limitations = Array.isArray(limitations) ? limitations : [];
-    currentState.handoff = { status, review: currentState.review, launch: currentState.launch, limitations: currentState.limitations, fingerprint: fingerprint(cwd, ['.']), at: new Date().toISOString() };
+    currentState.handoff = { status, review: currentState.review, launch: currentState.launch, limitations: currentState.limitations, verification: verificationMode(currentState.plan), fingerprint: fingerprint(cwd, ['.']), at: new Date().toISOString(), evidence: structuredClone(currentState.evidence), reviewEvidence: currentState.reviewEvidence ? structuredClone(currentState.reviewEvidence) : null };
     persist();
     res.json({ success: true, state: currentState });
   } catch (error) {
