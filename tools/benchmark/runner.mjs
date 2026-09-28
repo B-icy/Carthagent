@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { startGateway, MODEL } from './gateway.mjs';
 import { TASKS, MATRIX } from './tasks.mjs';
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-export const ROOT = '/home/baissi/benchmarks/deepseek-jev-v1';
+export const ROOT = '/home/baissi/benchmarks/deepseek-jev-v2';
 const ENGINE = '/home/baissi/.nvm/versions/node/v26.7.0/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js';
 export function childEnv(config, gateway, log) {
   return { HOME: '/home/baissi', USER: 'baissi', PATH: `/home/baissi/.cargo/bin:${dirname(process.execPath)}:/usr/local/bin:/usr/bin:/bin:/snap/bin`, LANG: 'C.UTF-8', CI: '1', PI_CODING_AGENT_DIR: config, PI_OFFLINE: '1', PI_TELEMETRY: '0', BENCH_GATEWAY: gateway, BENCH_ADVISOR_LOG: log };
@@ -15,7 +15,7 @@ export async function runCandidate(task, arm, { smoke = false, key } = {}) {
   const run = join(ROOT, smoke ? `smoke-${arm}` : `${task}-${arm}`), workspace = join(run, 'workspace'), config = join(run, 'config');
   if (existsSync(run)) throw Error(`Run exists; refusing overwrite: ${run}`);
   mkdirSync(workspace, { recursive: true }); mkdirSync(config);
-  const gateway = await startGateway({ key, limit: smoke ? 0.08 : 3, allowJev: arm === 'jev', receiptPath: join(run, 'gateway.jsonl') });
+  const gateway = await startGateway({ key, limit: smoke ? 0.08 : 2.84, allowJev: arm === 'jev', receiptPath: join(run, 'gateway.jsonl') });
   const env = childEnv(config, gateway.url, join(run, 'advisor.jsonl'));
   writeFileSync(join(config, 'auth.json'), '{}');
   writeFileSync(join(config, 'settings.json'), JSON.stringify({ retry: { enabled: false }, compaction: { enabled: false }, toolExecution: 'sequential' }));
@@ -34,7 +34,7 @@ export async function runCandidate(task, arm, { smoke = false, key } = {}) {
   }
   if (arm === 'jev') args.push('-e', join(REPO,'tools/benchmark/advisor.ts'));
   args.push('--tools', tools.join(','), prompt);
-  writeFileSync(join(run,'invocation.json'), JSON.stringify({ task, arm, smoke, engine: ENGINE, engineVersion: '0.85.1', harnessCommit: spawnSync('git',['rev-parse','HEAD'],{cwd:REPO,encoding:'utf8'}).stdout.trim(), args, ceilings: { seconds: smoke ? 180 : 900, tools:120, usd:smoke?.08:3 }, startedAt:new Date().toISOString() },null,2));
+  writeFileSync(join(run,'invocation.json'), JSON.stringify({ task, arm, smoke, engine: ENGINE, engineVersion: '0.85.1', harnessCommit: spawnSync('git',['rev-parse','HEAD'],{cwd:REPO,encoding:'utf8'}).stdout.trim(), args, ceilings: { seconds: smoke ? 180 : 900, tools:120, usd:smoke?.08:2.84 }, startedAt:new Date().toISOString() },null,2));
   let count = 0, pending = '', stopReason = null; const started = Date.now();
   const child = spawn(process.execPath,args,{cwd:workspace,env,detached:true,stdio:['ignore','pipe','pipe']});
   const kill = reason => { stopReason ||= reason; try { process.kill(-child.pid,'SIGTERM'); } catch {} setTimeout(()=>{ try {process.kill(-child.pid,'SIGKILL');} catch {} },2000).unref(); };
@@ -53,6 +53,6 @@ export async function runCandidate(task, arm, { smoke = false, key } = {}) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const key=JSON.parse(readFileSync('/home/baissi/.pi/agent/auth.json','utf8')).openrouter.key;
   const [task,arm]=process.argv.slice(2);
-  if(task==='matrix') { if(!existsSync(join(ROOT,'freeze.json'))) throw Error('Freeze evaluators first'); for(const [t,a] of MATRIX) await runCandidate(t,a,{key}); }
+  if(task==='matrix') { if(!existsSync(join(ROOT,'freeze.json'))) throw Error('Freeze evaluators first'); for(const [t,a] of MATRIX) { const result = await runCandidate(t,a,{key}); if(result.budget.stopped) throw Error('Matrix stopped on infrastructure/billing failure; retain results and diagnose before any further runs.'); } }
   else await runCandidate(task,arm,{key,smoke:task==='smoke'});
 }

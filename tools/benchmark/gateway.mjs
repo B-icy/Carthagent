@@ -53,7 +53,7 @@ export async function startGateway({ key, receiptPath, limit = 3, allowJev = fal
         if (Object.keys(QUESTIONS).some(k => answers?.[k]?.type !== 'noul' || !Number.isFinite(answers[k].noul) || answers[k].noul < 0 || answers[k].noul > 1)) throw Error('Invalid advisor answers');
       } else {
         for (const line of text.split('\n')) if (line.startsWith('data: ') && line.slice(6).trim() !== '[DONE]') {
-          const chunk = JSON.parse(line.slice(6)); if (chunk.error) throw Error('Provider stream error');
+          const chunk = JSON.parse(line.slice(6)); if (chunk.error) { record({ type: 'stream-error', kind, code: typeof chunk.error.code === 'number' ? chunk.error.code : null }); throw Error('Provider stream error'); }
           if (chunk.usage) usage = chunk.usage; model ||= chunk.model; provider ||= chunk.provider; id ||= chunk.id;
         }
       }
@@ -63,7 +63,7 @@ export async function startGateway({ key, receiptPath, limit = 3, allowJev = fal
       res.writeHead(200, { 'Content-Type': kind === 'jev' ? 'application/json' : 'text/event-stream' }); res.end(text);
     } catch (err) {
       if (held) budget.stopped ||= 'unreconciled-request';
-      record({ type: 'failure', kind, reason: held ? 'upstream-or-billing-failure' : err.message, latencyMs: started ? Date.now() - started : 0 });
+      record({ type: 'failure', kind, reason: held ? 'upstream-or-billing-failure' : err.message, errorClass: err.name, errorCode: err.cause?.code || null, stage: ['Upstream HTTP failure','Provider stream error','Response bound exceeded','Billing invalid','Invalid advisor answers'].includes(err.message) ? err.message : null, latencyMs: started ? Date.now() - started : 0 });
       res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: { message: 'Benchmark gateway refused request; inspect supervisor receipts.', type: 'benchmark_stop' } }));
     } finally { if (held) busy = false; }
   });
