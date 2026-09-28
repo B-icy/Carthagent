@@ -1,4 +1,5 @@
 import express from 'express';
+import { validatePlanning, recordPlanReview, approvePlanning, planningStatus, startImplementation } from './lib/planning.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
@@ -85,6 +86,8 @@ app.get('/api/status', (req, res) => {
       launch: currentState.launch || currentState.handoff?.launch || '',
       limitations: currentState.limitations || currentState.handoff?.limitations || [],
       currentFingerprint,
+      planningStatus: planningStatus(currentState, currentFingerprint),
+      planning: currentState.planning || null,
       pendingChecks: pending,
       workspace: cwd,
       report: active?.path || null
@@ -109,7 +112,7 @@ app.post('/api/plan/d2', (req, res) => {
 });
 
 // Mutating endpoints share a cross-process lease for the entire response.
-app.use(['/api/plan/set', '/api/plan/revise', '/api/checks/run', '/api/review', '/api/finish'], (req, res, next) => {
+app.use(['/api/design', '/api/plan/set', '/api/plan/revise', '/api/checks/run', '/api/review', '/api/finish'], (req, res, next) => {
   if (req.method !== 'POST') return next();
   let release;
   try { release = lockWorkspace(cwd); refresh(); }
@@ -172,6 +175,20 @@ app.post('/api/plan/bind-required', (req, res) => {
   }
 });
 
+app.post('/api/design', (req, res) => {
+  try {
+    if (!currentState.plan) throw Error('No active plan');
+    const hash = fingerprint(cwd, ['.']);
+    let result;
+    if (req.body.action === 'validate') result = validatePlanning(currentState, hash);
+    else if (req.body.action === 'review') result = recordPlanReview(currentState, hash, req.body.review);
+    else if (req.body.action === 'approve') result = approvePlanning(currentState, hash);
+    else throw Error('Unknown design action');
+    persist();
+    res.json({ result, planningStatus: planningStatus(currentState, hash) });
+  } catch (error) { res.status(400).json({ error: error.message }); }
+});
+
 app.post('/api/checks/run', async (req, res) => {
   refresh();
   if (!currentState.plan?.checks?.length) return res.status(400).json({ error: 'No active plan' });
@@ -179,6 +196,8 @@ app.post('/api/checks/run', async (req, res) => {
   if (!checks.length) return res.status(404).json({ error: `Unknown check ID: ${req.body.id}` });
   pendingRuns++;
   try {
+    startImplementation(currentState, fingerprint(cwd, ['.']));
+    persist();
     selectReport(cwd, active.path);
     const results = await enqueue(async () => {
       const runResults = [];

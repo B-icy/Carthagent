@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { fixtureDesign, fixtureReview } from './helpers/tested-design.mjs';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
@@ -14,7 +15,7 @@ const { createJiti } = requireEngine('jiti');
 const jiti = createJiti(import.meta.url, { alias: { '@earendil-works/pi-coding-agent': fileURLToPath(new URL('../vendor/agent/index.js', import.meta.url)) } });
 const factory = await jiti.import(fileURLToPath(new URL('../extensions/delivery.ts', import.meta.url)), { default: true });
 const options = {};
-function fixture(t) {
+function fixture(t, { approve = true } = {}) {
   const cwd = mkdtempSync(join(tmpdir(), 'engine extension integration '));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
   writeFileSync(join(cwd, 'app.py'), 'print(1)');
@@ -29,7 +30,23 @@ function fixture(t) {
   };
   factory(engine);
   const ctx = { cwd, hasUI: false, aborted: 0, abort() { this.aborted++; }, sessionManager: { getEntries: () => entries, getBranch: () => entries, getSessionId: () => 'integration-session' }, hasPendingMessages: () => false };
-  const call = (name, params = {}) => tools[name].execute('test-id', params, undefined, undefined, ctx);
+  const rawCall = (name, params = {}) => tools[name].execute('test-id', params, undefined, undefined, ctx);
+  const call = async (name, params = {}) => {
+    if (approve && name === 'delivery_plan' && (params.verification ?? 'required') === 'required') params = { ...params, design: fixtureDesign(params) };
+    if (approve && name === 'delivery_revise' && params.patch?.acceptance) params = { ...params, patch: { ...params.patch, design: fixtureDesign({ ...entries.at(-1).data.plan, ...params.patch }) } };
+    const result = await rawCall(name, params);
+    if (approve && ['delivery_plan', 'delivery_revise'].includes(name)) {
+      const current = entries.at(-1)?.data?.plan;
+      if (current && (current.verification ?? 'required') === 'required') {
+        if (JSON.stringify(current.design) !== JSON.stringify(fixtureDesign(current))) await rawCall('delivery_revise', { reason: 'Bind fixture scenarios to required validators', patch: { design: fixtureDesign(current) } });
+        const plan = entries.at(-1).data.plan;
+        await rawCall('delivery_design', { action: 'validate' });
+        await rawCall('delivery_design', { action: 'review', review: fixtureReview(plan) });
+        await rawCall('delivery_design', { action: 'approve' });
+      }
+    }
+    return result;
+  };
   const plan = { goal: 'Working script', assumptions: [], artifacts: ['app.py'], steps: ['Implement', 'Verify'], acceptance: [{ requirement: 'Runs', checks: ['run'] }], checks: [{ id: 'run', kind: 'runtime', argv: [process.execPath, '-e', 'console.log("passed")'], timeoutSeconds: 5 }] };
   return { cwd, ctx, hooks, commands, entries, messages, flags, call, plan };
 }
@@ -68,9 +85,9 @@ test('real extension loads, gates writes, executes checks and rejects stale evid
   const f = fixture(t);
   assert.equal(f.hooks.tool_call({ toolName: 'write' }).block, true);
   assert.equal(f.hooks.tool_call({ toolName: 'bash', input: { command: 'mkdir artifacts' } }, f.ctx).block, true);
-  assert.equal(f.hooks.tool_call({ toolName: 'bash', input: { command: 'ls -la' } }, f.ctx), undefined);
+  assert.equal(f.hooks.tool_call({ toolName: 'bash', input: { command: 'ls -la' } }, f.ctx).block, true);
   await f.call('delivery_plan', f.plan);
-  assert.equal(f.hooks.tool_call({ toolName: 'write' }), undefined);
+  assert.equal(f.hooks.tool_call({ toolName: 'write' }, f.ctx), undefined);
   const finish = { status: 'verified', review: 'Reviewed executable behavior.', launch: 'python app.py', limitations: [] };
   await assert.rejects(f.call('delivery_finish', finish), /Cannot verify/);
   await f.call('delivery_check', { id: 'all' });
@@ -198,21 +215,22 @@ test('repair nudges quote the failing check, its exit code and its output tail',
   assert.match(context.messages[0].content, /"passed":false/);
   assert.ok(context.messages[0].content.length < 4000);
 });
-test('bash timeout cap bounds runaway shell commands when configured', options, t => {
+test('bash timeout cap bounds runaway shell commands when configured', options, async t => {
   const f = fixture(t);
+  await f.call('delivery_plan', f.plan);
   // Disabled by default: un-timed commands stay un-timed.
   const runaway = { toolName: 'bash', input: { command: 'find / -name verify_ursina.py' } };
-  f.hooks.tool_call(runaway);
+  f.hooks.tool_call(runaway, f.ctx);
   assert.equal(runaway.input.timeout, undefined);
   // Enabled: caps missing and oversized timeouts, preserves tighter explicit ones.
   f.flags['delivery-bash-cap'] = 120;
-  f.hooks.tool_call(runaway);
+  f.hooks.tool_call(runaway, f.ctx);
   assert.equal(runaway.input.timeout, 120);
   const tight = { toolName: 'bash', input: { command: 'ls', timeout: 10 } };
-  f.hooks.tool_call(tight);
+  f.hooks.tool_call(tight, f.ctx);
   assert.equal(tight.input.timeout, 10);
   const over = { toolName: 'powershell', input: { command: 'x', timeout: 9999 } };
-  f.hooks.tool_call(over);
+  f.hooks.tool_call(over, f.ctx);
   assert.equal(over.input.timeout, 120);
   // Non-shell tools and blocked-write gating are untouched.
   const read = { toolName: 'read', input: { path: 'app.py' } };
@@ -233,8 +251,9 @@ test('edit calls normalize a JSON-encoded edits array', options, async t => {
   assert.equal(f.hooks.tool_call(event, f.ctx), undefined);
   assert.deepEqual(event.input.edits, [{ oldText: 'print(1)', newText: 'print(2)' }]);
 });
-test('bash cap blocks process-wide termination but allows targeted child cleanup', options, t => {
+test('bash cap blocks process-wide termination but allows targeted child cleanup', options, async t => {
   const f = fixture(t);
+  await f.call('delivery_plan', f.plan);
   f.flags['delivery-bash-cap'] = 120;
   for (const command of [
     'pkill -f python',
@@ -247,7 +266,7 @@ test('bash cap blocks process-wide termination but allows targeted child cleanup
   ]) {
     const broadKill = { toolName: 'bash', input: { command } };
     assert.match(
-      f.hooks.tool_call(broadKill).reason,
+      f.hooks.tool_call(broadKill, f.ctx).reason,
       /Broad process termination/
     );
   }
@@ -256,13 +275,14 @@ test('bash cap blocks process-wide termination but allows targeted child cleanup
     toolName: 'bash',
     input: { command: 'kill "$child_pid"' }
   };
-  assert.equal(f.hooks.tool_call(targetedKill), undefined);
+  assert.equal(f.hooks.tool_call(targetedKill, f.ctx), undefined);
   assert.equal(targetedKill.input.timeout, 120);
 });
 test('bounded runs cap whole-file rewrites per path and pace tool loops', options, async t => {
   const f = fixture(t);
   f.flags['delivery-strict'] = false;
   f.flags['delivery-rewrite-cap'] = 2;
+  await f.call('delivery_plan', f.plan);
   const write = path => f.hooks.tool_call({ toolName: 'write', input: { path } }, f.ctx);
   f.flags['delivery-protect-existing'] = true;
   f.hooks.session_start({}, f.ctx);
@@ -295,7 +315,7 @@ test('bounded runs cap whole-file rewrites per path and pace tool loops', option
   assert.equal(write('app.py'), undefined);
   assert.match(write('app.py').reason, /Full-file rewrite limit reached/);
   assert.equal(write('README.md'), undefined);
-  assert.equal(f.hooks.tool_call({ toolName: 'edit', input: { path: 'app.py' } }), undefined);
+  assert.equal(f.hooks.tool_call({ toolName: 'edit', input: { path: 'app.py' } }, f.ctx), undefined);
   assert.match(
     f.hooks.tool_call(
       { toolName: 'write', input: { path: f.cwd.replace(/^\/+/, '') + '/nested.py' } },
@@ -414,7 +434,7 @@ test('blocked delivery succeeds and finishes cleanly even when evidence scope li
   // delivery_check reports scope error with guidance
   await assert.rejects(
     f.call('delivery_check', { id: 'run' }),
-    /Evidence scope error.*status="blocked"/
+    /Evidence scope exceeds/
   );
 
   // delivery_finish with status='verified' must still fail
@@ -474,17 +494,14 @@ test('verification:none plan finishes cleanly with no checks and no repair nudge
   assert.equal(f.messages.length, 0);
 });
 
-test('advisory checks record real failures without throwing or blocking finish', options, async t => {
+test('advisory commands cannot bypass approval; informational finish remains available', options, async t => {
   const f = fixture(t);
   const failing = { ...f.plan, verification: 'advisory' };
   failing.checks = [{ ...f.plan.checks[0], argv: [process.execPath, '-e', 'console.log("advisory context"); process.exit(4)'] }];
   await f.call('delivery_plan', failing);
-  const result = await f.call('delivery_check', { id: 'all' });
-  assert.match(result.content[0].text, /advisory context/);
-  const evidence = f.entries.at(-1).data.evidence.run;
-  assert.equal(evidence.passed, false);
-  assert.equal(evidence.code, 4);
-  // A failing advisory check is context, not a repair order.
+  await assert.rejects(f.call('delivery_check', { id: 'all' }), /Implementation locked/);
+  assert.deepEqual(f.entries.at(-1).data.evidence, {});
+  // Advisory classification cannot authorize arbitrary process execution.
   await f.call('delivery_finish', { status: 'verified', review: 'Reported the measured failure as context.', launch: 'n/a', limitations: ['advisory check failed by design'] });
   const handoff = f.entries.at(-1).data.handoff;
   assert.equal(handoff.advisory, true);
@@ -677,4 +694,28 @@ test('budget status command reports remaining allowance without consuming tools'
   assert.equal(status.tools, 1);
   assert.equal(status.remaining.tools, 1);
   assert.equal(status.reason, null);
+});
+
+
+test('unapproved tasks fail closed for shell, custom tools, tests and disabled legacy strict flag', async t => {
+  const f = fixture(t, { approve: false });
+  f.flags['delivery-strict'] = false;
+  for (const toolName of ['write', 'edit', 'bash', 'powershell', 'custom_runner', 'delivery_check', 'delivery_progress']) {
+    assert.equal(f.hooks.tool_call({ toolName, input: { command: 'ls' } }, f.ctx).block, true);
+  }
+  for (const toolName of ['read', 'ls', 'find', 'grep', 'delivery_plan']) assert.equal(f.hooks.tool_call({ toolName }, f.ctx), undefined);
+  await f.call('delivery_plan', { ...f.plan, design: fixtureDesign(f.plan) });
+  await assert.rejects(f.call('delivery_check', { id: 'all' }), /Implementation locked/);
+  await f.call('delivery_design', { action: 'validate' });
+  await f.call('delivery_design', { action: 'review', review: fixtureReview({ ...f.plan, design: fixtureDesign(f.plan) }) });
+  await f.call('delivery_design', { action: 'approve' });
+  f.hooks.session_start({}, f.ctx);
+  writeFileSync(join(f.cwd, 'app.py'), 'changed before first mutation');
+  assert.equal(f.hooks.tool_call({ toolName: 'write' }, f.ctx).block, true);
+  await f.call('delivery_design', { action: 'validate' });
+  await f.call('delivery_design', { action: 'review', review: fixtureReview({ ...f.plan, design: fixtureDesign(f.plan) }) });
+  await f.call('delivery_design', { action: 'approve' });
+  assert.equal(f.hooks.tool_call({ toolName: 'write' }, f.ctx), undefined);
+  await f.call('delivery_revise', { reason: 'New assumption', patch: { assumptions: ['Retain compatibility'] } });
+  assert.equal(f.hooks.tool_call({ toolName: 'write' }, f.ctx).block, true);
 });

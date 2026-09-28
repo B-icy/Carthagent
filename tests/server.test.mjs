@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { fixtureDesign, fixtureReview } from './helpers/tested-design.mjs';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -39,6 +40,22 @@ const json = (token, body) => ({
   body: JSON.stringify(body)
 });
 
+async function approvedPost(server, path, body) {
+  if (path === 'checks/run') {
+    const state = await (await fetch(`${server.url}/api/status`, { headers: { 'x-carthagent-token': server.token } })).json();
+    const plan = { ...state.plan, design: fixtureDesign(state.plan) };
+    if (JSON.stringify(state.plan.design) !== JSON.stringify(plan.design)) {
+      const revised = await fetch(`${server.url}/api/plan/revise`, json(server.token, { reason: 'Fixture design', patch: { design: plan.design } }));
+      assert.equal(revised.status, 200, await revised.text());
+    }
+    for (const action of ['validate', 'review', 'approve']) {
+      const response = await fetch(`${server.url}/api/design`, json(server.token, { action, review: fixtureReview(plan) }));
+      assert.equal(response.status, 200, await response.text());
+    }
+  }
+  return fetch(`${server.url}/api/${path}`, json(server.token, body));
+}
+
 test('dashboard API requires its launch token and rejects foreign origins', async t => {
   const server = await serverFixture(t);
   assert.equal((await fetch(`${server.url}/api/status`)).status, 401);
@@ -62,7 +79,7 @@ test('dashboard persists plans and executes checks in the selected workspace', a
   };
   const saved = await fetch(`${server.url}/api/plan/set`, json(server.token, { plan }));
   assert.equal(saved.status, 200, await saved.text());
-  const checked = await fetch(`${server.url}/api/checks/run`, json(server.token, { id: 'all' }));
+  const checked = await approvedPost(server, 'checks/run', { id: 'all' });
   assert.equal(checked.status, 200, await checked.text());
   const status = await fetch(`${server.url}/api/status`, { headers: { 'x-carthagent-token': server.token } });
   const body = await status.json();
@@ -73,7 +90,7 @@ test('dashboard persists plans and executes checks in the selected workspace', a
 
 test('dashboard preserves command evidence but rejects new-requirement coverage until rerun and records reviews', async t => {
   const server = await serverFixture(t);
-  const post = (path, body) => fetch(`${server.url}/api/${path}`, json(server.token, body));
+  const post = (path, body) => approvedPost(server, path, body);
   const plan = { goal: 'Review API', artifacts: ['.'], steps: ['Run'], acceptance: [{ requirement: 'Runs', checks: ['smoke'] }], checks: [{ id: 'smoke', kind: 'runtime', argv: [process.execPath, 'app.mjs'], timeoutSeconds: 10 }] };
   assert.equal((await post('plan/set', { plan })).status, 200);
   assert.equal((await post('checks/run', { id: 'all' })).status, 200);
@@ -106,7 +123,7 @@ test('dashboard rejects plan replacement and finish during checks and releases a
       `const fs = require('node:fs'); fs.writeFileSync(${JSON.stringify(started)}, 'yes'); const timer = setInterval(() => { if (fs.existsSync(${JSON.stringify(release)})) { clearInterval(timer); process.exitCode = 1; } }, 20);`
     ], timeoutSeconds: 5 }]
   };
-  const post = (path, body) => fetch(`${server.url}/api/${path}`, json(server.token, body));
+  const post = (path, body) => approvedPost(server, path, body);
   assert.equal((await post('plan/set', { plan })).status, 200);
   const running = post('checks/run', { id: 'all' });
   const deadline = Date.now() + 4000;
@@ -134,7 +151,7 @@ test('dashboard rejects plan replacement and finish during checks and releases a
 
 test('dashboard revisions preserve evidence and enforce output and step completion', async t => {
   const server = await serverFixture(t);
-  const post = (path, body) => fetch(`${server.url}/api/${path}`, json(server.token, body));
+  const post = (path, body) => approvedPost(server, path, body);
   const status = async () => (await fetch(`${server.url}/api/status`, { headers: { 'x-carthagent-token': server.token } })).json();
   const plan = {
     goal: 'Migration report', assumptions: [], artifacts: ['app.mjs'], steps: ['Run'],
@@ -183,4 +200,19 @@ test('dashboard is self-contained and does not render API data with innerHTML', 
     { console: 'error-free' },
   ]);
   assert.equal(rendered.pass, true, rendered.failures.join('\n'));
+});
+
+
+test('raw HTTP and CLI cannot run arbitrary checks before tested-plan approval', async t => {
+  const server = await serverFixture(t);
+  const plan = { goal: 'Gate', artifacts: ['.'], steps: ['Run'], acceptance: [{ requirement: 'Runs', checks: ['smoke'] }], checks: [{ id: 'smoke', kind: 'runtime', argv: [process.execPath, '-e', 'require("node:fs").writeFileSync("bypass.txt", "bad")'], timeoutSeconds: 10 }] };
+  const saved = await fetch(`${server.url}/api/plan/set`, json(server.token, { plan }));
+  assert.equal(saved.status, 200);
+  const blocked = await fetch(`${server.url}/api/checks/run`, json(server.token, { id: 'all' }));
+  assert.notEqual(blocked.status, 200);
+  assert.match(await blocked.text(), /Implementation locked/);
+  const cli = spawnSync(process.execPath, [join(root, 'bin/ctg.mjs'), 'check', 'all'], { cwd: server.cwd, encoding: 'utf8' });
+  assert.notEqual(cli.status, 0);
+  assert.match(cli.stderr, /Implementation locked/);
+  assert.equal(existsSync(join(server.cwd, 'bypass.txt')), false);
 });
