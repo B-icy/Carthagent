@@ -32,6 +32,12 @@ Optional `workflow:{nodes:[],recovery:[]}` is the canonical graph, not free-form
 
 Prerequisites form a DAG. Recovery transitions declare `{from,to,when,maxAttempts,stop}` with 1–10 attempts. These are proposed bounded recovery routes, **not an executable scheduler**; the agent still performs actions through gated tools and session budgets. D2 is generated from this validated graph. The harness overlays design approval, fresh verification, final review and handoff gates; the model cannot remove those. Legacy plans retain their old D2 and have a canonical fallback projection. Architecture is a separate component/dependency/port projection.
 
+## Workflow, architecture and evidence views
+
+The dashboard Plan panel has three selectable views and a pinned revision/lock explanation. Workflow shows observed current work, node states and recovery routes; architecture shows responsibilities, non-responsibilities, dependency direction and injection contracts; evidence shows execution revisions, logs and stale/failed status. Check buttons are disabled while approval is locked. Proposed decisions/artifacts are never inferred successful.
+
+The terminal supports `/workflow`, `/architecture` and `/evidence` in the side pane. Report-file/tool-result updates refresh the shared projection; dashboard status polling consumes that same projection. This is observed-state refresh, not a claimed ordered event stream. `ctg status --json` includes `planningView` for other consumers. A passing command or an approved plan remains distinct from semantic correctness.
+
 ## API and enforcement scope
 
 `POST /api/design` accepts the same action/review fields under the dashboard's authentication and workspace lock. `/api/checks/run`, `ctg check`, and `delivery_check` enforce the same approval policy. Participating tool calls are fail-closed before approval; this is **not an OS sandbox**. External processes, trusted host/extensions, tool-name replacement, raw API state-file tampering and postapproval unexpected edits are outside the guarantee. A tool hook does not hold a cross-process lease for an arbitrary tool's entire execution; avoid concurrent sessions editing one workspace.

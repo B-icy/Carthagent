@@ -31,8 +31,8 @@ Reviews record challenges, walkthroughs and findings against an exact revision, 
 |---|---|---|---|
 | 1 | Planning contract, validator and lifecycle | Missing requirements/scenarios/ports; invalid references; blockers; stale review/approval; revision history; no I/O in policy | Merged [#93](https://github.com/B-icy/Carthagent/pull/93); 335 local tests and all CI green |
 | 2 | Approval gate and mutation restrictions | Default pre-plan protection; shell/custom-tool bypass; informational downgrade; CLI/HTTP check bypass; restore/revision; truthful enforcement scope | Merged [#94](https://github.com/B-icy/Carthagent/pull/94); 337 local tests and all CI green |
-| 3 | Agent-authored workflow and architecture | Stable IDs; DAG prerequisites; explicit bounded recovery; mandatory gate overlay; D2 escaping; old plan rendering | Implemented; final checks in progress |
-| 4 | Event-driven workflow/architecture/evidence UI | Current phase, reason locked, findings, evidence, stale states; safe rendering; terminal projection; browser integration | Pending |
+| 3 | Agent-authored workflow and architecture | Stable IDs; DAG prerequisites; explicit bounded recovery; mandatory gate overlay; D2 escaping; old plan rendering | Merged [#95](https://github.com/B-icy/Carthagent/pull/95); 340 local tests and all CI green |
+| 4 | Event-driven workflow/architecture/evidence UI | Current phase, reason locked, findings, evidence, stale states; safe rendering; terminal projection; browser integration | Implemented; final checks in progress |
 | 5 | Adversarial review and scenario loop | Inspection receipt; complete challenges/walkthroughs; finding history; unresolved blocker; repair/revalidate; honest self-review provenance | Pending |
 | 6 | Optional Jev advisory evaluation | Injected fake/HTTP adapter; no-key baseline; failure/timeout/malformed response; shadow findings, false negatives, latency/cost metrics; no approval authority | Pending |
 

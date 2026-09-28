@@ -1,4 +1,5 @@
 import express from 'express';
+import { planningView } from './lib/planning-view.mjs';
 import { validatePlanning, recordPlanReview, approvePlanning, planningStatus, startImplementation } from './lib/planning.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
@@ -88,6 +89,7 @@ app.get('/api/status', (req, res) => {
       currentFingerprint,
       planningStatus: planningStatus(currentState, currentFingerprint),
       planning: currentState.planning || null,
+      planningView: planningView(currentState, currentFingerprint),
       pendingChecks: pending,
       workspace: cwd,
       report: active?.path || null

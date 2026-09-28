@@ -193,6 +193,9 @@ test('dashboard is self-contained and does not render API data with innerHTML', 
   assert.match(html, /stepStatus/);
   const rendered = await domCheck(html, [
     { selector: '.shell' },
+    { selector: '#planning-view' },
+    { eval: `(() => { const select = document.querySelector('#planning-view'); select.value = 'architecture'; select.dispatchEvent(new Event('change')); return document.querySelector('#d2').hidden; })()`, expect: true },
+    { eval: `(() => { const select = document.querySelector('#planning-view'); select.value = 'workflow'; select.dispatchEvent(new Event('change')); return document.querySelector('#planning-detail').textContent.includes('No active action recorded'); })()`, expect: true },
     { selector: '.brand', text: /Carthagent/ },
     { eval: 'document.documentElement.dataset.theme', expect: 'carthage' },
     { eval: `(() => { const option = document.querySelector('[data-theme-value="paper"]'); option.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true })); return document.documentElement.dataset.theme; })()`, expect: 'paper' },
