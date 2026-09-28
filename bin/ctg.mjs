@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
+import { startImplementation } from '../lib/planning.mjs';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import {
@@ -279,6 +280,7 @@ async function runWorkspaceChecks() {
     return;
   }
 
+  startImplementation(state, fingerprint(cwd, ['.']));
   let allPassed = true;
   const priorStatus = state.status;
   state.status = 'verifying';

@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve, delimiter } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { createReport, latestReport } from '../lib/reports.mjs';
+import { approveFixture } from './helpers/tested-design.mjs';
+import { createReport, latestReport, saveReport } from '../lib/reports.mjs';
 import { buildEngineArgs } from '../lib/engine.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -50,6 +51,8 @@ test('check executes declared argv and persists fresh evidence', t => {
     },
     evidence: {}
   }, 'session');
+  const report = latestReport(cwd);
+  saveReport(report.path, approveFixture(report.state, cwd));
   const result = run(cwd, 'check', 'all');
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /passed/);

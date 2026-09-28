@@ -1,6 +1,6 @@
 # Adaptive delivery planning
 
-> Implementation roadmap: [tested planning and agent-authored workflows](tested-planning-roadmap.md). The six-stage upgrade adds a tested-design approval gate before any code generation. This page describes the existing delivery/evidence layer; it is not permission to skip the new gate as stages land.
+> Read [tested planning before code](tested-planning.md) first. The approval gate is mandatory before code, tests or commands, including legacy-report resumes. This page describes the subsequent adaptive delivery/evidence layer. See the [rollout ledger](tested-planning-roadmap.md) for stage status.
 
 The plan is a revisable acceptance contract, not a one-time list of edits. Its job is to retain requirements, discoveries, progress and verification obligations as understanding changes. It cannot establish that the model understood every requirement or wrote adequate tests.
 
@@ -12,7 +12,7 @@ The plan is a revisable acceptance contract, not a one-time list of edits. Its j
 - Unchanged commands, kinds, IDs and deadlines retain fresh evidence only when the full workspace fingerprint and old evidence identity still match. Rebinding records `originRevision` and `executedRevision` and retains the actual log. New/remapped acceptance criteria retain truthful old command results but appear in `unverifiedRequirements` until their mapped suites execute at or after the requirement's introduction. Repeated revisions cannot launder old executions into new coverage. New assertions are still a model obligation, not mechanically proven by rerunning a command. Changed checks need new executions. Failed/stale evidence stays visible without being promoted to fresh; removed/changed checks remain in revision history.
 - Once verification has started, revisions cannot erase that fact to downgrade a required task. User-owned required validators are rebound automatically.
 - `delivery_check({id:"all"})` runs all declared suites sequentially, collecting ordinary failures before reporting an error. Cancellation and evidence-scope errors still stop execution.
-- For required delivery plans, `delivery_status` and `delivery_finish` share completion checks: required checks must be fresh, artifact roots must exist, declared output paths must be files, structured steps must be done, newly added/remapped requirements need fresh executions, and structured required plans need a snapshot-bound `delivery_review` receipt. Informational/advisory plans remain non-blocking. Explicit unfinished legacy progress also blocks finish. Old untracked string-only plans remain compatible.
+- For required delivery plans, `delivery_status` and `delivery_finish` share completion checks: required checks must be fresh, artifact roots must exist, declared output paths must be files, structured steps must be done, newly added/remapped requirements need fresh executions, and structured required plans need a snapshot-bound `delivery_review` receipt. Informational/advisory handoffs remain non-blocking, but those classifications cannot authorize new command execution. Explicit unfinished legacy progress also blocks finish. Old untracked string-only plans remain compatible.
 
 ### Dependency-aware steps
 

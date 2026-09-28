@@ -94,11 +94,12 @@ Useful flags: `--model`, `--thinking`, `--validators <file>`, `--context <file>`
 
 ## How it works
 
-`extensions/delivery.ts` wires seven tools into the engine (`lib/delivery.mjs` has the mechanics):
+`extensions/delivery.ts` wires eight tools into the engine (`lib/delivery.mjs` has the mechanics):
 
 | Tool | What it does |
 |---|---|
 | `delivery_plan` | Goal, steps, artifact roots, acceptance criteria → check mapping; `verification: required|advisory|none`; writes `plan.d2` |
+| `delivery_design` | Validate SRP/DI contracts and scenarios, record adversarial review, approve the exact revision/snapshot before code |
 | `delivery_revise` | Reason + partial plan patch; preserves valid evidence and stable progress, records revision history |
 | `delivery_check` | Runs check argv with deadlines; `all` collects ordinary failures across suites; records exit codes, logs, workspace SHA-256 |
 | `delivery_status` | Contract + evidence state (missing/failed/stale) |
@@ -108,11 +109,13 @@ Useful flags: `--model`, `--thinking`, `--validators <file>`, `--context <file>`
 
 The discipline: evidence is bound to the run, contract revision, executable check definition and workspace source fingerprint. Source edits invalidate evidence; dependency, cache and generated-output exclusions mean this is not a hash of every file. `verified` means declared required checks passed with current evidence—not independent proof of task completeness or correctness. Checks are real subprocesses (`argv`, no implicit shell), FIFO-queued, 1–300 s deadlines, logs under `.harness/`. Failed or missing checks get at most two automatic repair nudges per prompt. This is a workflow guardrail, not a security sandbox — for untrusted code use a container.
 
+**Test the plan before code.** A plan alone no longer enables implementation. Declare architecture/injection contracts and positive/failure scenarios, validate, challenge and iterate them, then approve with `delivery_design`. Revisions relock the gate. Shell, unknown tools, code/test writes and check runners are blocked before approval. This is a participating-tool boundary, not an OS sandbox. See [the design contract and migration notes](docs/tested-planning.md) and [rollout ledger](docs/tested-planning-roadmap.md).
+
 **Adaptive plans.** Steps can be legacy strings or `{id,title,dependsOn:[],checks:[]}`. Structured steps use stable IDs, enforce dependency order, and require mapped checks before completion. `delivery_revise({reason,patch})` keeps omitted fields and replaces supplied arrays; unchanged checks retain fresh evidence only on unchanged source. New/remapped requirements still need new suite executions; old command evidence cannot automatically cover newly stated behavior. Intentionally-red regression milestones use `kind:"regression",checks:[]`, keeping green suites on final acceptance. Structured required plans must inspect/record a final diff-linked review. Changed source still invalidates all workspace evidence. Revisions preserve failure history and acceptance criteria rather than resetting the contract. See [medium/large-codebase workflows and limits](docs/planning.md).
 
 **Headless monitoring.** `ctg --json -p "task"` streams engine JSONL events, including tool activity; `ctg status --json` returns a versioned report/fingerprint/completion snapshot. Text `-p` alone is not a live tool stream. Review receipts are traceable self-reports, not independent correctness proof.
 
-**Informational vs delivery asks.** Every plan declares a verification classification. `required` (the default) is the delivery contract above. `advisory` is for an informational answer that still benefits from running checks: the checks execute and their real exit codes are recorded, but a failure is reported as context instead of forcing a repair loop. `none` is a pure question/explanation with no checks at all. Informational plans finish with `delivery_finish` once (recorded as `advisory: true`) and never receive repair nudges; user-owned required validators always force `required`, and a `required` plan can only be reclassified before any check has run.
+**Informational vs delivery asks.** Every plan declares a verification classification. `required` (the default) is the delivery contract above. `advisory` retains optional informational evidence without a repair loop; it does not authorize new arbitrary command execution. New commands require a tested, approved `required` plan. `none` is a pure question/explanation with no checks at all. Informational plans finish with `delivery_finish` once (recorded as `advisory: true`) and never receive repair nudges; user-owned required validators always force `required`, and a `required` plan can only be reclassified before any check has run.
 
 ## Self-review
 

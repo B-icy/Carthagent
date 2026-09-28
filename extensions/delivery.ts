@@ -1,3 +1,5 @@
+import { validatePlanning, recordPlanReview, approvePlanning, planningStatus, startImplementation } from '../lib/planning.mjs';
+import { needsImplementation } from '../lib/planning-access.mjs';
 import { budgetLimits, newBudget, budgetReason, budgetSnapshot } from '../lib/budget.mjs';
 import { CONFIG_DIR_NAME, truncateTail, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
@@ -37,6 +39,8 @@ const Type = {
 const shortString = () => Type.String({ minLength: 1, maxLength: 1200 });
 const strings = (maxItems = 20) => Type.Array(shortString(), { minItems: 1, maxItems });
 const planFields = {
+  design: Type.Optional({ type: 'object', description: 'Tested architecture: components, ports, scenarios, risks. See docs/tested-planning-roadmap.md for field contracts.', additionalProperties: true }),
+  workflow: Type.Optional({ type: 'object', additionalProperties: true }),
   goal: shortString(), assumptions: Type.Array(shortString(), { maxItems: 20 }),
   artifacts: strings(40), outputs: Type.Optional(Type.Array(shortString(), { maxItems: 40 })),
   steps: Type.Array(Type.Union([shortString(), Type.Object({
@@ -50,9 +54,9 @@ const planFields = {
   checks: Type.Array(Type.Object({ id: Type.String({ pattern: '^[a-z][a-z0-9_-]{0,39}$' }), kind: Type.String({ description: 'test, runtime, or static' }), argv: strings(80), timeoutSeconds: Type.Integer({ minimum: 1, maximum: 300 }) }), { maxItems: 24 }),
 };
 const GUIDANCE = `Software delivery workflow (not required for questions or read-only reviews):
-Classify the ask before planning. Pure questions, explanations and read-only reviews are informational: either answer directly without delivery_plan, or — when a written contract helps — call delivery_plan with verification:"none" (no checks) or verification:"advisory" (optional checks whose failures are reported as context, never repaired). Reserve verification:"required" (the default) for tasks that change product files. Before running delivery_check, re-check the classification once more: a required plan may be reclassified to advisory/none only before any check has run, so decide before the verify loop. Informational plans finish cleanly with delivery_finish status="verified" and receive no repair nudges.
+Classify the ask before planning. Pure questions, explanations and read-only reviews are informational: either answer directly without delivery_plan, or — when a written contract helps — call delivery_plan with verification:"none" (no checks) or verification:"advisory" (legacy optional evidence, not permission to execute commands). Reserve verification:"required" (the default) for tasks that change product files. Before running delivery_check, re-check the classification once more: a required plan may be reclassified to advisory/none only before any check has run, so decide before the verify loop. Informational plans finish cleanly with delivery_finish status="verified" and receive no repair nudges.
 For substantial implementation work, inspect the repository and installed library APIs first. Identify which domain skills or knowledge bases apply to this task — check the available skills list and read the matching skill before implementing. Use delivery_plan BEFORE implementation: capture assumptions, a small vertical-slice plan, artifact roots, acceptance criteria and real check commands. D2 is generated for the flowchart; use D2 for any additional flowcharts.
-Pressure-test the plan before writing code: review it against every explicit requirement in the user's prompt, verify uncertain APIs with installed source or a tiny executable probe, and confirm the checks can actually detect failure. If the plan is weak or incomplete, call delivery_revise with a reason and a partial plan patch to fix it — the plan is a living contract, not a one-time artifact. Unchanged checks retain evidence only while the workspace fingerprint is unchanged; source edits still require re-verification.
+Before any code, tests or commands, declare design:{components,ports,scenarios,risks}; read docs/tested-planning.md for the contract. Use delivery_design action=validate, revise findings, action=review with adversarial challenges and every scenario walkthrough, then action=approve. Shell/unknown tools and check execution remain locked until approval. Discovery uses read/ls/find/grep, not executable probes. Every plan revision relocks implementation. Review is model-authored, not independent proof. Confirm proposed assertions can actually detect failure. If the plan is weak or incomplete, call delivery_revise with a reason and a partial plan patch to fix it — the plan is a living contract, not a one-time artifact. Unchanged checks retain evidence only while the workspace fingerprint is unchanged; source edits still require re-verification.
 Implement a runnable slice early, then complete the agreed behavior in small coherent steps. Mark progress with delivery_progress as each step finishes so the plan panel stays current. Don't stop at a scaffold. Verify uncertain APIs with installed source or a tiny executable probe; never invent library methods or assume assets exist. Separate testable logic from rendering/services. Include error handling, dependencies, launch instructions, and regression tests. Exercise actual interaction paths in fresh subprocesses with the normal environment, not only compilation or internal function calls. Include non-ASCII text, paths with spaces, and invalid data where applicable. On Windows, stdout may use a legacy code page (e.g. cp1252): use ASCII-escaped JSON or configure the application's UTF-8 output; don't hide failures by changing only the test environment. For visual work, capture and inspect a screenshot if your model supports images; otherwise explicitly disclose that visual review is unperformed.
 After creating a file, prefer focused edit calls over repeatedly rewriting the full file. Whole-file rewrites bloat model context, increase provider rate-limit risk, and can accidentally remove previously working behavior. If development reveals a wrong assumption or a step can't be completed as planned, call delivery_revise to adjust the contract — update steps and checks to match reality, but never silently drop original acceptance criteria. For multi-package work use structured steps {id,title,dependsOn:[],checks:[]} with stable IDs: dependencies gate progress and mapped checks must pass before done. Plan near-term slices in detail, leave later slices coarse, and refine them as dependencies become clear. Record architecture boundaries, affected callers, compatibility constraints, risky assumptions and rollback strategy in assumptions; resolve uncertainty with focused probes. Establish baseline failures, add a regression that fails before the fix, then run focused tests followed by integration and repository quality gates. Reopening a prerequisite resets downstream progress. Finish requires all structured steps done; string steps remain supported.
 Use a few meaningful check suites (usually 2–4), not one command per criterion: multiple acceptance criteria can share a suite. When user-owned required validators already cover a requirement, do not duplicate them with shallow model-authored checks; add only focused checks for logic they do not cover. Scope honestly: enumerate every explicit requirement in the user's prompt and back each core requirement with an acceptance criterion and a real check. Narrow contracts that omit core requirements make 'verified' a scope failure, not a smaller task; if budget remains once checks pass, implement and verify the missing requirements instead of stopping at the first passing slice. Run delivery_check with id="all" to execute every declared check sequentially. It executes the argv with a deadline, records logs and fingerprints the entire working project (excluding dependencies, caches and generated artifacts), so omitting a source file cannot hide stale evidence. Artifact roots must contain product source/tests/config/docs, never only artifacts/. Use ["."] for the project. Do not edit during checks; run dependent tools in separate batches. Use artifacts/ for generated screenshots/build output; .harness/ is reserved for harness logs. Re-run checks after final edits. When delivery_status reports readyToFinish:true, stop polling: adversarially review the result and call delivery_finish. Repeating an unchanged delivery_status is not progress and is blocked after a small number of calls.
@@ -112,7 +116,7 @@ export default function delivery(pi: ExtensionAPI) {
   let initialFiles = new Set<string>();
   pi.registerFlag('delivery-validators', { description: 'Path to user-owned required validator manifest; these checks cannot be omitted by the model', type: 'string' });
   pi.registerFlag('delivery-context', { description: 'Path to optional task/context guidance injected into the delivery system prompt', type: 'string' });
-  pi.registerFlag('delivery-strict', { description: 'Require delivery_plan before built-in edit/write (not a security sandbox)', type: 'boolean', default: false });
+  pi.registerFlag('delivery-strict', { description: 'Deprecated compatibility flag; tested-plan mutation gate is always enabled (not an OS sandbox)', type: 'boolean', default: true });
   pi.registerFlag('delivery-bash-cap', { description: 'Cap bash/powershell tool timeouts at N seconds (0 disables). A single un-timed runaway command (e.g. find /) can otherwise consume an entire bounded run. Instruct the model to set bounded timeouts either way.', type: 'string', default: '0' });
   pi.registerFlag('delivery-protect-existing', { description: 'Require focused edits instead of whole-file replacement for files present at session start', type: 'boolean', default: false });
   pi.registerFlag('delivery-rewrite-cap', { description: 'Maximum built-in write calls per path in a bounded run; later changes must use focused edits (0 disables)', type: 'string', default: '0' });
@@ -219,7 +223,7 @@ export default function delivery(pi: ExtensionAPI) {
     // Explicit checks/finish still validate evidence; a new plan restores context.
     if (!state || ['verified', 'blocked'].includes(state.status)) return;
     // Re-injected after compaction without replacing Pi's summary or pruning user messages.
-    const summary = { goal: state.plan.goal, revision: state.revision, lastRevision: state.revisions?.at(-1)?.reason, assumptions: state.plan.assumptions, status: state.status, stepStatus: state.stepStatus, verification: verificationMode(state.plan), verificationStarted: state.verificationStarted, outputs: state.plan.outputs, requirementRevisions: state.requirementRevisions, reviewRecorded: Boolean(state.reviewEvidence), progressNotes: state.progressNotes?.slice(-5), acceptance: state.plan.acceptance, steps: state.plan.steps, artifacts: state.plan.artifacts, checks: state.plan.checks, evidence: Object.fromEntries(Object.entries(state.evidence).map(([id, e]: any) => [id, { passed: e.passed, fingerprint: e.fingerprint, code: e.code, outputTail: e.outputTail ? e.outputTail.slice(-400) : undefined }])) };
+    const summary = { planning: { approvedRevision: state.planning?.approval?.revision, started: Boolean(state.planning?.started), findings: state.planning?.validation?.findings?.length }, goal: state.plan.goal, revision: state.revision, lastRevision: state.revisions?.at(-1)?.reason, assumptions: state.plan.assumptions, status: state.status, stepStatus: state.stepStatus, verification: verificationMode(state.plan), verificationStarted: state.verificationStarted, outputs: state.plan.outputs, requirementRevisions: state.requirementRevisions, reviewRecorded: Boolean(state.reviewEvidence), progressNotes: state.progressNotes?.slice(-5), acceptance: state.plan.acceptance, steps: state.plan.steps, artifacts: state.plan.artifacts, checks: state.plan.checks, evidence: Object.fromEntries(Object.entries(state.evidence).map(([id, e]: any) => [id, { passed: e.passed, fingerprint: e.fingerprint, code: e.code, outputTail: e.outputTail ? e.outputTail.slice(-400) : undefined }])) };
     return { messages: [...event.messages, { role: 'custom' as const, customType: 'delivery-context', content: `Delivery contract (evidence may be stale after edits):\n${JSON.stringify(summary)}\nInspect freshness with delivery_status once when needed. If it reports readyToFinish:true, call delivery_finish; do not poll unchanged status.`, display: false, timestamp: Date.now() }] };
   });
   pi.on('tool_call', (event, ctx) => {
@@ -266,24 +270,16 @@ export default function delivery(pi: ExtensionAPI) {
         // Leave invalid input unchanged so the tool returns its normal validation error.
       }
     }
-    const shellCommand =
-      ['bash', 'powershell'].includes(event.toolName) &&
-      input &&
-      typeof input === 'object' &&
-      typeof input.command === 'string'
-        ? input.command
-        : '';
-    const mutatingShell =
-      /(?:^|[;&|]\s*)\b(?:rm|mv|cp|mkdir|touch|truncate|install)\b/i.test(shellCommand) ||
-      /(?:^|[^>])>(?!>)/.test(shellCommand) ||
-      /\bsed\b[^\n]*\s-i(?:\s|$)/i.test(shellCommand) ||
-      /\b(?:open|write_text|writeFileSync|writeFile)\s*\(/i.test(shellCommand);
-    if (
-      pi.getFlag('delivery-strict') &&
-      !state &&
-      (['write', 'edit'].includes(event.toolName) || mutatingShell)
-    ) {
-      return { block: true, reason: 'BLOCKED — call delivery_plan NOW before any write/edit/bash. Schema: {goal, assumptions[], artifacts[], steps[], acceptance:[{requirement, checks:[checkId...]}], checks:[{id, kind:"test"|"runtime"|"static", argv:[...], timeoutSeconds}]}. Do not retry this tool until the plan exists; read-only inspection stays available.' };
+    if (needsImplementation(event.toolName)) {
+      try {
+        if (!ctx?.cwd) throw Error('Implementation locked: call delivery_plan and test/approve its design first.');
+        const release = lockWorkspace(ctx.cwd);
+        try {
+          refreshState(ctx);
+          startImplementation(state, fingerprint(ctx.cwd, ['.']));
+          persist(ctx);
+        } finally { release(); }
+      } catch (error: any) { return { block: true, reason: error.message }; }
     }
     if (['write', 'edit'].includes(event.toolName) && input && typeof input === 'object') {
       const path = typeof input.path === 'string' ? input.path.replaceAll('\\', '/') : '';
@@ -420,7 +416,7 @@ export default function delivery(pi: ExtensionAPI) {
         writeFileSync(join(dir, 'plan.d2'), planD2WithProgress(state.plan, state.stepStatus));
         persist(ctx);
         selectReport(ctx.cwd, join(dir, 'report.json'));
-        return text({ plan: join(dir, 'plan.d2'), report: join(dir, 'report.json'), next: 'Build a runnable slice, add regression tests, then delivery_check each check ID.' });
+        return text({ plan: join(dir, 'plan.d2'), report: join(dir, 'report.json'), next: 'No code or commands yet. Declare design components/ports/scenarios/risks, then delivery_design validate, review and approve. Revise any findings first.' });
       }, true));
     },
   });
@@ -437,7 +433,25 @@ export default function delivery(pi: ExtensionAPI) {
         const bound = bindRequiredChecks({ ...state.plan, ...validatePlanPatch(params.patch) }, required);
         state = revisePlan(state, bound, { cwd: ctx.cwd, reason: params.reason, hash });
         persist(ctx);
-        return text({ revision: state.revision, report: join(directory(ctx), 'report.json'), stepStatus: state.stepStatus, pendingChecks: pendingChecks(state, hash), unverifiedRequirements: pendingRequirements(state, hash), next: 'Continue revised steps. New/remapped requirements need concrete assertions and new executions even if old command evidence is fresh. Inspect/record final review with delivery_review.' });
+        return text({ revision: state.revision, report: join(directory(ctx), 'report.json'), stepStatus: state.stepStatus, pendingChecks: pendingChecks(state, hash), unverifiedRequirements: pendingRequirements(state, hash), next: 'Revision relocked implementation. Revalidate, review and approve the design before new code or check execution.' });
+      }));
+    },
+  });
+  pi.registerTool({
+    name: 'delivery_design', label: 'Test delivery design',
+    description: 'Before generating code: validate architecture and scenarios, record adversarial review, then approve. Review is self-reported, not independent proof. Revisions and preimplementation source edits invalidate approval.',
+    parameters: Type.Object({ action: Type.String({ enum: ['validate', 'review', 'approve'] }), review: Type.Optional({ type: 'object', additionalProperties: true, description: 'challenges:string[], walkthroughs:[{scenario,trace,assertion}], findings:[{severity,description,disposition?}], limitations:string[]' }) }),
+    async execute(_id, params, _signal, _update, ctx) {
+      return exclusive(() => workspaceOperation(ctx, async () => {
+        if (!state) throw Error('Call delivery_plan first');
+        const hash = fingerprint(ctx.cwd, ['.']);
+        let result;
+        if (params.action === 'validate') result = validatePlanning(state, hash);
+        else if (params.action === 'review') result = recordPlanReview(state, hash, params.review);
+        else if (params.action === 'approve') result = approvePlanning(state, hash);
+        else throw Error('Unknown design action');
+        persist(ctx);
+        return text({ result, planningStatus: planningStatus(state, hash) });
       }));
     },
   });
@@ -449,8 +463,10 @@ export default function delivery(pi: ExtensionAPI) {
       let pending: string[] = [];
       let freshnessKnown = true;
       let issues: any = null;
+      let designStatus: any = { locked: true, reasons: ['Source fingerprint unavailable.'] };
       try {
         const hash = fingerprint(ctx.cwd, ['.']);
+        designStatus = planningStatus(state, hash);
         pending = pendingChecks(state, hash);
         issues = completionIssues(state, ctx.cwd, hash);
       } catch (err: any) {
@@ -465,7 +481,7 @@ export default function delivery(pi: ExtensionAPI) {
           : 'Complete outstanding steps/outputs and unverified requirements. For structured plans, use delivery_review action=inspect then action=record before delivery_finish.';
       // History lives in report.json; do not flood model context with old snapshots.
       const { revisions, ...current } = state;
-      return text({ ...current, revisionHistory: revisions?.map((r: any) => ({ revision: r.revision, reason: r.reason, at: r.at })), pendingChecks: pending, completionIssues: issues, readyToFinish, next });
+      return text({ ...current, planningStatus: designStatus, revisionHistory: revisions?.map((r: any) => ({ revision: r.revision, reason: r.reason, at: r.at })), pendingChecks: pending, completionIssues: issues, readyToFinish, next });
     },
   });
   pi.registerTool({
@@ -503,6 +519,8 @@ export default function delivery(pi: ExtensionAPI) {
         if (verification === 'none') {
           return text({ verification, note: 'This plan declares verification:"none" (informational), so there are no checks to run. Call delivery_finish with status="verified" and the answer. If evidence is genuinely needed, replan with verification:"advisory" before any check has run.' });
         }
+        startImplementation(state, fingerprint(ctx.cwd, ['.']));
+        persist(ctx);
         const checks = params.id === 'all' ? state.plan.checks : state.plan.checks.filter((c: any) => c.id === params.id);
         if (!checks.length) throw Error('Unknown check ID. Use delivery_status or id="all".');
         const results = [];
