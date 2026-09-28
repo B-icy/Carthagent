@@ -1,4 +1,4 @@
-import { validatePlanning, recordPlanReview, approvePlanning } from '../../lib/planning.mjs';
+import { validatePlanning, inspectPlanning, recordPlanReview, approvePlanning } from '../../lib/planning.mjs';
 import { fingerprint } from '../../lib/delivery.mjs';
 
 // Explicit test scaffolding only: these scenarios describe fixture commands, not
@@ -17,7 +17,8 @@ export function approveFixture(state, cwd) {
   state.plan.design = fixtureDesign(state.plan);
   const hash = fingerprint(cwd, ['.']);
   validatePlanning(state, hash);
-  recordPlanReview(state, hash, fixtureReview(state.plan));
+  const capture = inspectPlanning(state, hash);
+  recordPlanReview(state, hash, { ...fixtureReview(state.plan), captureId: capture.id });
   approvePlanning(state, hash);
   return state;
 }

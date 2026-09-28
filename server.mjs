@@ -1,6 +1,6 @@
 import express from 'express';
 import { planningView } from './lib/planning-view.mjs';
-import { validatePlanning, recordPlanReview, approvePlanning, planningStatus, startImplementation } from './lib/planning.mjs';
+import { validatePlanning, inspectPlanning, recordPlanReview, approvePlanning, planningStatus, startImplementation } from './lib/planning.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
@@ -183,6 +183,7 @@ app.post('/api/design', (req, res) => {
     const hash = fingerprint(cwd, ['.']);
     let result;
     if (req.body.action === 'validate') result = validatePlanning(currentState, hash);
+    else if (req.body.action === 'inspect') result = inspectPlanning(currentState, hash);
     else if (req.body.action === 'review') result = recordPlanReview(currentState, hash, req.body.review);
     else if (req.body.action === 'approve') result = approvePlanning(currentState, hash);
     else throw Error('Unknown design action');

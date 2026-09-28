@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validateDesign, validatePlanning, recordPlanReview, approvePlanning, planningStatus, startImplementation } from '../lib/planning.mjs';
+import { validateDesign, validatePlanning, inspectPlanning, recordPlanReview, approvePlanning, planningStatus, startImplementation } from '../lib/planning.mjs';
 
 export function designedState() {
   return { runId: 'run', revision: 1, plan: {
@@ -15,7 +15,8 @@ export function designedState() {
 }
 export function reviewed(state, hash = 'source') {
   validatePlanning(state, hash);
-  recordPlanReview(state, hash, { challenges: ['Who owns failure behavior? Policy owns typed errors, not persistence.'], walkthroughs: state.plan.design.scenarios.map(s => ({ scenario: s.id, trace: `${s.input} -> policy -> ${s.expected}`, assertion: s.assertion })), findings: [], limitations: ['Model-authored review does not establish implementation correctness.'] });
+  const capture = inspectPlanning(state, hash);
+  recordPlanReview(state, hash, { captureId: capture.id, challenges: ['Who owns failure behavior? Policy owns typed errors, not persistence.'], walkthroughs: state.plan.design.scenarios.map(s => ({ scenario: s.id, trace: `${s.input} -> policy -> ${s.expected}`, assertion: s.assertion })), findings: [], limitations: ['Model-authored review does not establish implementation correctness.'] });
   approvePlanning(state, hash);
   return state;
 }
@@ -34,7 +35,8 @@ test('approval cannot bypass validation, scenarios, blocking findings or fresh i
   const state = designedState();
   assert.throws(() => approvePlanning(state, 'source'), /validation/);
   validatePlanning(state, 'source');
-  assert.throws(() => recordPlanReview(state, 'source', { challenges: ['challenge'], findings: [], walkthroughs: [], limitations: [] }), /every scenario/);
+  const capture = inspectPlanning(state, 'source');
+  assert.throws(() => recordPlanReview(state, 'source', { captureId: capture.id, challenges: ['challenge'], findings: [], walkthroughs: [], limitations: [] }), /every scenario/);
   reviewed(state);
   assert.equal(planningStatus(state, 'source').locked, false);
   assert.equal(planningStatus(state, 'changed').locked, true);
