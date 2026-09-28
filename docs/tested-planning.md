@@ -26,6 +26,12 @@ Informational plans still finish without a repair loop, but cannot authorize arb
 
 SRP means cohesive ownership/reasons to change, not mechanically one function per file. Contract validation detects missing declarations and contradictions, not undeclared hidden dependencies or semantic inadequacy.
 
+## Agent-authored workflow
+
+Optional `workflow:{nodes:[],recovery:[]}` is the canonical graph, not free-form executable D2. Each node declares `{id,title,type,dependsOn:[],requirements:[],components:[],checks:[],inputs:[],artifacts:[],effects:[]}`. Types: `work`, `decision`, `check`, `artifact`. Work nodes reference a `step` (structured ID or `legacy_1` etc.); every step must appear. Decisions declare `condition`; check nodes need check IDs. Effects are `read`, `write`, `execute` declarations, not permissions. IDs beginning `gate_` are reserved.
+
+Prerequisites form a DAG. Recovery transitions declare `{from,to,when,maxAttempts,stop}` with 1–10 attempts. These are proposed bounded recovery routes, **not an executable scheduler**; the agent still performs actions through gated tools and session budgets. D2 is generated from this validated graph. The harness overlays design approval, fresh verification, final review and handoff gates; the model cannot remove those. Legacy plans retain their old D2 and have a canonical fallback projection. Architecture is a separate component/dependency/port projection.
+
 ## API and enforcement scope
 
 `POST /api/design` accepts the same action/review fields under the dashboard's authentication and workspace lock. `/api/checks/run`, `ctg check`, and `delivery_check` enforce the same approval policy. Participating tool calls are fail-closed before approval; this is **not an OS sandbox**. External processes, trusted host/extensions, tool-name replacement, raw API state-file tampering and postapproval unexpected edits are outside the guarantee. A tool hook does not hold a cross-process lease for an arbitrary tool's entire execution; avoid concurrent sessions editing one workspace.
