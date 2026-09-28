@@ -1,6 +1,6 @@
 # Tested planning and agent-authored workflows
 
-Status: **in progress**. Owner: Carthagent. This is the implementation contract for the six sequential PRs below. Historical live-trial notes are evidence, not current operating instructions, and must remain intact.
+Status: **stages 1–5 merged; stage 6 implemented, awaiting CI/merge**. Owner: Carthagent. This is the implementation contract for the six sequential PRs below. Historical live-trial notes are evidence, not current operating instructions, and must remain intact.
 
 ## Non-negotiable behavior
 
@@ -33,8 +33,8 @@ Reviews record challenges, walkthroughs and findings against an exact revision, 
 | 2 | Approval gate and mutation restrictions | Default pre-plan protection; shell/custom-tool bypass; informational downgrade; CLI/HTTP check bypass; restore/revision; truthful enforcement scope | Merged [#94](https://github.com/B-icy/Carthagent/pull/94); 337 local tests and all CI green |
 | 3 | Agent-authored workflow and architecture | Stable IDs; DAG prerequisites; explicit bounded recovery; mandatory gate overlay; D2 escaping; old plan rendering | Merged [#95](https://github.com/B-icy/Carthagent/pull/95); 340 local tests and all CI green |
 | 4 | Event-driven workflow/architecture/evidence UI | Current phase, reason locked, findings, evidence, stale states; safe rendering; terminal projection; browser integration | Merged [#96](https://github.com/B-icy/Carthagent/pull/96); 341 local tests and all CI green; local Firefox blocked by snap /tmp restriction |
-| 5 | Adversarial review and scenario loop | Inspection receipt; complete challenges/walkthroughs; finding history; unresolved blocker; repair/revalidate; honest self-review provenance | Implemented; 343 local tests passing; CI pending |
-| 6 | Optional Jev advisory evaluation | Injected fake/HTTP adapter; no-key baseline; failure/timeout/malformed response; shadow findings, false negatives, latency/cost metrics; no approval authority | Pending |
+| 5 | Adversarial review and scenario loop | Inspection receipt; complete challenges/walkthroughs; finding history; unresolved blocker; repair/revalidate; honest self-review provenance | Merged [#97](https://github.com/B-icy/Carthagent/pull/97); 343 local tests and all CI green |
+| 6 | Optional Jev advisory evaluation | Injected fake/HTTP adapter; no-key baseline; failure/timeout/malformed response; shadow findings, false negatives, latency/cost metrics; no approval authority | Implemented; 348 local tests, real loopback HTTP transport and no-key corpus run pass; no live Jev benchmark |
 
 Each stage: focused tests → quality → PR inspection and cross-platform CI → merge → update this ledger for the next stage. GitHub does not permit self-approval; author review and authorized merge are not independent approval. No silent weakening of requirements to obtain green CI.
 
@@ -53,4 +53,6 @@ Outcome: ready to implement this roadmap sequentially. Known limitation: semanti
 
 ## Progress journal
 
+- Stage 6 results and limits: [optional advisor evaluation](plan-advisor-evaluation.md). No service credentials were accessed and no paid/provider request was made. Jev remains optional and outside normal approval flow.
+- Stages 4–6 use `/tmp/ctg-tested-planning`, an isolated Git worktree, to preserve concurrent unrelated provider/TUI changes in the original checkout. Local Firefox was blocked by snap's `/tmp` namespace; CI Firefox passed for stages 4–5.
 - Initial repository inspection confirms current plan-existence gate and fixed D2 suffix do not meet this contract. No implementation changes were made before documenting and challenging this plan.
