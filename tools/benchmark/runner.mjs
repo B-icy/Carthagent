@@ -8,7 +8,7 @@ import { safeEnv, provisionTools, ENGINE, stopGroup, sha } from './runtime.mjs';
 import { campaignAccount } from './campaign.mjs';
 import { verifyFreeze } from './freeze.mjs';
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-export const ROOT = '/home/baissi/benchmarks/deepseek-jev-v3';
+export const ROOT = '/home/baissi/benchmarks/deepseek-jev-v4';
 export const CAMPAIGN = '/home/baissi/benchmarks/deepseek-jev-campaign.json';
 export function terminalStatus(events, exit, stopReason, budget) {
   const last = events.filter(e=>e.type==='message_end' && e.message?.role==='assistant').at(-1)?.message;
@@ -27,7 +27,7 @@ export async function runCandidate(task, arm, { smoke = false, key, root = ROOT,
   mkdirSync(root, { recursive: true }); mkdirSync(run); mkdirSync(workspace); mkdirSync(config);
   if (!Number.isInteger(toolLimit) || toolLimit < 1 || toolLimit > 120) throw Error('Invalid tool limit');
   const toolsReceipt = provisionTools(config);
-  const gateway = await startGateway({ key, limit: smoke ? 0.08 : 2.80, allowJev: arm === 'jev', receiptPath: join(run, 'gateway.jsonl'), fetchImpl, account: campaignAccount(campaignPath, smoke ? 'smoke' : 'candidate', run) });
+  const gateway = await startGateway({ key, limit: smoke ? 0.08 : 2.79, allowJev: arm === 'jev', receiptPath: join(run, 'gateway.jsonl'), fetchImpl, account: campaignAccount(campaignPath, smoke ? 'smoke' : 'candidate', run) });
   try {
   const env = { ...childEnv(config, gateway.url, join(run, 'advisor.jsonl')), BENCH_TOOL_LIMIT: String(toolLimit) };
   writeFileSync(join(config, 'auth.json'), '{}');
@@ -49,7 +49,7 @@ export async function runCandidate(task, arm, { smoke = false, key, root = ROOT,
   }
   if (arm === 'jev') args.push('-e', join(REPO,'tools/benchmark/advisor.ts'));
   args.push('--tools', tools.join(','), prompt);
-  writeFileSync(join(run,'invocation.json'), JSON.stringify({ task, arm, smoke, toolsReceipt, transport: 'fresh-curl-http1.1', engine: ENGINE, engineVersion: '0.85.1', transportHash: sha(readFileSync(join(REPO,'tools/benchmark/transport.mjs'))), harnessCommit: spawnSync('git',['rev-parse','HEAD'],{cwd:REPO,encoding:'utf8'}).stdout.trim(), args, ceilings: { seconds: smoke ? 180 : 900, tools:toolLimit, usd:smoke?.08:2.80 }, startedAt:new Date().toISOString() },null,2));
+  writeFileSync(join(run,'invocation.json'), JSON.stringify({ task, arm, smoke, toolsReceipt, transport: 'fresh-curl-http1.1', engine: ENGINE, engineVersion: '0.85.1', transportHash: sha(readFileSync(join(REPO,'tools/benchmark/transport.mjs'))), harnessCommit: spawnSync('git',['rev-parse','HEAD'],{cwd:REPO,encoding:'utf8'}).stdout.trim(), args, ceilings: { seconds: smoke ? 180 : 900, tools:toolLimit, usd:smoke?.08:2.79 }, startedAt:new Date().toISOString() },null,2));
   let count = 0, pending = '', stopReason = null; const events = []; const decoder = new TextDecoder(); const started = Date.now();
   const child = spawn(process.execPath,args,{cwd:workspace,env,detached:true,stdio:['ignore','pipe','pipe']});
   const kill = reason => { stopReason ||= reason; try { process.kill(-child.pid,'SIGTERM'); } catch {} setTimeout(()=>{ try {process.kill(-child.pid,'SIGKILL');} catch {} },2000).unref(); };
