@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { request as httpRequest } from 'node:http';
 import { createBudget,reserve,reconcile,startGateway,MODEL } from './gateway.mjs';
 test('reservation and unknown billing fail closed',()=>{
   const b=createBudget(.15); const r=reserve(b,'generation'); assert.throws(()=>reserve(b,'generation')); assert.equal(reconcile(b,r,{cost:.01}),true); assert.equal(b.spent,.01);
@@ -22,6 +23,14 @@ test('real HTTP proxy allowlist, outbound bounds, billing and advisory',async()=
     assert.ok(!JSON.stringify(g.receipts).includes('test-secret'));
     assert.equal((await request({model:MODEL,messages:[{content:'x'.repeat(403000)}]})).status,400);
   } finally {await g.close();}
+});
+test('locks before body read, handles split Unicode and stops wrong-model responses after billing',async()=>{
+ let calls=0;const g=await startGateway({key:'x',fetchImpl:async(_url,o)=>{calls++;assert.equal(JSON.parse(o.body).messages[0].content,'héllo 🌍');return new Response('data: '+JSON.stringify({model:'wrong',usage:{cost:.001}})+'\n\ndata: [DONE]\n\n');}});
+ try{
+  const pending=httpRequest(g.url+'/v1/chat/completions',{method:'POST'});const done=new Promise((r,j)=>{pending.on('response',res=>{res.resume();res.on('end',()=>r(res.statusCode));});pending.on('error',j);});pending.write('{');await new Promise(r=>setTimeout(r,30));
+  const second=await fetch(g.url+'/v1/chat/completions',{method:'POST',body:JSON.stringify({model:MODEL,messages:[]})});assert.equal(second.status,400);await second.text();assert.equal(calls,0);
+  const payload=Buffer.from(JSON.stringify({model:MODEL,messages:[{role:'user',content:'héllo 🌍'}]}).slice(1));for(const byte of payload)pending.write(Buffer.from([byte]));pending.end();assert.equal(await done,400);assert.equal(calls,1);assert.equal(g.budget.spent,.001);assert.equal(g.budget.reserved,0);assert.equal(g.budget.stopped,'invalid-provider-response');
+ }finally{await g.close();}
 });
 test('malformed cost prevents delivery and subsequent paid requests',async()=>{
  let calls=0;const g=await startGateway({key:'x',fetchImpl:async()=>{calls++;return new Response('data: {"choices":[],"usage":{}}\n\n');}});

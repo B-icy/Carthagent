@@ -1,0 +1,18 @@
+// Supervisor-only evaluator reference fixture, not candidate scaffolding or a product.
+import {createServer} from 'node:http';import {mkdirSync,existsSync,readFileSync,writeFileSync}from'node:fs';import{join}from'node:path';
+const catalog=[['tent','Alpine Tent','shelter',12999,3],['mug','Trail Mug','accessories',1299,8],['lamp','Camp Lantern','lighting',3499,4],['pack','Ridge Pack','bags',7999,2],['rope','Utility Rope','accessories',999,0],['mat','Sleeping Mat','shelter',4599,5]].map(([id,name,category,priceCents,stock])=>({id,name,category,priceCents,stock}));
+mkdirSync(process.env.DATA_DIR,{recursive:true});const file=join(process.env.DATA_DIR,'state.json');const state=existsSync(file)?JSON.parse(readFileSync(file)):{products:catalog,orders:{},keys:{}};
+const mutant=process.env.FIXTURE_MUTANT;
+function norm(b){if(!Array.isArray(b.items)||!b.items.length)throw Error('cart');const merged={};for(const i of b.items){if(!state.products.some(p=>p.id===i.id)||!Number.isInteger(i.quantity)||i.quantity<1)throw Error('item');merged[i.id]=(merged[i.id]||0)+i.quantity;}const coupon=b.coupon||'';if(coupon&&coupon!=='WELCOME10')throw Error('coupon');return {items:Object.entries(merged).sort().map(([id,quantity])=>({id,quantity})),coupon};}
+function quote(n){let subtotalCents=0;for(const i of n.items){const p=state.products.find(p=>p.id===i.id);if(i.quantity>p.stock)throw Error('stock');subtotalCents+=p.priceCents*i.quantity;}const discountCents=n.coupon?(mutant==='round'?Math.round:Math.floor)(subtotalCents/10):0,shippingCents=subtotalCents-discountCents>=10000?0:599;return{subtotalCents,discountCents,shippingCents,totalCents:subtotalCents-discountCents+shippingCents};}
+createServer(async(req,res)=>{const u=new URL(req.url,'http://localhost');const send=(b,status=200)=>{res.writeHead(status,{'Content-Type':'application/json'});res.end(JSON.stringify(b));};try{
+ if(u.pathname==='/'){res.writeHead(200,{'Content-Type':'text/html'});return res.end(readFileSync(new URL('./ui.html',import.meta.url)));}
+ if(u.pathname==='/api/products'){let products=state.products.filter(p=>(!u.searchParams.get('q')||p.name.toLowerCase().includes(u.searchParams.get('q').toLowerCase()))&&(!u.searchParams.get('category')||p.category===u.searchParams.get('category')));const sort=u.searchParams.get('sort');products.sort(sort==='name'?(a,b)=>a.name.localeCompare(b.name):(a,b)=>(a.priceCents-b.priceCents)*(sort==='price-desc'?-1:1));return send({products});}
+ if(u.pathname.startsWith('/api/orders/'))return send({order:state.orders[u.pathname.split('/').at(-1)]});
+ let raw='';for await(const b of req)raw+=b;const body=JSON.parse(raw),n=norm(body);
+ if(u.pathname==='/api/quote')return send(quote(n));
+ if(u.pathname!=='/api/orders')throw Error('route');
+ const c=body.customer||{},customer={name:c.name?.trim(),email:c.email?.trim(),address:c.address?.trim()};if(!body.key||customer.name?.length<2||customer.address?.length<8||! /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email))throw Error('customer');
+ const identity=JSON.stringify({...n,customer});const old=state.keys[body.key];if(old&&mutant!=='idempotency'){if(old.identity!==identity)return send({error:'conflict'},409);return send({order:state.orders[old.id]});}
+ const order={id:String(Object.keys(state.orders).length+1),items:n.items,...quote(n)};for(const i of n.items)state.products.find(p=>p.id===i.id).stock-=i.quantity;state.orders[order.id]=order;state.keys[body.key]={identity,id:order.id};writeFileSync(file,JSON.stringify(state));return send({order});
+ }catch(e){send({error:e.message},400);}}).listen(Number(process.env.PORT),'127.0.0.1');

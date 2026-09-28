@@ -6,7 +6,7 @@ export default function advisor(pi: any) {
     if (event.toolName !== 'delivery_design' || event.input?.action !== 'inspect' || event.isError || seen.size >= 3) return;
     let capture: any;
     try { capture = JSON.parse(event.content.filter((c: any) => c.type === 'text').map((c: any) => c.text).join('\n')).result; } catch { return; }
-    if (!capture.plan || !capture.id) return;
+    if (!capture?.plan || !capture?.id) return;
     const revision = `${capture.runId}:${capture.revision}`;
     if (seen.has(revision)) return;
     seen.add(revision);

@@ -3,8 +3,9 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync,writeFileSync,readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { checks } from './eval-common.mjs';
+import { safeEnv } from './runtime.mjs';
 export const money=n=>{n=BigInt(n);return `${n/100n}.${String(n%100n).padStart(2,'0')}`;};
-export function ledgerRun(workspace,journal,commands){const r=spawnSync(process.execPath,['ledger.mjs','--journal',journal],{cwd:workspace,input:commands.map(c=>typeof c==='string'?c:JSON.stringify(c)).join('\n')+'\n',encoding:'utf8',timeout:10000,maxBuffer:2000000});const lines=r.stdout.trim().split('\n').filter(Boolean);return {code:r.status,stderr:r.stderr,rows:lines.map(l=>{try{return JSON.parse(l);}catch{return {invalid:l};}})};}
+export function ledgerRun(workspace,journal,commands){const r=spawnSync(process.execPath,['ledger.mjs','--journal',journal],{cwd:workspace,env:safeEnv(),input:commands.map(c=>typeof c==='string'?c:JSON.stringify(c)).join('\n')+'\n',encoding:'utf8',timeout:10000,maxBuffer:2000000});const lines=(r.stdout || '').trim().split('\n').filter(Boolean);return {code:r.status,stderr:r.stderr,rows:lines.map(l=>{try{return JSON.parse(l);}catch{return {invalid:l};}})};}
 export async function evaluateLedger(workspace,out){mkdirSync(out,{recursive:true});const c=checks();let seq=0;
  const run=commands=>{const r=ledgerRun(workspace,join(out,`journal-${seq++}.jsonl`),commands);assert.equal(r.code,0,r.stderr);assert.equal(r.rows.length,commands.length,'one JSON output per request');return r.rows;};
  const open=(account,balance,key=account)=>({op:'open',account,balance,key});const tx=(amount,key='t')=>({op:'transfer',from:'a',to:'b',amount,key});
