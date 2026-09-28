@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { createServer } from 'node:http';
 import assert from 'node:assert/strict';
 import { advisePlan, evaluateAdvisor } from '../lib/plan-advisor.mjs';
 import { createJevAdvisor } from '../lib/jev-advisor.mjs';
@@ -42,6 +43,22 @@ test('timeout, malformed/oversized data, missing key and HTTP failures do not gr
     assert.doesNotMatch(JSON.stringify(result), /secret token|sensitive-provider-error/);
   }
 });
+test('real HTTP transport handles streamed responses and aborts delayed bodies', async t => {
+  const server = createServer((req, res) => {
+    req.resume();
+    res.writeHead(200, { 'content-type': 'application/json' });
+    if (req.url === '/slow') { res.write('{'); return; }
+    const body = JSON.stringify(payload());
+    res.write(body.slice(0, 30)); res.end(body.slice(30));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const advisor = path => createJevAdvisor({ apiKey: 'fixture', timeoutMs: 250, fetchImpl: (_url, options) => fetch(url + path, options) });
+  assert.equal((await advisePlan({}, { advisor: advisor('/') })).mode, 'shadow');
+  assert.equal((await advisePlan({}, { advisor: advisor('/slow') })).mode, 'unavailable');
+});
+
 test('shadow evaluation reports false negatives, false positives, Brier and unknown costs honestly', async () => {
   const cases = [{ id: 'fixture', plan: {}, labels: { srp: true, di: false, tests: true } }];
   const baseline = await evaluateAdvisor(cases);

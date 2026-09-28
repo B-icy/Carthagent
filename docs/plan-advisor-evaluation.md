@@ -18,7 +18,7 @@ The adapter has a 3-second default deadline, no retries, a conservative 64KB req
 
 ## What was actually evaluated
 
-- **Local quality: 347 tests**, including no-key operation, injected classifier immutability, typed HTTP request/response contract, timeout even for an uncooperative fake, invalid/oversized response, missing key, HTTP errors and sanitized failure output.
+- **Local quality: 348 tests**, including no-key operation, injected classifier immutability, typed HTTP request/response contract, timeout even for an uncooperative fake, invalid/oversized response, missing key, HTTP errors and sanitized failure output. A real loopback HTTP server exercises the fetch/streaming adapter and cancellation of a delayed body; no external service is used.
 - **Three-case, supervisor-authored illustrative corpus**: cohesive pure policy, mixed policy/hidden network, and missing parser failure cases. This is neither blind nor representative. Labels are judgments, not independently adjudicated truth. The corpus tests evaluation plumbing, not production readiness.
 - No-advisor baseline: 9 category decisions, 4 false negatives, 5 true negatives, no positive alerts, undefined precision/Brier score and unknown cost. This is an intentionally silent baseline, **not a comparison against Carthagent's deterministic validator or generative review**.
 - Injected probability fixture: one true positive, one false positive, one false negative, Brier score approximately 0.4467. These values test metric calculations only; they are not Jev measurements.
