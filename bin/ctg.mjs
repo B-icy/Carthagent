@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
+import { planningView } from '../lib/planning-view.mjs';
 import { startImplementation } from '../lib/planning.mjs';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
@@ -225,7 +226,7 @@ async function handleStatus() {
   const report = latestReport(cwd);
   if (argv.includes('--json')) {
     const state = report?.state;
-    console.log(JSON.stringify({ version: 1, workspace: cwd, currentFingerprint: currentFp, report: report?.path || null, state: state || null, completionIssues: state?.plan ? completionIssues(state, cwd, currentFp) : null }));
+    console.log(JSON.stringify({ version: 1, workspace: cwd, currentFingerprint: currentFp, report: report?.path || null, state: state || null, planningView: planningView(state, currentFp), completionIssues: state?.plan ? completionIssues(state, cwd, currentFp) : null }));
     return;
   }
   console.log(`\x1b[1mWorkspace:\x1b[0m     ${cwd}`);

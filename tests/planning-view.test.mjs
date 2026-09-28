@@ -1,0 +1,33 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { planningView, planningViewLines } from '../lib/planning-view.mjs';
+import { approveFixture, fixtureDesign } from './helpers/tested-design.mjs';
+import { evidenceIdentity, fingerprint } from '../lib/delivery.mjs';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+test('shared views distinguish locked, proposed, observed, failed and stale receipts', t => {
+  const cwd = mkdtempSync(join(tmpdir(), 'planning-view-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const state = { runId: 'run', revision: 1, status: 'implementing', evidence: {}, plan: { goal: 'View', steps: ['Work'], acceptance: [{ requirement: 'Works', checks: ['unit'] }], checks: [{ id: 'unit', kind: 'test', argv: ['node', '--version'], timeoutSeconds: 10 }] } };
+  state.plan.design = fixtureDesign(state.plan);
+  let view = planningView(state, fingerprint(cwd, ['.']));
+  assert.ok(view.gate.locked);
+  assert.equal(view.current.length, 0);
+  assert.equal(view.workflow.nodes.find(n => n.id === 'step0').status, 'blocked');
+  approveFixture(state, cwd);
+  const hash = fingerprint(cwd, ['.']);
+  state.stepStatus = { step0: 'active' };
+  view = planningView(state, hash);
+  assert.equal(view.current[0].id, 'step0');
+  assert.match(planningViewLines(view, 'architecture').join('\n'), /Production behavior/);
+  const check = state.plan.checks[0];
+  state.evidence.unit = { ...evidenceIdentity(state, check), executedRevision: 1, fingerprint: hash, passed: false, code: 1 };
+  assert.equal(planningView(state, hash).evidence[0].status, 'fail');
+  state.evidence.unit.passed = true;
+  assert.equal(planningView(state, hash).evidence[0].status, 'done');
+  assert.equal(planningView(state, 'changed').evidence[0].status, 'stale');
+  assert.match(planningViewLines(planningView(state, 'changed'), 'evidence').join('\n'), /stale/);
+  assert.equal(planningView(null, hash).workflow, null);
+});

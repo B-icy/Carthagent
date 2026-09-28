@@ -334,14 +334,18 @@
       <div class="grid">
         <div class="card span-7">
           <div class="section-head">
-            <div><h2>Plan</h2><div class="subtle">Editing the plan resets existing evidence.</div></div>
+            <div><h2>Plan</h2><div class="subtle">Revisions relock implementation; honest matching evidence is retained.</div></div>
             <div class="actions"><button id="validate-plan" class="button">Validate</button><button id="save-plan" class="button primary">Save plan</button></div>
           </div>
           <textarea id="plan-json" class="code" spellcheck="false" placeholder="No plan loaded"></textarea>
           <div id="plan-message" class="message"></div>
         </div>
         <div class="card span-5">
-          <h3>D2</h3>
+          <h3>Observed workflow</h3>
+          <div id="design-gate" class="gate" role="status"></div>
+          <label for="planning-view">View</label>
+          <select id="planning-view"><option value="workflow">Workflow</option><option value="architecture">Architecture</option><option value="evidence">Evidence</option></select>
+          <pre id="planning-detail" class="mono-block" style="white-space:pre-wrap"></pre>
           <div id="d2-current" class="d2-current" hidden></div>
           <div id="d2" class="d2-chart" style="margin-top:12px">No plan loaded.</div>
           <details class="d2-source"><summary>D2 source</summary><pre id="d2-source-pre" class="mono-block"></pre></details>
@@ -497,8 +501,9 @@
     byId('fingerprint').textContent = state.currentFingerprint || '—';
     byId('report').textContent = state.report || '';
     const plan = state.plan;
-    byId('run-all').disabled = !plan?.checks?.length;
-    byId('run-all-header').disabled = !plan?.checks?.length;
+    byId('run-all').disabled = !plan?.checks?.length || state.planningStatus?.locked;
+    byId('run-all-header').disabled = !plan?.checks?.length || state.planningStatus?.locked;
+    renderPlanningView();
     byId('mark-verified').disabled = !plan;
     byId('mark-blocked').disabled = !plan;
     byId('goal').textContent = plan?.goal || 'No active delivery';
@@ -548,6 +553,29 @@
     gate.textContent = !plan ? 'No active plan.' : checks.length && current === checks.length ? 'All declared checks have current passing evidence.' : `${checks.length - current} check${checks.length - current === 1 ? '' : 's'} pending, failed, or stale.`;
   }
 
+  function renderPlanningView() {
+    const view = state.planningView;
+    const tab = byId('planning-view').value;
+    byId('design-gate').textContent = `${view?.gate.phase || 'discovery'} · revision ${state.revision || '-'}\n${view?.gate.locked ? 'LOCKED: validate, review and approve this design revision before code.' : 'Design approved; final correctness still requires evidence.'}`;
+    const lines = [];
+    if (tab === 'architecture') {
+      for (const c of view?.architecture?.nodes || []) lines.push(`${c.id} [${c.layer}] ${c.title}`, `  excludes: ${(c.excludes || []).join('; ')}`);
+      for (const edge of view?.architecture?.edges || []) lines.push(`${edge.from} -> ${edge.to}`);
+      for (const p of view?.architecture?.ports || []) lines.push(`${p.owner} -> port ${p.id} -> ${p.adapter}; injected at ${p.compositionRoot}`, `  input: ${p.input}; output: ${p.output}; errors: ${p.errors}`, `  real adapter assertion: ${p.integrationAssertion}`);
+    } else if (tab === 'evidence') {
+      for (const e of view?.evidence || []) lines.push(`${e.id}: ${e.status}; executed revision ${e.executedRevision ?? '-'}`, `  ${e.logPath || 'No execution receipt'}`);
+    } else {
+      lines.push('CURRENT: ' + ((view?.current || []).map(n => n.title).join(', ') || 'No active action recorded'));
+      for (const n of view?.workflow?.nodes || []) lines.push(`${n.id} [${n.status}] ${n.title}`);
+      for (const e of view?.workflow?.edges || []) lines.push(`${e.from} -> ${e.to}${e.label ? ': ' + e.label : ''}`);
+    }
+    if (view?.blockers.length) lines.push('BLOCKERS', ...view.blockers);
+    lines.push(view?.provenance || 'No observed delivery state');
+    byId('planning-detail').textContent = lines.join('\n');
+    byId('d2').hidden = tab !== 'workflow';
+    byId('d2-current').hidden = tab !== 'workflow';
+  }
+
   function renderChecks(checks) {
     const body = byId('checks-body');
     clear(body);
@@ -571,6 +599,7 @@
       const duration = node('td', evidence?.durationMs != null ? `${evidence.durationMs}ms` : '—');
       const action = node('td');
       const run = node('button', 'Run', 'button');
+      run.disabled = Boolean(state.planningStatus?.locked);
       run.addEventListener('click', () => runChecks(check.id));
       action.append(run);
       row.append(id, kind, command, timeout, stateCell, duration, action);
@@ -688,6 +717,7 @@
   /** Map live delivery state to per-node states (mirrors computeNodeStates in the TUI). */
   function computeD2States() {
     const st = new Map();
+    if (state.plan?.workflow && state.planningView?.workflow) return new Map(state.planningView.workflow.nodes.map(n => [n.id, n.status]));
     const plan = state.plan;
     if (!plan) return st;
     const ev = state.evidence || {};
@@ -914,6 +944,7 @@
     catch (error) { byId('doc-content').textContent = error.message; }
   }
 
+  byId('planning-view').addEventListener('change', renderPlanningView);
   byId('validate-plan').addEventListener('click', () => planAction(false));
   byId('save-plan').addEventListener('click', () => planAction(true));
   byId('run-all').addEventListener('click', () => runChecks('all'));
