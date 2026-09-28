@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cycleProvider, filterModelsByProvider, modelMatchesQuery, providerForModel, providersFromModels } from '../lib/tui/models.mjs';
+import { cycleProvider, filterModelsByProvider, modelMatchesQuery, modelSupportsThinking, providerForModel, providersFromModels } from '../lib/tui/models.mjs';
 
 const MODELS = [
-  { provider: 'experiential-labs', id: 'gpt-5.6-luna', full: 'experiential-labs/gpt-5.6-luna', name: 'OpenAI · GPT-5.6 Luna' },
+  { provider: 'experiential-labs', id: 'gpt-6-luna', full: 'experiential-labs/gpt-6-luna', name: 'GPT-6 Luna', reasoning: true },
   { provider: 'deepseek', id: 'deepseek-chat', full: 'deepseek/deepseek-chat' },
   { provider: 'deepseek', id: 'deepseek-reasoner', full: 'deepseek/deepseek-reasoner' },
   { provider: 'openrouter', id: 'anthropic/claude', full: 'openrouter/anthropic/claude' },
@@ -52,6 +52,12 @@ test('modelMatchesQuery searches display names and treats punctuation as separat
   assert.equal(modelMatchesQuery(model, 'DeepSeek 4.1 Flash'), true);
   assert.equal(modelMatchesQuery(model, 'deepseek v4 1'), true);
   assert.equal(modelMatchesQuery(model, 'V4.1 Pro'), false);
+});
+
+test('modelSupportsThinking trusts resolved engine metadata', () => {
+  assert.equal(modelSupportsThinking(MODELS[0]), true);
+  assert.equal(modelSupportsThinking(MODELS[1]), false);
+  assert.equal(modelSupportsThinking({ id: 'looks-like-thinking' }), false);
 });
 
 test('cycleProvider wraps in both directions and handles unknown current', () => {

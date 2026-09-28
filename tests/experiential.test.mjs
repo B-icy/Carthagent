@@ -11,6 +11,7 @@ import {
   isManagedCloudNonRetryableError,
   managedCloudRequestOptions,
   experientialProviderConfig,
+  experientialModelDefinition,
   parseExperientialModels,
   registerExperientialProvider,
 } from '../lib/providers/experiential.mjs';
@@ -126,17 +127,38 @@ test('Managed Cloud transport makes one attempt while direct Experiential preser
   assert.equal(directCalls[0].init.headers.has('idempotency-key'), false);
 });
 
-test('Experiential model parsing is identity-only, sorted, and deduplicated', () => {
+test('Experiential model parsing is sorted, deduplicated, and resolves reasoning capabilities', () => {
   const models = parseExperientialModels({ data: [
     { id: 'z-model', name: 'Zed' },
-    { id: 'a-model' },
+    { id: 'gpt-6-luna' },
+    { id: 'qwen3-max-thinking' },
     { id: 'z-model', name: 'Duplicate' },
     { nope: true },
   ] });
-  assert.deepEqual(models, [
-    { id: 'a-model', name: 'a-model' },
-    { id: 'z-model', name: 'Zed' },
-  ]);
+  assert.deepEqual(models.map(model => model.id), ['gpt-6-luna', 'qwen3-max-thinking', 'z-model']);
+  assert.equal(models[0].name, 'GPT-6 Luna');
+  assert.equal(models[0].reasoning, true);
+  assert.deepEqual(models[0].thinkingLevelMap, {
+    off: 'none', minimal: null, low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max',
+  });
+  assert.equal(models[0].compat.supportsReasoningEffort, true);
+  assert.equal(models[1].reasoning, true);
+  assert.equal(models[1].thinkingLevelMap.medium, 'medium');
+  assert.equal(models[1].thinkingLevelMap.off, null);
+  assert.deepEqual(models[2], { id: 'z-model', name: 'Zed' });
+});
+
+test('Experiential model definitions preserve supplied metadata and detect explicit thinking aliases', () => {
+  assert.deepEqual(experientialModelDefinition({ id: 'future-thinking', name: 'Future', reasoning: false, contextWindow: 42 }), {
+    id: 'future-thinking', name: 'Future', reasoning: false, contextWindow: 42,
+  });
+  const detected = experientialModelDefinition('future-reasoning-model');
+  assert.equal(detected.reasoning, true);
+  assert.equal(detected.thinkingLevelMap.medium, 'medium');
+  const managed = experientialModelDefinition('openai/gpt-6-luna');
+  assert.equal(managed.id, 'openai/gpt-6-luna');
+  assert.equal(managed.name, 'GPT-6 Luna');
+  assert.equal(managed.reasoning, true);
 });
 
 test('Experiential model discovery authenticates with API-key or OAuth credentials without logging them', async () => {
