@@ -1,0 +1,36 @@
+[
+  {
+    "id": "cohesive-pure-policy",
+    "plan": {
+      "goal": "Normalize empty or nonempty display names",
+      "design": {
+        "components": [{"id":"name-policy","responsibility":"Trim names and reject empty names","excludes":["Persistence","HTTP"],"layer":"core","dependencies":[],"externalDependencies":[]}],
+        "scenarios": [{"input":"  Ada  ","expected":"Ada","assertion":"Equals Ada"},{"input":"   ","expected":"EmptyName error","assertion":"Throws EmptyName"}]
+      }
+    },
+    "labels": {"srp":false,"di":false,"tests":false}
+  },
+  {
+    "id": "mixed-policy-hidden-network",
+    "plan": {
+      "goal": "Calculate invoice totals and deliver receipts",
+      "design": {
+        "components": [{"id":"invoice","responsibility":"Calculate tax, read secrets, open SMTP sockets and render HTML","layer":"core","externalDependencies":[]}],
+        "ports": [],
+        "scenarios": [{"input":"one ordinary invoice","expected":"sent","assertion":"Does not throw"}]
+      }
+    },
+    "labels": {"srp":true,"di":true,"tests":true}
+  },
+  {
+    "id": "missing-failure-scenario",
+    "plan": {
+      "goal": "Parse bounded decimal values",
+      "design": {
+        "components": [{"id":"parser","responsibility":"Parse bounded decimal strings","excludes":["I/O"],"layer":"core","externalDependencies":[]}],
+        "scenarios": [{"input":"1.23","expected":"123","assertion":"Equals 123"}]
+      }
+    },
+    "labels": {"srp":false,"di":false,"tests":true}
+  }
+]
