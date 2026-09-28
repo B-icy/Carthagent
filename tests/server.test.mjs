@@ -48,9 +48,12 @@ async function approvedPost(server, path, body) {
       const revised = await fetch(`${server.url}/api/plan/revise`, json(server.token, { reason: 'Fixture design', patch: { design: plan.design } }));
       assert.equal(revised.status, 200, await revised.text());
     }
-    for (const action of ['validate', 'review', 'approve']) {
-      const response = await fetch(`${server.url}/api/design`, json(server.token, { action, review: fixtureReview(plan) }));
-      assert.equal(response.status, 200, await response.text());
+    let captureId;
+    for (const action of ['validate', 'inspect', 'review', 'approve']) {
+      const response = await fetch(`${server.url}/api/design`, json(server.token, { action, review: { ...fixtureReview(plan), captureId } }));
+      const body = await response.json();
+      assert.equal(response.status, 200, JSON.stringify(body));
+      if (action === 'inspect') captureId = body.result.id;
     }
   }
   return fetch(`${server.url}/api/${path}`, json(server.token, body));

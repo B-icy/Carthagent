@@ -31,6 +31,10 @@ function fixture(t, { approve = true } = {}) {
   factory(engine);
   const ctx = { cwd, hasUI: false, aborted: 0, abort() { this.aborted++; }, sessionManager: { getEntries: () => entries, getBranch: () => entries, getSessionId: () => 'integration-session' }, hasPendingMessages: () => false };
   const rawCall = (name, params = {}) => tools[name].execute('test-id', params, undefined, undefined, ctx);
+  const inspectReview = async () => {
+    const inspected = JSON.parse((await rawCall('delivery_design', { action: 'inspect' })).content[0].text);
+    return { ...fixtureReview(entries.at(-1).data.plan), captureId: inspected.result.id };
+  };
   const call = async (name, params = {}) => {
     if (approve && name === 'delivery_plan' && (params.verification ?? 'required') === 'required') params = { ...params, design: fixtureDesign(params) };
     if (approve && name === 'delivery_revise' && params.patch?.acceptance) params = { ...params, patch: { ...params.patch, design: fixtureDesign({ ...entries.at(-1).data.plan, ...params.patch }) } };
@@ -41,14 +45,15 @@ function fixture(t, { approve = true } = {}) {
         if (JSON.stringify(current.design) !== JSON.stringify(fixtureDesign(current))) await rawCall('delivery_revise', { reason: 'Bind fixture scenarios to required validators', patch: { design: fixtureDesign(current) } });
         const plan = entries.at(-1).data.plan;
         await rawCall('delivery_design', { action: 'validate' });
-        await rawCall('delivery_design', { action: 'review', review: fixtureReview(plan) });
+        const inspected = JSON.parse((await rawCall('delivery_design', { action: 'inspect' })).content[0].text);
+        await rawCall('delivery_design', { action: 'review', review: { ...fixtureReview(plan), captureId: inspected.result.id } });
         await rawCall('delivery_design', { action: 'approve' });
       }
     }
     return result;
   };
   const plan = { goal: 'Working script', assumptions: [], artifacts: ['app.py'], steps: ['Implement', 'Verify'], acceptance: [{ requirement: 'Runs', checks: ['run'] }], checks: [{ id: 'run', kind: 'runtime', argv: [process.execPath, '-e', 'console.log("passed")'], timeoutSeconds: 5 }] };
-  return { cwd, ctx, hooks, commands, entries, messages, flags, call, plan };
+  return { cwd, ctx, hooks, commands, entries, messages, flags, call, plan, inspectReview };
 }
 
 test('live extension refreshes same-run state and rejects superseded mutations and busy checks', async t => {
@@ -707,13 +712,13 @@ test('unapproved tasks fail closed for shell, custom tools, tests and disabled l
   await f.call('delivery_plan', { ...f.plan, design: fixtureDesign(f.plan) });
   await assert.rejects(f.call('delivery_check', { id: 'all' }), /Implementation locked/);
   await f.call('delivery_design', { action: 'validate' });
-  await f.call('delivery_design', { action: 'review', review: fixtureReview({ ...f.plan, design: fixtureDesign(f.plan) }) });
+  await f.call('delivery_design', { action: 'review', review: await f.inspectReview() });
   await f.call('delivery_design', { action: 'approve' });
   f.hooks.session_start({}, f.ctx);
   writeFileSync(join(f.cwd, 'app.py'), 'changed before first mutation');
   assert.equal(f.hooks.tool_call({ toolName: 'write' }, f.ctx).block, true);
   await f.call('delivery_design', { action: 'validate' });
-  await f.call('delivery_design', { action: 'review', review: fixtureReview({ ...f.plan, design: fixtureDesign(f.plan) }) });
+  await f.call('delivery_design', { action: 'review', review: await f.inspectReview() });
   await f.call('delivery_design', { action: 'approve' });
   assert.equal(f.hooks.tool_call({ toolName: 'write' }, f.ctx), undefined);
   await f.call('delivery_revise', { reason: 'New assumption', patch: { assumptions: ['Retain compatibility'] } });
