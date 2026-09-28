@@ -1,5 +1,7 @@
 # Adaptive delivery planning
 
+> Implementation roadmap: [tested planning and agent-authored workflows](tested-planning-roadmap.md). The six-stage upgrade adds a tested-design approval gate before any code generation. This page describes the existing delivery/evidence layer; it is not permission to skip the new gate as stages land.
+
 The plan is a revisable acceptance contract, not a one-time list of edits. Its job is to retain requirements, discoveries, progress and verification obligations as understanding changes. It cannot establish that the model understood every requirement or wrote adequate tests.
 
 ## Tools and lifecycle
