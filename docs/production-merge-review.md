@@ -20,4 +20,4 @@ User authorized merging existing work. Merge the current context-efficiency, opt
 
 ## Verification
 
-Pending integration and fresh local/remote checks. Review is author-performed; independent human approval is not claimed.
+Integrated origin/main at72f819a cleanly; thinking-model catalog/TUI changes preserved. Fresh npm run quality: lint/typecheck/build and362/362 tests pass. Separate node --test tools/benchmark/*.test.mjs:18/20 pass, including actual installed-engine offline full delivery, mocked advice, TLS transport and billing/profile tests. Two historical browser evaluator tests fail because local Snap geckodriver cannot preserve its mount namespace (driver log: Invalid argument, unexpected eof); shop6/6 non-browser categories and voxel7/7 non-browser categories pass. These failures remain disclosed, not converted to skips. Logs /tmp/ctg-production-quality.log and /tmp/ctg-production-benchmark-tests.log; historical evaluator diagnostic artifacts retained under /home/baissi/benchmarks/infrastructure-tests/. No live paid calls. Remote OS/Node/Python/browser CI pending at PR publication. Review is author-performed; independent human approval is not claimed.
