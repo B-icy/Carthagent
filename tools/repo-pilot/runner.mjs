@@ -8,17 +8,17 @@ import { safeEnv, provisionTools, ENGINE_ROOT, stopGroup, sha } from '../benchma
 import { initializeCampaign, campaignAccount } from '../benchmark/campaign.mjs';
 import { terminalStatus } from '../benchmark/runner.mjs';
 import { TASKS, MATRIX, BASE } from './tasks.mjs';
-export const ROOT='/home/baissi/benchmarks/jev-repo-pilot';
+export const ROOT='/home/baissi/benchmarks/jev-repo-pilot-v2';
 const REPO=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
 const BWRAP=ROOT+'/setup/bubblewrap-root/usr/bin/bwrap';
-const CAMPAIGN=ROOT+'/campaign.json';
+const CAMPAIGN='/home/baissi/benchmarks/jev-repo-pilot/campaign.json';
 const NODE=dirname(dirname(process.execPath));
 function walk(root){return readdirSync(root,{withFileTypes:true}).flatMap(e=>e.isDirectory()?walk(join(root,e.name)):e.isFile()?[join(root,e.name)]:[]);}
-export function manifest(){return Object.fromEntries([...['lib','extensions','docs','skills','tools/repo-pilot','tools/benchmark'].flatMap(d=>walk(join(REPO,d))),...walk(ROOT+'/reference'),...walk(ROOT+'/setup/fastify').filter(p=>!p.includes('/.git/')), ...walk(ENGINE_ROOT), ...walk(REPO+'/vendor'), ...walk(REPO+'/node_modules'),process.execPath,BWRAP].sort().map(p=>[p,sha(readFileSync(p))]));}
+export function manifest(){return Object.fromEntries([...['lib','extensions','docs','skills','tools/repo-pilot','tools/benchmark'].flatMap(d=>walk(join(REPO,d))),...walk(ROOT+'/reference'),...walk(ROOT+'/system'),...walk(ROOT+'/setup/fastify').filter(p=>!p.includes('/.git/')), ...walk(ENGINE_ROOT), ...walk(REPO+'/vendor'), ...walk(REPO+'/node_modules'),process.execPath,BWRAP].sort().map(p=>[p,sha(readFileSync(p))]));}
 export function freeze(){writeFileSync(ROOT+'/freeze.json',JSON.stringify({at:new Date().toISOString(),base:BASE,hashes:manifest(),limits:{candidate:14,smoke:1,cell:2.3,seconds:900,tools:120},compaction:{enabled:true,reserveTokens:70000,keepRecentTokens:6000}},null,2),{flag:'wx'});}
 function verify(){const frozen=JSON.parse(readFileSync(ROOT+'/freeze.json'));if(JSON.stringify(frozen.hashes)!==JSON.stringify(manifest()))throw Error('Freeze mismatch');}
 export function sandboxArgs(run, {broker=true,evaluator=false}={}){
- const args=['--die-with-parent','--new-session','--unshare-user','--unshare-pid','--unshare-ipc','--unshare-uts','--unshare-net','--cap-drop','ALL','--ro-bind','/usr','/usr','--ro-bind','/lib','/lib','--ro-bind','/lib64','/lib64','--symlink','usr/bin','/bin','--proc','/proc','--dev','/dev','--tmpfs','/tmp','--dir','/home','--dir','/home/agent','--ro-bind',NODE,'/node','--ro-bind',ENGINE_ROOT,'/engine','--bind',run+'/workspace','/work','--ro-bind',ROOT+'/setup/fastify/node_modules','/work/node_modules','--bind',run+'/config','/config','--bind',run+'/sessions','/sessions','--bind',run+'/logs','/logs','--ro-bind',ROOT+'/reference','/reference'];
+ const args=['--die-with-parent','--new-session','--unshare-user','--unshare-pid','--unshare-ipc','--unshare-uts','--unshare-net','--cap-drop','ALL','--ro-bind','/usr','/usr','--ro-bind','/lib','/lib','--ro-bind','/lib64','/lib64','--symlink','usr/bin','/bin','--proc','/proc','--dev','/dev','--ro-bind',ROOT+'/system/hosts','/etc/hosts','--ro-bind',ROOT+'/system/nsswitch.conf','/etc/nsswitch.conf','--tmpfs','/tmp','--dir','/home','--dir','/home/agent','--ro-bind',NODE,'/node','--ro-bind',ENGINE_ROOT,'/engine','--bind',run+'/workspace','/work','--ro-bind',ROOT+'/setup/fastify/node_modules','/work/node_modules','--bind',run+'/config','/config','--bind',run+'/sessions','/sessions','--bind',run+'/logs','/logs','--ro-bind',ROOT+'/reference','/reference'];
  for(const d of ['lib','extensions','docs','skills','vendor','node_modules'])args.push('--ro-bind',REPO+'/'+d,'/harness/'+d);
  args.push('--ro-bind',REPO+'/tools/benchmark/guard.ts','/guard.ts','--ro-bind',REPO+'/tools/repo-pilot/sandbox-entry.mjs','/entry.mjs');
  if(broker)args.push('--ro-bind',run+'/broker.sock','/broker.sock');
