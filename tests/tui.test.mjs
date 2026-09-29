@@ -53,9 +53,9 @@ test('active model synchronization refreshes welcome blocks without redundant in
   assert.equal(feed.version, version + 1);
   assert.equal(feed.blocks[1].text, 'keep');
 
-  syncActiveModel(state, feed, { provider: 'experiential-labs', id: 'gpt-5.6-luna' });
-  assert.equal(state.model, 'experiential-labs/gpt-5.6-luna');
-  assert.equal(feed.blocks[0].model, 'Carthagent Ship/gpt-5.6-luna');
+  syncActiveModel(state, feed, { provider: 'experiential-labs', id: 'gpt-6-luna' });
+  assert.equal(state.model, 'experiential-labs/gpt-6-luna');
+  assert.equal(feed.blocks[0].model, 'Carthagent Ship/gpt-6-luna');
 });
 
 const SAMPLE_PLAN = {
