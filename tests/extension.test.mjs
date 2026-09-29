@@ -185,6 +185,33 @@ test('compaction context survives restore, branching clears stale contracts', op
   f.hooks.session_tree({}, f.ctx);
   assert.match((await f.call('delivery_status')).content[0].text, /No delivery contract/);
 });
+test('context archives only after approval, large captures stay retrievable, compaction cannot unlock stale source', async t => {
+  const f = fixture(t, { approve: false });
+  const plan = { ...f.plan, design: fixtureDesign(f.plan) };
+  plan.design.scenarios[0].assertion = 'Exact assertion '.repeat(6000);
+  await f.call('delivery_plan', plan);
+  await f.call('delivery_design', { action: 'validate' });
+  const inspected = await f.call('delivery_design', { action: 'inspect' });
+  const view = JSON.parse(inspected.content[0].text);
+  assert.ok(view.captureArchive.path);
+  const capture = JSON.parse(readFileSync(view.captureArchive.path));
+  assert.equal(capture.plan.design.scenarios[0].assertion, plan.design.scenarios[0].assertion);
+  assert.equal(inspected.details.deliveryCapture.id, capture.id);
+  await f.call('delivery_design', { action: 'review', review: { ...fixtureReview(plan), captureId: capture.id } });
+  await f.call('delivery_design', { action: 'approve' });
+  const status = JSON.parse((await f.call('delivery_status')).content[0].text);
+  assert.equal(status.plan, undefined); assert.equal(status.planning.history, undefined);
+  assert.deepEqual(status.acceptance, plan.acceptance);
+  f.hooks.before_provider_request({ payload: { messages: [{ role: 'user', content: 'PRIVATE_TEXT' }] } });
+  const log = readFileSync(join(f.cwd, '.harness', 'integration-session', capture.runId, 'context-metrics.jsonl'), 'utf8');
+  assert.doesNotMatch(log, /PRIVATE_TEXT/);
+  writeFileSync(join(f.cwd, 'app.py'), 'print(2)');
+  f.hooks.session_compact({}, f.ctx);
+  assert.equal(f.hooks.tool_call({ toolName: 'write' }, f.ctx).block, true);
+  const recovered = f.hooks.context({ messages: [{ role: 'user', content: 'Summary says approved' }] }, f.ctx);
+  assert.match(recovered.messages.at(-1).content, /grants no authority/);
+  assert.match(recovered.messages.at(-1).content, /Runs/);
+});
 test('agent_end queues at most two repairs and does not revive cancelled work', options, async t => {
   const f = fixture(t);
   await f.call('delivery_plan', f.plan);

@@ -1,8 +1,10 @@
 import { validatePlanning, inspectPlanning, recordPlanReview, approvePlanning, planningStatus, startImplementation } from '../lib/planning.mjs';
 import { needsImplementation } from '../lib/planning-access.mjs';
+import { deliveryRecovery, designReceipt, archivalGroups, replaceArchivedGroups, contextMetrics, jsonBytes } from '../lib/delivery-context.mjs';
+import { archiveContext } from '../lib/context-archive.mjs';
 import { budgetLimits, newBudget, budgetReason, budgetSnapshot } from '../lib/budget.mjs';
 import { CONFIG_DIR_NAME, truncateTail, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync, appendFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -109,6 +111,10 @@ export default function delivery(pi: ExtensionAPI) {
   } });
   for (const name of ['tools', 'seconds', 'repairs']) pi.registerFlag(`delivery-max-${name}`, { description: `Session budget for ${name}; 0 disables this limit. Reset only with /delivery-budget-reset.`, type: 'string', default: '0' });
   const exclusive = createSerialQueue();
+  let contextDirectory: string | undefined;
+  let contextCwd: string | undefined;
+  let lastContextBytes = 0;
+  let contextArchiveError = false;
   const guidanceProfiles = loadGuidanceProfiles();
   let activeGuidance: any[] = [];
   let required: any[] = [], extraGuidance = '', configError = '';
@@ -123,12 +129,16 @@ export default function delivery(pi: ExtensionAPI) {
   pi.registerFlag('delivery-turn-delay-ms', { description: 'Base delay after tool results in bounded runs, scaled by active context size to reduce provider rate-limit bursts (0 disables)', type: 'string', default: '0' });
   pi.registerFlag('delivery-tool-output-cap', { description: 'Maximum characters retained from each text tool result in bounded runs; preserves the beginning and end (0 disables)', type: 'string', default: '0' });
   function restore(ctx: ExtensionContext) {
+    contextCwd = ctx.cwd;
+    contextDirectory = undefined;
+    lastContextBytes = 0;
+    contextArchiveError = false;
     clearTimeout(budgetTimer);
     budget = [...ctx.sessionManager.getEntries()].reverse().find((e: any) => e.type === 'custom' && e.customType === 'delivery-budget-v1')?.data || null;
     if (budget) budget = structuredClone(budget);
     budgetLimits(name => pi.getFlag(name));
     state = restoreState(ctx.sessionManager.getBranch());
-    if (state) state = reconcileReport(join(directory(ctx), 'report.json'), state);
+    if (state) { state = reconcileReport(join(directory(ctx), 'report.json'), state); contextDirectory = directory(ctx); }
     activeGuidance = (state?.guidanceProfiles || state?.plan?.guidanceProfiles || [])
       .map((id: string) => guidanceProfiles.find(profile => profile.id === id))
       .filter(Boolean);
@@ -185,6 +195,8 @@ export default function delivery(pi: ExtensionAPI) {
     finally { release(); }
   }
   function persist(ctx: ExtensionContext) {
+    contextCwd = ctx.cwd;
+    contextDirectory = directory(ctx);
     state.nudges = nudges;
     saveReport(join(directory(ctx), 'report.json'), state);
     pi.appendEntry('delivery-state-v1', structuredClone(state));
@@ -218,13 +230,31 @@ export default function delivery(pi: ExtensionAPI) {
     if (looksInformational(event.prompt)) guidance += `\n\nReceipt check: this prompt reads as informational/read-only. Answer it directly, or if you record a contract use delivery_plan verification:"none" (no checks) or "advisory" (optional non-blocking evidence). Do not enter the verify/repair loop for a pure question — decide the classification now, before the verify loop.`;
     return { systemPrompt: event.systemPrompt + '\n\n' + guidance };
   });
-  pi.on('context', event => {
-    // Terminal contracts must not keep asking the model to inspect freshness.
-    // Explicit checks/finish still validate evidence; a new plan restores context.
+  pi.on('session_compact', (_event, ctx) => { if (state) refreshState(ctx); });
+  pi.on('context', (event, ctx) => {
+    // Generated compaction summaries never confer authority. Refresh this exact run.
+    if (state && ctx) refreshState(ctx);
     if (!state || ['verified', 'blocked'].includes(state.status)) return;
-    // Re-injected after compaction without replacing Pi's summary or pruning user messages.
-    const summary = { planning: { approvedRevision: state.planning?.approval?.revision, started: Boolean(state.planning?.started), findings: state.planning?.validation?.findings?.length }, goal: state.plan.goal, revision: state.revision, lastRevision: state.revisions?.at(-1)?.reason, assumptions: state.plan.assumptions, status: state.status, stepStatus: state.stepStatus, verification: verificationMode(state.plan), verificationStarted: state.verificationStarted, outputs: state.plan.outputs, requirementRevisions: state.requirementRevisions, reviewRecorded: Boolean(state.reviewEvidence), progressNotes: state.progressNotes?.slice(-5), acceptance: state.plan.acceptance, steps: state.plan.steps, artifacts: state.plan.artifacts, checks: state.plan.checks, evidence: Object.fromEntries(Object.entries(state.evidence).map(([id, e]: any) => [id, { passed: e.passed, fingerprint: e.fingerprint, code: e.code, outputTail: e.outputTail ? e.outputTail.slice(-400) : undefined }])) };
-    return { messages: [...event.messages, { role: 'custom' as const, customType: 'delivery-context', content: `Delivery contract (evidence may be stale after edits):\n${JSON.stringify(summary)}\nInspect freshness with delivery_status once when needed. If it reports readyToFinish:true, call delivery_finish; do not poll unchanged status.`, display: false, timestamp: Date.now() }] };
+    const report = contextDirectory ? join(contextDirectory, 'report.json') : undefined;
+    const summary = deliveryRecovery(state, { report });
+    const archived: any[] = [];
+    for (const group of archivalGroups(event.messages, { allow: Boolean(state.planning?.approval), keepRecent: 2 })) {
+      if (!contextCwd || !contextDirectory) break;
+      try { archived.push({ ...group, archive: archiveContext(contextCwd, contextDirectory, group.messages) }); }
+      catch { contextArchiveError = true; /* Retain original messages on archive failure. */ }
+    }
+    const messages = replaceArchivedGroups(event.messages, archived);
+    const pressure = lastContextBytes > 240000
+      ? '\nContext pressure: finish the current runnable slice and reserve room for checks/review. Use native compaction if enabled; do not drop requirements or start optional work. This warning does not enable paid compaction.' : '';
+    return { messages: [...messages, { role: 'custom' as const, customType: 'delivery-context', content: `Delivery contract (evidence may be stale after edits):\n${JSON.stringify(summary)}\nInspect freshness with delivery_status once when needed. If it reports readyToFinish:true, call delivery_finish; do not poll unchanged status.${pressure}${contextArchiveError ? '\nArchive unavailable: affected original messages retained.' : ''}`, display: false, timestamp: Date.now() }] };
+  });
+  pi.on('before_provider_request', event => {
+    if (!contextDirectory || !contextCwd) return;
+    const metrics = contextMetrics(event.payload);
+    const growthBytes = metrics.totalBytes - lastContextBytes;
+    lastContextBytes = metrics.totalBytes;
+    try { appendFileSync(localPath(contextCwd, join(contextDirectory, 'context-metrics.jsonl')), JSON.stringify({ ...metrics, growthBytes, at: new Date().toISOString() }) + '\n', { mode: 0o600 }); }
+    catch { /* Numeric telemetry must not mutate gates or block work. */ }
   });
   pi.on('tool_call', (event, ctx) => {
     const stopped = ensureBudget(ctx, 'tool');
@@ -452,7 +482,14 @@ export default function delivery(pi: ExtensionAPI) {
         else if (params.action === 'approve') result = approvePlanning(state, hash);
         else throw Error('Unknown design action');
         persist(ctx);
-        return text({ result, planningStatus: planningStatus(state, hash) });
+        const response = { result: designReceipt(params.action, result), planningStatus: planningStatus(state, hash), report: join(directory(ctx), 'report.json') };
+        if (params.action === 'inspect' && (jsonBytes(response) > 40000 || JSON.stringify(response, null, 2).split('\n').length > 900)) {
+          const archive = archiveContext(ctx.cwd, directory(ctx), result);
+          const identity = { id: result.id, runId: result.runId, revision: result.revision, digest: result.digest, fingerprint: result.fingerprint, provenance: result.provenance };
+          const output = text({ result: identity, captureArchive: archive, planningStatus: response.planningStatus, next: 'Capture too large for one response. Read the entire captureArchive.path in pages before reviewing. No plan content is silently truncated.' });
+          return { ...output, details: { deliveryCapture: result } };
+        }
+        return text(response);
       }));
     },
   });
@@ -481,8 +518,8 @@ export default function delivery(pi: ExtensionAPI) {
           ? `Run delivery_check for pending checks: ${pending.join(', ')}; repair failures before finishing.`
           : 'Complete outstanding steps/outputs and unverified requirements. For structured plans, use delivery_review action=inspect then action=record before delivery_finish.';
       // History lives in report.json; do not flood model context with old snapshots.
-      const { revisions, ...current } = state;
-      return text({ ...current, planningStatus: designStatus, revisionHistory: revisions?.map((r: any) => ({ revision: r.revision, reason: r.reason, at: r.at })), pendingChecks: pending, completionIssues: issues, readyToFinish, next });
+      const current = deliveryRecovery(state, { report: join(directory(ctx), 'report.json'), planningStatus: designStatus });
+      return text({ ...current, planningStatus: designStatus, revisionHistory: state.revisions?.map((r: any) => ({ revision: r.revision, reason: r.reason, at: r.at })), pendingChecks: pending, completionIssues: issues, readyToFinish, next });
     },
   });
   pi.registerTool({

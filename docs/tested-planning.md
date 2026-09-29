@@ -1,4 +1,6 @@
-# Tested planning before code
+# Tested planning
+
+Context handling: [compact projections and recovery](context-efficiency.md). `delivery_status` returns active obligations rather than the full report history. A large `delivery_design inspect` returns `captureArchive.path`; read the entire immutable capture in pages before authoring review. Its capture ID/digest/source binding and all validation/approval requirements are unchanged. A pointer is not evidence that the plan was read. Full history remains in the report/session; older successful planning exchanges may be referenced by verified archives in outbound model context. before code
 
 New and resumed delivery tasks must test and approve their design before generating product code, tests or executable prototypes. A plan's existence is no longer permission to implement. `--delivery-strict=false` does not bypass this policy.
 
