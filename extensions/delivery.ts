@@ -3,6 +3,8 @@ import { needsImplementation } from '../lib/planning-access.mjs';
 import { deliveryRecovery, designReceipt, archivalGroups, replaceArchivedGroups, contextMetrics, jsonBytes } from '../lib/delivery-context.mjs';
 import { archiveContext } from '../lib/context-archive.mjs';
 import { configuredAdvisor, inspectAdvice } from '../lib/planning-advice.mjs';
+import { PLANNING_START, planningGuide, planningNext } from '../lib/planning-guide.mjs';
+import { newDiscovery, restoreDiscovery, discoveryEvent, discoveryCheckpoint } from '../lib/planning-discovery.mjs';
 import { budgetLimits, newBudget, budgetReason, budgetSnapshot } from '../lib/budget.mjs';
 import { CONFIG_DIR_NAME, truncateTail, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { mkdirSync, writeFileSync, appendFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
@@ -42,7 +44,7 @@ const Type = {
 const shortString = () => Type.String({ minLength: 1, maxLength: 1200 });
 const strings = (maxItems = 20) => Type.Array(shortString(), { minItems: 1, maxItems });
 const planFields = {
-  design: Type.Optional({ type: 'object', description: 'Tested architecture: components, ports, scenarios, risks. See docs/tested-planning-roadmap.md for field contracts.', additionalProperties: true }),
+  design: Type.Optional({ type: 'object', description: 'Tested architecture: components, ports, scenarios, risks. Call delivery_design action=guide for exact fields and example.', additionalProperties: true }),
   workflow: Type.Optional({ type: 'object', additionalProperties: true }),
   goal: shortString(), assumptions: Type.Array(shortString(), { maxItems: 20 }),
   artifacts: strings(40), outputs: Type.Optional(Type.Array(shortString(), { maxItems: 40 })),
@@ -58,8 +60,8 @@ const planFields = {
 };
 const GUIDANCE = `Software delivery workflow (not required for questions or read-only reviews):
 Classify the ask before planning. Pure questions, explanations and read-only reviews are informational: either answer directly without delivery_plan, or — when a written contract helps — call delivery_plan with verification:"none" (no checks) or verification:"advisory" (legacy optional evidence, not permission to execute commands). Reserve verification:"required" (the default) for tasks that change product files. Before running delivery_check, re-check the classification once more: a required plan may be reclassified to advisory/none only before any check has run, so decide before the verify loop. Informational plans finish cleanly with delivery_finish status="verified" and receive no repair nudges.
-For substantial implementation work, inspect the repository and installed library APIs first. Identify which domain skills or knowledge bases apply to this task — check the available skills list and read the matching skill before implementing. Use delivery_plan BEFORE implementation: capture assumptions, a small vertical-slice plan, artifact roots, acceptance criteria and real check commands. D2 is generated for the flowchart; use D2 for any additional flowcharts.
-Before any code, tests or commands, declare design:{components,ports,scenarios,risks}; read docs/tested-planning.md for the contract. Use delivery_design action=validate, action=inspect to read the captured plan and captureId, action=review with captureId, adversarial challenges and every scenario walkthrough, then action=approve. Blocking findings persist until a later design revision supplies resolutions:[{id,change,evidence}]; revalidate/inspect after revising. Shell/unknown tools and check execution remain locked until approval. Discovery uses read/ls/find/grep, not executable probes. Every plan revision relocks implementation. Review is model-authored, not independent proof. Confirm proposed assertions can actually detect failure. If the plan is weak or incomplete, call delivery_revise with a reason and a partial plan patch to fix it — the plan is a living contract, not a one-time artifact. Unchanged checks retain evidence only while the workspace fingerprint is unchanged; source edits still require re-verification.
+For substantial implementation work, inspect relevant entry points and installed library APIs first; do not wait for exhaustive discovery before proposing a concrete plan. Identify which domain skills or knowledge bases apply to this task — check the available skills list and read the matching skill before implementing. Use delivery_plan BEFORE implementation: capture assumptions, a small vertical-slice plan, artifact roots, acceptance criteria and real check commands. D2 is generated for the flowchart; use D2 for any additional flowcharts.
+Before any code, tests or commands, declare design:{components,ports,scenarios,risks}; use delivery_design action=guide for the compact contract (docs/tested-planning.md has extended details). Use delivery_design action=validate, action=inspect to read the captured plan and captureId, action=review with captureId, adversarial challenges and every scenario walkthrough, then action=approve. Blocking findings persist until a later design revision supplies resolutions:[{id,change,evidence}]; revalidate/inspect after revising. Shell/unknown tools and check execution remain locked until approval. Discovery uses read/ls/find/grep, not executable probes. Every plan revision relocks implementation. Review is model-authored, not independent proof. Confirm proposed assertions can actually detect failure. If the plan is weak or incomplete, call delivery_revise with a reason and a partial plan patch to fix it — the plan is a living contract, not a one-time artifact. Unchanged checks retain evidence only while the workspace fingerprint is unchanged; source edits still require re-verification.
 Implement a runnable slice early, then complete the agreed behavior in small coherent steps. Mark progress with delivery_progress as each step finishes so the plan panel stays current. Don't stop at a scaffold. Verify uncertain APIs with installed source or a tiny executable probe; never invent library methods or assume assets exist. Separate testable logic from rendering/services. Include error handling, dependencies, launch instructions, and regression tests. Exercise actual interaction paths in fresh subprocesses with the normal environment, not only compilation or internal function calls. Include non-ASCII text, paths with spaces, and invalid data where applicable. On Windows, stdout may use a legacy code page (e.g. cp1252): use ASCII-escaped JSON or configure the application's UTF-8 output; don't hide failures by changing only the test environment. For visual work, capture and inspect a screenshot if your model supports images; otherwise explicitly disclose that visual review is unperformed.
 After creating a file, prefer focused edit calls over repeatedly rewriting the full file. Whole-file rewrites bloat model context, increase provider rate-limit risk, and can accidentally remove previously working behavior. If development reveals a wrong assumption or a step can't be completed as planned, call delivery_revise to adjust the contract — update steps and checks to match reality, but never silently drop original acceptance criteria. For multi-package work use structured steps {id,title,dependsOn:[],checks:[]} with stable IDs: dependencies gate progress and mapped checks must pass before done. Plan near-term slices in detail, leave later slices coarse, and refine them as dependencies become clear. Record architecture boundaries, affected callers, compatibility constraints, risky assumptions and rollback strategy in assumptions; resolve uncertainty with focused probes. Establish baseline failures, add a regression that fails before the fix, then run focused tests followed by integration and repository quality gates. Reopening a prerequisite resets downstream progress. Finish requires all structured steps done; string steps remain supported.
 Use a few meaningful check suites (usually 2–4), not one command per criterion: multiple acceptance criteria can share a suite. When user-owned required validators already cover a requirement, do not duplicate them with shallow model-authored checks; add only focused checks for logic they do not cover. Scope honestly: enumerate every explicit requirement in the user's prompt and back each core requirement with an acceptance criterion and a real check. Narrow contracts that omit core requirements make 'verified' a scope failure, not a smaller task; if budget remains once checks pass, implement and verify the missing requirements instead of stopping at the first passing slice. Run delivery_check with id="all" to execute every declared check sequentially. It executes the argv with a deadline, records logs and fingerprints the entire working project (excluding dependencies, caches and generated artifacts), so omitting a source file cannot hide stale evidence. Artifact roots must contain product source/tests/config/docs, never only artifacts/. Use ["."] for the project. Do not edit during checks; run dependent tools in separate batches. Use artifacts/ for generated screenshots/build output; .harness/ is reserved for harness logs. Re-run checks after final edits. When delivery_status reports readyToFinish:true, stop polling: adversarially review the result and call delivery_finish. Repeating an unchanged delivery_status is not progress and is blocked after a small number of calls.
@@ -68,6 +70,8 @@ Before concluding a structured plan, call delivery_review action="inspect" to ca
 
 export default function delivery(pi: ExtensionAPI) {
   let state: any = null;
+  let discovery = newDiscovery();
+  const saveDiscovery = () => pi.appendEntry('delivery-discovery-v1', structuredClone(discovery));
   let touched = false, nudges = 0;
   let budget: any = null;
   let statusPollKey = '', statusPollRepeats = 0;
@@ -141,6 +145,7 @@ export default function delivery(pi: ExtensionAPI) {
     budget = [...ctx.sessionManager.getEntries()].reverse().find((e: any) => e.type === 'custom' && e.customType === 'delivery-budget-v1')?.data || null;
     if (budget) budget = structuredClone(budget);
     budgetLimits(name => pi.getFlag(name));
+    discovery = restoreDiscovery([...ctx.sessionManager.getBranch()].reverse().find((e: any) => e.type === 'custom' && e.customType === 'delivery-discovery-v1')?.data);
     state = restoreState(ctx.sessionManager.getBranch());
     if (state) { state = reconcileReport(join(directory(ctx), 'report.json'), state); contextDirectory = directory(ctx); }
     activeGuidance = (state?.guidanceProfiles || state?.plan?.guidanceProfiles || [])
@@ -218,7 +223,7 @@ export default function delivery(pi: ExtensionAPI) {
     }
   });
   pi.on('input', event => {
-    if (event.source !== 'extension') { nudges = 0; touched = false; resetStatusPolls(); }
+    if (event.source !== 'extension') { nudges = 0; touched = false; resetStatusPolls(); discovery = newDiscovery(); saveDiscovery(); }
     return { action: 'continue' };
   });
   pi.on('before_agent_start', (event, ctx) => {
@@ -226,7 +231,11 @@ export default function delivery(pi: ExtensionAPI) {
     activeGuidance = state && !['verified', 'blocked'].includes(state.status)
       ? [...new Map([...activeGuidance, ...routed].map(profile => [profile.id, profile])).values()].sort((a, b) => b.priority - a.priority)
       : routed;
+    if (!discovery.active && (!state || ['verified', 'blocked'].includes(state.status)) && !looksInformational(event.prompt)) {
+      discovery = newDiscovery(true); saveDiscovery();
+    }
     let guidance = GUIDANCE + BROWSER_CHECK_GUIDANCE;
+    if (discovery.active) guidance += '\n\n' + PLANNING_START;
     const routedText = formatGuidance(activeGuidance);
     if (routedText) guidance += `\n\n${routedText}`;
     if (extraGuidance) guidance += `\n\nTask-specific delivery context:\n${extraGuidance}`;
@@ -238,7 +247,11 @@ export default function delivery(pi: ExtensionAPI) {
   pi.on('context', (event, ctx) => {
     // Generated compaction summaries never confer authority. Refresh this exact run.
     if (state && ctx) refreshState(ctx);
-    if (!state || ['verified', 'blocked'].includes(state.status)) return;
+    if (!state || ['verified', 'blocked'].includes(state.status)) {
+      const checkpoint = discoveryCheckpoint(discovery);
+      if (checkpoint) return { messages: [...event.messages, { role: 'custom' as const, customType: 'delivery-discovery', content: checkpoint, display: false, timestamp: Date.now() }] };
+      return;
+    }
     const report = contextDirectory ? join(contextDirectory, 'report.json') : undefined;
     const summary = deliveryRecovery(state, { report });
     const archived: any[] = [];
@@ -313,7 +326,10 @@ export default function delivery(pi: ExtensionAPI) {
           startImplementation(state, fingerprint(ctx.cwd, ['.']));
           persist(ctx);
         } finally { release(); }
-      } catch (error: any) { return { block: true, reason: error.message }; }
+      } catch (error: any) {
+        if (discovery.active) { discovery = discoveryEvent(discovery, 'blocked'); saveDiscovery(); }
+        return { block: true, reason: error.message + (discoveryCheckpoint(discovery) ? '\n' + discoveryCheckpoint(discovery) : '') };
+      }
     }
     if (['write', 'edit'].includes(event.toolName) && input && typeof input === 'object') {
       const path = typeof input.path === 'string' ? input.path.replaceAll('\\', '/') : '';
@@ -409,6 +425,7 @@ export default function delivery(pi: ExtensionAPI) {
     }
   });
   pi.on('tool_result', async (event, ctx) => {
+    if (discovery.active && ['read', 'ls', 'find', 'grep'].includes(event.toolName)) { discovery = discoveryEvent(discovery, 'read'); saveDiscovery(); }
     if (!event.isError && ['write', 'edit'].includes(event.toolName)) touched = true;
     const baseDelay = Math.max(0, Number(pi.getFlag('delivery-turn-delay-ms')) || 0);
     const contextTokens = ctx?.getContextUsage?.()?.tokens ?? 0;
@@ -445,12 +462,13 @@ export default function delivery(pi: ExtensionAPI) {
         } else {
           state = { version: 1, runId: randomUUID(), revision: (state?.revision || 0) + 1, guidanceProfiles: activeGuidance.map(profile => profile.id), plan, evidence: {}, status: 'implementing', createdAt: new Date().toISOString(), stepStatus: {} };
         }
+        discovery = newDiscovery(); saveDiscovery();
         const dir = directory(ctx);
         mkdirSync(dir, { recursive: true });
         writeFileSync(join(dir, 'plan.d2'), planD2WithProgress(state.plan, state.stepStatus));
         persist(ctx);
         selectReport(ctx.cwd, join(dir, 'report.json'));
-        return text({ plan: join(dir, 'plan.d2'), report: join(dir, 'report.json'), next: 'No code or commands yet. Declare design components/ports/scenarios/risks, then delivery_design validate, review and approve. Revise any findings first.' });
+        return text({ plan: join(dir, 'plan.d2'), report: join(dir, 'report.json'), next: 'No code or commands yet. delivery_design guide gives exact fields. Validate, inspect the capture (optional Jev advice), review, then approve. Revise blocking findings first.' });
       }, true));
     },
   });
@@ -473,11 +491,12 @@ export default function delivery(pi: ExtensionAPI) {
   });
   pi.registerTool({
     name: 'delivery_design', label: 'Test delivery design',
-    description: 'Before generating code: validate architecture and scenarios, record adversarial review, then approve. Review is self-reported, not independent proof. Revisions and preimplementation source edits invalidate approval.',
-    parameters: Type.Object({ action: Type.String({ enum: ['validate', 'inspect', 'review', 'approve'] }), review: Type.Optional({ type: 'object', additionalProperties: true, description: 'captureId from inspect, resolutions:[{id,change,evidence}] for previous blockers, challenges:string[], walkthroughs:[{scenario,trace,assertion}], findings:[{severity,description,disposition?}], limitations:string[]' }) }),
+    description: 'Use action=guide BEFORE planning for compact exact fields and an illustrative example, without state or approval. Before generating code: validate architecture and scenarios, inspect, record adversarial review, then approve. Review is self-reported, not independent proof. Revisions and preimplementation source edits invalidate approval.',
+    parameters: Type.Object({ action: Type.String({ enum: ['guide', 'validate', 'inspect', 'review', 'approve'] }), review: Type.Optional({ type: 'object', additionalProperties: true, description: 'captureId from inspect, resolutions:[{id,change,evidence}] for previous blockers, challenges:string[], walkthroughs:[{scenario,trace,assertion}], findings:[{severity,description,disposition?}], limitations:string[]' }) }),
     async execute(_id, params, _signal, _update, ctx) {
+      if (params.action === 'guide') return text(planningGuide());
       return exclusive(() => workspaceOperation(ctx, async () => {
-        if (!state) throw Error('Call delivery_plan first');
+        if (!state) throw Error('Call delivery_plan first; action=guide gives exact fields.');
         const hash = fingerprint(ctx.cwd, ['.']);
         let result;
         if (params.action === 'validate') result = validatePlanning(state, hash);
@@ -491,7 +510,7 @@ export default function delivery(pi: ExtensionAPI) {
           createAdvisor: () => configuredAdvisor({ enabled: true, provider: pi.getFlag('delivery-jev-provider') || 'openrouter', broker: pi.getFlag('delivery-jev-broker'), signal: _signal }),
           persist: () => persist(ctx),
         }) : undefined;
-        const response = { result: designReceipt(params.action, result), advice, planningStatus: planningStatus(state, hash), report: join(directory(ctx), 'report.json') };
+        const response = { result: designReceipt(params.action, result), advice, ...(params.action === 'validate' ? planningNext(state, result) : {}), planningStatus: planningStatus(state, hash), report: join(directory(ctx), 'report.json') };
         if (params.action === 'inspect' && (jsonBytes(response) > 40000 || JSON.stringify(response, null, 2).split('\n').length > 900)) {
           const archive = archiveContext(ctx.cwd, directory(ctx), result);
           const identity = { id: result.id, runId: result.runId, revision: result.revision, digest: result.digest, fingerprint: result.fingerprint, provenance: result.provenance };

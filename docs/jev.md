@@ -10,6 +10,10 @@ TYPESAFE_API_KEY=... node bin/ctg.mjs --delivery-jev --delivery-jev-provider typ
 
 Flags must be passed to the pi/delivery session (CLI forwarding depends on invocation; `pi -e /absolute/path/extensions/delivery.ts --delivery-jev` is the direct form). Do not put keys in command arguments or project files.
 
+Schema repair is deterministic and free of advisor calls: use `delivery_design action=guide`, validate and repair references first. Invalid inspection neither dispatches Jev nor consumes an advice attempt.
+
+The disclosed semantic input includes goal, exact acceptance, **check definitions (including executable argv), outputs and assumptions**, design and workflow. These additional fields let Jev assess scenario-to-check links and promised-output coverage; they can contain confidential paths/arguments and are sent only after explicit opt-in. The 64KB bound still applies; larger input becomes unavailable rather than silently truncated. Commands are declarations, not proof of execution.
+
 After successful `delivery_design inspect`, the enabled critic automatically assesses the captured plan for SRP, DI seams and missing test assertions/boundaries. OpenRouter uses `typesafe/jev-1.13` at its Decisions endpoint, not a chat/router model. The direct TypeSafe adapter retains its existing model configuration.
 
 - At most **three attempts per delivery run**, reserved in the report before network dispatch.

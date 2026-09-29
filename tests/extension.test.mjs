@@ -93,6 +93,74 @@ test('built-in Jev opt-in persists unavailable advice without unlocking implemen
   assert.match(f.hooks.context({ messages: [] }, f.ctx).messages.at(-1).content, /unavailable/);
 });
 
+test('discovery guide/checkpoint restore, questions, terminal suppression and read permission', async t => {
+  const f = fixture(t, { approve: false });
+  const guide = JSON.parse((await f.call('delivery_design', { action: 'guide' })).content[0].text);
+  assert.equal(guide.authority, 'none'); assert.equal(f.entries.length, 0);
+  f.hooks.before_agent_start({ prompt: 'Implement a new feature', systemPrompt: '' }, f.ctx);
+  for (let i = 0; i < 8; i++) await f.hooks.tool_result({ toolName: 'read', content: [] }, f.ctx);
+  assert.match(f.hooks.context({ messages: [] }, f.ctx).messages[0].content, /8 discovery/);
+  assert.equal(f.hooks.tool_call({ toolName: 'read' }, f.ctx), undefined);
+  f.hooks.session_compact({}, f.ctx); f.hooks.session_start({}, f.ctx);
+  assert.match(f.hooks.context({ messages: [] }, f.ctx).messages[0].content, /8 discovery/);
+  const branch = f.ctx.sessionManager.getBranch;
+  f.ctx.sessionManager.getBranch = () => [];
+  f.hooks.session_tree({}, f.ctx);
+  assert.equal(f.hooks.context({ messages: [] }, f.ctx), undefined);
+  f.ctx.sessionManager.getBranch = branch;
+  f.hooks.session_tree({}, f.ctx);
+  assert.match(f.hooks.context({ messages: [] }, f.ctx).messages[0].content, /8 discovery/);
+  f.hooks.input({ source: 'interactive' });
+  f.hooks.before_agent_start({ prompt: 'Explain how this code works', systemPrompt: '' }, f.ctx);
+  for (let i = 0; i < 20; i++) await f.hooks.tool_result({ toolName: 'read', content: [] }, f.ctx);
+  assert.equal(f.hooks.context({ messages: [] }, f.ctx), undefined);
+  f.hooks.input({ source: 'interactive' });
+  f.hooks.before_agent_start({ prompt: 'Implement a new feature', systemPrompt: '' }, f.ctx);
+  f.hooks.tool_call({ toolName: 'bash' }, f.ctx);
+  assert.match(f.hooks.tool_call({ toolName: 'bash' }, f.ctx).reason, /2 blocked/);
+  await f.call('delivery_plan', { ...f.plan, design: fixtureDesign(f.plan) });
+  await f.call('delivery_finish', { status: 'blocked', review: 'Fixture stop', launch: 'n/a', limitations: ['No implementation'] });
+  assert.equal(f.hooks.context({ messages: [] }, f.ctx), undefined);
+});
+
+test('schema repair -> Jev -> approved edit -> checks -> final review completes without changing scope', async t => {
+  const { createServer } = await import('node:http'); let calls = 0;
+  const server = createServer(async (req, res) => {
+    let body = ''; for await (const chunk of req) body += chunk;
+    const payload = JSON.parse(body); assert.equal(payload.state.goal, 'Working script'); assert.ok(payload.state.checks[0].argv); calls++;
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ model: 'typesafe/jev-1.13-fixture', answers: { srp: { type: 'noul', noul: .1 }, di: { type: 'noul', noul: .1 }, tests: { type: 'noul', noul: .8 } } }));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const f = fixture(t, { approve: false });
+  f.flags['delivery-jev'] = true; f.flags['delivery-jev-broker'] = `http://127.0.0.1:${server.address().port}/jev`;
+  await f.call('delivery_design', { action: 'guide' });
+  const plan = { ...f.plan, steps: [{ id: 'build', title: 'Implement and test', checks: ['run'] }] };
+  plan.design = fixtureDesign(plan); const correct = structuredClone(plan.design); plan.design.scenarios[0].checks = ['wrong'];
+  await f.call('delivery_plan', plan);
+  const validation = JSON.parse((await f.call('delivery_design', { action: 'validate' })).content[0].text);
+  assert.match(validation.next, /No Jev call/); assert.deepEqual(validation.references.checks, ['run']);
+  await assert.rejects(f.call('delivery_design', { action: 'inspect' }), /Fresh passing/); assert.equal(calls, 0);
+  assert.equal(f.entries.at(-1).data.advisorAttempts, undefined);
+  await f.call('delivery_revise', { reason: 'Fix check reference preserving obligations', patch: { design: correct } });
+  await f.call('delivery_design', { action: 'validate' });
+  const inspected = JSON.parse((await f.call('delivery_design', { action: 'inspect' })).content[0].text);
+  assert.equal(calls, 1); assert.equal(inspected.advice.findings[0].category, 'tests'); assert.equal(inspected.planningStatus.locked, true);
+  const current = f.entries.at(-1).data.plan;
+  assert.deepEqual(current.acceptance, plan.acceptance); assert.deepEqual(current.checks, plan.checks);
+  await f.call('delivery_design', { action: 'review', review: { ...fixtureReview(current), captureId: inspected.result.id, challenges: ['Investigated Jev tests topic; fixture checks plumbing, not semantic completeness'] } });
+  await f.call('delivery_design', { action: 'approve' });
+  assert.equal(f.hooks.tool_call({ toolName: 'write' }, f.ctx), undefined);
+  writeFileSync(join(f.cwd, 'app.py'), 'print(2)');
+  f.hooks.session_compact({}, f.ctx);
+  await f.call('delivery_check', { id: 'all' }); await f.call('delivery_progress', { step: 'build', status: 'done' });
+  const capture = JSON.parse((await f.call('delivery_review', { action: 'inspect' })).content[0].text);
+  await f.call('delivery_review', { action: 'record', captureId: capture.id, coverage: [{ requirement: 'Runs', assertions: 'Fixture subprocess exited zero' }], probes: ['Runtime check exit 0'], findings: [], limitations: ['Plumbing fixture, no Git baseline or semantic proof'] });
+  await f.call('delivery_finish', { status: 'verified', review: 'Reviewed fixture', launch: 'python app.py', limitations: ['Plumbing only'] });
+  assert.equal(f.entries.at(-1).data.status, 'verified'); assert.equal(calls, 1);
+});
+
 test('revision tool rejects malformed patches before merging current fields', async t => {
   const f = fixture(t);
   await f.call('delivery_plan', f.plan);
