@@ -2,6 +2,7 @@ import { validatePlanning, inspectPlanning, recordPlanReview, approvePlanning, p
 import { needsImplementation } from '../lib/planning-access.mjs';
 import { deliveryRecovery, designReceipt, archivalGroups, replaceArchivedGroups, contextMetrics, jsonBytes } from '../lib/delivery-context.mjs';
 import { archiveContext } from '../lib/context-archive.mjs';
+import { configuredAdvisor, inspectAdvice } from '../lib/planning-advice.mjs';
 import { budgetLimits, newBudget, budgetReason, budgetSnapshot } from '../lib/budget.mjs';
 import { CONFIG_DIR_NAME, truncateTail, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { mkdirSync, writeFileSync, appendFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
@@ -110,6 +111,9 @@ export default function delivery(pi: ExtensionAPI) {
     if (ctx.hasUI) ctx.ui.notify('Delivery budget reset', 'info');
   } });
   for (const name of ['tools', 'seconds', 'repairs']) pi.registerFlag(`delivery-max-${name}`, { description: `Session budget for ${name}; 0 disables this limit. Reset only with /delivery-budget-reset.`, type: 'string', default: '0' });
+  pi.registerFlag('delivery-jev', { description: 'Explicitly enable paid Jev plan advice (maximum 3 attempts/run; never approval authority)', type: 'boolean', default: false });
+  pi.registerFlag('delivery-jev-provider', { description: 'Jev provider: openrouter (OPENROUTER_API_KEY) or typesafe (TYPESAFE_API_KEY)', type: 'string', default: 'openrouter' });
+  pi.registerFlag('delivery-jev-broker', { description: 'Explicit trusted local billing broker http://127.0.0.1:PORT/jev (no provider key sent)', type: 'string' });
   const exclusive = createSerialQueue();
   let contextDirectory: string | undefined;
   let contextCwd: string | undefined;
@@ -482,11 +486,16 @@ export default function delivery(pi: ExtensionAPI) {
         else if (params.action === 'approve') result = approvePlanning(state, hash);
         else throw Error('Unknown design action');
         persist(ctx);
-        const response = { result: designReceipt(params.action, result), planningStatus: planningStatus(state, hash), report: join(directory(ctx), 'report.json') };
+        const advice = params.action === 'inspect' ? await inspectAdvice(state, result, {
+          enabled: pi.getFlag('delivery-jev') === true,
+          createAdvisor: () => configuredAdvisor({ enabled: true, provider: pi.getFlag('delivery-jev-provider') || 'openrouter', broker: pi.getFlag('delivery-jev-broker'), signal: _signal }),
+          persist: () => persist(ctx),
+        }) : undefined;
+        const response = { result: designReceipt(params.action, result), advice, planningStatus: planningStatus(state, hash), report: join(directory(ctx), 'report.json') };
         if (params.action === 'inspect' && (jsonBytes(response) > 40000 || JSON.stringify(response, null, 2).split('\n').length > 900)) {
           const archive = archiveContext(ctx.cwd, directory(ctx), result);
           const identity = { id: result.id, runId: result.runId, revision: result.revision, digest: result.digest, fingerprint: result.fingerprint, provenance: result.provenance };
-          const output = text({ result: identity, captureArchive: archive, planningStatus: response.planningStatus, next: 'Capture too large for one response. Read the entire captureArchive.path in pages before reviewing. No plan content is silently truncated.' });
+          const output = text({ result: identity, advice, captureArchive: archive, planningStatus: response.planningStatus, next: 'Capture too large for one response. Read the entire captureArchive.path in pages before reviewing. No plan content is silently truncated.' });
           return { ...output, details: { deliveryCapture: result } };
         }
         return text(response);

@@ -76,6 +76,23 @@ test('live extension refreshes same-run state and rejects superseded mutations a
   await f.call('delivery_plan', f.plan); // Explicit new work can supersede an idle run.
 });
 
+test('built-in Jev opt-in persists unavailable advice without unlocking implementation', async t => {
+  const f = fixture(t, { approve: false });
+  f.flags['delivery-jev'] = true;
+  f.flags['delivery-jev-provider'] = 'invalid-provider';
+  await f.call('delivery_plan', { ...f.plan, design: fixtureDesign(f.plan) });
+  await f.call('delivery_design', { action: 'validate' });
+  const first = JSON.parse((await f.call('delivery_design', { action: 'inspect' })).content[0].text);
+  assert.equal(first.advice.mode, 'unavailable');
+  assert.equal(first.planningStatus.locked, true);
+  const again = JSON.parse((await f.call('delivery_design', { action: 'inspect' })).content[0].text);
+  assert.equal(again.advice.reused, true);
+  assert.equal(f.entries.at(-1).data.advisorAttempts.length, 1);
+  f.hooks.session_start({}, f.ctx);
+  assert.equal(f.hooks.tool_call({ toolName: 'write' }, f.ctx).block, true);
+  assert.match(f.hooks.context({ messages: [] }, f.ctx).messages.at(-1).content, /unavailable/);
+});
+
 test('revision tool rejects malformed patches before merging current fields', async t => {
   const f = fixture(t);
   await f.call('delivery_plan', f.plan);

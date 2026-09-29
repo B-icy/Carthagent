@@ -1,0 +1,6 @@
+const {writeFileSync}=require('node:fs');const {spawnSync}=require('node:child_process');
+const task=process.argv[2];const lines=task==='append'?[
+"reply.appendHeader('x', 'a').code(200)","reply.appendHeader('x', 0)","reply.appendHeader('x', ['a', 2] as const)","// @ts-expect-error object values invalid","reply.appendHeader('x', {})","// @ts-expect-error undefined invalid","reply.appendHeader('x', undefined)","// @ts-expect-error nonstring name invalid","reply.appendHeader(7, 'x')"
+]:["reply.vary('Accept').code(200)","reply.vary(['Origin', 'Accept'] as const)","// @ts-expect-error numeric values invalid","reply.vary(7)","// @ts-expect-error object values invalid","reply.vary({})","// @ts-expect-error undefined invalid","reply.vary(undefined)"];
+writeFileSync('/tmp/pilot-contract.ts',"import type { FastifyReply } from '/work/fastify'\ndeclare const reply: FastifyReply\n"+lines.join('\n'));
+const r=spawnSync(process.execPath,['/work/node_modules/typescript/bin/tsc','/tmp/pilot-contract.ts','--noEmit','--strict','--skipLibCheck','--target','es2022','--module','node16','--moduleResolution','node16'],{encoding:'utf8',timeout:30000});process.stdout.write(r.stdout||'');process.stderr.write(r.stderr||'');process.exitCode=r.status??2;
