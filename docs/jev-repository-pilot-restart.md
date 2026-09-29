@@ -1,0 +1,7 @@
+# Uniform pilot restart after hostname infrastructure defect
+
+Initial root `/home/baissi/benchmarks/jev-repo-pilot` retained. Plain append external7/7 and types passed, but original94-test regression subset had localhost DNS failures because isolated `/etc/hosts` was absent. The initial baseline check was on host, not in the namespace: preflight gap. Do not count those as model failures. Harness append already running when discovered; manually terminated to avoid more invalid-environment spend. Its canceled in-flight request hold remains. Other four cells unstarted. Original freeze renamed `freeze-infrastructure-attempt.json` to prevent further dispatch before code changes.
+
+Repair: mount minimal frozen `/etc/hosts` (127.0.0.1 and ::1 localhost) and `nsswitch.conf` (`hosts: files`), keeping network isolated. Original94 tests now pass INSIDE corrected sandbox (`/tmp/repo-sandbox-baseline.log`). No general DNS or egress enabled.
+
+Uniform restart in `/home/baissi/benchmarks/jev-repo-pilot-v2`, fresh workspaces for all six cells. Same tasks/evaluators/model/arms/compaction/limits. Shared old campaign account, **no reset or release of unknown holds**, aggregate $15 unchanged. Setup directory referenced from first root; candidate cannot see this supervisor path. Source/runtime/dependency/doc/host-config hashes refrozen. All historical attempts reported separately. Evaluator feedback never given to any new candidate. No claim of preregistered confirmatory experiment.

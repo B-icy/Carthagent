@@ -1,4 +1,15 @@
-# Tested planning before code
+# Tested planning
+
+## Quick start without exhaustive discovery
+
+Use `delivery_design {"action":"guide"}` **before creating a plan** for the compact exact field contract and illustrative example. It does not need approval, execute commands, mutate the workspace, or call Jev. Substitute actual task requirements and real checks; the example is not a ready-made design for your project.
+
+Inspect relevant entry points, callers/types and nearby tests, then submit the first concrete contract. After eight discovery results or two blocked execution attempts, the extension recommends a plan or one targeted unresolved question; after sixteen results it emphasizes excessive discovery. These are advisory checkpoints, not a hard cutoff. Necessary reads remain available. Numeric checkpoint state follows the selected session branch and survives compaction; a new user input resets it and a successful plan suppresses it. Informational requests do not receive these reminders (classification is heuristic, not an authorization decision).
+
+Validation reports offending references and allowed IDs. Repair via `delivery_revise`, preserving every acceptance requirement and output; then validate → inspect → review → approve. Keep unknowns explicit rather than inventing baseline results. Jev, if enabled, runs only at valid inspection and challenges semantic adequacy—not schema syntax. See [Jev configuration and disclosure](jev.md).
+
+
+Context handling: [compact projections and recovery](context-efficiency.md). `delivery_status` returns active obligations rather than the full report history. A large `delivery_design inspect` returns `captureArchive.path`; read the entire immutable capture in pages before authoring review. Its capture ID/digest/source binding and all validation/approval requirements are unchanged. A pointer is not evidence that the plan was read. Full history remains in the report/session; older successful planning exchanges may be referenced by verified archives in outbound model context. before code
 
 New and resumed delivery tasks must test and approve their design before generating product code, tests or executable prototypes. A plan's existence is no longer permission to implement. `--delivery-strict=false` does not bypass this policy.
 

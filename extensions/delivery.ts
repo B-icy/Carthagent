@@ -1,8 +1,13 @@
 import { validatePlanning, inspectPlanning, recordPlanReview, approvePlanning, planningStatus, startImplementation } from '../lib/planning.mjs';
 import { needsImplementation } from '../lib/planning-access.mjs';
+import { deliveryRecovery, designReceipt, archivalGroups, replaceArchivedGroups, contextMetrics, jsonBytes } from '../lib/delivery-context.mjs';
+import { archiveContext } from '../lib/context-archive.mjs';
+import { configuredAdvisor, inspectAdvice } from '../lib/planning-advice.mjs';
+import { PLANNING_START, planningGuide, planningNext } from '../lib/planning-guide.mjs';
+import { newDiscovery, restoreDiscovery, discoveryEvent, discoveryCheckpoint } from '../lib/planning-discovery.mjs';
 import { budgetLimits, newBudget, budgetReason, budgetSnapshot } from '../lib/budget.mjs';
 import { CONFIG_DIR_NAME, truncateTail, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync, appendFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -39,7 +44,7 @@ const Type = {
 const shortString = () => Type.String({ minLength: 1, maxLength: 1200 });
 const strings = (maxItems = 20) => Type.Array(shortString(), { minItems: 1, maxItems });
 const planFields = {
-  design: Type.Optional({ type: 'object', description: 'Tested architecture: components, ports, scenarios, risks. See docs/tested-planning-roadmap.md for field contracts.', additionalProperties: true }),
+  design: Type.Optional({ type: 'object', description: 'Tested architecture: components, ports, scenarios, risks. Call delivery_design action=guide for exact fields and example.', additionalProperties: true }),
   workflow: Type.Optional({ type: 'object', additionalProperties: true }),
   goal: shortString(), assumptions: Type.Array(shortString(), { maxItems: 20 }),
   artifacts: strings(40), outputs: Type.Optional(Type.Array(shortString(), { maxItems: 40 })),
@@ -55,8 +60,8 @@ const planFields = {
 };
 const GUIDANCE = `Software delivery workflow (not required for questions or read-only reviews):
 Classify the ask before planning. Pure questions, explanations and read-only reviews are informational: either answer directly without delivery_plan, or — when a written contract helps — call delivery_plan with verification:"none" (no checks) or verification:"advisory" (legacy optional evidence, not permission to execute commands). Reserve verification:"required" (the default) for tasks that change product files. Before running delivery_check, re-check the classification once more: a required plan may be reclassified to advisory/none only before any check has run, so decide before the verify loop. Informational plans finish cleanly with delivery_finish status="verified" and receive no repair nudges.
-For substantial implementation work, inspect the repository and installed library APIs first. Identify which domain skills or knowledge bases apply to this task — check the available skills list and read the matching skill before implementing. Use delivery_plan BEFORE implementation: capture assumptions, a small vertical-slice plan, artifact roots, acceptance criteria and real check commands. D2 is generated for the flowchart; use D2 for any additional flowcharts.
-Before any code, tests or commands, declare design:{components,ports,scenarios,risks}; read docs/tested-planning.md for the contract. Use delivery_design action=validate, action=inspect to read the captured plan and captureId, action=review with captureId, adversarial challenges and every scenario walkthrough, then action=approve. Blocking findings persist until a later design revision supplies resolutions:[{id,change,evidence}]; revalidate/inspect after revising. Shell/unknown tools and check execution remain locked until approval. Discovery uses read/ls/find/grep, not executable probes. Every plan revision relocks implementation. Review is model-authored, not independent proof. Confirm proposed assertions can actually detect failure. If the plan is weak or incomplete, call delivery_revise with a reason and a partial plan patch to fix it — the plan is a living contract, not a one-time artifact. Unchanged checks retain evidence only while the workspace fingerprint is unchanged; source edits still require re-verification.
+For substantial implementation work, inspect relevant entry points and installed library APIs first; do not wait for exhaustive discovery before proposing a concrete plan. Identify which domain skills or knowledge bases apply to this task — check the available skills list and read the matching skill before implementing. Use delivery_plan BEFORE implementation: capture assumptions, a small vertical-slice plan, artifact roots, acceptance criteria and real check commands. D2 is generated for the flowchart; use D2 for any additional flowcharts.
+Before any code, tests or commands, declare design:{components,ports,scenarios,risks}; use delivery_design action=guide for the compact contract (docs/tested-planning.md has extended details). Use delivery_design action=validate, action=inspect to read the captured plan and captureId, action=review with captureId, adversarial challenges and every scenario walkthrough, then action=approve. Blocking findings persist until a later design revision supplies resolutions:[{id,change,evidence}]; revalidate/inspect after revising. Shell/unknown tools and check execution remain locked until approval. Discovery uses read/ls/find/grep, not executable probes. Every plan revision relocks implementation. Review is model-authored, not independent proof. Confirm proposed assertions can actually detect failure. If the plan is weak or incomplete, call delivery_revise with a reason and a partial plan patch to fix it — the plan is a living contract, not a one-time artifact. Unchanged checks retain evidence only while the workspace fingerprint is unchanged; source edits still require re-verification.
 Implement a runnable slice early, then complete the agreed behavior in small coherent steps. Mark progress with delivery_progress as each step finishes so the plan panel stays current. Don't stop at a scaffold. Verify uncertain APIs with installed source or a tiny executable probe; never invent library methods or assume assets exist. Separate testable logic from rendering/services. Include error handling, dependencies, launch instructions, and regression tests. Exercise actual interaction paths in fresh subprocesses with the normal environment, not only compilation or internal function calls. Include non-ASCII text, paths with spaces, and invalid data where applicable. On Windows, stdout may use a legacy code page (e.g. cp1252): use ASCII-escaped JSON or configure the application's UTF-8 output; don't hide failures by changing only the test environment. For visual work, capture and inspect a screenshot if your model supports images; otherwise explicitly disclose that visual review is unperformed.
 After creating a file, prefer focused edit calls over repeatedly rewriting the full file. Whole-file rewrites bloat model context, increase provider rate-limit risk, and can accidentally remove previously working behavior. If development reveals a wrong assumption or a step can't be completed as planned, call delivery_revise to adjust the contract — update steps and checks to match reality, but never silently drop original acceptance criteria. For multi-package work use structured steps {id,title,dependsOn:[],checks:[]} with stable IDs: dependencies gate progress and mapped checks must pass before done. Plan near-term slices in detail, leave later slices coarse, and refine them as dependencies become clear. Record architecture boundaries, affected callers, compatibility constraints, risky assumptions and rollback strategy in assumptions; resolve uncertainty with focused probes. Establish baseline failures, add a regression that fails before the fix, then run focused tests followed by integration and repository quality gates. Reopening a prerequisite resets downstream progress. Finish requires all structured steps done; string steps remain supported.
 Use a few meaningful check suites (usually 2–4), not one command per criterion: multiple acceptance criteria can share a suite. When user-owned required validators already cover a requirement, do not duplicate them with shallow model-authored checks; add only focused checks for logic they do not cover. Scope honestly: enumerate every explicit requirement in the user's prompt and back each core requirement with an acceptance criterion and a real check. Narrow contracts that omit core requirements make 'verified' a scope failure, not a smaller task; if budget remains once checks pass, implement and verify the missing requirements instead of stopping at the first passing slice. Run delivery_check with id="all" to execute every declared check sequentially. It executes the argv with a deadline, records logs and fingerprints the entire working project (excluding dependencies, caches and generated artifacts), so omitting a source file cannot hide stale evidence. Artifact roots must contain product source/tests/config/docs, never only artifacts/. Use ["."] for the project. Do not edit during checks; run dependent tools in separate batches. Use artifacts/ for generated screenshots/build output; .harness/ is reserved for harness logs. Re-run checks after final edits. When delivery_status reports readyToFinish:true, stop polling: adversarially review the result and call delivery_finish. Repeating an unchanged delivery_status is not progress and is blocked after a small number of calls.
@@ -65,6 +70,8 @@ Before concluding a structured plan, call delivery_review action="inspect" to ca
 
 export default function delivery(pi: ExtensionAPI) {
   let state: any = null;
+  let discovery = newDiscovery();
+  const saveDiscovery = () => pi.appendEntry('delivery-discovery-v1', structuredClone(discovery));
   let touched = false, nudges = 0;
   let budget: any = null;
   let statusPollKey = '', statusPollRepeats = 0;
@@ -108,7 +115,14 @@ export default function delivery(pi: ExtensionAPI) {
     if (ctx.hasUI) ctx.ui.notify('Delivery budget reset', 'info');
   } });
   for (const name of ['tools', 'seconds', 'repairs']) pi.registerFlag(`delivery-max-${name}`, { description: `Session budget for ${name}; 0 disables this limit. Reset only with /delivery-budget-reset.`, type: 'string', default: '0' });
+  pi.registerFlag('delivery-jev', { description: 'Explicitly enable paid Jev plan advice (maximum 3 attempts/run; never approval authority)', type: 'boolean', default: false });
+  pi.registerFlag('delivery-jev-provider', { description: 'Jev provider: openrouter (OPENROUTER_API_KEY) or typesafe (TYPESAFE_API_KEY)', type: 'string', default: 'openrouter' });
+  pi.registerFlag('delivery-jev-broker', { description: 'Explicit trusted local billing broker http://127.0.0.1:PORT/jev (no provider key sent)', type: 'string' });
   const exclusive = createSerialQueue();
+  let contextDirectory: string | undefined;
+  let contextCwd: string | undefined;
+  let lastContextBytes = 0;
+  let contextArchiveError = false;
   const guidanceProfiles = loadGuidanceProfiles();
   let activeGuidance: any[] = [];
   let required: any[] = [], extraGuidance = '', configError = '';
@@ -123,12 +137,17 @@ export default function delivery(pi: ExtensionAPI) {
   pi.registerFlag('delivery-turn-delay-ms', { description: 'Base delay after tool results in bounded runs, scaled by active context size to reduce provider rate-limit bursts (0 disables)', type: 'string', default: '0' });
   pi.registerFlag('delivery-tool-output-cap', { description: 'Maximum characters retained from each text tool result in bounded runs; preserves the beginning and end (0 disables)', type: 'string', default: '0' });
   function restore(ctx: ExtensionContext) {
+    contextCwd = ctx.cwd;
+    contextDirectory = undefined;
+    lastContextBytes = 0;
+    contextArchiveError = false;
     clearTimeout(budgetTimer);
     budget = [...ctx.sessionManager.getEntries()].reverse().find((e: any) => e.type === 'custom' && e.customType === 'delivery-budget-v1')?.data || null;
     if (budget) budget = structuredClone(budget);
     budgetLimits(name => pi.getFlag(name));
+    discovery = restoreDiscovery([...ctx.sessionManager.getBranch()].reverse().find((e: any) => e.type === 'custom' && e.customType === 'delivery-discovery-v1')?.data);
     state = restoreState(ctx.sessionManager.getBranch());
-    if (state) state = reconcileReport(join(directory(ctx), 'report.json'), state);
+    if (state) { state = reconcileReport(join(directory(ctx), 'report.json'), state); contextDirectory = directory(ctx); }
     activeGuidance = (state?.guidanceProfiles || state?.plan?.guidanceProfiles || [])
       .map((id: string) => guidanceProfiles.find(profile => profile.id === id))
       .filter(Boolean);
@@ -185,6 +204,8 @@ export default function delivery(pi: ExtensionAPI) {
     finally { release(); }
   }
   function persist(ctx: ExtensionContext) {
+    contextCwd = ctx.cwd;
+    contextDirectory = directory(ctx);
     state.nudges = nudges;
     saveReport(join(directory(ctx), 'report.json'), state);
     pi.appendEntry('delivery-state-v1', structuredClone(state));
@@ -202,7 +223,7 @@ export default function delivery(pi: ExtensionAPI) {
     }
   });
   pi.on('input', event => {
-    if (event.source !== 'extension') { nudges = 0; touched = false; resetStatusPolls(); }
+    if (event.source !== 'extension') { nudges = 0; touched = false; resetStatusPolls(); discovery = newDiscovery(); saveDiscovery(); }
     return { action: 'continue' };
   });
   pi.on('before_agent_start', (event, ctx) => {
@@ -210,7 +231,11 @@ export default function delivery(pi: ExtensionAPI) {
     activeGuidance = state && !['verified', 'blocked'].includes(state.status)
       ? [...new Map([...activeGuidance, ...routed].map(profile => [profile.id, profile])).values()].sort((a, b) => b.priority - a.priority)
       : routed;
+    if (!discovery.active && (!state || ['verified', 'blocked'].includes(state.status)) && !looksInformational(event.prompt)) {
+      discovery = newDiscovery(true); saveDiscovery();
+    }
     let guidance = GUIDANCE + BROWSER_CHECK_GUIDANCE;
+    if (discovery.active) guidance += '\n\n' + PLANNING_START;
     const routedText = formatGuidance(activeGuidance);
     if (routedText) guidance += `\n\n${routedText}`;
     if (extraGuidance) guidance += `\n\nTask-specific delivery context:\n${extraGuidance}`;
@@ -218,13 +243,35 @@ export default function delivery(pi: ExtensionAPI) {
     if (looksInformational(event.prompt)) guidance += `\n\nReceipt check: this prompt reads as informational/read-only. Answer it directly, or if you record a contract use delivery_plan verification:"none" (no checks) or "advisory" (optional non-blocking evidence). Do not enter the verify/repair loop for a pure question — decide the classification now, before the verify loop.`;
     return { systemPrompt: event.systemPrompt + '\n\n' + guidance };
   });
-  pi.on('context', event => {
-    // Terminal contracts must not keep asking the model to inspect freshness.
-    // Explicit checks/finish still validate evidence; a new plan restores context.
-    if (!state || ['verified', 'blocked'].includes(state.status)) return;
-    // Re-injected after compaction without replacing Pi's summary or pruning user messages.
-    const summary = { planning: { approvedRevision: state.planning?.approval?.revision, started: Boolean(state.planning?.started), findings: state.planning?.validation?.findings?.length }, goal: state.plan.goal, revision: state.revision, lastRevision: state.revisions?.at(-1)?.reason, assumptions: state.plan.assumptions, status: state.status, stepStatus: state.stepStatus, verification: verificationMode(state.plan), verificationStarted: state.verificationStarted, outputs: state.plan.outputs, requirementRevisions: state.requirementRevisions, reviewRecorded: Boolean(state.reviewEvidence), progressNotes: state.progressNotes?.slice(-5), acceptance: state.plan.acceptance, steps: state.plan.steps, artifacts: state.plan.artifacts, checks: state.plan.checks, evidence: Object.fromEntries(Object.entries(state.evidence).map(([id, e]: any) => [id, { passed: e.passed, fingerprint: e.fingerprint, code: e.code, outputTail: e.outputTail ? e.outputTail.slice(-400) : undefined }])) };
-    return { messages: [...event.messages, { role: 'custom' as const, customType: 'delivery-context', content: `Delivery contract (evidence may be stale after edits):\n${JSON.stringify(summary)}\nInspect freshness with delivery_status once when needed. If it reports readyToFinish:true, call delivery_finish; do not poll unchanged status.`, display: false, timestamp: Date.now() }] };
+  pi.on('session_compact', (_event, ctx) => { if (state) refreshState(ctx); });
+  pi.on('context', (event, ctx) => {
+    // Generated compaction summaries never confer authority. Refresh this exact run.
+    if (state && ctx) refreshState(ctx);
+    if (!state || ['verified', 'blocked'].includes(state.status)) {
+      const checkpoint = discoveryCheckpoint(discovery);
+      if (checkpoint) return { messages: [...event.messages, { role: 'custom' as const, customType: 'delivery-discovery', content: checkpoint, display: false, timestamp: Date.now() }] };
+      return;
+    }
+    const report = contextDirectory ? join(contextDirectory, 'report.json') : undefined;
+    const summary = deliveryRecovery(state, { report });
+    const archived: any[] = [];
+    for (const group of archivalGroups(event.messages, { allow: Boolean(state.planning?.approval), keepRecent: 2 })) {
+      if (!contextCwd || !contextDirectory) break;
+      try { archived.push({ ...group, archive: archiveContext(contextCwd, contextDirectory, group.messages) }); }
+      catch { contextArchiveError = true; /* Retain original messages on archive failure. */ }
+    }
+    const messages = replaceArchivedGroups(event.messages, archived);
+    const pressure = lastContextBytes > 240000
+      ? '\nContext pressure: finish the current runnable slice and reserve room for checks/review. Use native compaction if enabled; do not drop requirements or start optional work. This warning does not enable paid compaction.' : '';
+    return { messages: [...messages, { role: 'custom' as const, customType: 'delivery-context', content: `Delivery contract (evidence may be stale after edits):\n${JSON.stringify(summary)}\nInspect freshness with delivery_status once when needed. If it reports readyToFinish:true, call delivery_finish; do not poll unchanged status.${pressure}${contextArchiveError ? '\nArchive unavailable: affected original messages retained.' : ''}`, display: false, timestamp: Date.now() }] };
+  });
+  pi.on('before_provider_request', event => {
+    if (!contextDirectory || !contextCwd) return;
+    const metrics = contextMetrics(event.payload);
+    const growthBytes = metrics.totalBytes - lastContextBytes;
+    lastContextBytes = metrics.totalBytes;
+    try { appendFileSync(localPath(contextCwd, join(contextDirectory, 'context-metrics.jsonl')), JSON.stringify({ ...metrics, growthBytes, at: new Date().toISOString() }) + '\n', { mode: 0o600 }); }
+    catch { /* Numeric telemetry must not mutate gates or block work. */ }
   });
   pi.on('tool_call', (event, ctx) => {
     const stopped = ensureBudget(ctx, 'tool');
@@ -279,7 +326,10 @@ export default function delivery(pi: ExtensionAPI) {
           startImplementation(state, fingerprint(ctx.cwd, ['.']));
           persist(ctx);
         } finally { release(); }
-      } catch (error: any) { return { block: true, reason: error.message }; }
+      } catch (error: any) {
+        if (discovery.active) { discovery = discoveryEvent(discovery, 'blocked'); saveDiscovery(); }
+        return { block: true, reason: error.message + (discoveryCheckpoint(discovery) ? '\n' + discoveryCheckpoint(discovery) : '') };
+      }
     }
     if (['write', 'edit'].includes(event.toolName) && input && typeof input === 'object') {
       const path = typeof input.path === 'string' ? input.path.replaceAll('\\', '/') : '';
@@ -375,6 +425,7 @@ export default function delivery(pi: ExtensionAPI) {
     }
   });
   pi.on('tool_result', async (event, ctx) => {
+    if (discovery.active && ['read', 'ls', 'find', 'grep'].includes(event.toolName)) { discovery = discoveryEvent(discovery, 'read'); saveDiscovery(); }
     if (!event.isError && ['write', 'edit'].includes(event.toolName)) touched = true;
     const baseDelay = Math.max(0, Number(pi.getFlag('delivery-turn-delay-ms')) || 0);
     const contextTokens = ctx?.getContextUsage?.()?.tokens ?? 0;
@@ -411,12 +462,13 @@ export default function delivery(pi: ExtensionAPI) {
         } else {
           state = { version: 1, runId: randomUUID(), revision: (state?.revision || 0) + 1, guidanceProfiles: activeGuidance.map(profile => profile.id), plan, evidence: {}, status: 'implementing', createdAt: new Date().toISOString(), stepStatus: {} };
         }
+        discovery = newDiscovery(); saveDiscovery();
         const dir = directory(ctx);
         mkdirSync(dir, { recursive: true });
         writeFileSync(join(dir, 'plan.d2'), planD2WithProgress(state.plan, state.stepStatus));
         persist(ctx);
         selectReport(ctx.cwd, join(dir, 'report.json'));
-        return text({ plan: join(dir, 'plan.d2'), report: join(dir, 'report.json'), next: 'No code or commands yet. Declare design components/ports/scenarios/risks, then delivery_design validate, review and approve. Revise any findings first.' });
+        return text({ plan: join(dir, 'plan.d2'), report: join(dir, 'report.json'), next: 'No code or commands yet. delivery_design guide gives exact fields. Validate, inspect the capture (optional Jev advice), review, then approve. Revise blocking findings first.' });
       }, true));
     },
   });
@@ -439,11 +491,12 @@ export default function delivery(pi: ExtensionAPI) {
   });
   pi.registerTool({
     name: 'delivery_design', label: 'Test delivery design',
-    description: 'Before generating code: validate architecture and scenarios, record adversarial review, then approve. Review is self-reported, not independent proof. Revisions and preimplementation source edits invalidate approval.',
-    parameters: Type.Object({ action: Type.String({ enum: ['validate', 'inspect', 'review', 'approve'] }), review: Type.Optional({ type: 'object', additionalProperties: true, description: 'captureId from inspect, resolutions:[{id,change,evidence}] for previous blockers, challenges:string[], walkthroughs:[{scenario,trace,assertion}], findings:[{severity,description,disposition?}], limitations:string[]' }) }),
+    description: 'Use action=guide BEFORE planning for compact exact fields and an illustrative example, without state or approval. Before generating code: validate architecture and scenarios, inspect, record adversarial review, then approve. Review is self-reported, not independent proof. Revisions and preimplementation source edits invalidate approval.',
+    parameters: Type.Object({ action: Type.String({ enum: ['guide', 'validate', 'inspect', 'review', 'approve'] }), review: Type.Optional({ type: 'object', additionalProperties: true, description: 'captureId from inspect, resolutions:[{id,change,evidence}] for previous blockers, challenges:string[], walkthroughs:[{scenario,trace,assertion}], findings:[{severity,description,disposition?}], limitations:string[]' }) }),
     async execute(_id, params, _signal, _update, ctx) {
+      if (params.action === 'guide') return text(planningGuide());
       return exclusive(() => workspaceOperation(ctx, async () => {
-        if (!state) throw Error('Call delivery_plan first');
+        if (!state) throw Error('Call delivery_plan first; action=guide gives exact fields.');
         const hash = fingerprint(ctx.cwd, ['.']);
         let result;
         if (params.action === 'validate') result = validatePlanning(state, hash);
@@ -452,7 +505,19 @@ export default function delivery(pi: ExtensionAPI) {
         else if (params.action === 'approve') result = approvePlanning(state, hash);
         else throw Error('Unknown design action');
         persist(ctx);
-        return text({ result, planningStatus: planningStatus(state, hash) });
+        const advice = params.action === 'inspect' ? await inspectAdvice(state, result, {
+          enabled: pi.getFlag('delivery-jev') === true,
+          createAdvisor: () => configuredAdvisor({ enabled: true, provider: pi.getFlag('delivery-jev-provider') || 'openrouter', broker: pi.getFlag('delivery-jev-broker'), signal: _signal }),
+          persist: () => persist(ctx),
+        }) : undefined;
+        const response = { result: designReceipt(params.action, result), advice, ...(params.action === 'validate' ? planningNext(state, result) : {}), planningStatus: planningStatus(state, hash), report: join(directory(ctx), 'report.json') };
+        if (params.action === 'inspect' && (jsonBytes(response) > 40000 || JSON.stringify(response, null, 2).split('\n').length > 900)) {
+          const archive = archiveContext(ctx.cwd, directory(ctx), result);
+          const identity = { id: result.id, runId: result.runId, revision: result.revision, digest: result.digest, fingerprint: result.fingerprint, provenance: result.provenance };
+          const output = text({ result: identity, advice, captureArchive: archive, planningStatus: response.planningStatus, next: 'Capture too large for one response. Read the entire captureArchive.path in pages before reviewing. No plan content is silently truncated.' });
+          return { ...output, details: { deliveryCapture: result } };
+        }
+        return text(response);
       }));
     },
   });
@@ -481,8 +546,8 @@ export default function delivery(pi: ExtensionAPI) {
           ? `Run delivery_check for pending checks: ${pending.join(', ')}; repair failures before finishing.`
           : 'Complete outstanding steps/outputs and unverified requirements. For structured plans, use delivery_review action=inspect then action=record before delivery_finish.';
       // History lives in report.json; do not flood model context with old snapshots.
-      const { revisions, ...current } = state;
-      return text({ ...current, planningStatus: designStatus, revisionHistory: revisions?.map((r: any) => ({ revision: r.revision, reason: r.reason, at: r.at })), pendingChecks: pending, completionIssues: issues, readyToFinish, next });
+      const current = deliveryRecovery(state, { report: join(directory(ctx), 'report.json'), planningStatus: designStatus });
+      return text({ ...current, planningStatus: designStatus, revisionHistory: state.revisions?.map((r: any) => ({ revision: r.revision, reason: r.reason, at: r.at })), pendingChecks: pending, completionIssues: issues, readyToFinish, next });
     },
   });
   pi.registerTool({
