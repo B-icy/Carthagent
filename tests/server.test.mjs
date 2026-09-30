@@ -12,14 +12,14 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const serverPath = join(root, 'server.mjs');
 const htmlPath = join(root, 'public', 'index.html');
 
-async function serverFixture(t) {
+async function serverFixture(t, envOverrides = {}) {
   const cwd = mkdtempSync(join(tmpdir(), 'carthagent server '));
   writeFileSync(join(cwd, 'app.mjs'), 'console.log("ok")\n');
   const port = 32000 + Math.floor(Math.random() * 10000);
   const token = 'test-token';
   const child = spawn(process.execPath, [serverPath], {
     cwd: root,
-    env: { ...process.env, CARTHAGENT_WORKSPACE: cwd, CARTHAGENT_PORT: String(port), CARTHAGENT_SERVER_TOKEN: token },
+    env: { ...process.env, CARTHAGENT_WORKSPACE: cwd, CARTHAGENT_PORT: String(port), CARTHAGENT_SERVER_TOKEN: token, ...envOverrides },
     stdio: ['ignore', 'pipe', 'pipe']
   });
   t.after(() => { child.kill('SIGTERM'); rmSync(cwd, { recursive: true, force: true }); });
@@ -71,6 +71,29 @@ test('dashboard API requires its launch token and rejects foreign origins', asyn
   const body = await response.json();
   assert.equal(body.workspace, server.cwd);
   assert.deepEqual(body.stepStatus, {});
+});
+
+test('dashboard status reports an available update from the release cache', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'carthagent update '));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  // Seed the throttled cache so the check resolves without touching the network.
+  const cachePath = join(dir, 'update-check.json');
+  writeFileSync(cachePath, JSON.stringify({ checkedAt: Date.now(), release: { version: '99.0.0', tag: 'v99.0.0' } }));
+  const server = await serverFixture(t, { CARTHAGENT_UPDATE_CHECK_FILE: cachePath });
+  let body = {};
+  for (let i = 0; i < 50 && !body.update; i++) {
+    body = await (await fetch(`${server.url}/api/status`, { headers: { 'x-carthagent-token': server.token } })).json();
+    if (!body.update) await new Promise(r => setTimeout(r, 50));
+  }
+  assert.equal(body.update.latest, '99.0.0');
+  assert.equal(body.update.available, true);
+  assert.ok(body.update.installed);
+});
+
+test('dashboard omits update info when the check is disabled', async t => {
+  const server = await serverFixture(t, { CARTHAGENT_NO_UPDATE_CHECK: '1' });
+  const body = await (await fetch(`${server.url}/api/status`, { headers: { 'x-carthagent-token': server.token } })).json();
+  assert.equal(body.update, null);
 });
 
 test('dashboard persists plans and executes checks in the selected workspace', async t => {
@@ -196,6 +219,8 @@ test('dashboard is self-contained and does not render API data with innerHTML', 
   assert.match(html, /stepStatus/);
   const rendered = await domCheck(html, [
     { selector: '.shell' },
+    { selector: '#update-badge' },
+    { eval: 'document.getElementById("update-badge").hidden', expect: true },
     { selector: '#planning-view' },
     { eval: `(() => { const select = document.querySelector('#planning-view'); select.value = 'architecture'; select.dispatchEvent(new Event('change')); return document.querySelector('#d2').hidden; })()`, expect: true },
     { eval: `(() => { const select = document.querySelector('#planning-view'); select.value = 'workflow'; select.dispatchEvent(new Event('change')); return document.querySelector('#planning-detail').textContent.includes('No active action recorded'); })()`, expect: true },

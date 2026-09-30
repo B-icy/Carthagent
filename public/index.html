@@ -143,6 +143,9 @@
     .status.blocked::before, .status.failed::before { background: var(--error); }
     .status.verifying::before, .status.implementing::before { background: var(--warning); }
     .hash { color: var(--faint); font: 12px var(--mono); }
+    .update-badge { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--accent); border-radius: 5px; background: var(--accent-bg); color: var(--accent); padding: 5px 10px; font: 12px var(--mono); }
+    .update-badge:hover { border-color: var(--border-hover); }
+    .update-badge:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
     nav { border-bottom: 1px solid var(--border); background: var(--chrome); }
     .tabs { max-width: 1440px; margin: 0 auto; padding: 0 24px; display: flex; gap: 22px; overflow-x: auto; }
     .tab { border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); padding: 11px 0 10px; font-size: 13px; }
@@ -273,6 +276,7 @@
       <div id="workspace" class="workspace">loading workspace</div>
       <div id="status" class="status">idle</div>
       <div id="header-hash" class="hash">—</div>
+      <button id="update-badge" class="update-badge" type="button" hidden></button>
       <div id="theme-picker" class="theme-picker">
         <button id="theme-trigger" class="theme-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">Carthage (default)</button>
         <div id="theme-menu" class="theme-menu" role="listbox" aria-label="Color theme">
@@ -498,6 +502,14 @@
     byId('status').textContent = state.status || 'idle';
     byId('status').className = `status ${state.status || 'idle'}`;
     byId('header-hash').textContent = state.currentFingerprint ? state.currentFingerprint.slice(0, 12) : '—';
+    const updateBadge = byId('update-badge');
+    if (state.update?.available) {
+      updateBadge.hidden = false;
+      if (updateBadge.dataset.copied !== 'true') updateBadge.textContent = `↑ ${state.update.latest} available`;
+      updateBadge.title = `Carthagent ${state.update.latest} is available (installed ${state.update.installed}) — click to copy 'ctg update'`;
+    } else {
+      updateBadge.hidden = true;
+    }
     byId('fingerprint').textContent = state.currentFingerprint || '—';
     byId('report').textContent = state.report || '';
     const plan = state.plan;
@@ -949,6 +961,15 @@
   byId('save-plan').addEventListener('click', () => planAction(true));
   byId('run-all').addEventListener('click', () => runChecks('all'));
   byId('run-all-header').addEventListener('click', () => { document.querySelector('[data-panel="checks"]').click(); runChecks('all'); });
+  byId('update-badge').addEventListener('click', async () => {
+    const badge = byId('update-badge');
+    try {
+      await navigator.clipboard.writeText('ctg update');
+      badge.dataset.copied = 'true';
+      badge.textContent = 'ctg update copied';
+      setTimeout(() => { delete badge.dataset.copied; }, 2500);
+    } catch { badge.textContent = 'run: ctg update'; }
+  });
   byId('mark-verified').addEventListener('click', () => finish('verified'));
   byId('mark-blocked').addEventListener('click', () => finish('blocked'));
   document.querySelectorAll('.doc-tab').forEach(button => button.addEventListener('click', () => {
