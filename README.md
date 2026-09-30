@@ -34,6 +34,10 @@ git clone https://github.com/B-icy/Carthagent && cd Carthagent
 npm ci && npm install -g .    # gives you `ctg`; or run `node bin/ctg.mjs`
 ```
 
+## Update
+
+`ctg update` resolves the latest release (the Carthagent control plane first, GitHub releases as fallback) and reinstalls it the way you installed: checkout the tag + `npm ci` in a clone install, or `npm install -g --install-links=true github:B-icy/Carthagent#<tag>` for a `github:` install. `ctg update --check` reports without installing. The console also prints a notice once a day when a newer release exists — set `CARTHAGENT_NO_UPDATE_CHECK=1` to opt out.
+
 ## Connect a provider
 
 First run needs AI credentials. One store (`~/.carthagent/agent/auth.json`) covers the console, headless runs, and the dashboard.
@@ -81,6 +85,7 @@ ctg account                   # Ship balance, plan, grants, and sessions
 ctg billing checkout          # Ship Builder checkout URL
 ctg serve                     # web dashboard (127.0.0.1, authenticated URL)
 ctg test                      # unit suite
+ctg update                    # install the latest release (--check to peek)
 ctg --help                    # everything else
 ```
 

@@ -23,6 +23,7 @@ import { lockWorkspace, selectReport } from '../lib/workspace.mjs';
 import { beginReview, parseFindings } from '../lib/review-state.mjs';
 import { latestReport, saveReport } from '../lib/reports.mjs';
 import { normalizeReviewMode, resolveReviewMode, loadCarthagentConfig, saveCarthagentConfig, carthagentConfigPath, reviewerPrompt, parseVerdict, resolveStickyDefaults } from '../lib/review.mjs';
+import { compareVersions, fetchLatestRelease, detectInstallMethod } from '../lib/update.mjs';
 
 // Ensure Carthagent operates completely isolated in its own agent directory (~/.carthagent/agent)
 // so it NEVER touches, reads, or piggybacks on any existing ~/.pi/agent installation.
@@ -71,6 +72,7 @@ function printHelp() {
   \x1b[32meval\x1b[0m [args...]         Run evaluation harness (evaluate.mjs)
   \x1b[32mreview\x1b[0m                Show self-review default · \x1b[32mreview\x1b[0m ask|yes|no sets it
   \x1b[32mreview\x1b[0m <pr>           Run a fresh-context review of a pull request
+  \x1b[32mupdate\x1b[0m [--check]        Update Carthagent to the latest release
   \x1b[32mhelp\x1b[0m, \x1b[32m--help\x1b[0m, \x1b[32m-h\x1b[0m       Display this help message
 
 \x1b[1mTUI OPTIONS:\x1b[0m
@@ -537,6 +539,59 @@ async function runReview(prRef, rest) {
   } finally { round.release(); }
 }
 
+/**
+ * `ctg update [--check] [--force]` — resolve the latest release (control plane
+ * first, GitHub releases fallback), then re-install it the same way it was
+ * originally installed: checkout the tag in a clone install, or re-run the
+ * tagged `github:` npm install otherwise.
+ */
+async function handleUpdate(args) {
+  let checkOnly = false, force = false;
+  for (const arg of args) {
+    if (arg === '--check') checkOnly = true;
+    else if (arg === '--force') force = true;
+    else { console.error(`\x1b[31mUnknown update option:\x1b[0m ${arg}`); process.exit(2); }
+  }
+  let latest;
+  try { latest = (await fetchLatestRelease()).release; }
+  catch (error) { console.error(`\x1b[31mCannot resolve the latest release:\x1b[0m ${error.message}`); process.exit(2); }
+  // npm is a .cmd shim on Windows and cannot spawn with shell:false — run it via cmd.exe.
+  const npmStep = npmArgs => process.platform === 'win32' ? ['cmd.exe', '/d', '/s', '/c', 'npm', ...npmArgs] : ['npm', ...npmArgs];
+  const runStep = async step => {
+    const result = await runCommand(step.argv, { cwd: root, timeoutSeconds: step.timeout ?? 600 });
+    if (result.code !== 0) {
+      console.error(`\x1b[31m${step.label} failed${result.timedOut ? ' (timed out)' : ''}:\x1b[0m`);
+      if (result.output.trim()) console.error(result.output.trim());
+      process.exit(1);
+    }
+  };
+  if (latest.minNode && compareVersions(process.versions.node, latest.minNode) < 0) {
+    console.error(`\x1b[31mCarthagent ${latest.version} requires Node ≥ ${latest.minNode}\x1b[0m — this runtime is ${process.versions.node}`);
+    process.exit(1);
+  }
+  const delta = compareVersions(version, latest.version);
+  if (delta === 0 && !force) { console.log(`\x1b[32mCarthagent ${version} is already the latest release.\x1b[0m`); return; }
+  if (delta > 0 && !force) { console.log(`\x1b[33mInstalled ${version} is ahead of latest release ${latest.version} — pass --force to reinstall anyway.\x1b[0m`); return; }
+  if (checkOnly) {
+    console.log(`\x1b[33mCarthagent ${latest.version} is available${latest.note ? ` — ${latest.note}` : ''}\x1b[0m (installed: ${version}) — run \x1b[36mctg update\x1b[0m`);
+    return;
+  }
+  const method = detectInstallMethod(root);
+  console.log(`\x1b[36mUpdating Carthagent ${version} → ${latest.version}\x1b[0m (${method} install)`);
+  if (method === 'clone') {
+    const dirty = await runCommand(['git', 'status', '--porcelain'], { cwd: root, timeoutSeconds: 30 });
+    if (dirty.code !== 0) { console.error(`\x1b[31mCannot inspect the clone at ${root}\x1b[0m`); process.exit(1); }
+    if (dirty.output.trim()) { console.error(`\x1b[31mThe clone at ${root} has uncommitted changes.\x1b[0m Commit, stash, or update it manually: git fetch --tags && git checkout ${latest.tag} && npm ci && npm install -g .`); process.exit(1); }
+    await runStep({ argv: ['git', 'fetch', 'origin', '--tags', '--force'], label: 'git fetch --tags' });
+    await runStep({ argv: ['git', 'checkout', '--detach', latest.tag], label: `git checkout ${latest.tag}` });
+    await runStep({ argv: npmStep(['ci']), label: 'npm ci', timeout: 600 });
+    await runStep({ argv: npmStep(['install', '-g', '.']), label: 'npm install -g .', timeout: 600 });
+  } else {
+    await runStep({ argv: npmStep(['install', '-g', '--install-links=true', latest.installSpec]), label: `npm install ${latest.installSpec}`, timeout: 600 });
+  }
+  console.log(`\x1b[32mCarthagent updated to ${latest.version}.\x1b[0m Restart any running console to pick it up.`);
+}
+
 function handleEval() {
   const evalScript = join(root, 'evaluate.mjs');
   const child = spawn(process.execPath, [evalScript, ...argv.slice(1)], {
@@ -606,6 +661,9 @@ switch (command) {
     break;
   case 'review':
     handleReview(argv.slice(1));
+    break;
+  case 'update':
+    handleUpdate(argv.slice(1));
     break;
   case 'help':
   case '--help':
