@@ -3,7 +3,7 @@
  * Carthagent CLI - Evidence-driven delivery & contract verification
  */
 import { fileURLToPath } from 'node:url';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { planningView } from '../lib/planning-view.mjs';
@@ -23,7 +23,7 @@ import { lockWorkspace, selectReport } from '../lib/workspace.mjs';
 import { beginReview, parseFindings } from '../lib/review-state.mjs';
 import { latestReport, saveReport } from '../lib/reports.mjs';
 import { normalizeReviewMode, resolveReviewMode, loadCarthagentConfig, saveCarthagentConfig, carthagentConfigPath, reviewerPrompt, parseVerdict, resolveStickyDefaults } from '../lib/review.mjs';
-import { compareVersions, fetchLatestRelease, detectInstallMethod } from '../lib/update.mjs';
+import { compareVersions, fetchLatestRelease, detectInstallMethod, cleanStaleGlobalInstall } from '../lib/update.mjs';
 
 // Ensure Carthagent operates completely isolated in its own agent directory (~/.carthagent/agent)
 // so it NEVER touches, reads, or piggybacks on any existing ~/.pi/agent installation.
@@ -565,6 +565,25 @@ async function handleUpdate(args) {
       process.exit(1);
     }
   };
+  // Global installs die with ENOTDIR/EEXIST when a stray `carthagent` entry or a
+  // `.carthagent-*` stash leftover occupies the global node_modules — clear and retry once.
+  const npmInstallStep = async step => {
+    const run = () => runCommand(step.argv, { cwd: root, timeoutSeconds: step.timeout ?? 600 });
+    let result = await run();
+    if (result.code !== 0 && /\bENOTDIR\b|\bEEXIST\b|\bENOTEMPTY\b/.test(result.output)) {
+      const probe = await runCommand(npmStep(['root', '-g']), { cwd: root, timeoutSeconds: 30 });
+      const removed = probe.code === 0 ? cleanStaleGlobalInstall(probe.output.trim()) : [];
+      if (removed.length) {
+        console.log(`\x1b[33mRemoved stale global install ${removed.length === 1 ? 'entry' : 'entries'} (${removed.map(p => basename(p)).join(', ')}) — retrying.\x1b[0m`);
+        result = await run();
+      }
+    }
+    if (result.code !== 0) {
+      console.error(`\x1b[31m${step.label} failed${result.timedOut ? ' (timed out)' : ''}:\x1b[0m`);
+      if (result.output.trim()) console.error(result.output.trim());
+      process.exit(1);
+    }
+  };
   if (latest.minNode && compareVersions(process.versions.node, latest.minNode) < 0) {
     console.error(`\x1b[31mCarthagent ${latest.version} requires Node ≥ ${latest.minNode}\x1b[0m — this runtime is ${process.versions.node}`);
     process.exit(1);
@@ -585,9 +604,9 @@ async function handleUpdate(args) {
     await runStep({ argv: ['git', 'fetch', 'origin', '--tags', '--force'], label: 'git fetch --tags' });
     await runStep({ argv: ['git', 'checkout', '--detach', latest.tag], label: `git checkout ${latest.tag}` });
     await runStep({ argv: npmStep(['ci']), label: 'npm ci', timeout: 600 });
-    await runStep({ argv: npmStep(['install', '-g', '.']), label: 'npm install -g .', timeout: 600 });
+    await npmInstallStep({ argv: npmStep(['install', '-g', '.']), label: 'npm install -g .', timeout: 600 });
   } else {
-    await runStep({ argv: npmStep(['install', '-g', '--install-links=true', latest.installSpec]), label: `npm install ${latest.installSpec}`, timeout: 600 });
+    await npmInstallStep({ argv: npmStep(['install', '-g', '--install-links=true', latest.installSpec]), label: `npm install ${latest.installSpec}`, timeout: 600 });
   }
   console.log(`\x1b[32mCarthagent updated to ${latest.version}.\x1b[0m Restart any running console to pick it up.`);
 }
