@@ -161,6 +161,19 @@ test('Experiential model definitions preserve supplied metadata and detect expli
   assert.equal(managed.reasoning, true);
 });
 
+test('Managed model caps published by the cloud catalog clamp to the model profile', () => {
+  // The gpt-6-luna profile declares contextWindow 1_050_000 / maxTokens 128_000.
+  // A managed alias publishing tighter operating caps wins on contextWindow
+  // while the profile wins on maxTokens — both bounds stay honest.
+  const managed = experientialModelDefinition({ id: 'openai/gpt-6-luna', contextWindow: 150_000, maxTokens: 156_000 });
+  assert.equal(managed.contextWindow, 150_000);
+  assert.equal(managed.maxTokens, 128_000);
+  // Without a matching profile the published caps stand alone.
+  const alias = experientialModelDefinition({ id: 'carthagent-code', contextWindow: 150_000, maxTokens: 156_000 });
+  assert.equal(alias.contextWindow, 150_000);
+  assert.equal(alias.maxTokens, 156_000);
+});
+
 test('Experiential model discovery authenticates with API-key or OAuth credentials without logging them', async () => {
   const requests = [];
   const config = experientialProviderConfig({
