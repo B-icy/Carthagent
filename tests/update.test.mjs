@@ -2,12 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import {
+  cleanStaleGlobalInstall,
   compareVersions,
   detectInstallMethod,
   latestReleaseCached,
   normalizeRelease,
+  staleGlobalInstallPaths,
   updateCheckEnabled,
 } from '../lib/update.mjs';
 
@@ -113,4 +115,31 @@ test('detectInstallMethod distinguishes clones from packed installs', () => with
   assert.equal(detectInstallMethod(dir), 'npm');
   mkdirSync(join(dir, '.git'));
   assert.equal(detectInstallMethod(dir), 'clone');
+}));
+
+// ---- staleGlobalInstallPaths / cleanStaleGlobalInstall
+
+test('staleGlobalInstallPaths flags non-directory carthagent and stash leftovers', () => withTempDir(dir => {
+  writeFileSync(join(dir, 'carthagent'), 'stray file');
+  mkdirSync(join(dir, '.carthagent-WHcGBFBt'));
+  mkdirSync(join(dir, 'other-pkg'));
+  const stale = staleGlobalInstallPaths(dir).map(p => basename(p));
+  assert.deepEqual(stale.sort(), ['.carthagent-WHcGBFBt', 'carthagent']);
+}));
+
+test('staleGlobalInstallPaths leaves a real carthagent install alone', () => withTempDir(dir => {
+  mkdirSync(join(dir, 'carthagent'));
+  assert.deepEqual(staleGlobalInstallPaths(dir), []);
+}));
+
+test('staleGlobalInstallPaths ignores a missing npm root', () => {
+  assert.deepEqual(staleGlobalInstallPaths(join(tmpdir(), 'ctg-no-such-dir')), []);
+});
+
+test('cleanStaleGlobalInstall removes flagged entries and reports them', () => withTempDir(dir => {
+  writeFileSync(join(dir, 'carthagent'), 'stray file');
+  writeFileSync(join(dir, '.carthagent-abandoned'), 'stash leftover');
+  const removed = cleanStaleGlobalInstall(dir);
+  assert.equal(removed.length, 2);
+  assert.deepEqual(staleGlobalInstallPaths(dir), []);
 }));

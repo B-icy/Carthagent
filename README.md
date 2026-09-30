@@ -27,6 +27,15 @@ ctg
 
 If installation succeeds but your shell cannot find `ctg`, restart the terminal and confirm that npm's global executable directory is on `PATH` (`$(npm prefix -g)/bin` on Linux/macOS; the directory shown by `npm prefix -g` on Windows).
 
+If `npm install -g` fails with `ENOTDIR`/`EEXIST` while renaming `…/node_modules/carthagent`, a stale entry from an earlier install (or an `npm link`) is in the way. Remove it and retry:
+
+```sh
+rm -rf "$(npm root -g)/carthagent" "$(npm root -g)"/.carthagent-*
+npm install -g --install-links=true github:B-icy/Carthagent
+```
+
+`ctg update` performs this cleanup automatically and retries.
+
 Or install from a clone:
 
 ```sh
