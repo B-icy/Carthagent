@@ -47,6 +47,8 @@ npm ci && npm install -g .    # gives you `ctg`; or run `node bin/ctg.mjs`
 
 `ctg update` resolves the latest release (the Carthagent control plane first, GitHub releases as fallback) and reinstalls it the way you installed: checkout the tag + `npm ci` in a clone install, or `npm install -g --install-links=true github:B-icy/Carthagent#<tag>` for a `github:` install. `ctg update --check` reports without installing. The console also prints a notice once a day when a newer release exists — set `CARTHAGENT_NO_UPDATE_CHECK=1` to opt out.
 
+**Releasing:** bump `version` in `package.json` and `package-lock.json`, merge, then tag `vX.Y.Z` on main and push. The `Release` workflow publishes the manifest to the control plane (`POST /v1/cli/releases`), making the tag resolvable by `ctg update` and the dashboard badge. It needs the `CARTHAGENT_CLI_RELEASE_TOKEN` repository secret set to the backend's `CARTHAGENT_CLI_RELEASE_ADMIN_TOKEN`; `CARTHAGENT_CLOUD_URL` can override the API origin as a repository variable.
+
 ## Connect a provider
 
 First run needs AI credentials. One store (`~/.carthagent/agent/auth.json`) covers the console, headless runs, and the dashboard.

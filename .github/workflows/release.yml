@@ -1,0 +1,28 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  publish-release-manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish the CLI release manifest to the control plane
+        env:
+          CARTHAGENT_CLI_RELEASE_TOKEN: ${{ secrets.CARTHAGENT_CLI_RELEASE_TOKEN }}
+          CARTHAGENT_CLOUD_URL: ${{ vars.CARTHAGENT_CLOUD_URL || 'https://api.carthagent.xyz' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CARTHAGENT_CLI_RELEASE_TOKEN:-}" ]; then
+            echo "::error::Set the CARTHAGENT_CLI_RELEASE_TOKEN repository secret to the backend's CARTHAGENT_CLI_RELEASE_ADMIN_TOKEN value." >&2
+            exit 1
+          fi
+          version="${GITHUB_REF_NAME#v}"
+          curl -fsS -X POST "${CARTHAGENT_CLOUD_URL}/v1/cli/releases" \
+            -H "authorization: Bearer ${CARTHAGENT_CLI_RELEASE_TOKEN}" \
+            -H 'content-type: application/json' \
+            -d "{\"version\":\"${version}\"}"
