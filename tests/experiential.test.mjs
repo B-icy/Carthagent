@@ -62,6 +62,24 @@ test('Managed Cloud operations share one identity and disable transport retries 
   assert.throws(() => createCloudOperationIdentity(() => ''), /identity is invalid/);
 });
 
+test('Managed Cloud payloads drop disabled thinking only for always-reasoning models', async () => {
+  const options = managedCloudRequestOptions({}, () => 'operation-x');
+  const alwaysReasoning = { id: 'glm-5.3', thinkingLevelMap: { off: null, low: 'low' } };
+  const body = await options.onPayload({ thinking: { type: 'disabled' } }, alwaysReasoning);
+  assert.equal(body.thinking, undefined);
+  assert.equal(body.metadata.operation_key, 'operation-x');
+
+  const canDisable = { id: 'deepseek-v4.1-flash', thinkingLevelMap: { off: 'none', low: 'low' } };
+  const deepseekBody = await options.onPayload({ thinking: { type: 'disabled' } }, canDisable);
+  assert.deepEqual(deepseekBody.thinking, { type: 'disabled' });
+
+  const noMap = await options.onPayload({ thinking: { type: 'disabled' } }, { id: 'other' });
+  assert.deepEqual(noMap.thinking, { type: 'disabled' });
+
+  const enabled = await options.onPayload({ thinking: { type: 'enabled', clear_thinking: false } }, alwaysReasoning);
+  assert.deepEqual(enabled.thinking, { type: 'enabled', clear_thinking: false });
+});
+
 test('Managed Cloud duplicate-operation errors are marked non-retryable', () => {
   assert.equal(isManagedCloudNonRetryableError('idempotency_key_reused'), true);
   assert.equal(isManagedCloudNonRetryableError('request_reconciliation_required'), true);
