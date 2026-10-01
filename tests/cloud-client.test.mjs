@@ -95,23 +95,29 @@ test('OAuth and account formatters keep token expiration and account UX determin
     accountId: 'paid', balance: { availableNanoUsd: 8_000_000_000 },
     subscription: { status: 'active', current_period_end: 1_800_000_000 },
     managedUsage: {
+      planName: 'Pro',
       periodEnd: 1_800_000_000,
       monthly: { allowanceNanoUsd: 8_000_000_000, reservedNanoUsd: 250_000_000, availableNanoUsd: 6_750_000_000 },
       daily: { limitNanoUsd: 500_000_000, reservedNanoUsd: 50_000_000, availableNanoUsd: 300_000_000, resetsAt: '2027-01-02T00:00:00.000Z' },
     }, sessions: [],
   });
-  assert.match(managed, /Managed monthly: \$6\.75 available of \$8\.00 \(\$0\.25 reserved\)/);
-  assert.match(managed, /Managed daily: \$0\.30 available of \$0\.50 \(\$0\.05 reserved\)/);
-  assert.match(managed, /Daily reset: 2027-01-02T00:00:00\.000Z/);
+  assert.match(managed, /Plan: Pro \(active\)/);
+  assert.match(managed, /monthly\s+16%\s+▓▓▓░░░░░░░░░░░░░\s+renews Jan 15/);
+  assert.match(managed, /daily\s+40%\s+▓▓▓▓▓▓░░░░░░░░░░\s+resets 00:00 UTC/);
   const usage = { data: [
-    { createdAt: '2027-01-01T12:00:00.000Z', alias: 'gpt-5.6-luna', inputTokens: 1200, outputTokens: 34 },
-    { createdAt: '2027-01-01T11:00:00.000Z', alias: 'gpt-5.6-luna', inputTokens: 800, outputTokens: 6 },
+    { createdAt: '2027-01-01T12:00:00.000Z', alias: 'gpt-6-luna', inputTokens: 1200, outputTokens: 34, status: 'completed' },
+    { createdAt: '2027-01-01T11:00:00.000Z', alias: 'deepseek-v4-flash', inputTokens: 800, outputTokens: 6, status: 'failed' },
   ] };
-  assert.match(formatCloudUsage(usage), /2 recent settled requests\): 2,000 input · 40 output tokens/);
-  assert.match(formatCloudUsage(usage), /gpt-5\.6-luna · 1,200 in · 34 out/);
-  assert.match(formatCloudAccount({ accountId: 'acct', balance: { availableNanoUsd: 1_000_000_000 }, subscription: { status: 'none' }, sessions: [] }, { usage }), /Ship usage \(2 recent settled requests\)/);
-  assert.equal(formatCloudUsage({ data: [] }), 'Ship usage: no settled requests yet');
-  assert.match(formatCloudUsage(usage, { account: { balance: { availableNanoUsd: 1_000_000_000 }, subscription: { status: 'none' } } }), /Carthagent Ship · Free[\s\S]*Credit: \$1\.00 available/);
+  assert.match(formatCloudUsage(usage), /𐤀\s+SHIP · USAGE/);
+  assert.match(formatCloudUsage(usage), /last 5\s+gpt-6-luna · 1\.2k in \/ 34 out/);
+  assert.match(formatCloudUsage(usage), /deepseek-v4-flash · 800 in \/ 6 out · failed/);
+  assert.match(formatCloudUsage(usage, { account: { managedUsage: { planName: 'Pro', periodEnd: 1_800_000_000,
+    monthly: { allowanceNanoUsd: 21_000_000_000, availableNanoUsd: 12_600_000_000 },
+    daily: { limitNanoUsd: 1_200_000_000, availableNanoUsd: 1_200_000_000, resetsAt: '2027-01-02T00:00:00.000Z' } } } }),
+    /PRO · USAGE[\s\S]*monthly\s+40%[\s\S]*renews Jan 15[\s\S]*daily\s+0%/);
+  assert.match(formatCloudUsage(usage, { byok: true }), /external provider — not counted here/);
+  assert.match(formatCloudUsage({ data: [] }), /no settled requests yet/);
+  assert.match(formatCloudAccount({ accountId: 'acct', balance: { availableNanoUsd: 1_000_000_000 }, subscription: { status: 'none' }, sessions: [] }, { usage }), /SHIP · USAGE/);
 });
 
 test('managed usage recovery distinguishes daily, monthly, subscription, and credit paths', () => {
