@@ -48,7 +48,7 @@
     "start": "node server.mjs",
     "ctg": "node bin/ctg.mjs",
     "check": "node tools/check-syntax.mjs",
-    "typecheck": "tsc --noEmit --skipLibCheck --target ES2023 --module NodeNext --moduleResolution NodeNext --types node extensions/delivery.ts extensions/experiential.ts types/pi-coding-agent.d.ts",
+    "typecheck": "tsc --noEmit --skipLibCheck --target ES2023 --module NodeNext --moduleResolution NodeNext --types node extensions/delivery.ts extensions/experiential.ts extensions/codegraph.ts types/pi-coding-agent.d.ts",
     "lint": "eslint . && npm run typecheck",
     "quality": "npm run lint && npm run build && npm test",
     "test:browser": "node tools/test-webdriver.mjs",
@@ -58,8 +58,10 @@
   },
   "dependencies": {
     "express": "^5.2.1",
+    "jiti": "^2.7.0",
     "jsdom": "^30.0.1",
-    "jiti": "^2.7.0"
+    "tree-sitter-wasms": "^0.1.13",
+    "web-tree-sitter": "^0.22.6"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
