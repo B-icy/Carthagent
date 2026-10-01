@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync, mkdirSync
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { deflateRawSync } from 'node:zlib';
-import { extractZip, findBrowser, bundledBinaryPath, ensureBundledBrowser } from '../lib/browser-bin.mjs';
+import { extractZip, findBrowser, bundledBinaryPath, ensureBundledBrowser, isSandboxFailure } from '../lib/browser-bin.mjs';
 
 /** Build a minimal zip archive in memory: [{name, data, method}] → Buffer. */
 function buildZip(entries) {
@@ -69,6 +69,13 @@ test('findBrowser honors CARTHAGENT_BROWSER, bundled path, then system/firefox',
   else assert.equal(findBrowser({ env: env2 }), null);
   const found = findBrowser({ env: { PATH: '/nonexistent' } });
   assert.ok(found === null || /firefox|chrome|chromium/.test(found));
+});
+
+test('isSandboxFailure matches AppArmor/userns sandbox errors only', () => {
+  assert.equal(isSandboxFailure('! If you are running on Ubuntu 23.10+ or another Linux distro that has disabled unprivileged user namespaces with AppArmor'), true);
+  assert.equal(isSandboxFailure('cannot run as root without --no-sandbox'), true);
+  assert.equal(isSandboxFailure('DevTools listening on ws://127.0.0.1'), false);
+  assert.equal(isSandboxFailure(''), false);
 });
 
 test('ensureBundledBrowser short-circuits when binary exists and honors base', async () => {
