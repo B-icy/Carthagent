@@ -111,3 +111,32 @@ test('codegraph refreshes incrementally on mtime change', async t => {
   assert.equal(ix.stats().files, 4);
   assert.equal(ix.outline('src/c.py').length, 0);
 });
+
+test('codegraph callees distinguishes same-named methods in one file', async t => {
+  const dir = fixture();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(join(dir, 'src', 'two.ts'), [
+    `class A { run() { alpha(); } }`,
+    `class B { run() { beta(); } }`,
+  ].join('\n'));
+  const ix = await createCodeIndex(dir);
+
+  assert.deepEqual(ix.callees('A.run').map(c => c.name), ['alpha']);
+  assert.deepEqual(ix.callees('B.run').map(c => c.name), ['beta']);
+});
+
+test('codegraph drops stale entries when a file grows past maxBytes', async t => {
+  const dir = fixture();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const ix = await createCodeIndex(dir, { maxBytes: 80 });
+
+  writeFileSync(join(dir, 'src', 'small.ts'), `export function tiny() { helper(); }\n`);
+  await ix.refresh();
+  assert.equal(ix.definition('tiny').length, 1);
+
+  writeFileSync(join(dir, 'src', 'small.ts'), `export function tiny() { helper(); } ${'// pad'.repeat(30)}\n`);
+  const future = new Date(Date.now() + 2000);
+  utimesSync(join(dir, 'src', 'small.ts'), future, future);
+  await ix.refresh();
+  assert.equal(ix.definition('tiny').length, 0);
+});
