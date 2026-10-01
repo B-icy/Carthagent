@@ -78,11 +78,13 @@ test('latestReleaseCached fetches once, then serves the cache', () => withTempDi
   const cachePath = join(dir, 'update-check.json');
   let calls = 0;
   const fetchImpl = async () => { calls++; return { status: 200, json: async () => manifest }; };
-  const first = await latestReleaseCached({ cachePath, intervalMs: 1000, fetchImpl });
+  // Pinned clock: a slow runner must not outrun the cache TTL mid-test.
+  const t0 = Date.now();
+  const first = await latestReleaseCached({ cachePath, intervalMs: 1000, now: t0, fetchImpl });
   assert.equal(first.release.version, '0.3.0');
   assert.equal(first.fresh, false);
   assert.equal(calls, 1);
-  const second = await latestReleaseCached({ cachePath, intervalMs: 1000, fetchImpl });
+  const second = await latestReleaseCached({ cachePath, intervalMs: 1000, now: t0 + 500, fetchImpl });
   assert.equal(second.release.version, '0.3.0');
   assert.equal(second.fresh, true);
   assert.equal(calls, 1);
