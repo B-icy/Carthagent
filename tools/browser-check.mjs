@@ -10,7 +10,9 @@
  *
  * Serves the workspace over a local HTTP server (avoids file:// CORS),
  * runs jsdom assertions with real inline-script execution, and optionally
- * captures a real Firefox screenshot into artifacts/.
+ * captures a real screenshot into artifacts/ using the bundled headless
+ * shell (auto-downloaded), a system Chrome/Chromium, or Firefox as a last
+ * resort.
  *
  * Exit 0 = all assertions pass (screenshot failures are warnings unless
  * --require-screenshot is set). Prints a JSON summary to stdout.
@@ -18,7 +20,8 @@
 import { resolve, isAbsolute } from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { serveDir, domCheck, firefoxScreenshot } from '../lib/browser.mjs';
+import { serveDir, domCheck, browserScreenshot } from '../lib/browser.mjs';
+import { findBrowser, ensureBundledBrowser } from '../lib/browser-bin.mjs';
 
 const args = process.argv.slice(2);
 const opt = (name, def) => {
@@ -86,9 +89,11 @@ try {
     mkdirSync(dirname(abs), { recursive: true });
     const wait = opt('--wait');
     const win = (opt('--window', '1280x800').split('x').map(Number));
-    summary.screenshot = await firefoxScreenshot(url, abs, {
+    const browser = findBrowser() ?? await ensureBundledBrowser().catch(() => null);
+    summary.screenshot = await browserScreenshot(url, abs, {
       width: win[0] || 1280, height: win[1] || 800,
       waitSeconds: wait != null ? +wait : undefined,
+      browser,
     });
     if (!summary.screenshot.ok && has('--require-screenshot')) {
       console.log(JSON.stringify({ ...summary, pass: false }, null, 2));

@@ -1,6 +1,12 @@
 #!/usr/bin/env node
+/**
+ * webdriver-check — real-browser assertions over the bundled headless shell
+ * (CDP, no driver binary) by default; pass --endpoint <webdriver-url> to use an
+ * external W3C WebDriver service (geckodriver/chromedriver) instead.
+ */
 import { resolve } from 'node:path';
 import { webdriverCheck } from '../lib/webdriver.mjs';
+import { cdpCheck } from '../lib/cdp.mjs';
 import { serveDir } from '../lib/browser.mjs';
 
 let server;
@@ -18,7 +24,7 @@ try {
       steps.push({ selector: value.slice(0, split), text: value.slice(split + 1) });
     } else options[key.slice(2)] = value;
   }
-  if (!options.endpoint || !steps.length) throw Error('Require --endpoint http://127.0.0.1:4444 and at least one assertion or click');
+  if (!steps.length) throw Error('Require at least one assertion or click');
   if (options.url && (options.root || options.page)) throw Error('--url cannot be combined with --root or --page');
   const waitMs = options['wait-ms'] === undefined ? 5000 : Number(options['wait-ms']);
   if (!Number.isInteger(waitMs) || waitMs < 1 || waitMs > 60000) throw Error('--wait-ms must be an integer from 1 to 60000');
@@ -33,7 +39,11 @@ try {
     if (new URL(url).origin !== server.url) throw Error('--page must address the local served workspace');
   }
   let result;
-  try { result = await webdriverCheck({ endpoint: options.endpoint, url, steps, waitMs, screenshot: options.screenshot && resolve(options.screenshot) }); }
+  try {
+    result = options.endpoint
+      ? await webdriverCheck({ endpoint: options.endpoint, url, steps, waitMs, screenshot: options.screenshot && resolve(options.screenshot) })
+      : await cdpCheck({ url, steps, waitMs, screenshot: options.screenshot && resolve(options.screenshot) });
+  }
   catch (error) { error.category ||= 'driver'; throw error; }
   console.log(JSON.stringify(result));
 } catch (error) {

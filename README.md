@@ -8,7 +8,7 @@ Carthagent is a delivery-focused AI coding console and CLI built on a bundled de
 
 ## Install
 
-Core CLI requires Node ≥ 22.19. Optional workflows need additional tools: Git and authenticated `gh` for PR review, Firefox/geckodriver for real-browser checks, and Python with the scenario dependencies for game graders. The engine is bundled inside the package.
+Core CLI requires Node ≥ 22.19. Optional workflows need additional tools: Git and authenticated `gh` for PR review, and Python with the scenario dependencies for game graders. Real-browser checks use a bundled lightweight headless browser (`chrome-headless-shell`, auto-downloaded on first use to `~/.carthagent/browser/`) — no local browser install needed; an external WebDriver endpoint remains supported. The engine is bundled inside the package.
 
 Install directly from GitHub:
 
@@ -177,18 +177,18 @@ ctg -p --max-tools 100 --max-seconds 900 --max-repairs 2 "Implement the requeste
 
 Limits are opt-in, session-persistent cooperative controls—not dollar/token caps or hard process deadlines. Inspect with `/delivery-budget-status`; only an explicit `/delivery-budget-reset` starts a fresh allowance in the same session. See [session budgets](docs/budgets.md).
 
-Browser evidence has two tiers: jsdom for DOM/unit checks (module scripts are rejected when execution is requested), and real Firefox/WebDriver for application modules and interactions. Firefox checks subscribe to browser errors before navigation and fail on unexpected console errors, exceptions and rejected promises. Screenshots are evidence to inspect, not automatic visual approval. See [browser setup and checks](docs/webdriver.md).
+Browser evidence has two tiers: jsdom for DOM/unit checks (module scripts are rejected when execution is requested), and a real headless browser (bundled `chrome-headless-shell` over CDP, or an external WebDriver endpoint) for application modules and interactions. Browser checks subscribe to console errors before navigation and fail on unexpected console errors, exceptions and rejected promises. Screenshots are evidence to inspect, not automatic visual approval. See [browser setup and checks](docs/webdriver.md).
 
 ## Development
 
 ```sh
 npm ci && npm run quality                  # lint, typecheck, build and tests; no model calls
-npm run test:browser                       # real Firefox; requires Firefox/geckodriver
+npm run test:browser                       # bundled headless browser (auto-downloads on first use)
 python3 -m pip install -r scenarios/game/requirements.txt && npm run test:python   # game graders
 # Only with explicit spending authorization and a cap:
 node evaluate.mjs --task cli --mode both --allow-live   # live A/B eval — spends API credit
 ```
 
-Tests cover contract validation, stale evidence, required validators, timeouts/cancellation, compaction, actual-engine session budgets, report conflicts, and dashboard auth. Native CI covers Windows/macOS/Linux on Node 22/24; a separate Linux job runs real Firefox. WSL JS/browser evidence is local and separate; WSL Python validation remains unperformed successfully. This does not establish all terminals or browsers as supported/tested. `PI_CLI` points the suite at a non-standard engine location.
+Tests cover contract validation, stale evidence, required validators, timeouts/cancellation, compaction, actual-engine session budgets, report conflicts, and dashboard auth. Native CI covers Windows/macOS/Linux on Node 22/24; a separate Linux job runs the bundled real-browser suite. WSL JS/browser evidence is local and separate; WSL Python validation remains unperformed successfully. This does not establish all terminals or browsers as supported/tested. `PI_CLI` points the suite at a non-standard engine location.
 
 See [repository quality gates](docs/quality.md) and [controlled evaluation readiness](docs/evaluation-readiness.md). Review admission is persistently bounded locally; delivery operations now share a workspace lock and explicit active-run pointer with same-run live reconciliation. See [coordination and recovery](docs/workspace-coordination.md) for limits and interrupted-lock handling. No controlled paid comparison yet establishes lower cost or fewer interventions for complete web deliveries.
