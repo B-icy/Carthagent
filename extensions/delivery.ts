@@ -20,7 +20,7 @@ import { formatGuidance, loadGuidanceProfiles, routeGuidance } from '../lib/guid
 const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url));
 const BROWSER_CHECK = join(EXTENSION_DIR, '..', 'tools', 'browser-check.mjs');
 const BROWSER_CHECK_GUIDANCE = existsSync(BROWSER_CHECK)
-  ? `\nFor web/browser tasks, a self-contained browser check is available: ${JSON.stringify(BROWSER_CHECK)}. Declare it as a runtime check, e.g. ["node","${BROWSER_CHECK}","--page","index.html","--assert","#app","--assert-count","#items:3","--click","#btn","--then-text","#out:done","--console-clean","--screenshot","artifacts/ui.png"]. It serves the workspace over HTTP, runs jsdom assertions with real inline-script execution (clicks, text, selectors, console-error detection), and captures a real Firefox screenshot when Firefox is installed — no external downloads needed.`
+  ? `\nFor web/browser tasks, a self-contained browser check is available: ${JSON.stringify(BROWSER_CHECK)}. Declare it as a runtime check, e.g. ["node","${BROWSER_CHECK}","--page","index.html","--assert","#app","--assert-count","#items:3","--click","#btn","--then-text","#out:done","--console-clean","--screenshot","artifacts/ui.png"]. It serves the workspace over HTTP, runs jsdom assertions with real inline-script execution (clicks, text, selectors, console-error detection), and captures a real screenshot with the bundled lightweight headless browser (auto-downloaded on first use) — no local browser install needed.`
   : '';
 
 const text = (value: unknown) => {
@@ -235,6 +235,8 @@ export default function delivery(pi: ExtensionAPI) {
       discovery = newDiscovery(true); saveDiscovery();
     }
     let guidance = GUIDANCE + BROWSER_CHECK_GUIDANCE;
+    const supportsImages = !Array.isArray(ctx?.model?.input) || ctx.model.input.includes('image');
+    if (!supportsImages) guidance += `\nThis session's model cannot process images: do not attempt to view, read, or reason over image files or screenshots — visual review is unavailable. Verify visual behavior through DOM structure, computed styles, and console evidence instead; screenshots remain useful as evidence artifacts for the user even though you cannot inspect them.`;
     if (discovery.active) guidance += '\n\n' + PLANNING_START;
     const routedText = formatGuidance(activeGuidance);
     if (routedText) guidance += `\n\n${routedText}`;

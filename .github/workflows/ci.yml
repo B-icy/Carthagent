@@ -40,14 +40,10 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - uses: browser-actions/setup-firefox@v1
-        with:
-          firefox-version: latest
-      - uses: browser-actions/setup-geckodriver@latest
-      - run: npm run test:browser
+      - run: npm run test:browser   # bundled chrome-headless-shell; no browser setup needed
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: firefox-evidence
+          name: browser-evidence
           path: artifacts/
           if-no-files-found: ignore
