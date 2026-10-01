@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync, mkdirSync
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { deflateRawSync } from 'node:zlib';
-import { extractZip, findBrowser, bundledBinaryPath, ensureBundledBrowser, isSandboxFailure } from '../lib/browser-bin.mjs';
+import { extractZip, findBrowser, findChromium, bundledBinaryPath, ensureBundledBrowser, isSandboxFailure } from '../lib/browser-bin.mjs';
 
 /** Build a minimal zip archive in memory: [{name, data, method}] → Buffer. */
 function buildZip(entries) {
@@ -64,11 +64,14 @@ test('findBrowser honors CARTHAGENT_BROWSER, bundled path, then system/firefox',
   writeFileSync(custom, 'fake');
   assert.equal(findBrowser({ env: { CARTHAGENT_BROWSER: custom, PATH: '' } }), custom);
   const bundled = bundledBinaryPath();
-  const env2 = { PATH: '' };
-  if (existsSync(bundled)) assert.equal(findBrowser({ env: env2 }), bundled);
-  else assert.equal(findBrowser({ env: env2 }), null);
-  const found = findBrowser({ env: { PATH: '/nonexistent' } });
-  assert.ok(found === null || /firefox|chrome|chromium/.test(found));
+  const found = findBrowser({ env: { PATH: '' } });
+  // System browsers are host-dependent: bundled when present, else whatever
+  // the host provides (CI images ship /usr/bin/firefox) or null.
+  if (existsSync(bundled)) assert.equal(found, bundled);
+  else assert.ok(found === null || /firefox/i.test(found));
+  const chromium = findChromium({ env: { PATH: '' } });
+  if (existsSync(bundled)) assert.equal(chromium, bundled);
+  else assert.equal(chromium, null);
 });
 
 test('isSandboxFailure matches AppArmor/userns sandbox errors only', () => {
