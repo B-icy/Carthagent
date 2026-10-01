@@ -111,6 +111,21 @@ test('authoritative invoice webhook grants Builder credit exactly once', () => {
   assert.equal(control.subscription(account.accountId).status, 'active');
 });
 
+test('Checkout resolves plan selectors against the configured catalog', async () => {
+  const calls = [];
+  const stripe = {
+    createCheckoutSession: async input => { calls.push(input.line_items); return { id: 'cs_1', url: 'https://checkout.test' }; },
+    createPortalSession: async () => ({ id: 'bps_1', url: 'https://portal.test' }),
+  };
+  const { control } = fixture({ stripe, stripePriceId: 'price_builder', planCatalog: { pro: 'price_pro' } });
+  const account = control.createUserAccount({ email: 'tier@example.com' });
+  await control.createCheckout({ accountId: account.accountId, successUrl: 'https://app/s', cancelUrl: 'https://app/c' });
+  await control.createCheckout({ accountId: account.accountId, successUrl: 'https://app/s', cancelUrl: 'https://app/c', priceId: 'pro' });
+  await control.createCheckout({ accountId: account.accountId, successUrl: 'https://app/s', cancelUrl: 'https://app/c', priceId: 'price_pro' });
+  assert.deepEqual(calls, [[{ price: 'price_builder', quantity: 1 }], [{ price: 'price_pro', quantity: 1 }], [{ price: 'price_pro', quantity: 1 }]]);
+  await assert.rejects(control.createCheckout({ accountId: account.accountId, priceId: 'price_nope' }), /billing_not_configured/);
+});
+
 test('Checkout and portal use server-owned plan and customer references', async () => {
   const calls = [];
   const stripe = {
