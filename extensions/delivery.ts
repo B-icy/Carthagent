@@ -3,6 +3,8 @@ import { needsImplementation } from '../lib/planning-access.mjs';
 import { deliveryRecovery, designReceipt, archivalGroups, replaceArchivedGroups, contextMetrics, jsonBytes } from '../lib/delivery-context.mjs';
 import { archiveContext } from '../lib/context-archive.mjs';
 import { configuredAdvisor, inspectAdvice } from '../lib/planning-advice.mjs';
+import { createShipAdvisor } from '../lib/ship-jev.mjs';
+import { CARTHAGENT_SHIP_PROVIDER_ID } from '../lib/providers/names.mjs';
 import { PLANNING_START, planningGuide, planningNext } from '../lib/planning-guide.mjs';
 import { newDiscovery, restoreDiscovery, discoveryEvent, discoveryCheckpoint } from '../lib/planning-discovery.mjs';
 import { budgetLimits, newBudget, budgetReason, budgetSnapshot } from '../lib/budget.mjs';
@@ -115,8 +117,8 @@ export default function delivery(pi: ExtensionAPI) {
     if (ctx.hasUI) ctx.ui.notify('Delivery budget reset', 'info');
   } });
   for (const name of ['tools', 'seconds', 'repairs']) pi.registerFlag(`delivery-max-${name}`, { description: `Session budget for ${name}; 0 disables this limit. Reset only with /delivery-budget-reset.`, type: 'string', default: '0' });
-  pi.registerFlag('delivery-jev', { description: 'Explicitly enable paid Jev plan advice (maximum 3 attempts/run; never approval authority)', type: 'boolean', default: false });
-  pi.registerFlag('delivery-jev-provider', { description: 'Jev provider: openrouter (OPENROUTER_API_KEY) or typesafe (TYPESAFE_API_KEY)', type: 'string', default: 'openrouter' });
+  pi.registerFlag('delivery-jev', { description: 'Enable Jev plan advice (default on for Carthagent Ship; maximum 3 attempts/run; never approval authority)', type: 'boolean', default: false });
+  pi.registerFlag('delivery-jev-provider', { description: 'Jev provider: openrouter (OPENROUTER_API_KEY) or typesafe (TYPESAFE_API_KEY); Carthagent Ship models default to the managed ship endpoint when unset', type: 'string', default: '' });
   pi.registerFlag('delivery-jev-broker', { description: 'Explicit trusted local billing broker http://127.0.0.1:PORT/jev (no provider key sent)', type: 'string' });
   const exclusive = createSerialQueue();
   let contextDirectory: string | undefined;
@@ -507,9 +509,20 @@ export default function delivery(pi: ExtensionAPI) {
         else if (params.action === 'approve') result = approvePlanning(state, hash);
         else throw Error('Unknown design action');
         persist(ctx);
+        // Carthagent Ship gets managed plan advice by default: the backend
+        // proxies the free System One endpoint outside billing. A literal
+        // --delivery-jev=false opts out; an explicit --delivery-jev-provider
+        // keeps BYOK providers (OpenRouter/TypeSafe) working as before.
+        const jevFlag = pi.getFlag('delivery-jev');
+        const jevProvider = pi.getFlag('delivery-jev-provider');
+        const jevBroker = pi.getFlag('delivery-jev-broker');
+        const shipManaged = ctx?.model?.provider === CARTHAGENT_SHIP_PROVIDER_ID;
+        const useShipAdvisor = shipManaged && !jevProvider && !jevBroker;
         const advice = params.action === 'inspect' ? await inspectAdvice(state, result, {
-          enabled: pi.getFlag('delivery-jev') === true,
-          createAdvisor: () => configuredAdvisor({ enabled: true, provider: pi.getFlag('delivery-jev-provider') || 'openrouter', broker: pi.getFlag('delivery-jev-broker'), signal: _signal }),
+          enabled: jevFlag === true || (jevFlag === false && useShipAdvisor),
+          createAdvisor: () => useShipAdvisor
+            ? createShipAdvisor({ signal: _signal })
+            : configuredAdvisor({ enabled: true, provider: jevProvider || 'openrouter', broker: jevBroker, signal: _signal }),
           persist: () => persist(ctx),
         }) : undefined;
         const response = { result: designReceipt(params.action, result), advice, ...(params.action === 'validate' ? planningNext(state, result) : {}), planningStatus: planningStatus(state, hash), report: join(directory(ctx), 'report.json') };
