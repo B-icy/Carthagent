@@ -93,6 +93,32 @@ test('built-in Jev opt-in persists unavailable advice without unlocking implemen
   assert.match(f.hooks.context({ messages: [] }, f.ctx).messages.at(-1).content, /unavailable/);
 });
 
+test('design review accepts captureId beside the action or echoed as review.id', async t => {
+  const f = fixture(t, { approve: false });
+  await f.call('delivery_plan', { ...f.plan, design: fixtureDesign(f.plan) });
+  await f.call('delivery_design', { action: 'validate' });
+  const first = JSON.parse((await f.call('delivery_design', { action: 'inspect' })).content[0].text);
+  assert.equal(first.captureId, first.result.id);
+  // Top-level captureId (the delivery_review shape) is normalized into review.
+  await f.call('delivery_design', { action: 'review', captureId: first.result.id, review: fixtureReview(entriesPlan(f)) });
+  await f.call('delivery_design', { action: 'approve' });
+  // A revision relocks: captureId echoed under the inspect field name works too.
+  await f.call('delivery_revise', { reason: 'Adjust scope', patch: { assumptions: ['new'] } });
+  await f.call('delivery_design', { action: 'validate' });
+  const second = JSON.parse((await f.call('delivery_design', { action: 'inspect' })).content[0].text);
+  const failed = await f.call('delivery_design', { action: 'review', review: fixtureReview(entriesPlan(f)) }).then(() => null, e => e);
+  assert.match(failed.message, new RegExp(second.result.id));
+  await f.call('delivery_design', { action: 'review', review: { ...fixtureReview(entriesPlan(f)), id: second.result.id } });
+  await f.call('delivery_design', { action: 'approve' });
+  // An explicit nested null must not shadow the valid top-level captureId.
+  await f.call('delivery_revise', { reason: 'Second adjustment', patch: { assumptions: ['newer'] } });
+  await f.call('delivery_design', { action: 'validate' });
+  const third = JSON.parse((await f.call('delivery_design', { action: 'inspect' })).content[0].text);
+  await f.call('delivery_design', { action: 'review', captureId: third.result.id, review: { ...fixtureReview(entriesPlan(f)), captureId: null } });
+  await f.call('delivery_design', { action: 'approve' });
+});
+function entriesPlan(f) { return f.entries.at(-1).data.plan; }
+
 test('discovery guide/checkpoint restore, questions, terminal suppression and read permission', async t => {
   const f = fixture(t, { approve: false });
   const guide = JSON.parse((await f.call('delivery_design', { action: 'guide' })).content[0].text);
