@@ -28,6 +28,16 @@ test('blocking findings cannot be laundered by an empty second review or same-re
   assert.equal(planningStatus(s, 'hash').locked, false);
   assert.ok(s.planning.history.some(e => e.receipt?.findings?.some(f => f.id === id)));
 });
+test('review errors distinguish a missing capture from a stale captureId and name the current id', () => {
+  const s = state(); validatePlanning(s, 'hash');
+  assert.throws(() => recordPlanReview(s, 'hash', fixtureReview(s.plan)), /No current plan capture/);
+  const capture = inspectPlanning(s, 'hash');
+  assert.throws(() => recordPlanReview(s, 'hash', fixtureReview(s.plan)), new RegExp(`must be the id from the latest inspect result \\(${capture.id}\\)`));
+  assert.throws(() => recordPlanReview(s, 'hash', { ...fixtureReview(s.plan), captureId: 'stale-id' }), new RegExp(`received "stale-id"`));
+  // Re-validation clears the capture: the id that just worked is useless again.
+  validatePlanning(s, 'hash');
+  assert.throws(() => recordPlanReview(s, 'hash', { ...fixtureReview(s.plan), captureId: capture.id }), /No current plan capture/);
+});
 test('inspection receipts bind revision/snapshot and cannot pretend to be independent', () => {
   const s = state(); validatePlanning(s, 'hash');
   const capture = inspectPlanning(s, 'hash');

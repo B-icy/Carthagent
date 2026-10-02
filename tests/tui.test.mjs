@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseD2, layoutD2, renderD2 } from '../lib/tui/d2.mjs';
-import { syncActiveModel, planSideWidth, makeKeyParser, matchSlash, slashCardDimensions, renderSlashCard, computeNodeStates, barRange, scrollCell, cloudManagedUsageNotice, isCloudCreditExhaustion } from '../lib/tui/app.mjs';
+import { syncActiveModel, planSideWidth, makeKeyParser, matchSlash, slashCardDimensions, renderSlashCard, computeNodeStates, barRange, scrollCell, paneClipCols, cloudManagedUsageNotice, isCloudCreditExhaustion } from '../lib/tui/app.mjs';
 import { UNICODE_GLYPHS, ASCII_GLYPHS, detectGlyphMode, resolveGlyphs } from '../lib/tui/glyphs.mjs';
 import { checkDigest, planD2, computePhase, freshChecks, PHASES } from '../lib/delivery.mjs';
 import { createFeed, resetFeed, applyEvent, summarizeArgs, renderFeed, hydrateFeed } from '../lib/tui/feed.mjs';
@@ -580,6 +580,24 @@ test('sliceCols and inverseCols handle display-column ranges', () => {
   const styled = inverseCols('\x1b[31mred\x1b[0m plain', 4, 9);
   assert.equal(strip(styled), 'red plain');
   assert.match(styled, /\x1b\[27m/);
+});
+
+test('paneClipCols clamps drag-copy ranges to the anchor pane', () => {
+  // 120-col split: feed content 0..72, scrollbar at 73, │ separator at 74,
+  // plan content 75..118, plan scrollbar at 119
+  const clip = { feedEnd: 73, planStart: 75, planEnd: 119, rowTop: 2, rowBottom: 40 };
+  // feed-anchored drag spanning the whole width copies feed text only
+  assert.deepEqual(paneClipCols(clip, 5, 10, 0, 120), [0, 73]);
+  // a drag inside the feed that stops before the edge keeps its range
+  assert.deepEqual(paneClipCols(clip, 5, 10, 10, 40), [10, 40]);
+  // plan-anchored drag drops the feed columns and the plan scrollbar
+  assert.deepEqual(paneClipCols(clip, 90, 10, 0, 120), [75, 119]);
+  assert.deepEqual(paneClipCols(clip, 90, 10, 80, 120), [80, 119]);
+  // header/input rows (outside the composed body) are never clipped
+  assert.deepEqual(paneClipCols(clip, 5, 1, 0, 120), [0, 120]);
+  assert.deepEqual(paneClipCols(clip, 90, 45, 0, 120), [0, 120]);
+  // no split → no clipping
+  assert.deepEqual(paneClipCols(null, 5, 10, 0, 120), [0, 120]);
 });
 
 test('matchSlash filters commands by prefix and closes on args', () => {
