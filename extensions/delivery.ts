@@ -509,7 +509,7 @@ export default function delivery(pi: ExtensionAPI) {
           // field name `id`. Normalize all three into params.review.
           const review = params.review && typeof params.review === 'object' ? params.review : {};
           for (const field of ['captureId', 'challenges', 'walkthroughs', 'findings', 'limitations', 'resolutions']) {
-            if (review[field] === undefined && params[field] !== undefined) review[field] = params[field];
+            if (review[field] == null && params[field] !== undefined) review[field] = params[field];
           }
           if (review.captureId == null && typeof review.id === 'string' && review.id) review.captureId = review.id;
           result = recordPlanReview(state, hash, review);

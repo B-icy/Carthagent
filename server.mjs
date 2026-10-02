@@ -187,7 +187,7 @@ app.post('/api/design', (req, res) => {
     else if (req.body.action === 'review') {
       const review = req.body.review && typeof req.body.review === 'object' ? req.body.review : {};
       for (const field of ['captureId', 'challenges', 'walkthroughs', 'findings', 'limitations', 'resolutions']) {
-        if (review[field] === undefined && req.body[field] !== undefined) review[field] = req.body[field];
+        if (review[field] == null && req.body[field] !== undefined) review[field] = req.body[field];
       }
       if (review.captureId == null && typeof review.id === 'string' && review.id) review.captureId = review.id;
       result = recordPlanReview(currentState, hash, review);

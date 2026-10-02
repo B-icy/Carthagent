@@ -110,6 +110,12 @@ test('design review accepts captureId beside the action or echoed as review.id',
   assert.match(failed.message, new RegExp(second.result.id));
   await f.call('delivery_design', { action: 'review', review: { ...fixtureReview(entriesPlan(f)), id: second.result.id } });
   await f.call('delivery_design', { action: 'approve' });
+  // An explicit nested null must not shadow the valid top-level captureId.
+  await f.call('delivery_revise', { reason: 'Second adjustment', patch: { assumptions: ['newer'] } });
+  await f.call('delivery_design', { action: 'validate' });
+  const third = JSON.parse((await f.call('delivery_design', { action: 'inspect' })).content[0].text);
+  await f.call('delivery_design', { action: 'review', captureId: third.result.id, review: { ...fixtureReview(entriesPlan(f)), captureId: null } });
+  await f.call('delivery_design', { action: 'approve' });
 });
 function entriesPlan(f) { return f.entries.at(-1).data.plan; }
 
