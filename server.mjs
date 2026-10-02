@@ -20,6 +20,7 @@ import {
   verificationMode
 } from './lib/delivery.mjs';
 import { captureDeliveryReview, recordDeliveryReview } from './lib/delivery-review.mjs';
+import { compareVersions, latestReleaseCached, packageVersion, updateCheckEnabled } from './lib/update.mjs';
 import { lockWorkspace, selectReport } from './lib/workspace.mjs';
 import { createReport, latestReport, saveReport } from './lib/reports.mjs';
 
@@ -33,6 +34,19 @@ const enqueue = createSerialQueue();
 let pendingRuns = 0;
 let active = latestReport(cwd);
 let currentState = active?.state || { version: 1, status: 'idle', plan: null, evidence: {}, review: '', launch: '', limitations: [] };
+
+// Resolved once at startup (the shared cache throttles fetches to ~1/day) and
+// surfaced on /api/status so the dashboard can badge an available update.
+let updateState = null;
+if (updateCheckEnabled()) {
+  latestReleaseCached().then(({ release }) => {
+    const installed = packageVersion();
+    let available = false;
+    try { available = Boolean(installed && release && compareVersions(installed, release.version) < 0); }
+    catch { /* non-semver comparison input */ }
+    updateState = { installed, latest: release?.version || installed, available, tag: release?.tag, note: release?.note };
+  }).catch(() => { /* update check is best-effort */ });
+}
 
 app.disable('x-powered-by');
 app.use((req, res, next) => {
@@ -92,7 +106,8 @@ app.get('/api/status', (req, res) => {
       planningView: planningView(currentState, currentFingerprint),
       pendingChecks: pending,
       workspace: cwd,
-      report: active?.path || null
+      report: active?.path || null,
+      update: updateState
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
