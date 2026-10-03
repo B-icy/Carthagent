@@ -259,6 +259,26 @@ test('feed reducer handles a full run lifecycle', () => {
   assert.equal(user.text, 'build x');
 });
 
+test('run completion is announced only after the whole run settles, with Aleph and a brief flourish', () => {
+  const S = createFeed();
+  applyEvent(S, { type: 'agent_start' });
+  applyEvent(S, { type: 'message_start', message: { role: 'user', content: [{ type: 'text', text: 'ship it' }] } });
+  applyEvent(S, { type: 'message_start', message: { role: 'assistant', content: [] } });
+  applyEvent(S, { type: 'message_update', assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: 'Done.' } });
+  applyEvent(S, { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'Done.' }], stopReason: 'stop' } });
+  assert.equal(S.blocks.some(b => b.kind === 'completion'), false, 'assistant message alone is not the whole run');
+  applyEvent(S, { type: 'agent_end', messages: [] });
+  assert.equal(S.blocks.some(b => b.kind === 'completion'), false, 'wait for settled event');
+  applyEvent(S, { type: 'agent_settled' });
+  const completion = S.blocks.find(b => b.kind === 'completion');
+  assert.ok(completion);
+  const early = strip(renderFeed(S, 72, getTheme('opencode'), { now: completion.startedAt + 100, frame: 0 }).lines.join('\n'));
+  const late = strip(renderFeed(S, 72, getTheme('opencode'), { now: completion.startedAt + 1500, frame: 0 }).lines.join('\n'));
+  assert.match(early, /Run complete.*Aleph/);
+  assert.match(late, /Run complete.*Aleph/);
+  assert.notEqual(early, late, 'completion flourish changes during its short animation');
+});
+
 test('feed dedupes a locally echoed user prompt', () => {
   const S = createFeed();
   S.blocks.push({ kind: 'user', text: 'hi', t: Date.now() });
