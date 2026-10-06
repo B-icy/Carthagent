@@ -72,6 +72,15 @@ test('normalizeRelease fills defaults and returns null on unusable payloads', ()
   assert.equal(filled.installSpec, 'github:B-icy/Carthagent#v0.5.0');
 });
 
+test('normalizeRelease rejects install specs that do not install the release tag', () => {
+  // The manifest doubles as an install instruction: a tampered spec must
+  // never reach `npm install -g`.
+  assert.equal(normalizeRelease({ ...manifest, installSpec: 'github:attacker/evil#v9.9.9' }), null);
+  assert.equal(normalizeRelease({ ...manifest, installSpec: 'github:B-icy/Carthagent#v0.2.0' }), null);
+  assert.equal(normalizeRelease({ ...manifest, installSpec: 'carthagent@latest' }), null);
+  assert.equal(normalizeRelease(manifest).installSpec, 'github:B-icy/Carthagent#v0.3.0');
+});
+
 // ---- latestReleaseCached
 
 test('latestReleaseCached fetches once, then serves the cache', () => withTempDir(async dir => {
