@@ -532,6 +532,21 @@ test('standard mode accepts compact contracts and bounded discovery probe', asyn
   await f.call('delivery_check', { id: 'all' });
   await assert.rejects(f.call('delivery_finish', { status: 'verified', review: 'done', launch: 'n/a', limitations: [] }), /Review:/);
 });
+test('resumed runs keep their planned workflow guidance regardless of the launch flag', async t => {
+  const f = fixture(t, { approve: false });
+  await f.call('delivery_plan', f.plan);
+  assert.equal(f.entries.at(-1).data.workflowMode, 'strict');
+  f.flags['delivery-workflow'] = 'standard';
+  f.hooks.session_start({}, f.ctx);
+  const resumed = f.hooks.before_agent_start({ systemPrompt: 'base', prompt: 'continue the implementation' }, f.ctx).systemPrompt;
+  assert.doesNotMatch(resumed, /Standard delivery:/);
+  assert.match(f.hooks.tool_call({ toolName: 'write', input: { path: 'app.py' } }, f.ctx).reason, /approve/);
+  const g = fixture(t, { approve: false }); g.flags['delivery-workflow'] = 'standard';
+  await g.call('delivery_plan', g.plan);
+  g.flags['delivery-workflow'] = 'strict';
+  g.hooks.session_start({}, g.ctx);
+  assert.match(g.hooks.before_agent_start({ systemPrompt: 'base', prompt: 'continue the implementation' }, g.ctx).systemPrompt, /Standard delivery:/);
+});
 test('required validators cannot be omitted or replaced by model plans', options, async t => {
   const f = fixture(t);
   const manifest = join(f.cwd, 'validators.json');
