@@ -5,6 +5,7 @@ import { syncActiveModel, planSideWidth, makeKeyParser, matchSlash, slashCardDim
 import { UNICODE_GLYPHS, ASCII_GLYPHS, detectGlyphMode, resolveGlyphs } from '../lib/tui/glyphs.mjs';
 import { checkDigest, planD2, computePhase, freshChecks, PHASES } from '../lib/delivery.mjs';
 import { createFeed, resetFeed, applyEvent, summarizeArgs, renderFeed, hydrateFeed } from '../lib/tui/feed.mjs';
+import { CARTHAGE_LINES } from '../lib/tui/carthage.mjs';
 import { strip, width, wrap, truncate, hasTruecolor, sliceCols, inverseCols, mix, fg } from '../lib/tui/ansi.mjs';
 import { getTheme, resolveThemeName, flattenTheme, THEME_NAMES } from '../lib/tui/theme.mjs';
 import { framePrompt, shouldFrame, unframe, frameHint, FRAME_HINTS } from '../lib/tui/framing.mjs';
@@ -274,8 +275,9 @@ test('run completion is announced only after the whole run settles, with Aleph a
   assert.ok(completion);
   const early = strip(renderFeed(S, 72, getTheme('opencode'), { now: completion.startedAt + 100, frame: 0 }).lines.join('\n'));
   const late = strip(renderFeed(S, 72, getTheme('opencode'), { now: completion.startedAt + 1500, frame: 0 }).lines.join('\n'));
-  assert.match(early, /Run complete.*Aleph/);
-  assert.match(late, /Run complete.*Aleph/);
+  assert.ok(CARTHAGE_LINES.includes(completion.line), 'completion picks a Carthage line');
+  assert.match(early, new RegExp(`Run complete.*${completion.line.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+  assert.match(late, new RegExp(`Run complete.*${completion.line.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   assert.notEqual(early, late, 'completion flourish changes during its short animation');
 });
 
