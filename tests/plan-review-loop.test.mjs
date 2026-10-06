@@ -34,9 +34,12 @@ test('review errors distinguish a missing capture from a stale captureId and nam
   const capture = inspectPlanning(s, 'hash');
   assert.throws(() => recordPlanReview(s, 'hash', fixtureReview(s.plan)), new RegExp(`must be the id from the latest inspect result \\(${capture.id}\\)`));
   assert.throws(() => recordPlanReview(s, 'hash', { ...fixtureReview(s.plan), captureId: 'stale-id' }), new RegExp(`received "stale-id"`));
-  // Re-validation clears the capture: the id that just worked is useless again.
+  // Observational re-validation preserves the current capture.
   validatePlanning(s, 'hash');
-  assert.throws(() => recordPlanReview(s, 'hash', { ...fixtureReview(s.plan), captureId: capture.id }), /No current plan capture/);
+  recordPlanReview(s, 'hash', { ...fixtureReview(s.plan), captureId: capture.id });
+  approvePlanning(s, 'hash');
+  validatePlanning(s, 'hash');
+  assert.ok(s.planning.approval);
 });
 test('inspection receipts bind revision/snapshot and cannot pretend to be independent', () => {
   const s = state(); validatePlanning(s, 'hash');

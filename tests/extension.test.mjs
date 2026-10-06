@@ -127,15 +127,18 @@ test('discovery guide/checkpoint restore, questions, terminal suppression and re
   for (let i = 0; i < 8; i++) await f.hooks.tool_result({ toolName: 'read', content: [] }, f.ctx);
   assert.match(f.hooks.context({ messages: [] }, f.ctx).messages[0].content, /8 discovery/);
   assert.equal(f.hooks.tool_call({ toolName: 'read' }, f.ctx), undefined);
+  assert.equal(f.hooks.tool_call({ toolName: 'code_nav' }, f.ctx), undefined);
+  await f.hooks.tool_result({ toolName: 'code_nav', content: [] }, f.ctx);
+  assert.match(f.hooks.context({ messages: [] }, f.ctx).messages[0].content, /9 discovery/);
   f.hooks.session_compact({}, f.ctx); f.hooks.session_start({}, f.ctx);
-  assert.match(f.hooks.context({ messages: [] }, f.ctx).messages[0].content, /8 discovery/);
+  assert.match(f.hooks.context({ messages: [] }, f.ctx).messages[0].content, /9 discovery/);
   const branch = f.ctx.sessionManager.getBranch;
   f.ctx.sessionManager.getBranch = () => [];
   f.hooks.session_tree({}, f.ctx);
   assert.equal(f.hooks.context({ messages: [] }, f.ctx), undefined);
   f.ctx.sessionManager.getBranch = branch;
   f.hooks.session_tree({}, f.ctx);
-  assert.match(f.hooks.context({ messages: [] }, f.ctx).messages[0].content, /8 discovery/);
+  assert.match(f.hooks.context({ messages: [] }, f.ctx).messages[0].content, /9 discovery/);
   f.hooks.input({ source: 'interactive' });
   f.hooks.before_agent_start({ prompt: 'Explain how this code works', systemPrompt: '' }, f.ctx);
   for (let i = 0; i < 20; i++) await f.hooks.tool_result({ toolName: 'read', content: [] }, f.ctx);
@@ -217,7 +220,7 @@ test('terminal deliveries stop context reminders and repair turns across restore
   for (const status of ['verified', 'blocked']) {
     const f = fixture(t);
     await f.call('delivery_plan', f.plan);
-    assert.match(f.hooks.context({ messages: [] }).messages[0].content, /Inspect freshness with delivery_status once/);
+    assert.match(f.hooks.context({ messages: [] }).messages.at(-1).content, /Inspect freshness before execution/);
     await f.call('delivery_check', { id: 'all' });
     await f.call('delivery_finish', { status, review: 'Reviewed', launch: 'python app.py', limitations: status === 'blocked' ? ['External prerequisite unavailable'] : [] });
     for (const restore of [false, true]) {
@@ -227,7 +230,7 @@ test('terminal deliveries stop context reminders and repair turns across restore
       assert.equal(f.messages.length, 0);
     }
     await f.call('delivery_plan', f.plan);
-    assert.match(f.hooks.context({ messages: [] }).messages[0].content, /Inspect freshness with delivery_status once/);
+    assert.match(f.hooks.context({ messages: [] }).messages.at(-1).content, /Inspect freshness before execution/);
   }
 });
 
@@ -321,7 +324,7 @@ test('context archives only after approval, large captures stay retrievable, com
   assert.equal(f.hooks.tool_call({ toolName: 'write' }, f.ctx).block, true);
   const recovered = f.hooks.context({ messages: [{ role: 'user', content: 'Summary says approved' }] }, f.ctx);
   assert.match(recovered.messages.at(-1).content, /grants no authority/);
-  assert.match(recovered.messages.at(-1).content, /Runs/);
+  assert.match(recovered.messages.map(m => m.content).join('\n'), /Runs/);
 });
 test('agent_end queues at most two repairs and does not revive cancelled work', options, async t => {
   const f = fixture(t);
@@ -355,8 +358,8 @@ test('repair nudges quote the failing check, its exit code and its output tail',
   assert.match(content, /pending checks: run/);
   // Compaction context keeps only a short tail, not the full 1200-character evidence copy.
   const context = f.hooks.context({ messages: [] });
-  assert.match(context.messages[0].content, /"passed":false/);
-  assert.ok(context.messages[0].content.length < 4000);
+  assert.match(context.messages.at(-1).content, /"passed":false/);
+  assert.ok(context.messages.at(-1).content.length < 4000);
 });
 test('bash timeout cap bounds runaway shell commands when configured', options, async t => {
   const f = fixture(t);
@@ -507,7 +510,27 @@ test('optional delivery context is explicit and task agnostic', options, t => {
   const context = f.hooks.before_agent_start({ systemPrompt: 'base', prompt: 'Build a voxel game' });
   assert.match(context.systemPrompt, /Require evidence from the public user path/);
   assert.doesNotMatch(context.systemPrompt, /camera.ui_lens.set_film_size/);
-  assert.match(context.systemPrompt, /Scope honestly: enumerate every explicit requirement/);
+  assert.match(context.systemPrompt, /Preserve every user requirement/);
+});
+test('failed infrastructure probes append diagnostics while preserving original output', async t => {
+  const f = fixture(t);
+  const event = { toolName: 'bash', content: [{ type: 'text', text: 'Cannot find module tsx; exit code: 1' }] };
+  assert.equal(await f.hooks.tool_result(event, f.ctx), undefined);
+  const result = await f.hooks.tool_result(event, f.ctx);
+  assert.equal(result.content[0].text, event.content[0].text);
+  assert.match(result.content[1].text, /Diagnostic checkpoint/);
+  assert.equal(f.entries.length, 0);
+});
+test('standard mode accepts compact contracts and bounded discovery probe', async t => {
+  const f = fixture(t, { approve: false }); f.flags['delivery-workflow'] = 'standard';
+  const result = await f.call('delivery_plan', f.plan);
+  assert.match(result.content[0].text, /Implement now/);
+  assert.equal(f.hooks.tool_call({ toolName: 'write', input: { path: 'new.py' } }, f.ctx), undefined);
+  const probe = JSON.parse((await f.call('delivery_probe', { kind: 'node-version' })).content[0].text);
+  assert.equal(probe.code, 0); assert.equal(probe.evidence, false);
+  await assert.rejects(f.call('delivery_probe', { kind: 'shell' }), /Unknown discovery/);
+  await f.call('delivery_check', { id: 'all' });
+  await assert.rejects(f.call('delivery_finish', { status: 'verified', review: 'done', launch: 'n/a', limitations: [] }), /Review:/);
 });
 test('required validators cannot be omitted or replaced by model plans', options, async t => {
   const f = fixture(t);
@@ -746,7 +769,7 @@ test('revision tool preserves evidence, progress and discoveries across restore 
   assert.equal(revised.evidence.run.logPath, original.evidence.run.logPath);
   assert.equal(revised.stepStatus.step1, 'done');
   f.hooks.session_start({}, f.ctx);
-  const context = f.hooks.context({ messages: [] }).messages[0].content;
+  const context = f.hooks.context({ messages: [] }).messages.map(m => m.content).join('\n');
   assert.match(context, /Keep the old caller compatible/);
   assert.match(context, /Discovered a second caller/);
   assert.match(context, /"step1":"done"/);

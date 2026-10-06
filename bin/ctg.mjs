@@ -104,6 +104,8 @@ function printHelp() {
   --guide                 Force delivery framing on (default)
   --ascii                 Plain-ASCII glyphs (for fonts that render icons as ?)
   --glyphs <mode>         Glyph tier: auto (default) | unicode | ascii
+  --codegraph-max-files <n> Maximum source files indexed for structural navigation (default 8000)
+  --workflow <mode>       standard (default) or strict tested-design ceremony
   --demo                  Drive the console with a scripted mock run (no provider)
   -p, --print             Headless passthrough: text output without TUI
   --json                  Headless JSONL engine events (tool starts/results and messages)
@@ -130,6 +132,8 @@ const TUI_FLAGS = {
   '--engine-cli': 'engineCli', '--agent-cli': 'engineCli', '--validators': 'validators', '--context': 'context', '--bash-cap': 'bashCap',
   '--max-tools': 'maxTools', '--max-seconds': 'maxSeconds', '--max-repairs': 'maxRepairs',
   '--session': 'session', '--review': 'review', '--glyphs': 'glyphs',
+  '--codegraph-max-files': 'codegraphMaxFiles',
+  '--workflow': 'workflow',
 };
 const TUI_BOOL = {
   '--isolate': ['isolate', true], '--no-strict': ['strict', false], '--strict': ['strict', true],
