@@ -7,6 +7,7 @@ import {
   cleanStaleGlobalInstall,
   compareVersions,
   detectInstallMethod,
+  fetchLatestRelease,
   latestReleaseCached,
   normalizeRelease,
   staleGlobalInstallPaths,
@@ -70,6 +71,33 @@ test('normalizeRelease fills defaults and returns null on unusable payloads', ()
   const filled = normalizeRelease({ version: '0.5.0' });
   assert.equal(filled.tag, 'v0.5.0');
   assert.equal(filled.installSpec, 'github:B-icy/Carthagent#v0.5.0');
+});
+
+test('normalizeRelease rejects install specs that do not install the release tag', () => {
+  // The manifest doubles as an install instruction: a tampered spec must
+  // never reach `npm install -g`.
+  assert.equal(normalizeRelease({ ...manifest, installSpec: 'github:attacker/evil#v9.9.9' }), null);
+  assert.equal(normalizeRelease({ ...manifest, installSpec: 'github:B-icy/Carthagent#v0.2.0' }), null);
+  assert.equal(normalizeRelease({ ...manifest, installSpec: 'carthagent@latest' }), null);
+  assert.equal(normalizeRelease(manifest).installSpec, 'github:B-icy/Carthagent#v0.3.0');
+});
+
+test('fetchLatestRelease falls back to GitHub when the manifest fails validation', async () => {
+  // A control-plane 200 whose installSpec is rejected must not dead-end the
+  // update — the GitHub release still resolves.
+  const urls = [];
+  const fetchImpl = async url => {
+    urls.push(url);
+    if (url.includes('/v1/cli/releases/latest')) {
+      return { status: 200, json: async () => ({ ...manifest, installSpec: 'carthagent@latest' }) };
+    }
+    return { status: 200, json: async () => ({ tag_name: 'v0.3.1', published_at: '2026-03-01T00:00:00Z' }) };
+  };
+  const { release, source } = await fetchLatestRelease({ cloudUrl: 'https://cloud.test', fetchImpl });
+  assert.equal(source, 'github');
+  assert.equal(release.version, '0.3.1');
+  assert.equal(release.installSpec, 'github:B-icy/Carthagent#v0.3.1');
+  assert.equal(urls.length, 2);
 });
 
 // ---- latestReleaseCached
