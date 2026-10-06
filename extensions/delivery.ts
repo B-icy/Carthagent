@@ -240,6 +240,8 @@ export default function delivery(pi: ExtensionAPI) {
   pi.on('before_agent_start', (event, ctx) => {
     const configuredWorkflow = pi.getFlag('delivery-workflow') ?? 'strict';
     if (!['standard', 'strict'].includes(String(configuredWorkflow))) throw Error('delivery-workflow must be standard or strict');
+    // An active run keeps the mode it was planned under; the flag only selects the mode for new runs.
+    const workflow = state && !['verified', 'blocked'].includes(state.status) ? (state.workflowMode === 'standard' ? 'standard' : 'strict') : configuredWorkflow;
     const routed = routeGuidance(event.prompt, { cwd: ctx?.cwd || process.cwd(), profiles: guidanceProfiles });
     activeGuidance = state && !['verified', 'blocked'].includes(state.status)
       ? [...new Map([...activeGuidance, ...routed].map(profile => [profile.id, profile])).values()].sort((a, b) => b.priority - a.priority)
@@ -248,12 +250,12 @@ export default function delivery(pi: ExtensionAPI) {
       discovery = newDiscovery(true); saveDiscovery();
     }
     let guidance = DELIVERY_INVARIANTS + '\n' + deliveryPhaseGuidance(state);
-    if (pi.getFlag('delivery-workflow') === 'standard') guidance = 'Standard delivery: inspect relevant files (ls/find/read/code_nav); create delivery_plan with complete requirements, artifact roots, a few steps and real checks. A valid required plan enables implementation immediately: design components/scenario ceremony is optional. Revisions merge design/workflow fields, replace supplied arrays, preserve obligations and require fresh final evidence, not repeated approval. Mark implementation steps done independently of integrated check execution. Use delivery_check all, final delivery_review inspect/record, then delivery_finish with honest limitations. No fabricated evidence, scope reduction or unrequested dependency changes. Informational plans do not authorize implementation. For bounded environment versions use delivery_probe kind=node-version or npm-version; inspect other APIs through read.';
+    if (workflow === 'standard') guidance = 'Standard delivery: inspect relevant files (ls/find/read/code_nav); create delivery_plan with complete requirements, artifact roots, a few steps and real checks. A valid required plan enables implementation immediately: design components/scenario ceremony is optional. Revisions merge design/workflow fields, replace supplied arrays, preserve obligations and require fresh final evidence, not repeated approval. Mark implementation steps done independently of integrated check execution. Use delivery_check all, final delivery_review inspect/record, then delivery_finish with honest limitations. No fabricated evidence, scope reduction or unrequested dependency changes. Informational plans do not authorize implementation. For bounded environment versions use delivery_probe kind=node-version or npm-version; inspect other APIs through read.';
     if (/\b(test|typescript|route|backend|api)\b/i.test(event.prompt)) guidance += '\n' + TEST_INFRASTRUCTURE_GUIDANCE;
     if (activeGuidance.some(profile => /web|browser/.test(profile.id)) || /\b(browser|web|frontend|screenshot)\b/i.test(event.prompt)) guidance += BROWSER_CHECK_GUIDANCE;
     const supportsImages = !Array.isArray(ctx?.model?.input) || ctx.model.input.includes('image');
     if (!supportsImages) guidance += `\nThis session's model cannot process images: do not attempt to view, read, or reason over image files or screenshots — visual review is unavailable. Verify visual behavior through DOM structure, computed styles, and console evidence instead; screenshots remain useful as evidence artifacts for the user even though you cannot inspect them.`;
-    if (discovery.active && pi.getFlag('delivery-workflow') !== 'standard') guidance += '\n\n' + PLANNING_START;
+    if (discovery.active && workflow !== 'standard') guidance += '\n\n' + PLANNING_START;
     const routedText = formatGuidance(activeGuidance);
     if (routedText) guidance += `\n\n${routedText}`;
     if (extraGuidance) guidance += `\n\nTask-specific delivery context:\n${extraGuidance}`;

@@ -1,6 +1,6 @@
 import { truncateTail, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { createCodeIndex } from '../lib/codegraph.mjs';
-import { queryCodeIndex } from '../lib/codegraph-query.mjs';
+import { boundedCodeNavResult } from '../lib/codegraph-query.mjs';
 
 type CodeIndex = Awaited<ReturnType<typeof createCodeIndex>>;
 export default function codegraph(pi: ExtensionAPI) {
@@ -28,13 +28,7 @@ export default function codegraph(pi: ExtensionAPI) {
     async execute(_id, params: { op: string; name?: string; path?: string; container?: string; limit?: number; offset?: number }, _signal: unknown, _update: unknown, ctx: ExtensionContext) {
       const index = await indexFor(ctx);
       await index.refresh();
-      // Reduce the page instead of losing the completion metadata through truncation.
-      let result = queryCodeIndex(index, params);
-      let serialized = JSON.stringify(result);
-      while (Buffer.byteLength(serialized) > 23000 && result.returned > 1) {
-        result = queryCodeIndex(index, { ...params, limit: Math.max(1, Math.floor(result.returned / 2)) });
-        serialized = JSON.stringify(result);
-      }
+      const serialized = boundedCodeNavResult(index, params);
       const output = truncateTail(serialized, { maxBytes: 24000, maxLines: 400 });
       return { content: [{ type: 'text' as const, text: output.content + (output.truncated ? '\n[Oversized record truncated; narrow query.]' : '') }], details: {} };
     },

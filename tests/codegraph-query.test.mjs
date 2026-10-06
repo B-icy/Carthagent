@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createCodeIndex } from '../lib/codegraph.mjs';
-import { queryCodeIndex } from '../lib/codegraph-query.mjs';
+import { queryCodeIndex, boundedCodeNavResult } from '../lib/codegraph-query.mjs';
 import { buildEngineArgs } from '../lib/engine.mjs';
 import { needsImplementation } from '../lib/planning-access.mjs';
 
@@ -40,4 +40,27 @@ test('coverage counts remain stable across refreshes and disclose capped indexin
   assert.equal(index.stats().skipped, 2); assert.equal(index.stats().discovered, 3);
   assert.equal(index.stats().complete, false); assert.equal(index.stats().parsed, before.parsed);
   assert.equal(queryCodeIndex(index, { op: 'symbols', name: 'a' }).coverage.complete, false);
+});
+test('unreadable directories mark coverage incomplete', { skip: process.platform === 'win32' || process.getuid?.() === 0 }, async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'graph-unreadable-'));
+  writeFileSync(join(dir, 'a.ts'), 'function a() {}');
+  mkdirSync(join(dir, 'private')); writeFileSync(join(dir, 'private', 'b.ts'), 'function hidden() {}');
+  chmodSync(join(dir, 'private'), 0o000);
+  t.after(() => { chmodSync(join(dir, 'private'), 0o755); rmSync(dir, { recursive: true, force: true }); });
+  const index = await createCodeIndex(dir);
+  assert.equal(index.stats().unreadable, 1); assert.equal(index.stats().complete, false);
+  assert.deepEqual(queryCodeIndex(index, { op: 'definition', name: 'hidden' }).coverage, { files: 1, discovered: 1, skipped: 0, unreadable: 1, parseErrors: 0, complete: false });
+  chmodSync(join(dir, 'private'), 0o755); await index.refresh();
+  assert.equal(index.stats().unreadable, 0); assert.equal(index.stats().complete, true);
+});
+test('oversized graph records keep a parseable envelope and pagination', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'graph-oversized-')); t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(join(dir, 'big.ts'), `function ${'x'.repeat(30000)}() {}\nfunction xsmall() {}`);
+  const index = await createCodeIndex(dir);
+  const serialized = boundedCodeNavResult(index, { op: 'symbols', name: 'x' });
+  assert.ok(Buffer.byteLength(serialized) <= 23000);
+  const page = JSON.parse(serialized);
+  assert.equal(page.total, 2); assert.equal(page.returned, 1); assert.equal(page.nextOffset, 1);
+  assert.match(page.clipped, /shortened/); assert.match(page.results[0].name, /30000 chars/);
+  assert.equal(JSON.parse(boundedCodeNavResult(index, { op: 'symbols', name: 'x', offset: 1 })).results[0].name, 'xsmall');
 });
