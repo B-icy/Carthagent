@@ -15,11 +15,11 @@ import {
   runCommand,
   createSerialQueue,
   revisePlan,
-  validatePlanPatch,
   completionIssues,
   verificationMode
 } from './lib/delivery.mjs';
 import { captureDeliveryReview, recordDeliveryReview } from './lib/delivery-review.mjs';
+import { mergePlanPatch } from './lib/delivery.mjs';
 import { compareVersions, latestReleaseCached, packageVersion, updateCheckEnabled } from './lib/update.mjs';
 import { lockWorkspace, selectReport } from './lib/workspace.mjs';
 import { createReport, latestReport, saveReport } from './lib/reports.mjs';
@@ -176,7 +176,7 @@ app.post('/api/plan/revise', (req, res) => {
   try {
     if (!currentState.plan) throw Error('No active plan');
     const required = currentState.plan.checks.filter(c => c.id.startsWith('required_'));
-    const plan = bindRequiredChecks({ ...currentState.plan, ...validatePlanPatch(req.body.patch) }, required);
+    const plan = bindRequiredChecks(mergePlanPatch(currentState.plan, req.body.patch), required);
     currentState = revisePlan(currentState, plan, { cwd, hash: fingerprint(cwd, ['.']), reason: req.body.reason });
     persist();
     res.json({ success: true, revision: currentState.revision, report: active.path });

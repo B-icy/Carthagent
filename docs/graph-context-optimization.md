@@ -1,0 +1,15 @@
+# Graph-first discovery and compact delivery context
+
+`code_nav` is a trusted read-only discovery tool; unknown custom tools remain locked. Discovery checkpoints count graph queries alongside reads/searches. The CLI forwards `--codegraph-max-files` (positive safe integer, default 8000) through the shared engine adapter.
+
+Graph responses include results, returned/total counts, offset/nextOffset and current index coverage. `path` filters definition/symbol/caller call-site files; `container` filters declared containers or enclosing callers. Call edges remain name-based candidates, not resolved runtime bindings. Use pagination/filtering for incomplete results and source reads for authority. Parse/skip counts describe the current refresh; totalParseErrors/parsed/parseMs are cumulative. Unsupported and intentionally excluded files are outside coverage.
+
+Permanent delivery guidance now contains concise invariants; discovery/design/implementation instructions are supplied by phase. The compact delivery prompt retains classification, approval, verification and truthful handoff obligations. Browser instructions are conditional on task/profile relevance. The software-delivery skill recommends graph lookup -> consumers -> targeted source reads, with grep for strings/config/SQL.
+
+Context recovery separates a full exact-obligation checkpoint from current progress/findings/evidence. The outbound checkpoint retains its position while its source-history anchor remains. When compaction removes that anchor, restoration clears the cache, or contract identity changes, full obligations are restored. Stored session/report history and deterministic approval/freshness gates remain authoritative. This is not permission inferred from model memory.
+
+## Pilot outcome
+
+Follow-up adds advisory execution diagnostics after two/four consecutive failures and concise testing guidance against custom-loader overengineering, exit-masking pipelines, unrelated dependency changes and fake types. The repeat uses a natural user request with no benchmark/budget/test-technique hints; time/tool ceilings are external only. `/home/baissi/ctg_test/repeat-results.html` preserves the changed protocol. Neither repeat arm completed: updated timed out after core code (31/33 frozen checks, missing tests/docs), baseline ended before code on a malformed provider stream. No relative efficiency claim is justified; source review also found an auth-exception preservation gap missed by the evaluator.
+
+A one-task old/new pilot lives at `/home/baissi/ctg_test/results.html`, with task, frozen source manifests, provider receipts, events and independent quality checks alongside it. Both runs hit the 900-second allowance before delivery_finish. New used more aggregate input and cost despite lower mean input per request; its custom test-loader debugging consumed additional turns. This does not demonstrate a completion-rate or total-cost improvement. Follow-up should focus on test infrastructure guidance and limiting unproductive probe/revision loops, then use repeated randomized trials. No paid rerun was silently substituted for the failed outcome.

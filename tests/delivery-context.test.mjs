@@ -8,6 +8,8 @@ import { archiveContext } from '../lib/context-archive.mjs';
 import { approveFixture } from './helpers/tested-design.mjs';
 import { planningStatus } from '../lib/planning.mjs';
 import { fingerprint, revisePlan } from '../lib/delivery.mjs';
+import { recoveryMessages } from '../lib/delivery-context.mjs';
+import { DELIVERY_INVARIANTS, deliveryPhaseGuidance } from '../lib/delivery-guidance.mjs';
 const plan = { goal:'Exact obligations',assumptions:[],artifacts:['.'],outputs:['release.txt'],steps:['Implement'],acceptance:[{requirement:'Keep every cent exactly',checks:['required_money']}],checks:[{id:'required_money',kind:'test',argv:['node','verify.mjs'],timeoutSeconds:5}] };
 function turn(id,name='delivery_status',isError=false){return [{role:'assistant',stopReason:'toolUse',timestamp:1,content:[{type:'thinking',thinking:'x'.repeat(3000),thinkingSignature:'unchanged'},{type:'toolCall',id,name,arguments:{plan:'x'.repeat(5000)}}]},{role:'toolResult',toolCallId:id,toolName:name,isError,content:[{type:'text',text:'x'.repeat(5000)}]}];}
 test('outbound archives preserve users/failures/pairing and leave stored history untouched',t=>{
@@ -33,4 +35,32 @@ test('recovery preserves exact obligations, failed evidence/blockers; cannot rev
 test('compact review receipt retains findings/limitations and metrics never copy secret payloads',()=>{
  const receipt={runId:'r',walkthroughs:[{trace:'x'.repeat(10000)}],challenges:['long'],findings:[{description:'failure'}],limitations:['model authored']};const compact=designReceipt('review',receipt);assert.deepEqual(compact.findings,receipt.findings);assert.equal(compact.walkthroughCount,1);assert.ok(jsonBytes(compact)<jsonBytes(receipt)/10);
  const payload={tools:[{function:{name:'read'}}],messages:[{role:'system',content:'SECRET'},{role:'assistant',reasoning_details:[{text:'秘密'}],content:'hi'},{role:'tool',content:'SECRET'}]};const m=contextMetrics(payload);assert.equal(Object.values(m.categories).reduce((a,b)=>a+b,0),m.totalBytes);assert.ok(m.categories.reasoning>0);assert.ok(m.categories.envelope>=0);assert.ok(!JSON.stringify(m).includes('SECRET'));
+});
+test('checkpoint is not repeated; compaction/revision restore exact obligations and current failures', () => {
+ const state={runId:'r',revision:1,plan:structuredClone(plan),status:'implementing',evidence:{required_money:{passed:false,code:9}},stepStatus:{}};
+ const summary=deliveryRecovery(state);
+ const first=recoveryMessages([],summary);
+ assert.equal(first.filter(m=>m.customType==='delivery-checkpoint').length,1);
+ assert.deepEqual(JSON.parse(first[0].content).acceptance,plan.acceptance);
+ const second=recoveryMessages(first,summary);
+ assert.equal(second.length,2); assert.equal(second[0],first[0]);
+ assert.equal(JSON.parse(second[1].content).evidence.required_money.passed,false);
+ const compacted=recoveryMessages([{role:'user',content:'summary without checkpoint'}],summary);
+ assert.deepEqual(JSON.parse(compacted[1].content).checks,plan.checks);
+ const changed=recoveryMessages(second,{...summary,revision:2,acceptance:[...summary.acceptance,{requirement:'New',checks:['required_money']}]});
+ assert.equal(changed.filter(m=>m.customType==='delivery-checkpoint').length,1);
+ assert.equal(JSON.parse(changed[0].content).acceptance.length,2);
+ assert.ok(DELIVERY_INVARIANTS.length<2000); assert.match(deliveryPhaseGuidance(null),/code_nav/);
+ assert.match(deliveryPhaseGuidance(state),/Design:/);
+ assert.match(deliveryPhaseGuidance({...state,planning:{approval:{}}}),/snapshot|delivery_review/);
+});
+test('outbound-only checkpoints retain their position until their history anchor disappears', () => {
+ const summary=deliveryRecovery({runId:'r',revision:1,plan,status:'implementing',evidence:{}});
+ const cache={}; const anchor={role:'toolResult',toolCallId:'plan',content:'created'};
+ const first=recoveryMessages([anchor],summary,cache);
+ const checkpoint=first[1];
+ const second=recoveryMessages([anchor,{role:'assistant',content:'next'}],summary,cache);
+ assert.equal(second[1],checkpoint);
+ const third=recoveryMessages([{role:'user',content:'compacted'}],summary,cache);
+ assert.notEqual(third[1],checkpoint); assert.deepEqual(JSON.parse(third[1].content).acceptance,plan.acceptance);
 });
