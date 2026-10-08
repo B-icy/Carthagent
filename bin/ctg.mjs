@@ -216,7 +216,8 @@ async function handleTui(list) {
       env: {
         ...process.env,
         CARTHAGENT_CODING_AGENT_DIR: process.env.CARTHAGENT_CODING_AGENT_DIR || defaultAgentDir,
-        PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR || defaultAgentDir
+        PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR || defaultAgentDir,
+        CARTHAGENT_RUN_MODE: 'print'
       }
     });
     child.on('error', error => { console.error(error.message); process.exitCode = 1; });
