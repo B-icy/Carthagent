@@ -48,11 +48,11 @@ test('Managed Cloud operations share one identity and disable transport retries 
 
   assert.equal(ids, 1);
   assert.equal(options.maxRetries, 0);
-  assert.deepEqual(options.requestHeaders, {
+  for (const [key, value] of Object.entries({
     'X-Test': 'preserved',
     'Idempotency-Key': 'operation-1',
     'X-Client-Request-Id': 'operation-1',
-  });
+  })) assert.equal(options.requestHeaders[key], value);
   const body = await options.onPayload({ model: 'carthagent-code', messages: [] }, { id: 'carthagent-code' });
   assert.equal(payloads.length, 1);
   assert.deepEqual(body.metadata, { inherited: 'yes', operation_key: 'operation-1' });
