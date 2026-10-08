@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execFile } from 'node:child_process';
 import os from 'node:os';
 
 const packageVersion = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')).version;
@@ -34,6 +35,26 @@ test('install id persists across runs and is regenerated when the file is corrup
   assert.equal(shipInstallId({ agentDir }), regenerated);
 });
 
+test('concurrent first runs and corrupt repairs converge on one install id', async t => {
+  const lib = new URL('../lib/ship-telemetry.mjs', import.meta.url).href;
+  const run = agentDir => new Promise((resolve, reject) =>
+    execFile(process.execPath, ['--input-type=module', '-e',
+      `import { shipInstallId } from '${lib}'; console.log(shipInstallId({ agentDir: ${JSON.stringify(agentDir)} }));`],
+      (error, stdout) => error ? reject(error) : resolve(stdout.trim())));
+  // Fresh directory: racing launches adopt a single id.
+  const fresh = tmp(t);
+  const ids = await Promise.all([run(fresh), run(fresh), run(fresh), run(fresh)]);
+  assert.equal(new Set(ids).size, 1);
+  assert.match(ids[0], UUID);
+  assert.equal(readFileSync(installIdPath(fresh), 'utf8').trim(), ids[0]);
+  // Corrupt file: racing repairs also converge.
+  const corrupt = tmp(t);
+  writeFileSync(installIdPath(corrupt), 'garbage');
+  const repaired = await Promise.all([run(corrupt), run(corrupt), run(corrupt), run(corrupt)]);
+  assert.equal(new Set(repaired).size, 1);
+  assert.equal(readFileSync(installIdPath(corrupt), 'utf8').trim(), repaired[0]);
+});
+
 test('provider mode reflects ship, byok, both, or no credentials', t => {
   const agentDir = tmp(t);
   assert.equal(providerMode({ agentDir, env: {} }), 'none');
@@ -46,6 +67,12 @@ test('provider mode reflects ship, byok, both, or no credentials', t => {
   assert.equal(providerMode({ agentDir, env: {} }), 'byok');
   writeFileSync(join(agentDir, 'auth.json'), JSON.stringify({ anthropic: { type: 'api_key', key: 'k' } }));
   assert.equal(providerMode({ agentDir, env: {} }), 'byok');
+  // A direct key in models.json — even under the Ship provider id — is BYOK.
+  writeFileSync(join(agentDir, 'auth.json'), '{}');
+  writeFileSync(join(agentDir, 'models.json'), JSON.stringify({ providers: { 'experiential-labs': { apiKey: 'direct' } } }));
+  assert.equal(providerMode({ agentDir, env: {} }), 'byok');
+  writeFileSync(join(agentDir, 'auth.json'), JSON.stringify({ 'experiential-labs': { type: 'oauth', access: 'a' } }));
+  assert.equal(providerMode({ agentDir, env: {} }), 'ship+byok');
 });
 
 test('update check sends the install headers to the control plane only', async t => {
