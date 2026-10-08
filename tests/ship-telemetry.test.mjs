@@ -2,7 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import os from 'node:os';
+
+const packageVersion = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')).version;
 import {
   installIdPath, shipInstallId, providerMode,
   noteEngineSession, noteAgentTurn, shipRequestHeaders, resetShipContext,
@@ -38,6 +41,9 @@ test('provider mode reflects ship, byok, both, or no credentials', t => {
   writeFileSync(join(agentDir, 'auth.json'), JSON.stringify({ 'experiential-labs': { type: 'oauth', access: 'a', refresh: 'r', expires: 1 } }));
   assert.equal(providerMode({ agentDir, env: {} }), 'ship');
   assert.equal(providerMode({ agentDir, env: { OPENAI_API_KEY: 'k' } }), 'ship+byok');
+  // A direct api_key under the Ship provider id is BYOK, not a Ship account.
+  writeFileSync(join(agentDir, 'auth.json'), JSON.stringify({ 'experiential-labs': { type: 'api_key', key: 'k' } }));
+  assert.equal(providerMode({ agentDir, env: {} }), 'byok');
   writeFileSync(join(agentDir, 'auth.json'), JSON.stringify({ anthropic: { type: 'api_key', key: 'k' } }));
   assert.equal(providerMode({ agentDir, env: {} }), 'byok');
 });
@@ -62,7 +68,7 @@ test('update check sends the install headers to the control plane only', async t
   assert.equal(control.headers['x-carthagent-arch'], process.arch);
   assert.equal(control.headers['x-carthagent-node'], process.versions.node);
   assert.equal(control.headers['x-carthagent-provider-mode'], 'none');
-  assert.equal(control.headers['x-carthagent-version'], JSON.parse(readFileSync(join(new URL('..', import.meta.url).pathname, 'package.json'), 'utf8')).version);
+  assert.equal(control.headers['x-carthagent-version'], packageVersion);
   assert.equal(github.headers['x-carthagent-install-id'], undefined);
 });
 
@@ -88,7 +94,7 @@ test('managed requests carry thread, turn, install and run-mode headers', t => {
   assert.equal(first['x-carthagent-turn'], '1');
   assert.match(first['x-carthagent-install-id'], UUID);
   assert.equal(first['x-carthagent-run-mode'], 'interactive');
-  assert.equal(first['x-carthagent-version'], JSON.parse(readFileSync(join(new URL('..', import.meta.url).pathname, 'package.json'), 'utf8')).version);
+  assert.equal(first['x-carthagent-version'], packageVersion);
   assert.equal(first['Idempotency-Key'], 'op-1');
 
   // More model calls inside the same user turn keep the turn number; the next
@@ -97,12 +103,16 @@ test('managed requests carry thread, turn, install and run-mode headers', t => {
   noteAgentTurn();
   assert.equal(managedCloudRequestOptions({}, () => 'op-3').requestHeaders['x-carthagent-turn'], '2');
 
-  // A new engine session rethreads and restarts the counter.
+  // session_start with the same id (extension reload) keeps the turn count.
   noteEngineSession('aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee');
   noteAgentTurn();
+  noteEngineSession('aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee');
   const headers = shipRequestHeaders({ env });
   assert.equal(headers['x-carthagent-thread-id'], 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee');
   assert.equal(headers['x-carthagent-turn'], '1');
+  // A different session id rethreads and restarts the counter.
+  noteEngineSession('cccccccc-dddd-4eee-8fff-000000000000');
+  assert.equal(shipRequestHeaders({ env })['x-carthagent-turn'], '0');
 
   // Without a session event a thread id is still minted; print mode is stamped.
   noteEngineSession(null);
