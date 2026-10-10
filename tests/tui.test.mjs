@@ -18,6 +18,19 @@ import { tmpdir } from 'node:os';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
+test('compaction notices distinguish success, failure and cancellation', () => {
+  for (const [event, expected] of [
+    [{errorMessage:'Summarization failed: request_too_large'},'compaction failed'],
+    [{aborted:true},'compaction aborted'],
+    [{},'context compacted'],
+  ]) {
+    const feed=createFeed();
+    applyEvent(feed,{type:'compaction_end',...event});
+    assert.ok(feed.blocks.at(-1).text.startsWith(expected));
+    if (event.errorMessage) assert.equal(feed.blocks.at(-1).tone,'error');
+  }
+});
+
 test('Cloud managed-usage exhaustion is detected only for failed Cloud assistant messages', () => {
   assert.equal(isCloudCreditExhaustion({ type: 'message_end', message: { role: 'assistant', provider: 'experiential-labs', stopReason: 'error', errorMessage: 'insufficient_quota' } }), true);
   assert.equal(isCloudCreditExhaustion({ type: 'message_end', message: { role: 'assistant', stopReason: 'error', errorMessage: 'credit is exhausted' } }, 'experiential-labs/model'), true);
