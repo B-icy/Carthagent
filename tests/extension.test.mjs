@@ -836,6 +836,25 @@ test('structured steps and promised outputs are enforced consistently by status 
   await f.call('delivery_finish', finish);
 });
 
+test('review acceptance gaps persist through session restore and cannot be relabeled as limitations', async t => {
+  const f = fixture(t);
+  await f.call('delivery_plan', f.plan);
+  await f.call('delivery_check', { id: 'all' });
+  const capture = JSON.parse((await f.call('delivery_review', { action: 'inspect' })).content[0].text);
+  const review = { action: 'record', captureId: capture.id, coverage: [{ requirement: 'Runs', assertions: 'Only component behavior checked', status: 'unverified' }], probes: ['component check exited zero'], findings: [], limitations: [] };
+  const result = JSON.parse((await f.call('delivery_review', review)).content[0].text);
+  assert.equal(result.recorded, false);
+  assert.equal(f.entries.at(-1).data.reviewFindings.length, 1);
+  await f.hooks.session_start({}, f.ctx);
+  review.coverage[0] = { requirement: 'Runs', assertions: 'component check exited zero' };
+  review.limitations = ['No integration test'];
+  assert.equal(JSON.parse((await f.call('delivery_review', review)).content[0].text).recorded, false);
+  await assert.rejects(f.call('delivery_finish', { status: 'verified', review: 'done', launch: 'n/a', limitations: review.limitations }), /Unresolved review finding/);
+  const resolved = await f.call('delivery_review', { ...review, resolutions: [{ id: result.unresolvedFindings[0].id, change: 'Checked actual entrypoint', evidence: 'Entrypoint executes and returns expected output' }] });
+  assert.equal(JSON.parse(resolved.content[0].text).recorded, true);
+  await f.call('delivery_finish', { status: 'verified', review: 'entrypoint checked', launch: 'n/a', limitations: [] });
+});
+
 test('all checks collects failures and independent successes rather than stopping at first failure', async t => {
   const f = fixture(t);
   f.plan.checks = [

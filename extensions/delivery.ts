@@ -50,6 +50,7 @@ const Type = {
 const shortString = () => Type.String({ minLength: 1, maxLength: 1200 });
 const strings = (maxItems = 20) => Type.Array(shortString(), { minItems: 1, maxItems });
 const planFields = {
+  outcomes: Type.Optional(Type.Array(Type.Object({ id: shortString(), requirement: shortString(), entrypoint: shortString(), observable: shortString(), substitutions: Type.Array(shortString()), missedFailure: shortString(), checks: Type.Array(shortString()) }), { maxItems: 32, description: 'Experimental opt-in outcome contracts. Choose critical user paths. Exercise the documented normal entrypoint in a thin working slice early, then recheck after implementation. State observable success, all substitutions and a plausible defect component tests miss. Never substitute an alternate smoke/test mode for normal launch.' })),
   design: Type.Optional({ type: 'object', description: 'Tested architecture: components, ports, scenarios, risks. Call delivery_design action=guide for exact fields and example.', additionalProperties: true }),
   workflow: Type.Optional({ type: 'object', additionalProperties: true }),
   goal: shortString(), assumptions: Type.Array(shortString(), { maxItems: 20 }),
@@ -726,11 +727,13 @@ export default function delivery(pi: ExtensionAPI) {
   });
   pi.registerTool({
     name: 'delivery_review', label: 'Review delivery evidence',
-    description: 'Required for structured delivery plans. inspect captures the actual Git diff and lists new files; read it and inspect new-file contents. record binds per-requirement assertion coverage, executed boundary probes and limitations to the unchanged snapshot. Unresolved findings block recording; repair or finish blocked. This is traceable self-review, not independent correctness proof.',
+    description: 'Required for structured delivery plans. inspect captures the Git diff and new source contents, excluding dependencies/generated output. Read the full capture when truncated. record binds assertion coverage and executed probes to the snapshot. Test critical component connections and the user outcome, not just component functions or artifact existence. Mark undemonstrated requirements coverage.status=unverified. Findings persist; clearing findings or moving them into limitations cannot resolve them. Resolve using resolutions:[{id,change,evidence}] after repair/rechecking or concrete evidence that the original requirement is met; otherwise finish blocked. This is model-authored review, not independent correctness proof.',
     parameters: Type.Object({
       action: Type.String({ description: 'inspect or record' }),
       captureId: Type.Optional(shortString()),
-      coverage: Type.Optional(Type.Array(Type.Object({ requirement: shortString(), assertions: shortString() }), { maxItems: 64 })),
+      coverage: Type.Optional(Type.Array(Type.Object({ requirement: shortString(), assertions: shortString(), status: Type.Optional(Type.String({ description: 'demonstrated or unverified' })) }), { maxItems: 64 })),
+      resolutions: Type.Optional(Type.Array(Type.Object({ id: shortString(), change: shortString(), evidence: shortString() }), { maxItems: 40 })),
+      outcomes: Type.Optional(Type.Array(Type.Object({ id: shortString(), check: shortString(), observation: shortString(), challenge: shortString(), status: Type.String({ description: 'demonstrated or unverified' }) }), { maxItems: 32, description: 'One per plan outcome; check must name its fresh executed check. Observation must describe the actual normal entrypoint result. Challenge records an executed probe of the plausible missed failure (e.g. input-to-persistence or representation roundtrip), not a claim based on source text. Missing core behavior must be unverified.' })),
       probes: Type.Optional(Type.Array(shortString(), { maxItems: 40 })),
       findings: Type.Optional(Type.Array(shortString(), { maxItems: 40 })),
       limitations: Type.Optional(Type.Array(shortString(), { maxItems: 20 })),
@@ -740,7 +743,7 @@ export default function delivery(pi: ExtensionAPI) {
         if (!state) throw Error('Call delivery_plan first');
         let result;
         if (params.action === 'inspect') result = await captureDeliveryReview(state, ctx.cwd, directory(ctx), signal);
-        else if (params.action === 'record') { recordDeliveryReview(state, ctx.cwd, params); result = { recorded: true, next: 'If steps and outputs are complete, call delivery_finish. Review records model-authored assertions, not a correctness guarantee.' }; }
+        else if (params.action === 'record') { const review = recordDeliveryReview(state, ctx.cwd, params); result = review.recorded === false ? review : { recorded: true, next: 'If steps and outputs are complete, call delivery_finish. Review records model-authored assertions, not a correctness guarantee.' }; }
         else throw Error('Review action must be inspect or record');
         persist(ctx);
         return text(result);
