@@ -24,6 +24,7 @@ import { beginReview, parseFindings } from '../lib/review-state.mjs';
 import { latestReport, saveReport } from '../lib/reports.mjs';
 import { normalizeReviewMode, resolveReviewMode, loadCarthagentConfig, saveCarthagentConfig, carthagentConfigPath, reviewerPrompt, parseVerdict, resolveStickyDefaults } from '../lib/review.mjs';
 import { compareVersions, fetchLatestRelease, detectInstallMethod, cleanStaleGlobalInstall } from '../lib/update.mjs';
+import { acceptanceReviewerPrompt } from '../lib/acceptance-review.mjs';
 
 // Ensure Carthagent operates completely isolated in its own agent directory (~/.carthagent/agent)
 // so it NEVER touches, reads, or piggybacks on any existing ~/.pi/agent installation.
@@ -53,6 +54,7 @@ function printHelp() {
   ctg <task>                     Open the console and immediately deliver <task>
   ctg --list-models [search]     List available provider models
   ctg <command> [options]
+  ctg review workspace --request-file <task.txt> [--provider <name> --model <id>]
 
 \x1b[1mCOMMANDS:\x1b[0m
   \x1b[32mtui\x1b[0m, \x1b[32mui\x1b[0m                 Interactive console: live run feed + live plan.d2 side panel
@@ -461,6 +463,20 @@ function handleTest() {
  *   ctg review <pr>         run a detached fresh-context reviewer over a PR
  */
 async function handleReview(args) {
+  if (args[0] === 'workspace') {
+    let requestFile, provider, model, thinking = 'high';
+    for (let i = 1; i < args.length; i++) {
+      const flag = args[i], value = args[++i];
+      if (!value) throw Error(`Missing value for ${flag}`);
+      if (flag === '--request-file') requestFile = value;
+      else if (flag === '--provider') provider = value;
+      else if (flag === '--model') model = value;
+      else if (flag === '--thinking') thinking = value;
+      else throw Error(`Unknown workspace review option: ${flag}`);
+    }
+    if (!requestFile) throw Error('Use ctg review workspace --request-file <original-task.txt> [--provider name --model id]');
+    return handleTui(['--print', '--no-delivery', '--no-guide', '--isolate', '--review', 'no', '--thinking', thinking, ...(provider ? ['--provider', provider] : []), ...(model ? ['--model', model] : []), '--', acceptanceReviewerPrompt(readFileSync(resolve(requestFile), 'utf8'))]);
+  }
   const ref = args[0];
   if (!ref || ref === 'status') {
     const config = loadCarthagentConfig();

@@ -31,3 +31,29 @@ Outcome contracts are now **opt-in**, rather than inferred from component count.
 Test across CLI, API, persistence, migration and packaging tasks, including simple
 changes, before considering a mandatory policy. Measure false verified finishes,
 successful deliveries, appropriate blocked results, cost and unnecessary friction.
+
+## Follow-up: fresh-context acceptance review and model repairs
+
+A further fresh implementation with generic representation/integration guidance
+still failed single-shot acceptance. A separate fresh CTG reviewer reproduced the
+render/control defects and the implementation model repaired them. Subsequent
+evaluation found intermittent native graphics output; model repair added a
+documented native software-renderer path. A second fresh reviewer found an AABB
+overlap error and a raycast boundary error, which the model repaired with tests.
+Final fresh review approved the core acceptance, with 75 Python tests passing,
+actual native launch, image/state correspondence, camera-relative movement over
+60 angle combinations, safe placement and chunk-isolation probes.
+
+This success required multiple review/repair rounds and extra time beyond the
+original 30-minute single-run comparison. Some interrupted continuations needed
+a fresh repair context. It is not evidence of autonomous single-shot reliability,
+lower cost, or a complete manual play test. Physical pointer input was unavailable.
+The successful general mechanism was fresh-context executable falsification,
+not game-specific rules in CTG. The generated game—not the harness—contains the
+domain-specific fixes.
+
+The experimental `ctg review workspace --request-file original-task.txt` command
+exposes this review mechanism without requiring a pull request. It runs a separate
+context with no delivery extension and does not automatically repair source,
+grant verified status, or make its verdict independent proof. Review subprocess
+tools are not OS-sandboxed; no source modifications are requested by its prompt.
