@@ -1,5 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   ANTHROPIC_PROVIDER_ID,
   OPENAI_CODEX_PROVIDER_ID,
@@ -7,7 +10,9 @@ import {
   codexDiscoveryProviderConfig,
   codexModelDefinition,
   codexThinkingLevelMap,
+  credentialKey,
   decodeChatGptAccountId,
+  fileSubscriptionCache,
   mergeDiscoveredModels,
   parseAnthropicModels,
   parseCodexModels,
@@ -28,6 +33,11 @@ function fakeJwt(claims) {
 }
 
 const signal = () => new AbortController().signal;
+const noKnown = async () => [];
+const memoryCache = () => {
+  const entries = new Map();
+  return { read: async id => entries.get(id) ?? null, write: async (id, entry) => entries.set(id, entry), entries };
+};
 
 test('anthropic discovery fetches /v1/models with the subscription OAuth headers', async () => {
   const calls = [];
@@ -38,7 +48,7 @@ test('anthropic discovery fetches /v1/models with the subscription OAuth headers
       { type: 'model', id: 'claude-sonnet-9', display_name: 'Claude Sonnet 9' },
     ], has_more: false });
   };
-  const config = anthropicDiscoveryProviderConfig({ fetchImpl });
+  const config = anthropicDiscoveryProviderConfig({ fetchImpl, knownModels: noKnown });
   const refreshed = await config.refreshModels({
     allowNetwork: true,
     credential: { type: 'oauth', access: 'sk-ant-oat', expires: Date.now() + 60_000 },
@@ -64,7 +74,7 @@ test('anthropic discovery uses x-api-key for API key credentials and paginates',
     }
     return jsonResponse({ data: [{ type: 'model', id: 'claude-b' }], has_more: false });
   };
-  const config = anthropicDiscoveryProviderConfig({ fetchImpl });
+  const config = anthropicDiscoveryProviderConfig({ fetchImpl, knownModels: noKnown });
   const refreshed = await config.refreshModels({
     allowNetwork: true,
     credential: { type: 'api_key', key: 'sk-ant-key' },
@@ -87,7 +97,7 @@ test('codex discovery fetches /codex/models with bearer, account id, and origina
       { slug: 'gpt-9-internal', visibility: 'hide' },
     ] });
   };
-  const config = codexDiscoveryProviderConfig({ fetchImpl });
+  const config = codexDiscoveryProviderConfig({ fetchImpl, knownModels: noKnown });
   const refreshed = await config.refreshModels({
     allowNetwork: true,
     credential: { type: 'oauth', access },
@@ -110,7 +120,7 @@ test('stored catalog metadata wins over defaults for known ids; new ids get fall
     { type: 'model', id: 'claude-opus-4-5', display_name: 'Claude Opus 4.5' },
     { type: 'model', id: 'claude-new-thing', display_name: 'Claude New Thing' },
   ] });
-  const config = anthropicDiscoveryProviderConfig({ fetchImpl });
+  const config = anthropicDiscoveryProviderConfig({ fetchImpl, knownModels: noKnown });
   const stored = { models: [{
     id: 'claude-opus-4-5', name: 'Claude Opus 4.5 (latest)', provider: 'anthropic',
     api: 'anthropic-messages', baseUrl: 'https://api.anthropic.com',
@@ -133,9 +143,31 @@ test('stored catalog metadata wins over defaults for known ids; new ids get fall
   assert.equal(unknown.cost, undefined);
 });
 
+test('builtin definitions keep cost and limits when no stored entry exists', async () => {
+  const fetchImpl = async () => jsonResponse({ data: [
+    { type: 'model', id: 'claude-sonnet-4-5', display_name: 'Claude Sonnet 4.5' },
+  ] });
+  const builtin = {
+    id: 'claude-sonnet-4-5', name: 'Claude Sonnet 4.5', provider: 'anthropic',
+    api: 'anthropic-messages', baseUrl: 'https://api.anthropic.com',
+    contextWindow: 1_000_000, maxTokens: 64_000, reasoning: true,
+    cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+  };
+  const config = anthropicDiscoveryProviderConfig({ fetchImpl, knownModels: async () => [builtin] });
+  const refreshed = await config.refreshModels({
+    allowNetwork: true,
+    credential: { type: 'api_key', key: 'k' },
+    signal: signal(),
+    stored: undefined,
+  });
+  const model = refreshed.find(m => m.id === 'claude-sonnet-4-5');
+  assert.equal(model.contextWindow, 1_000_000);
+  assert.deepEqual(model.cost, { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 });
+});
+
 test('stored catalog entries the endpoint did not return stay visible', async () => {
   const fetchImpl = async () => jsonResponse({ data: [{ type: 'model', id: 'claude-b' }] });
-  const config = anthropicDiscoveryProviderConfig({ fetchImpl });
+  const config = anthropicDiscoveryProviderConfig({ fetchImpl, knownModels: noKnown });
   const refreshed = await config.refreshModels({
     allowNetwork: true,
     credential: { type: 'oauth', access: 'tok' },
@@ -150,30 +182,63 @@ test('stored catalog entries the endpoint did not return stay visible', async ()
   assert.equal(refreshed[0].contextWindow, 42);
 });
 
-test('offline refreshes and missing credentials leave the catalog untouched', async () => {
+test('codex models the endpoint marks hidden are excluded from the stored fallback', async () => {
+  const access = fakeJwt({ 'https://api.openai.com/auth': { chatgpt_account_id: 'acct' } });
+  const fetchImpl = async () => jsonResponse({ models: [
+    { slug: 'gpt-new', visibility: 'list' },
+    { slug: 'gpt-old', visibility: 'hide' },
+  ] });
+  const config = codexDiscoveryProviderConfig({ fetchImpl, knownModels: noKnown });
+  const refreshed = await config.refreshModels({
+    allowNetwork: true,
+    credential: { type: 'oauth', access },
+    signal: signal(),
+    stored: { models: [
+      { id: 'gpt-old', name: 'GPT Old', provider: 'openai-codex' },
+      { id: 'gpt-remote-extra', name: 'Remote Extra', provider: 'openai-codex' },
+    ] },
+  });
+  assert.deepEqual(refreshed.map(m => m.id), ['gpt-new', 'gpt-remote-extra']);
+});
+
+test('missing credentials and empty discovery leave the catalog untouched', async () => {
   let called = 0;
   const fetchImpl = async () => { called++; return jsonResponse({ data: [{ id: 'x' }] }); };
-  const config = anthropicDiscoveryProviderConfig({ fetchImpl });
-  assert.equal(await config.refreshModels({ allowNetwork: false, credential: { type: 'api_key', key: 'k' }, signal: signal() }), undefined);
+  const config = anthropicDiscoveryProviderConfig({ fetchImpl, knownModels: noKnown });
   assert.equal(await config.refreshModels({ allowNetwork: true, signal: signal() }), undefined);
   assert.equal(await config.refreshModels({ allowNetwork: true, credential: { type: 'other' }, signal: signal() }), undefined);
+  const empty = anthropicDiscoveryProviderConfig({ fetchImpl: async () => jsonResponse({ data: [] }), knownModels: noKnown });
+  assert.equal(await empty.refreshModels({ allowNetwork: true, credential: { type: 'api_key', key: 'k' }, signal: signal() }), undefined);
   assert.equal(called, 0);
 });
 
-test('empty discovery result keeps the existing catalog', async () => {
-  const config = anthropicDiscoveryProviderConfig({ fetchImpl: async () => jsonResponse({ data: [] }) });
-  const refreshed = await config.refreshModels({
-    allowNetwork: true,
-    credential: { type: 'api_key', key: 'k' },
-    signal: signal(),
-  });
-  assert.equal(refreshed, undefined);
+test('offline refresh restores the cached discovery for the same credential', async () => {
+  const cache = memoryCache();
+  const fetchImpl = async () => jsonResponse({ data: [
+    { type: 'model', id: 'claude-new-9', display_name: 'Claude New 9' },
+  ] });
+  const config = anthropicDiscoveryProviderConfig({ fetchImpl, knownModels: noKnown, cache });
+  const credential = { type: 'oauth', access: 'tok', refresh: 'rt-1' };
+  await config.refreshModels({ allowNetwork: true, credential, signal: signal() });
+  assert.equal(cache.entries.get(ANTHROPIC_PROVIDER_ID).credential, credentialKey(credential));
+
+  const offline = await config.refreshModels({ allowNetwork: false, credential, signal: signal() });
+  assert.deepEqual(offline.map(m => m.id), ['claude-new-9']);
+  assert.equal(offline[0].api, 'anthropic-messages');
+});
+
+test('cached discovery is not restored for a different credential', async () => {
+  const cache = memoryCache();
+  const fetchImpl = async () => jsonResponse({ data: [{ type: 'model', id: 'claude-new-9' }] });
+  const config = anthropicDiscoveryProviderConfig({ fetchImpl, knownModels: noKnown, cache });
+  await config.refreshModels({ allowNetwork: true, credential: { type: 'api_key', key: 'sk-one' }, signal: signal() });
+  assert.equal(await config.refreshModels({ allowNetwork: false, credential: { type: 'api_key', key: 'sk-two' }, signal: signal() }), undefined);
 });
 
 test('codex discovery requires an OAuth credential', async () => {
   let called = 0;
   const fetchImpl = async () => { called++; return jsonResponse({ models: [] }); };
-  const config = codexDiscoveryProviderConfig({ fetchImpl });
+  const config = codexDiscoveryProviderConfig({ fetchImpl, knownModels: noKnown });
   const refreshed = await config.refreshModels({
     allowNetwork: true,
     credential: { type: 'api_key', key: 'sk-not-a-subscription' },
@@ -192,15 +257,18 @@ test('parsers dedupe, skip non-model entries, and tolerate odd shapes', () => {
     { type: 'model' },
     null,
   ] }).map(m => m.id), ['claude-a', 'claude-b']);
-  assert.deepEqual(parseCodexModels({ models: [
+  const parsed = parseCodexModels({ models: [
     { slug: 'gpt-a', display_name: 'A' },
     { slug: 'gpt-a' },
     { id: 'gpt-b' },
     'gpt-c',
     { slug: '' },
-  ] }).map(m => m.id), ['gpt-a', 'gpt-b', 'gpt-c']);
-  assert.deepEqual(parseCodexModels({}), []);
-  assert.deepEqual(parseCodexModels(null), []);
+    { slug: 'gpt-secret', visibility: 'hide' },
+  ] });
+  assert.deepEqual(parsed.models.map(m => m.id), ['gpt-a', 'gpt-b', 'gpt-c']);
+  assert.deepEqual([...parsed.hiddenIds], ['gpt-secret']);
+  assert.deepEqual(parseCodexModels({}).models, []);
+  assert.deepEqual(parseCodexModels(null).models, []);
 });
 
 test('codexThinkingLevelMap mirrors the endpoint levels; absent input stays unset', () => {
@@ -210,8 +278,10 @@ test('codexThinkingLevelMap mirrors the endpoint levels; absent input stays unse
     off: null, minimal: null, low: 'low', medium: null, high: 'high', xhigh: null, max: null,
   });
   assert.equal(codexThinkingLevelMap(['none']).off, 'none');
-  const definition = codexModelDefinition({ id: 'gpt-x', name: 'X', reasoningLevels: ['medium'] }, new Map());
-  assert.deepEqual(definition.thinkingLevelMap.medium, 'medium');
+  const definition = codexModelDefinition({ id: 'gpt-x', name: 'X', reasoningLevels: ['medium'] });
+  assert.equal(definition.thinkingLevelMap.medium, 'medium');
+  const preserved = codexModelDefinition({ id: 'gpt-y', name: 'Y' }, { thinkingLevelMap: { off: null, minimal: null, low: null, medium: null, high: 'high', xhigh: 'xhigh', max: 'max' } });
+  assert.equal(preserved.thinkingLevelMap.high, 'high');
 });
 
 test('decodeChatGptAccountId reads the claim and ignores malformed tokens', () => {
@@ -221,13 +291,32 @@ test('decodeChatGptAccountId reads the claim and ignores malformed tokens', () =
   assert.equal(decodeChatGptAccountId(fakeJwt({})), null);
 });
 
-test('mergeDiscoveredModels keeps upstream order and appends unseen stored entries', () => {
+test('credentialKey stays stable per account and differs across credentials', () => {
+  assert.equal(credentialKey({ type: 'oauth', access: 'a', refresh: 'r', accountId: 'acct-1' }), 'oauth:acct-1');
+  assert.equal(credentialKey({ type: 'oauth', access: 'a', refresh: 'r' }), credentialKey({ type: 'oauth', access: 'b', refresh: 'r' }));
+  assert.notEqual(credentialKey({ type: 'api_key', key: 'k1' }), credentialKey({ type: 'api_key', key: 'k2' }));
+  assert.equal(credentialKey({ type: 'weird' }), null);
+  assert.equal(credentialKey(undefined), null);
+});
+
+test('mergeDiscoveredModels keeps upstream order, appends unseen stored entries, honors exclusions', () => {
   const merged = mergeDiscoveredModels(
-    [{ id: 'a' }, { id: 'b' }],
+    [{ id: 'a' }, { id: 'b' }, { id: 'hidden' }],
     [{ id: 'b', x: 1 }, { id: 'c' }],
+    { excludeIds: new Set(['hidden']) },
   );
   assert.deepEqual(merged.map(m => m.id), ['b', 'c', 'a']);
   assert.equal(merged[0].x, 1);
+});
+
+test('fileSubscriptionCache round-trips entries per provider', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ctg-sub-cache-'));
+  const cache = fileSubscriptionCache(dir);
+  await cache.write(ANTHROPIC_PROVIDER_ID, { credential: 'k', discovered: [{ id: 'm' }], hiddenIds: [] });
+  const persisted = JSON.parse(readFileSync(cache.file, 'utf8'));
+  assert.equal(persisted[ANTHROPIC_PROVIDER_ID].discovered[0].id, 'm');
+  assert.deepEqual(await cache.read(ANTHROPIC_PROVIDER_ID), { credential: 'k', discovered: [{ id: 'm' }], hiddenIds: [] });
+  assert.equal(await cache.read(OPENAI_CODEX_PROVIDER_ID), null);
 });
 
 test('registerSubscriptionProviders overlays both builtin providers', () => {
