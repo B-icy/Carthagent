@@ -13,6 +13,7 @@ import {
   credentialKey,
   decodeChatGptAccountId,
   fileSubscriptionCache,
+  matchCachedDiscovery,
   mergeDiscoveredModels,
   parseAnthropicModels,
   parseCodexModels,
@@ -227,12 +228,71 @@ test('offline refresh restores the cached discovery for the same credential', as
   assert.equal(offline[0].api, 'anthropic-messages');
 });
 
-test('cached discovery is not restored for a different credential', async () => {
+test('cached discovery is not restored for a different credential once migration expires', async () => {
+  const cache = memoryCache();
+  const fetchImpl = async () => jsonResponse({ data: [{ type: 'model', id: 'claude-new-9' }] });
+  const config = anthropicDiscoveryProviderConfig({ fetchImpl, knownModels: noKnown, cache, cacheGraceMs: -1 });
+  await config.refreshModels({ allowNetwork: true, credential: { type: 'api_key', key: 'sk-one' }, signal: signal() });
+  assert.equal(await config.refreshModels({ allowNetwork: false, credential: { type: 'api_key', key: 'sk-two' }, signal: signal() }), undefined);
+});
+
+test('offline restore migrates to a rotated refresh token for a bounded window', async () => {
   const cache = memoryCache();
   const fetchImpl = async () => jsonResponse({ data: [{ type: 'model', id: 'claude-new-9' }] });
   const config = anthropicDiscoveryProviderConfig({ fetchImpl, knownModels: noKnown, cache });
-  await config.refreshModels({ allowNetwork: true, credential: { type: 'api_key', key: 'sk-one' }, signal: signal() });
-  assert.equal(await config.refreshModels({ allowNetwork: false, credential: { type: 'api_key', key: 'sk-two' }, signal: signal() }), undefined);
+  const before = { type: 'oauth', access: 'tok-1', refresh: 'rt-1' };
+  const rotated = { type: 'oauth', access: 'tok-2', refresh: 'rt-2' };
+  assert.notEqual(credentialKey(rotated), credentialKey(before));
+  await config.refreshModels({ allowNetwork: true, credential: before, signal: signal() });
+  const offline = await config.refreshModels({ allowNetwork: false, credential: rotated, signal: signal() });
+  assert.deepEqual(offline.map(m => m.id), ['claude-new-9']);
+  assert.equal(offline[0].api, 'anthropic-messages');
+});
+
+test('a discovery under a rotated credential demotes the previous epoch and keeps it restorable', async () => {
+  const cache = memoryCache();
+  const fetchImpl = async () => jsonResponse({ data: [{ type: 'model', id: 'claude-m' }] });
+  const config = anthropicDiscoveryProviderConfig({ fetchImpl, knownModels: noKnown, cache });
+  const first = { type: 'oauth', access: 'tok-1', refresh: 'rt-1' };
+  const second = { type: 'oauth', access: 'tok-2', refresh: 'rt-2' };
+  await config.refreshModels({ allowNetwork: true, credential: first, signal: signal() });
+  await config.refreshModels({ allowNetwork: true, credential: second, signal: signal() });
+  const entry = cache.entries.get(ANTHROPIC_PROVIDER_ID);
+  assert.equal(entry.credential, credentialKey(second));
+  assert.equal(entry.previous.credential, credentialKey(first));
+  assert.equal(entry.previous.discovered[0].id, 'claude-m');
+  // A same-credential re-discovery keeps the existing lineage.
+  await config.refreshModels({ allowNetwork: true, credential: second, signal: signal() });
+  assert.equal(cache.entries.get(ANTHROPIC_PROVIDER_ID).previous.credential, credentialKey(first));
+  // The demoted epoch still restores offline under the previous credential.
+  const restored = await config.refreshModels({ allowNetwork: false, credential: first, signal: signal() });
+  assert.deepEqual(restored.map(m => m.id), ['claude-m']);
+});
+
+test('matchCachedDiscovery matches exact, demoted, migrated, and expired epochs', () => {
+  const now = 1_000_000_000;
+  const day = 24 * 60 * 60 * 1000;
+  const graceMs = day;
+  const epoch = { credential: 'k1', checkedAt: now - 1000, discovered: [{ id: 'm' }], hiddenIds: [] };
+  assert.equal(matchCachedDiscovery(epoch, 'k1', { now, graceMs }), epoch);
+  // Exact matches are not bounded by the window.
+  const stale = { ...epoch, checkedAt: now - 30 * day };
+  assert.equal(matchCachedDiscovery(stale, 'k1', { now, graceMs }), stale);
+  // Credential changed without a discovery in between: migration fallback.
+  const migrated = { ...epoch, credential: 'k2' };
+  assert.equal(matchCachedDiscovery(migrated, 'k1', { now, graceMs }), migrated);
+  const expired = { ...epoch, credential: 'k2', checkedAt: now - day - 1 };
+  assert.equal(matchCachedDiscovery(expired, 'k1', { now, graceMs }), null);
+  // Demoted lineage is restorable under its own credential within the window.
+  const lineage = { ...epoch, credential: 'k3', previous: epoch };
+  assert.equal(matchCachedDiscovery(lineage, 'k3', { now, graceMs }), lineage);
+  assert.equal(matchCachedDiscovery(lineage, 'k1', { now, graceMs }), epoch);
+  assert.equal(matchCachedDiscovery(lineage, 'k1', { now, graceMs: -1 }), null);
+  // Malformed entries and credentials never match.
+  assert.equal(matchCachedDiscovery(null, 'k1', { now, graceMs }), null);
+  assert.equal(matchCachedDiscovery({}, 'k1', { now, graceMs }), null);
+  assert.equal(matchCachedDiscovery({ credential: 'k1' }, 'k1', { now, graceMs }), null);
+  assert.equal(matchCachedDiscovery({ credential: 'k1', discovered: [] }, 'k1', { now, graceMs }), null);
 });
 
 test('codex discovery requires an OAuth credential', async () => {
@@ -317,6 +377,31 @@ test('fileSubscriptionCache round-trips entries per provider', async () => {
   assert.equal(persisted[ANTHROPIC_PROVIDER_ID].discovered[0].id, 'm');
   assert.deepEqual(await cache.read(ANTHROPIC_PROVIDER_ID), { credential: 'k', discovered: [{ id: 'm' }], hiddenIds: [] });
   assert.equal(await cache.read(OPENAI_CODEX_PROVIDER_ID), null);
+});
+
+test('fileSubscriptionCache serializes concurrent writes across cache instances', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ctg-sub-cache-'));
+  const anthropic = fileSubscriptionCache(dir);
+  const codex = fileSubscriptionCache(dir);
+  await Promise.all([
+    anthropic.write(ANTHROPIC_PROVIDER_ID, { credential: 'k-a', discovered: [{ id: 'claude-a' }], hiddenIds: [] }),
+    codex.write(OPENAI_CODEX_PROVIDER_ID, { credential: 'k-c', discovered: [{ id: 'gpt-a' }], hiddenIds: [] }),
+  ]);
+  const persisted = JSON.parse(readFileSync(anthropic.file, 'utf8'));
+  assert.equal(persisted[ANTHROPIC_PROVIDER_ID]?.credential, 'k-a');
+  assert.equal(persisted[OPENAI_CODEX_PROVIDER_ID]?.credential, 'k-c');
+  const anthropicEntry = await codex.read(ANTHROPIC_PROVIDER_ID);
+  const codexEntry = await anthropic.read(OPENAI_CODEX_PROVIDER_ID);
+  assert.deepEqual(anthropicEntry?.discovered, [{ id: 'claude-a' }]);
+  assert.deepEqual(codexEntry?.discovered, [{ id: 'gpt-a' }]);
+  // Later writes merge over the existing entries instead of replacing them.
+  await Promise.all([
+    anthropic.write(ANTHROPIC_PROVIDER_ID, { credential: 'k-a2', discovered: [{ id: 'claude-a2' }], hiddenIds: [] }),
+    codex.write(OPENAI_CODEX_PROVIDER_ID, { credential: 'k-c2', discovered: [{ id: 'gpt-a2' }], hiddenIds: [] }),
+  ]);
+  const merged = JSON.parse(readFileSync(anthropic.file, 'utf8'));
+  assert.equal(merged[ANTHROPIC_PROVIDER_ID]?.credential, 'k-a2');
+  assert.equal(merged[OPENAI_CODEX_PROVIDER_ID]?.credential, 'k-c2');
 });
 
 test('registerSubscriptionProviders overlays both builtin providers', () => {
