@@ -29,14 +29,17 @@ CTG plugin entry path (`plugins/carthagent`); this runtime does not bundle or
 resolve the plugin on behalf of the CLI integration.
 
 `lib/opencode/service.mjs` exports `ensureService`, `serviceRequest`,
-`createSession`, `promptSession`, `cancelSession`, `sessionMessages`, and
-`launchTui`. `ensureService({ root, pluginPath, profile, startupTimeout })`
+`createSession`, `promptSession`, `cancelSession`, `sessionMessages`,
+`stopService`, and `launchTui`. `ensureService({ root, pluginPath, profile, startupTimeout })`
 returns the isolated service URL, auth headers, registration metadata, paths,
 and executable after a health/version/PID check. Startup is bounded (15s by
 default), concurrent calls converge on the private service registration, and
 no normal OpenCode service is stopped or restarted. Use `launchTui` to open the
 native OpenCode TUI pointed at CTG's environment, preserving workspace cwd and
 native session flags.
+`stopService({ root })` stops only the healthy process identified by that
+profile's private registration and is safe to use without affecting the normal
+OpenCode service.
 
 `lib/opencode/headless.mjs` exports `runHeadless` and the session helpers. It
 uses native `/api/session`, `/prompt`, `/message`, `/interrupt`, and wait APIs, returns
