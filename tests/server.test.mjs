@@ -239,9 +239,12 @@ test('raw HTTP and CLI cannot run arbitrary checks before tested-plan approval',
   const plan = { goal: 'Gate', artifacts: ['.'], steps: ['Run'], acceptance: [{ requirement: 'Runs', checks: ['smoke'] }], checks: [{ id: 'smoke', kind: 'runtime', argv: [process.execPath, '-e', 'require("node:fs").writeFileSync("bypass.txt", "bad")'], timeoutSeconds: 10 }] };
   const saved = await fetch(`${server.url}/api/plan/set`, json(server.token, { plan }));
   assert.equal(saved.status, 200);
+  assert.equal(existsSync(join(server.cwd, '.harness', 'workspace.lock')), false, 'a completed synchronous mutation releases its lease before its response is consumed');
   const blocked = await fetch(`${server.url}/api/checks/run`, json(server.token, { id: 'all' }));
   assert.notEqual(blocked.status, 200);
-  assert.match(await blocked.text(), /Implementation locked/);
+  const blockedBody = await blocked.text();
+  assert.match(blockedBody, /Implementation locked/);
+  assert.equal(existsSync(join(server.cwd, '.harness', 'workspace.lock')), false, 'a rejected mutation also releases its lease before its response is consumed');
   const cli = spawnSync(process.execPath, [join(root, 'bin/ctg.mjs'), 'check', 'all'], { cwd: server.cwd, encoding: 'utf8' });
   assert.notEqual(cli.status, 0);
   assert.match(cli.stderr, /Implementation locked/);
