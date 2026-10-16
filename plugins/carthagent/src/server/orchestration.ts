@@ -10,7 +10,10 @@ type Context = {
     prompt(input: Record<string, unknown>): Promise<unknown>
     wait(input: Record<string, unknown>): Promise<unknown>
     context(input: Record<string, unknown>): Promise<unknown[]>
+    get(input: Record<string, unknown>, options?: { signal?: AbortSignal }): Promise<{ outcome?: "succeeded" | "failed" | "interrupted" }>
+    interrupt(input: Record<string, unknown>): Promise<void>
   }
+  agent: { list(): Promise<unknown> }
   event: { subscribe(options?: { signal?: AbortSignal }): AsyncIterable<{ type: string }> }
 }
 
@@ -29,7 +32,7 @@ export function registerOrchestration(ctx: Context, options: OrchestrationOption
   if (!canonical || !projectID) throw new Error("CTG orchestration requires the canonical project location and projectID")
   const legacyRoots = options.legacyRoots ?? []
   return {
-    createTask: (input: { task: string; from?: string; branch?: string; model?: unknown; agent?: string }) => createTask({ ctx, canonical, projectID, ...input }),
+    createTask: (input: { task: string; from?: string; branch?: string; model?: { providerID: string; id: string; variant?: string }; agent?: string; parentTaskID?: string | null }) => createTask({ ctx, canonical, projectID, ...input }),
     listTasks: (input?: { includeOperations?: boolean }) => listTasks({ canonical, ...input }),
     reconcile: (sessionIDs: string[]) => reconcileTasks({ canonical, sessionIDs }),
     archive: {
@@ -38,8 +41,8 @@ export function registerOrchestration(ctx: Context, options: OrchestrationOption
       transcript: (path: string) => readLegacyTranscript({ path, roots: legacyRoots }),
       export: (path: string, format?: "json" | "jsonl") => exportLegacyTranscript({ path, format, roots: legacyRoots }),
     },
-    startReview: (input: { cwd: string; identity?: string; agent?: string }) => startReview({ ctx, model: options.reviewModel, ...input }),
-    startPullRequestReview: (input: { cwd: string; identity: string; localHead: string; remoteHead: string; pullRequestHead: string; source: string; readCurrent: () => Promise<{ localHead: string; remoteHead: string; pullRequestHead: string; source: string }>; agent?: string }) => startPullRequestReview({ ctx, model: options.reviewModel, ...input }),
+    startReview: (input: { cwd: string; identity?: string; agent?: string; timeoutMs?: number }, signal?: AbortSignal) => startReview({ ctx, model: options.reviewModel, ...input, signal }),
+    startPullRequestReview: (input: { cwd: string; identity: string; localHead: string; remoteHead: string; pullRequestHead: string; source: string; readCurrent: () => Promise<{ localHead: string; remoteHead: string; pullRequestHead: string; source: string }>; agent?: string; timeoutMs?: number }, signal?: AbortSignal) => startPullRequestReview({ ctx, model: options.reviewModel, ...input, signal }),
     verifyPullRequestHeads,
     async watch(signal?: AbortSignal) {
       for await (const event of ctx.event.subscribe({ signal })) {
