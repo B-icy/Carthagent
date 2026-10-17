@@ -52,7 +52,10 @@ function aborted(signal: AbortSignal) {
   if (signal.aborted) throw signal.reason ?? new DOMException('Operation aborted', 'AbortError');
 }
 
-function sameFile(left: Awaited<ReturnType<import('node:fs/promises').FileHandle['stat']>>, right: Awaited<ReturnType<import('node:fs/promises').FileHandle['stat']>>) {
+function sameFile(
+  left: NonNullable<Awaited<ReturnType<import('node:fs/promises').FileHandle['stat']>>>,
+  right: NonNullable<Awaited<ReturnType<import('node:fs/promises').FileHandle['stat']>>>,
+) {
   return left.dev === right.dev && left.ino === right.ino;
 }
 
