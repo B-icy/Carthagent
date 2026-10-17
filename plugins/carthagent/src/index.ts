@@ -7,10 +7,12 @@ import { registerArchive } from './server/archive-rpc';
 import { registerProviders } from './server/providers';
 import { createDeviceAuthController } from './server/device-auth.ts';
 import { shipAgentDir } from '../../../lib/ship-auth.mjs';
+import { registerNativeDelivery } from './server/native-delivery';
 
-export default Plugin.define({
-  id: 'carthagent',
-  async setup(context) {
+export async function setupCarthagent(
+  context: Parameters<typeof registerSessionControls>[0],
+  options: { delivery?: boolean; deliveryOptions?: Parameters<typeof registerNativeDelivery>[1] } = {},
+) {
     const cleanups: Array<() => Promise<void>> = [];
     const dispose = async () => {
       const failures: unknown[] = [];
@@ -27,6 +29,7 @@ export default Plugin.define({
       cleanups.push(await registerSessionControls(context));
       cleanups.push(await registerWorkspaceRpc(context, context.options));
       cleanups.push(await registerPullRequests(context));
+      if (options.delivery !== false) cleanups.push(await registerNativeDelivery(context, options.deliveryOptions));
       const archive = await registerArchive(context, context.options);
       cleanups.push(() => archive.dispose());
       const registration = await context.rpc.register(Carthagent, {
@@ -61,5 +64,6 @@ export default Plugin.define({
       catch (cleanupError) { throw new AggregateError([error, cleanupError], 'Carthagent plugin setup failed'); }
       throw error;
     }
-  },
-});
+}
+
+export default Plugin.define({ id: 'carthagent', setup: setupCarthagent });

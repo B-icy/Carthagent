@@ -113,6 +113,15 @@ name for terminals or contexts where the host claims `/help`.
 - `node tools/test-native-outcomes.mjs`: provider rejection produces a failed
   outcome; interrupt closes an in-flight provider request; a neighboring session
   succeeds; the interrupted session recovers with its history preserved.
+- `node tools/test-native-delivery-host.mjs <plugin-dir>` loads the production
+  `setupCarthagent(..., { delivery: true })` composition, not the isolated test
+  plugin. Scenarios cover standard/strict delivery, explicit `delivery:false`,
+  configured budget interruption (`resume:false`), mixed session settings, and
+  simultaneous identical shell commands in one worktree with per-session counts.
+- `npm run test:native-package` repeats those probes against the packed,
+  production-only installed artifact. In OpenCode 2.0.32, `ShellCreateBefore`
+  lacks session/call identity, so it is never used for attribution or charging;
+  the authoritative `tool:execute.before` event supplies session/call identity.
 
 Native `session.wait()` can resolve before the durable session projection exposes
 its terminal outcome. Consumers must reconcile within a bounded deadline and
