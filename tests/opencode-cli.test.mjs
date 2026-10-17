@@ -722,8 +722,9 @@ test('native update installs the validated package spec, and fails closed for so
     runCommand: async (argv, options) => { calls.push({ argv, options }); return { code: 0, timedOut: false, cancelled: false, output: '' }; },
   } });
   assert.equal(await runtime.command({ command: 'update', args: [] }), 0);
+  const npmPrefix = process.platform === 'win32' ? ['cmd.exe', '/d', '/s', '/c', 'npm'] : ['npm'];
   assert.deepEqual(calls, [{
-    argv: ['npm', 'install', '-g', '--install-links=true', 'github:B-icy/Carthagent#v1.0.4'],
+    argv: [...npmPrefix, 'install', '-g', '--install-links=true', 'github:B-icy/Carthagent#v1.0.4'],
     options: { cwd: '/package/root', timeoutSeconds: 600 },
   }]);
   const cloneCalls = [];
@@ -790,8 +791,9 @@ test('native updater force-reinstalls only the canonical validated release tag o
     runCommand: async (argv, options) => { installs.push({ argv, options }); return { code: 0, timedOut: false, cancelled: false, output: '' }; },
   } });
   assert.equal(await runtime.command({ command: 'update', args: ['--force'] }), 0);
+  const npmPrefix = process.platform === 'win32' ? ['cmd.exe', '/d', '/s', '/c', 'npm'] : ['npm'];
   assert.deepEqual(installs, [{
-    argv: ['npm', 'install', '-g', '--install-links=true', 'github:B-icy/Carthagent#v1.0.4'],
+    argv: [...npmPrefix, 'install', '-g', '--install-links=true', 'github:B-icy/Carthagent#v1.0.4'],
     options: { cwd: '/package/root', timeoutSeconds: 600 },
   }]);
 });
