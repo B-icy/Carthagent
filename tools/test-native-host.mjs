@@ -175,7 +175,9 @@ try {
   const deadline = Date.now() + 15_000;
   do {
     plugins = await client.plugin.list({ location: { directory: cwd } }, request);
-    if (plugins.data.some((entry) => entry.id === 'carthagent')) break;
+    const current = plugins.data.find((entry) => entry.id === 'carthagent');
+    if (current?.state.status === 'active') break;
+    if (current?.state.status === 'error') throw new Error(`Carthagent plugin setup failed: ${JSON.stringify(current)}`);
     await new Promise((done) => setTimeout(done, 200));
   } while (Date.now() < deadline);
   const nativePlugin = plugins.data.find((entry) => entry.id === 'carthagent');
