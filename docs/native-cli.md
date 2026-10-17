@@ -32,12 +32,15 @@ without a task fail with an actionable message.
 Headless success requires both the assistant's completed `finish: stop` message
 and a terminal `idle` message with `outcome: succeeded`; text output alone is not
 success. Native thinking levels are passed as model variants. The adapter rejects
-`--max-tools`, `--max-seconds`, and `--max-repairs` until the active native
-delivery plugin enforces session budgets. `--no-delivery`, `--no-strict`,
-`--bash-cap`, and `--isolate` remain fail-closed because the active plugin has no
-matching enforcement contract. `--no-guide` is stored in durable
-`carthagent.options` session metadata and honored by native prompt framing; on a
-resumed session, explicitly supplied options merge with existing session settings. `demo`
+`--max-tools`, `--max-seconds`, `--max-repairs`, `--no-delivery`, and `--no-strict`
+unless the active native plugin advertises the matching session-option, budget,
+and policy enforcement capabilities. They fail closed when that contract is
+missing. `--bash-cap` and `--isolate` remain unsupported and fail closed.
+`--codegraph-max-files` sets the bounded source-file scan limit for the native
+code navigation index and is resolved per session. `--no-guide` is stored in
+durable `carthagent.options` session metadata and honored by native prompt
+framing; on a resumed session, explicitly supplied options override persisted
+settings for that session only, while unspecified settings are preserved. `demo`
 runs a separately labeled offline Node fixture in a disposable temporary workspace;
 it makes no provider calls, edits no project files, and does not claim evidence for
 the user's project. Update
