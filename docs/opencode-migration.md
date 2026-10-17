@@ -52,6 +52,12 @@ after reconnect.
   its RPC result. Global commands need `mode: 'global'` in the keymap layer;
   omitting it registered a plugin but left its slash command undiscoverable.
   This is a bootstrap test, not approval of the upcoming full product UI.
+- `node tools/test-native-controls.mjs` exercises two concurrent sessions through
+  a local deterministic provider on the real 2.0.32 host: delivery framing,
+  explicit raw bypass, successful terminal outcomes and compaction notes in the
+  actual summary request. Compaction notes use a queued synthetic message because
+  the native compact API has no notes parameter; the host can process that
+  message in a primary turn before summarizing it.
 
 ## Delivery ledger
 
