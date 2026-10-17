@@ -1,13 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync, chmodSync, copyFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve, delimiter } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { approveFixture } from './helpers/tested-design.mjs';
 import { createReport, latestReport, saveReport } from '../lib/reports.mjs';
 import { buildEngineArgs } from '../lib/engine.mjs';
+import { initPrRepository, mutatePullRequestRemote, nativeCliFixture, setPullRequestFixture } from './helpers/native-cli-process.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const cli = join(root, 'bin', 'ctg.mjs');
@@ -22,6 +23,38 @@ function fixture(t) {
 function run(cwd, ...args) {
   return spawnSync(process.execPath, [cli, ...args], { cwd, encoding: 'utf8' });
 }
+
+test('ctg defaults to native domain routing and keeps help/version independent of providers', t => {
+  const cwd = fixture(t);
+  const runtimeRoot = join(cwd, 'native-runtime');
+  mkdirSync(join(runtimeRoot, 'lib', 'opencode'), { recursive: true });
+  writeFileSync(join(runtimeRoot, 'lib', 'opencode', 'runtime.mjs'), 'export const runtimeEnvironment = () => ({});\n');
+  writeFileSync(join(runtimeRoot, 'lib', 'opencode', 'service.mjs'), 'export const ensureService = async () => { throw new Error("native launcher route reached"); };\n');
+  writeFileSync(join(runtimeRoot, 'lib', 'opencode', 'headless.mjs'), 'export {};\n');
+  const env = { ...process.env, CTG_NATIVE: '0', CTG_NATIVE_RUNTIME_ROOT: runtimeRoot };
+  const invoke = (...args) => spawnSync(process.execPath, [cli, ...args], { cwd, env, encoding: 'utf8' });
+
+  const status = invoke('status', '--json');
+  assert.equal(status.status, 0, status.stderr);
+  assert.equal(JSON.parse(status.stdout).workspace, cwd);
+
+  const hash = invoke('hash');
+  assert.equal(hash.status, 0, hash.stderr);
+  assert.match(hash.stdout.trim(), /^[a-f0-9]{64}$/);
+
+  const account = invoke('account');
+  assert.equal(account.status, 1);
+  assert.match(account.stderr, /native launcher route reached/);
+
+  const version = invoke('--version');
+  assert.equal(version.status, 0, version.stderr);
+  assert.match(version.stdout.trim(), /^\d+\.\d+\.\d+$/);
+
+  const help = invoke('--help');
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /native OpenCode delivery console/);
+  assert.doesNotMatch(help.stdout, /split-terminal/);
+});
 
 test('status reads the newest persisted extension report', t => {
   const cwd = fixture(t);
@@ -104,71 +137,89 @@ test('review shows and persists the self-review default', t => {
   assert.equal(runEnv('review', 'no').status, 0);
   assert.match(runEnv('review').stdout, /self-review default:.*no/);
   assert.equal(JSON.parse(readFileSync(join(cwd, 'config.json'), 'utf8')).review, 'no');
+  writeFileSync(join(cwd, 'app.mjs'), 'review fixture source\n');
+  spawnSync('git', ['init', '-q'], { cwd });
+  spawnSync('git', ['add', '.'], { cwd });
+  spawnSync('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture'], { cwd });
   assert.equal(runEnv('review', 'bogus').status, 2);
 });
 
-/** Fake `gh` + fake engine CLI so `ctg review <pr>` runs end-to-end offline. */
-function reviewFixture(t, verdictLine) {
-  const cwd = fixture(t);
-  const bin = join(cwd, 'bin');
-  mkdirSync(join(cwd, 'bin'), { recursive: true });
-  const gh = join(bin, 'gh');
-  writeFileSync(gh, `#!/bin/sh
-if [ "$1" = "pr" ] && [ "$2" = "view" ]; then echo '{"title":"Fixture PR","url":"https://example.test/pr/14","headRefName":"feat","baseRefName":"main","headRefOid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'; exit 0; fi
-exit 0
-`);
-  chmodSync(gh, 0o755);
-  // Native executable fixture: Windows cannot execute a POSIX shebang shim.
-  if (process.platform === 'win32') {
-    copyFileSync(process.execPath, join(bin, 'gh.exe'));
-    writeFileSync(join(cwd, 'gh-preload.cjs'), `if (require('node:path').basename(process.execPath).toLowerCase() === 'gh.exe') { console.log(JSON.stringify({title:'Fixture PR',url:'https://example.test/pr/14',headRefName:'feat',baseRefName:'main',headRefOid:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'})); process.exit(0); }`);
-  }
-  const reviewer = join(cwd, 'reviewer.mjs');
-  writeFileSync(reviewer, `const prompt = process.argv.at(-1); const snapshot = /snapshot:"([a-f0-9]+)"/.exec(prompt)?.[1]; const head = /head:"([a-f0-9]+)"/.exec(prompt)?.[1]; console.log('fixture findings'); console.log('REVIEW_JSON: ' + JSON.stringify({version:1,snapshot,head,findings:${JSON.stringify(verdictLine.includes('CHANGES-REQUESTED') ? [{file:'app.mjs',line:1,severity:'blocking',issue:'fixture issue',fix:'fixture fix'}] : [])}})); console.log('${verdictLine}');\n`);
-  const env = { ...process.env, CARTHAGENT_CONFIG: join(cwd, 'config.json'), CARTHAGENT_CLI: reviewer, PATH: `${bin}${delimiter}${process.env.PATH}` };
-  if (process.platform === 'win32') env.NODE_OPTIONS = `${env.NODE_OPTIONS || ''} --require ${JSON.stringify(join(cwd, 'gh-preload.cjs'))}`;
-  return { cwd, env };
-}
-
-test('ctg review <pr> exits 0 when the fresh reviewer approves', t => {
-  const { cwd, env } = reviewFixture(t, 'VERDICT: APPROVE');
-  const result = spawnSync(process.execPath, [cli, 'review', '14'], { cwd, env, encoding: 'utf8' });
+test('ctg review <pr> exits 0 when the native reviewer approves', async t => {
+  const fixture = await nativeCliFixture(t);
+  initPrRepository(fixture);
+  const result = await fixture.run('review', '14');
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /fixture findings/);
   assert.match(result.stdout, /VERDICT: APPROVE/);
+  assert.deepEqual(fixture.ghInvocations, [
+    ['pr', 'view', '14', '--json', 'url,number'],
+    ['api', 'repos/owner/fixture/pulls/14'],
+    ['api', 'repos/owner/fixture/pulls/14'],
+  ]);
+  const blockedFallback = await fixture.verifyGhIsolation();
+  assert.equal(blockedFallback.status, 1, 'fixture preload must fail closed on unexpected GitHub CLI executable lookups');
+  assert.deepEqual(fixture.ghFallbacks, ['gh-fixture-sentinel']);
 });
 
-test('ctg review <pr> exits 1 on requested changes and 2 without a verdict', t => {
-  const { cwd, env } = reviewFixture(t, 'VERDICT: CHANGES-REQUESTED');
-  const result = spawnSync(process.execPath, [cli, 'review', '14'], { cwd, env, encoding: 'utf8' });
+test('ctg review <pr> exits 1 on requested changes and 2 without a verdict', async t => {
+  const requested = await nativeCliFixture(t, { verdict: 'CHANGES-REQUESTED' });
+  initPrRepository(requested);
+  const result = await requested.run('review', '14');
   assert.equal(result.status, 1, result.stderr);
-  const silent = reviewFixture(t, 'analysis but no verdict line');
-  const bad = spawnSync(process.execPath, [cli, 'review', '14'], { cwd: silent.cwd, env: silent.env, encoding: 'utf8' });
-  assert.equal(bad.status, 2);
-  assert.match(bad.stderr, /no VERDICT/);
+  assert.match(result.stdout, /VERDICT: CHANGES-REQUESTED/);
+
+  const silent = await nativeCliFixture(t, { omitVerdict: true });
+  initPrRepository(silent);
+  const bad = await silent.run('review', '14');
+  assert.equal(bad.status, 2, bad.stderr);
+  assert.match(bad.stderr, /exact structured VERDICT line/);
+  assert.deepEqual(silent.ghInvocations, [
+    ['pr', 'view', '14', '--json', 'url,number'],
+    ['api', 'repos/owner/fixture/pulls/14'],
+  ]);
 });
 
-test('review persists admission limits across fresh CLI processes', t => {
-  const { cwd, env } = reviewFixture(t, 'VERDICT: CHANGES-REQUESTED');
+test('review persists admission limits across fresh native CLI processes', async t => {
+  const fixture = await nativeCliFixture(t, { verdict: 'CHANGES-REQUESTED' });
+  initPrRepository(fixture);
   for (let i = 0; i < 3; i++) {
-    const result = spawnSync(process.execPath, [cli, 'review', '14'], { cwd, env, encoding: 'utf8' });
+    const result = await fixture.run('review', '14');
     assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stdout, /VERDICT: CHANGES-REQUESTED/);
   }
-  const exhausted = spawnSync(process.execPath, [cli, 'review', '14'], { cwd, env, encoding: 'utf8' });
-  assert.equal(exhausted.status, 2);
+  const exhausted = await fixture.run('review', '14');
+  assert.equal(exhausted.status, 2, exhausted.stderr);
   assert.match(exhausted.stderr, /round limit/);
-  assert.doesNotMatch(exhausted.stdout, /fixture findings/);
+  assert.doesNotMatch(exhausted.stdout, /VERDICT:/);
+  assert.equal(fixture.reviewRequests.length, 3, 'exhausted review admission must fail before another reviewer request');
+  assert.equal(fixture.ghInvocations.length, 11, 'review attempts use only the expected offline PR metadata calls');
 });
 
-test('review rejects source mutation and invalid execution bounds', t => {
-  const { cwd, env } = reviewFixture(t, 'VERDICT: APPROVE');
-  writeFileSync(join(cwd, 'reviewer.mjs'), `import {writeFileSync} from 'node:fs'; writeFileSync('changed.txt', 'café'); console.log('VERDICT: APPROVE');`);
-  const changed = spawnSync(process.execPath, [cli, 'review', '14'], { cwd, env, encoding: 'utf8' });
-  assert.equal(changed.status, 2);
-  assert.match(changed.stderr, /snapshot changed/);
+test('native PR review detects an authoritative PR-head advance after source capture', async t => {
+  const fixture = await nativeCliFixture(t);
+  initPrRepository(fixture);
+  mutatePullRequestRemote(fixture);
+  const mutation = await fixture.run('review', '14');
+  assert.match(mutation.stderr, /Authoritative GitHub PR refs or source moved while review was running/);
+  assert.equal(fixture.reviewRequests.length, 1, 'the reviewer must receive the source before the PR head advances');
+  assert.match(fixture.reviewRequests[0].head, /^[a-f0-9]{40}$/);
+  assert.match(fixture.reviewRequests[0].snapshot, /^[a-f0-9]{64}$/);
+  assert.equal(fixture.reviewRequests[0].sourceIncluded, true);
+  assert.equal(fixture.reviewRequests[0].providerResponseFinished, true, 'the model response must finish before refs advance');
+  assert.equal(fixture.reviewRequests[0].headAdvancedAfterResponse, true);
+  assert.equal(fixture.mutationError, undefined);
+  assert.match(fixture.advancedPullRequestHead, /^[a-f0-9]{40}$/);
+  assert.notEqual(fixture.advancedPullRequestHead, fixture.reviewRequests[0].head);
+  assert.equal(mutation.status, 2, mutation.stderr);
+  assert.equal(fixture.ghInvocations.length, 3, 'head mutation probe uses only fixture GitHub metadata requests');
+});
+
+test('native PR review validates invalid execution bounds', async t => {
+  const fixture = await nativeCliFixture(t);
+  initPrRepository(fixture);
   for (const value of ['0', '301', 'Infinity', 'invalid']) {
-    const invalid = spawnSync(process.execPath, [cli, 'review', '14', '--timeout', value], { cwd, env, encoding: 'utf8' });
-    assert.equal(invalid.status, 2);
+    setPullRequestFixture(fixture);
+    const invalid = await fixture.run('review', '14', '--timeout', value);
+    assert.equal(invalid.status, 2, invalid.stderr);
     assert.match(invalid.stderr, /integer from 1 to 300/);
   }
 });
@@ -177,6 +228,16 @@ test('buildEngineArgs always loads the Experiential provider extension', () => {
   const args = buildEngineArgs({ isolate: true, delivery: false });
   const extensionPaths = args.flatMap((arg, index) => arg === '-e' ? [args[index + 1]] : []);
   assert.ok(extensionPaths.some(path => path.endsWith(join('extensions', 'experiential.ts'))));
+});
+
+test('ctg --list-models reads native OpenCode model inventory without exposing credentials', async t => {
+  const fixture = await nativeCliFixture(t);
+  writeFileSync(join(fixture.cwd, 'private-sentinel.txt'), 'offline-fixture-token-must-not-appear');
+  const result = await fixture.run('--list-models', 'fixture');
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /lattice\s+gpt-6-luna\s+32000\s+1024\s+\?\s+\?/);
+  assert.doesNotMatch(result.stdout, /offline-fixture|private-sentinel/i);
+  assert.doesNotMatch(result.stderr, /offline-fixture|private-sentinel/i);
 });
 
 test('review modes launch the real bundled engine without unknown flags', t => {
@@ -192,35 +253,6 @@ test('review modes launch the real bundled engine without unknown flags', t => {
     assert.doesNotMatch(result.stderr, /Unknown option|Failed to load extension/);
     assert.match(result.stdout + result.stderr, /No models (matching|available)/);
   }
-});
-
-test('ctg --list-models renders stored identity-only Cloud metadata as unknown', t => {
-  const cwd = fixture(t);
-  const agentDir = join(cwd, 'agent');
-  mkdirSync(agentDir, { recursive: true });
-  writeFileSync(join(agentDir, 'auth.json'), JSON.stringify({
-    'experiential-labs': { type: 'api_key', key: 'fixture-credential' },
-  }));
-  writeFileSync(join(agentDir, 'models-store.json'), JSON.stringify({
-    'experiential-labs': {
-      models: [{ id: 'carthagent-code', name: 'carthagent-code' }],
-      checkedAt: 1,
-    },
-  }));
-  const result = spawnSync(process.execPath, [cli, '--list-models', 'Carthagent Ship'], {
-    cwd,
-    encoding: 'utf8',
-    env: {
-      ...process.env,
-      PI_OFFLINE: '1',
-      CARTHAGENT_CODING_AGENT_DIR: agentDir,
-      PI_CODING_AGENT_DIR: agentDir,
-    },
-  });
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /Carthagent Ship\s+carthagent-code\s+\?\s+\?\s+\?\s+\?/);
-  assert.doesNotMatch(result.stdout, /experiential/i);
-  assert.doesNotMatch(result.stderr, /Cannot read properties|Failed to load extension/);
 });
 
 test('vendored agent engine is bundled and loads ModelRuntime cleanly', async () => {
