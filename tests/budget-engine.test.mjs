@@ -12,10 +12,12 @@ for (const mode of ['tools', 'seconds', 'repairs']) test(`actual engine stops ${
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
   let calls = 0;
   let secondsResponseClosed = false;
+  const providerRequestTimes = [];
   const server = createServer((req, res) => {
     req.resume();
     req.on('end', () => {
       calls++;
+      providerRequestTimes.push(performance.now());
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       if (mode === 'seconds' && calls === 1) { res.on('close', () => { secondsResponseClosed = true; }); res.flushHeaders(); return; }
       const chunk = { id: 'local', object: 'chat.completion.chunk', created: 1, model: 'fixture', choices: [{ index: 0, delta: mode === 'seconds' ? { role: 'assistant', content: 'Reset request admitted' } : { role: 'assistant', tool_calls: [{ index: 0, id: `call${calls}`, type: 'function', function: { name: 'read', arguments: JSON.stringify({ path: 'input.txt' }) } }] }, finish_reason: null }] };
@@ -37,20 +39,55 @@ for (const mode of ['tools', 'seconds', 'repairs']) test(`actual engine stops ${
   const cli = fileURLToPath(new URL('../bin/ctg.mjs', import.meta.url));
   let beforeRestore = -1;
   let forcedKill = false;
-  async function run(prompt, secondsLimit = mode === 'seconds' ? '5' : '10000') {
+  async function run(prompt, secondsLimit = mode === 'seconds' ? '5' : '10000', expectBudgetStop = false) {
+    const startedAt = performance.now();
+    let priorEntryCount = 0;
+    try { priorEntryCount = readFileSync(session, 'utf8').split('\n').filter(Boolean).length; } catch { /* Initial session has not been created yet. */ }
+    let budgetStoppedAt = null;
     const child = spawn(process.execPath, [cli, '-p', '--no-guide', '--provider', 'localtest', '--model', 'fixture', '--session', session, '--max-tools', mode === 'tools' ? '1' : '0', '--max-seconds', secondsLimit, '--max-repairs', mode === 'repairs' ? '1' : '0', prompt], { cwd, env: { ...process.env, PI_OFFLINE: '1', CARTHAGENT_CODING_AGENT_DIR: agent, PI_CODING_AGENT_DIR: agent } });
     child.stdin.end();
     let output = ''; child.stdout.on('data', d => output += d); child.stderr.on('data', d => output += d);
-    const timer = setTimeout(() => { forcedKill = true; child.kill(); }, 15000);
+    let timer;
+    let watchdogPhase = expectBudgetStop ? 'startup/budget-stop' : 'child-exit';
+    const armWatchdog = (ms, phase) => {
+      clearTimeout(timer);
+      watchdogPhase = phase;
+      timer = setTimeout(() => { forcedKill = true; child.kill(); }, ms);
+    };
+    const observeBudgetStop = setInterval(() => {
+      try {
+        const freshEntries = readFileSync(session, 'utf8').split('\n').filter(Boolean).slice(priorEntryCount);
+        if (freshEntries.some(line => {
+          const entry = JSON.parse(line);
+          return entry.customType === 'delivery-budget-v1' && entry.data?.stopped;
+        })) {
+          if (budgetStoppedAt === null) {
+            budgetStoppedAt = performance.now();
+            if (expectBudgetStop) armWatchdog(15000, 'budget-stop/shutdown');
+          }
+        }
+      } catch { /* Ignore a partially appended JSONL entry; the next poll retries. */ }
+    }, 20);
+    armWatchdog(expectBudgetStop ? 20000 : 15000, expectBudgetStop ? 'startup/budget-stop' : 'child-exit');
     const code = await new Promise((resolve, reject) => { child.on('error', reject); child.on('close', resolve); });
     clearTimeout(timer);
-    assert.equal(forcedKill, false, 'child must exit naturally within the original 15-second watchdog');
+    clearInterval(observeBudgetStop);
+    const closedAt = performance.now();
+    const newRequestTimes = providerRequestTimes.filter(time => time >= startedAt);
+    const timing = {
+      startupToProviderMs: newRequestTimes.length ? Math.round(newRequestTimes[0] - startedAt) : null,
+      startToBudgetStopMs: budgetStoppedAt === null ? null : Math.round(budgetStoppedAt - startedAt),
+      budgetStopToCloseMs: budgetStoppedAt === null ? null : Math.round(closedAt - budgetStoppedAt),
+      totalMs: Math.round(closedAt - startedAt),
+    };
+    t.diagnostic(`${mode} child phase timing: ${JSON.stringify(timing)}`);
+    assert.equal(forcedKill, false, `child must exit naturally; watchdog phase=${watchdogPhase}; phase timing=${JSON.stringify(timing)}`);
     // Print mode reports the last assistant error even for a command-only reset.
     // Reset is verified from persisted state and subsequent successful tool use.
     assert.equal(code, (mode === 'seconds' || mode === 'repairs') && calls !== beforeRestore ? 0 : 1, `${output}\nrequests=${calls}\nsession=${readFileSync(session, 'utf8').slice(-6000)}`);
     return readFileSync(session, 'utf8').split('\n').filter(Boolean).map(JSON.parse);
   }
-  let entries = await run('Read input.txt repeatedly');
+  let entries = await run('Read input.txt repeatedly', undefined, true);
   if (mode === 'seconds') {
     assert.equal(calls, 1, 'seconds budget must stop without a follow-up request');
     assert.equal(secondsResponseClosed, true, 'seconds budget must close the active response/socket');
