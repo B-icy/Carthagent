@@ -9,6 +9,18 @@ import { provisionRuntime, resolveOpenCode, runtimeEnvironment, runtimePaths, wi
 import { cancelSession, createSession, ensureService, getSession, launchTui, promptSession, serviceRequest, sessionMessages, setSessionEnvironment, stopService } from '../lib/opencode/service.mjs';
 import { runHeadless } from '../lib/opencode/headless.mjs';
 
+function pendingUntilAbort(signal) {
+  return new Promise((_, reject) => {
+    const keepAlive = setTimeout(() => {}, 5000);
+    const aborted = () => {
+      clearTimeout(keepAlive);
+      reject(new DOMException('Aborted', 'AbortError'));
+    };
+    signal.addEventListener('abort', aborted, { once: true });
+    if (signal.aborted) aborted();
+  });
+}
+
 test('CTG runtime paths and env are isolated from host OpenCode roots', () => {
   const root = path.join(os.tmpdir(), 'ctg-test-profile');
   const paths = runtimePaths({ root });
@@ -30,30 +42,34 @@ test('CTG runtime paths and env are isolated from host OpenCode roots', () => {
 });
 
 test('runtime removes inherited OpenCode profile overrides', () => {
-  const env = runtimeEnvironment({ root: '/tmp/ctg-isolated', env: {
+  const root = path.resolve('/tmp/ctg-isolated');
+  const paths = runtimePaths({ root });
+  const env = runtimeEnvironment({ root, env: {
     OPENCODE_CONFIG_DIR: '/user/config',
     OPENCODE_CONFIG: '/user/opencode.json',
     OPENCODE_CONFIG_PROJECT_DISABLE: 'false',
     OPENCODE_SERVER_PASSWORD: 'user-service-secret',
     OPENAI_API_KEY: 'preserved',
   } });
-  assert.equal(env.OPENCODE_CONFIG_DIR, '/tmp/ctg-isolated/config/opencode');
-  assert.equal(env.OPENCODE_CONFIG, '/tmp/ctg-isolated/config/opencode/opencode.json');
+  assert.equal(env.OPENCODE_CONFIG_DIR, paths.configDir);
+  assert.equal(env.OPENCODE_CONFIG, paths.configFile);
   assert.equal(env.OPENCODE_CONFIG_PROJECT_DISABLE, 'true');
   assert.equal(env.OPENCODE_SERVER_PASSWORD, undefined);
   assert.equal(env.OPENAI_API_KEY, 'preserved');
-  assert.equal(env.APPDATA, '/tmp/ctg-isolated/home/AppData/Roaming');
-  assert.equal(env.LOCALAPPDATA, '/tmp/ctg-isolated/home/AppData/Local');
+  assert.equal(env.APPDATA, paths.appData);
+  assert.equal(env.LOCALAPPDATA, paths.localAppData);
 });
 
 test('runtime overrides inherited Windows profile roots with CTG-owned paths', () => {
-  const env = runtimeEnvironment({ root: '/tmp/ctg-windows-roots', env: {
+  const root = path.resolve('/tmp/ctg-windows-roots');
+  const paths = runtimePaths({ root });
+  const env = runtimeEnvironment({ root, env: {
     APPDATA: 'C:\\Users\\foreign\\AppData\\Roaming',
     LOCALAPPDATA: 'C:\\Users\\foreign\\AppData\\Local',
     OPENCODE_CONFIG_PROJECT_DISABLE: 'false',
   } });
-  assert.equal(env.APPDATA, '/tmp/ctg-windows-roots/home/AppData/Roaming');
-  assert.equal(env.LOCALAPPDATA, '/tmp/ctg-windows-roots/home/AppData/Local');
+  assert.equal(env.APPDATA, paths.appData);
+  assert.equal(env.LOCALAPPDATA, paths.localAppData);
   assert.equal(env.OPENCODE_CONFIG_PROJECT_DISABLE, 'true');
 });
 
@@ -113,7 +129,7 @@ test('persistent stale recovery marker fails closed at the lock deadline with ma
     }), (error) => {
       assert.match(error.message, /Timed out waiting for CTG runtime lock/);
       assert.match(error.message, /inspect and remove the stale lock\/recovery files/);
-      assert.match(error.message, new RegExp(`${lock.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}\\.recovery`));
+      assert.ok(error.message.includes(`${lock}.recovery`), 'manual guidance must name the recovery marker path');
       return true;
     });
     assert.ok(Date.now() - startedAt < 400, 'recovery-marker retries must observe the bounded deadline');
@@ -128,7 +144,7 @@ test('profile provisioning creates private isolated profile and absolute plugin 
     const config = JSON.parse(await readFile(paths.configFile, 'utf8'));
     assert.equal(config.model, 'fake/test');
     assert.deepEqual(config.plugins, [path.join(root, 'plugins/carthagent')]);
-    assert.equal((await stat(paths.configFile)).mode & 0o777, 0o600);
+    if (process.platform !== 'win32') assert.equal((await stat(paths.configFile)).mode & 0o777, 0o600);
     assert.equal((await stat(paths.appData)).isDirectory(), true);
     assert.equal((await stat(paths.localAppData)).isDirectory(), true);
     await writeFile(paths.configFile, JSON.stringify({ model: 'kept/model', plugins: ['kept-plugin'], commands: { keep: 'hello' } }));
@@ -142,9 +158,10 @@ test('profile provisioning creates private isolated profile and absolute plugin 
 });
 
 test('workspace environment records workspace without leaking CTG XDG overrides', () => {
-  const env = workspaceEnvironment('/tmp/workspace', { XDG_CONFIG_HOME: '/host/config', OPENAI_API_KEY: 'secret' });
+  const workspace = path.resolve('/tmp/workspace');
+  const env = workspaceEnvironment(workspace, { XDG_CONFIG_HOME: '/host/config', OPENAI_API_KEY: 'secret' });
   assert.equal(env.XDG_CONFIG_HOME, '/host/config');
-  assert.equal(env.CTG_WORKSPACE, '/tmp/workspace');
+  assert.equal(env.CTG_WORKSPACE, workspace);
   assert.equal(env.OPENAI_API_KEY, 'secret');
 });
 
@@ -168,34 +185,36 @@ test('native API requests preserve structured responses and reject status failur
 test('session API helpers use the v2 envelope, prompt payload, and endpoint contracts', async () => {
   const original = globalThis.fetch;
   const calls = [];
+  const work = path.resolve('/work');
+  const workspace = path.resolve('/workspace');
   try {
     globalThis.fetch = async (url, init) => {
       calls.push({ url: String(url), init });
       return new Response('{"data":{"id":"ses_example"}}', { status: 200 });
     };
     const service = { url: 'http://127.0.0.1:1234', headers: {} };
-    assert.deepEqual(await createSession(service, '/work'), { id: 'ses_example' });
-    assert.equal(JSON.parse(calls[0].init.body).location.directory, '/work');
+    assert.deepEqual(await createSession(service, work), { id: 'ses_example' });
+    assert.equal(JSON.parse(calls[0].init.body).location.directory, work);
     await promptSession(service, 'ses_example', 'hello');
     assert.equal(new URL(calls[1].url).pathname, '/api/session/ses_example/prompt');
     assert.equal(JSON.parse(calls[1].init.body).text, 'hello');
-    await setSessionEnvironment(service, 'ses_example', { API_KEY: 'fixture' }, { location: '/workspace' });
+    await setSessionEnvironment(service, 'ses_example', { API_KEY: 'fixture' }, { location: workspace });
     assert.equal(calls[2].init.method, 'PUT');
     assert.equal(new URL(calls[2].url).pathname, '/api/session/ses_example/environment');
     assert.equal(JSON.parse(calls[2].init.body).variables.API_KEY, 'fixture');
-    assert.equal(JSON.parse(calls[2].init.body).variables.CTG_WORKSPACE, '/workspace');
-    assert.equal(new URL(calls[0].url).searchParams.get('location[directory]'), '/work');
-    await sessionMessages(service, 'ses_example', { location: { directory: '/workspace' } });
-    assert.equal(new URL(calls[3].url).searchParams.get('location[directory]'), '/workspace');
-    await cancelSession(service, 'ses_example', { location: { directory: '/workspace' }, timeout: 100 });
+    assert.equal(JSON.parse(calls[2].init.body).variables.CTG_WORKSPACE, workspace);
+    assert.equal(new URL(calls[0].url).searchParams.get('location[directory]'), work);
+    await sessionMessages(service, 'ses_example', { location: { directory: workspace } });
+    assert.equal(new URL(calls[3].url).searchParams.get('location[directory]'), workspace);
+    await cancelSession(service, 'ses_example', { location: { directory: workspace }, timeout: 100 });
     const interrupt = new URL(calls[4].url);
     assert.equal(interrupt.pathname, '/api/session/ses_example/interrupt');
-    assert.equal(interrupt.searchParams.get('location[directory]'), '/workspace');
+    assert.equal(interrupt.searchParams.get('location[directory]'), workspace);
     assert.equal(interrupt.searchParams.get('resume'), 'false');
     assert.ok(calls[4].init.signal instanceof AbortSignal, 'interrupt requests have a bounded abort signal');
-    await getSession(service, 'ses_example', { location: '/workspace' });
+    await getSession(service, 'ses_example', { location: workspace });
     assert.equal(new URL(calls[5].url).pathname, '/api/session/ses_example');
-    assert.equal(new URL(calls[5].url).searchParams.get('location[directory]'), '/workspace');
+    assert.equal(new URL(calls[5].url).searchParams.get('location[directory]'), workspace);
   } finally { globalThis.fetch = original; }
 });
 
@@ -232,11 +251,12 @@ test('a live registered process is retained when health inspection fails', async
 
 test('ensure and stop serialize on the same lifecycle lock', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-lifecycle-race-'));
-  const binary = path.join(root, 'fake-opencode');
-  const script = `#!/usr/bin/env node\nif (process.argv[2] === '--version') { console.log('2.0.32'); process.exit(0); }\nconst http = require('node:http'); const server = http.createServer((req,res) => { if (req.url === '/api/info') { res.setHeader('content-type','application/json'); res.end(JSON.stringify({version:'2.0.32',pid:process.pid})); } else { res.statusCode=404; res.end(); } }); server.listen(Number(process.argv[process.argv.indexOf('--port')+1]), '127.0.0.1', () => console.log('server listening on http://127.0.0.1:'+server.address().port));\n`;
+  const script = path.join(root, 'fake-opencode.cjs');
+  const source = `if (process.argv[2] === '--version') { console.log('2.0.32'); process.exit(0); }\nconst http = require('node:http'); const server = http.createServer((req,res) => { if (req.url === '/api/info') { res.setHeader('content-type','application/json'); res.end(JSON.stringify({version:'2.0.32',pid:process.pid})); } else { res.statusCode=404; res.end(); } }); server.listen(Number(process.argv[process.argv.indexOf('--port')+1]), '127.0.0.1', () => console.log('server listening on http://127.0.0.1:'+server.address().port));\n`;
   try {
-    await writeFile(binary, script, { mode: 0o700 });
-    const options = { root, binary, startupTimeout: 5000, stopTimeout: 3000 };
+    await writeFile(script, source);
+    const spawnImpl = (command, args, options) => spawn(command, [script, ...args], options);
+    const options = { root, binary: process.execPath, spawnImpl, startupTimeout: 5000, stopTimeout: 3000 };
     const [ensured, stopped] = await Promise.all([ensureService(options), stopService(options)]);
     assert.equal(typeof stopped, 'boolean');
     if (ensured?.pid) {
@@ -281,6 +301,29 @@ test('headless runner passes workspace environment and returns assistant content
     assert.equal(result.outcome, 'succeeded');
     assert.equal(result.terminal, true);
     assert.equal(result.budgetReason, undefined, 'a successful terminal session has no budget failure reason');
+  } finally { globalThis.fetch = original; }
+});
+
+test('pre-aborted headless calls do not create or resume a session or return prior output', async () => {
+  const original = globalThis.fetch;
+  let requests = 0;
+  try {
+    globalThis.fetch = async () => { requests += 1; throw new Error('pre-aborted execution must not make API requests'); };
+    const controller = new AbortController();
+    controller.abort(new Error('already cancelled'));
+    const service = { url: 'http://127.0.0.1:3333', headers: {} };
+    const created = await runHeadless(service, '/workspace', 'new work', { signal: controller.signal });
+    assert.equal(created.outcome, 'interrupted');
+    assert.equal(created.result, undefined);
+    assert.deepEqual(created.messages, []);
+    assert.equal(created.accepted, undefined);
+    assert.equal(created.budgetReason, undefined);
+    const resumed = await runHeadless(service, '/workspace', 'more work', { sessionID: 'ses_old_success', signal: controller.signal });
+    assert.equal(resumed.outcome, 'interrupted');
+    assert.equal(resumed.session.id, 'ses_old_success');
+    assert.equal(resumed.result, undefined, 'must not reuse a prior successful assistant from the resumed session');
+    assert.deepEqual(resumed.messages, []);
+    assert.equal(requests, 0);
   } finally { globalThis.fetch = original; }
 });
 
@@ -347,7 +390,7 @@ test('aborting headless execution sends a native interrupt for that session', as
       if (pathname === '/api/session') return new Response('{"data":{"id":"ses_cancel"}}');
       if (pathname.endsWith('/environment')) return new Response(null, { status: 204 });
       if (pathname.endsWith('/prompt')) return new Response('{"data":{"id":"inbox_cancel"}}');
-      if (pathname.endsWith('/wait')) return new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true }));
+      if (pathname.endsWith('/wait')) return pendingUntilAbort(init.signal);
       if (pathname.endsWith('/interrupt')) return new Response(null, { status: 204 });
       throw new Error(`Unexpected endpoint ${pathname}`);
     };
@@ -372,7 +415,7 @@ test('headless timeout aborts the wait request and interrupts the native session
       if (pathname === '/api/session') return new Response('{"data":{"id":"ses_timeout"}}');
       if (pathname.endsWith('/environment')) return new Response(null, { status: 204 });
       if (pathname.endsWith('/prompt')) return new Response('{"data":{"id":"inbox_timeout"}}');
-      if (pathname.endsWith('/wait')) return new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true }));
+      if (pathname.endsWith('/wait')) return pendingUntilAbort(init.signal);
       if (pathname.endsWith('/interrupt')) return new Response(null, { status: 204 });
       if (pathname.endsWith('/message')) return new Response('{"data":[{"id":"idle-timeout","type":"idle","outcome":"interrupted","time":{"created":3}}]}');
       throw new Error(`Unexpected endpoint ${pathname}`);
@@ -393,7 +436,7 @@ test('headless reports timeout distinctly when no terminal outcome can be observ
       if (pathname === '/api/session') return new Response('{"data":{"id":"ses_no_outcome"}}');
       if (pathname.endsWith('/environment')) return new Response(null, { status: 204 });
       if (pathname.endsWith('/prompt')) return new Response('{"data":{"id":"inbox_no_outcome"}}');
-      if (pathname.endsWith('/wait')) return new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true }));
+      if (pathname.endsWith('/wait')) return pendingUntilAbort(init.signal);
       if (pathname.endsWith('/interrupt')) return new Response(null, { status: 204 });
       if (pathname.endsWith('/message')) return new Response('{"data":[]}');
       if (pathname === '/api/session/ses_no_outcome') return new Response('{"data":{"id":"ses_no_outcome"}}');
