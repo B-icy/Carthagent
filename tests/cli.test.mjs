@@ -150,6 +150,14 @@ test('ctg review <pr> exits 0 when the native reviewer approves', async t => {
   const result = await fixture.run('review', '14');
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /VERDICT: APPROVE/);
+  assert.deepEqual(fixture.ghInvocations, [
+    ['pr', 'view', '14', '--json', 'url,number'],
+    ['api', 'repos/owner/fixture/pulls/14'],
+    ['api', 'repos/owner/fixture/pulls/14'],
+  ]);
+  const blockedFallback = await fixture.verifyGhIsolation();
+  assert.equal(blockedFallback.status, 1, 'fixture preload must fail closed on unexpected GitHub CLI executable lookups');
+  assert.deepEqual(fixture.ghFallbacks, ['gh-fixture-sentinel']);
 });
 
 test('ctg review <pr> exits 1 on requested changes and 2 without a verdict', async t => {
@@ -164,6 +172,10 @@ test('ctg review <pr> exits 1 on requested changes and 2 without a verdict', asy
   const bad = await silent.run('review', '14');
   assert.equal(bad.status, 2, bad.stderr);
   assert.match(bad.stderr, /exact structured VERDICT line/);
+  assert.deepEqual(silent.ghInvocations, [
+    ['pr', 'view', '14', '--json', 'url,number'],
+    ['api', 'repos/owner/fixture/pulls/14'],
+  ]);
 });
 
 test('review persists admission limits across fresh native CLI processes', async t => {
@@ -178,6 +190,8 @@ test('review persists admission limits across fresh native CLI processes', async
   assert.equal(exhausted.status, 2, exhausted.stderr);
   assert.match(exhausted.stderr, /round limit/);
   assert.doesNotMatch(exhausted.stdout, /VERDICT:/);
+  assert.equal(fixture.reviewRequests.length, 3, 'exhausted review admission must fail before another reviewer request');
+  assert.equal(fixture.ghInvocations.length, 11, 'review attempts use only the expected offline PR metadata calls');
 });
 
 test('native PR review detects an authoritative PR-head advance after source capture', async t => {
@@ -196,6 +210,7 @@ test('native PR review detects an authoritative PR-head advance after source cap
   assert.match(fixture.advancedPullRequestHead, /^[a-f0-9]{40}$/);
   assert.notEqual(fixture.advancedPullRequestHead, fixture.reviewRequests[0].head);
   assert.equal(mutation.status, 2, mutation.stderr);
+  assert.equal(fixture.ghInvocations.length, 3, 'head mutation probe uses only fixture GitHub metadata requests');
 });
 
 test('native PR review validates invalid execution bounds', async t => {

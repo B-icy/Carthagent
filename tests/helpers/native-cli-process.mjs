@@ -28,6 +28,50 @@ function terminateProcessTree(child, force = false) {
   catch { try { child.kill(force ? 'SIGKILL' : 'SIGTERM'); } catch {} }
 }
 
+export function runNativeProcess(command, args, { cwd, env, timeoutMs = 30_000 } = {}) {
+  return new Promise((resolveRun, rejectRun) => {
+    const child = spawn(command, args, {
+      cwd, env, detached: process.platform !== 'win32', windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8').on('data', chunk => { stdout += chunk; });
+    child.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk; });
+    let timedOut = false;
+    let settled = false;
+    let escalation;
+    let hardBound;
+    const finish = (status, signal) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      clearTimeout(escalation);
+      clearTimeout(hardBound);
+      resolveRun({ status, signal, stdout, stderr, timedOut, pid: child.pid });
+    };
+    const timer = setTimeout(() => {
+      timedOut = true;
+      terminateProcessTree(child);
+      escalation = setTimeout(() => terminateProcessTree(child, true), 1500);
+      // Descendants may inherit the pipes; never let their handles block the caller forever.
+      hardBound = setTimeout(() => {
+        terminateProcessTree(child, true);
+        child.stdout.destroy();
+        child.stderr.destroy();
+        finish(null, 'TIMEOUT');
+      }, 5000);
+    }, timeoutMs);
+    child.once('error', error => {
+      clearTimeout(timer);
+      clearTimeout(escalation);
+      clearTimeout(hardBound);
+      if (!settled) { settled = true; rejectRun(error); }
+    });
+    child.once('close', (status, signal) => finish(status, signal));
+  });
+}
+
 function git(cwd, ...args) {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
   if (result.status !== 0) throw Error(result.stderr || `git ${args.join(' ')} failed`);
@@ -98,13 +142,10 @@ export async function nativeCliFixture(t, { verdict = 'APPROVE', omitVerdict = f
   });
   t.after(async () => {
     provider.closeAllConnections();
-  const cleanup = Promise.all([
-      stopService({ root: profile, stopTimeout: 3000, lockTimeout: 3000 }).catch(() => {}),
-      new Promise(resolveClose => provider.close(resolveClose)),
+    await Promise.all([
+      stopService({ root: profile, healthTimeout: 1500, stopTimeout: 10_000, lockTimeout: 12_000 }),
+      new Promise((resolveClose, rejectClose) => provider.close(error => error ? rejectClose(error) : resolveClose())),
     ]);
-    let cleanupTimer;
-    await Promise.race([cleanup, new Promise(resolveCleanup => { cleanupTimer = setTimeout(resolveCleanup, 7000); })]);
-    clearTimeout(cleanupTimer);
     rmSync(temp, { recursive: true, force: true });
   });
   let observerPlugin;
@@ -157,58 +198,47 @@ export default { id: 'ctg-budget-observer', async setup(ctx) {
     CTG_OPENCODE_HOME: profile,
     CTG_OPENCODE_BIN: binary,
     CARTHAGENT_CONFIG: join(temp, 'carthagent-config.json'),
-      PATH: process.env.PATH,
-      OPENCODE_DISABLE_AUTOUPDATE: 'true',
-    };
+    OPENCODE_DISABLE_AUTOUPDATE: 'true',
+  };
   const ghShim = join(temp, 'gh-fixture.mjs');
+  const ghLog = join(temp, 'gh-fixture.jsonl');
   writeFileSync(ghShim, `
-import { readFileSync } from 'node:fs';
+import { appendFileSync, readFileSync } from 'node:fs';
 const [group, command, ...args] = process.argv.slice(2);
-if (group === 'pr' && command === 'view') process.stdout.write(readFileSync(${JSON.stringify(join(temp, 'pr-view.json'))}));
-else if (group === 'api') process.stdout.write(readFileSync(${JSON.stringify(join(temp, 'pr-api.json'))}));
+appendFileSync(${JSON.stringify(ghLog)}, JSON.stringify([group, command, ...args]) + '\\n');
+if (group === 'pr' && command === 'view' && args.join(' ') === '14 --json url,number') process.stdout.write(readFileSync(${JSON.stringify(join(temp, 'pr-view.json'))}));
+else if (group === 'api' && command === 'repos/owner/fixture/pulls/14' && args.length === 0) process.stdout.write(readFileSync(${JSON.stringify(join(temp, 'pr-api.json'))}));
 else { console.error('unsupported gh fixture request', group, command, ...args); process.exitCode = 2; }
 `);
-  const run = (...args) => new Promise((resolveRun, rejectRun) => {
-    const child = spawn(process.execPath, [join(root, 'bin/ctg.mjs'), ...args], {
-      cwd, env: { ...env, CTG_NATIVE_RUNTIME_ROOT: root, CTG_GH_FIXTURE: ghShim }, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.setEncoding('utf8').on('data', chunk => { stdout += chunk; });
-    child.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk; });
-    let timedOut = false;
-    let settled = false;
-    let escalation;
-    let hardBound;
-    const finish = (status, signal) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      clearTimeout(escalation);
-      clearTimeout(hardBound);
-      resolveRun({ status, signal, stdout, stderr, timedOut });
-    };
-    let timer = setTimeout(() => {
-      timedOut = true;
-      terminateProcessTree(child);
-      escalation = setTimeout(() => terminateProcessTree(child, true), 1500);
-      // Do not wait forever for descendants to close inherited stdio handles.
-      hardBound = setTimeout(() => {
-        terminateProcessTree(child, true);
-        child.stdout.destroy();
-        child.stderr.destroy();
-        finish(null, 'TIMEOUT');
-      }, 5000);
-    }, 30_000);
-    child.once('error', error => {
-      clearTimeout(timer);
-      clearTimeout(escalation);
-      clearTimeout(hardBound);
-      if (!settled) { settled = true; rejectRun(error); }
-    });
-    child.once('close', (status, signal) => {
-      finish(status, signal);
-    });
+  const ghPreload = join(temp, 'gh-fixture-preload.mjs');
+  writeFileSync(ghPreload, `
+import childProcess from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
+import { basename } from 'node:path';
+import { appendFileSync } from 'node:fs';
+const fixture = ${JSON.stringify(ghShim)};
+const originalSpawn = childProcess.spawn;
+const originalExecFileSync = childProcess.execFileSync;
+const isGh = command => basename(String(command)).replace(/\\.exe$/i, '').toLowerCase() === 'gh';
+const blocked = command => {
+  if (isGh(command) || basename(String(command)).toLowerCase() !== 'gh-fixture-sentinel') return false;
+  appendFileSync(${JSON.stringify(join(temp, 'gh-real-fallback.jsonl'))}, JSON.stringify(String(command)) + '\\n');
+  return true;
+};
+childProcess.spawn = function(command, args, options) {
+  if (blocked(command)) return originalSpawn(process.execPath, ['-e', 'process.exit(97)'], options);
+  return isGh(command) ? originalSpawn(process.execPath, [fixture, ...(args || [])], options) : originalSpawn(command, args, options);
+};
+childProcess.execFileSync = function(command, args, options) {
+  if (blocked(command)) return originalExecFileSync(process.execPath, ['-e', 'process.exit(97)'], options);
+  return isGh(command) ? originalExecFileSync(process.execPath, [fixture, ...(args || [])], options) : originalExecFileSync(command, args, options);
+};
+syncBuiltinESMExports();
+`);
+  const preloadFlag = `--import=${pathToFileURL(ghPreload).href}`;
+  env.NODE_OPTIONS = [env.NODE_OPTIONS, preloadFlag].filter(Boolean).join(' ');
+  const run = (...args) => runNativeProcess(process.execPath, [join(root, 'bin/ctg.mjs'), ...args], {
+    cwd, env: { ...env, CTG_NATIVE_RUNTIME_ROOT: root },
   });
   const service = await ensureService({ root: profile, pluginPath: join(root, 'plugins/carthagent') });
   const client = OpenCode.make({ baseUrl: service.url, headers: service.headers });
@@ -246,6 +276,20 @@ else { console.error('unsupported gh fixture request', group, command, ...args);
     get advancedPullRequestHead() { return fixtureState.advancedPullRequestHead; },
     set advancedPullRequestHead(value) { fixtureState.advancedPullRequestHead = value; },
     setReviewMutation(callback) { fixtureState.onReviewRequest = callback; },
+    get ghFallbacks() {
+      try { return readFileSync(join(temp, 'gh-real-fallback.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line)); }
+      catch (error) { if (error.code === 'ENOENT') return []; throw error; }
+    },
+    async verifyGhIsolation() {
+      const result = await runNativeProcess(process.execPath, ['-e', "require('node:child_process').execFileSync('gh-fixture-sentinel')"], {
+        cwd, env: { ...env, CTG_NATIVE_RUNTIME_ROOT: root }, timeoutMs: 5000,
+      });
+      return result;
+    },
+    get ghInvocations() {
+      try { return readFileSync(ghLog, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line)); }
+      catch (error) { if (error.code === 'ENOENT') return []; throw error; }
+    },
     async deliveryBudget(sessionID, { timeout = 15_000, stopped, tools, repairs } = {}) {
       const deadline = Date.now() + timeout;
       let latest;
