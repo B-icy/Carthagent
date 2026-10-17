@@ -90,8 +90,9 @@ test('shell child verifies owned runtime before passing trusted selectors to fix
     encoding: 'utf8', env: { ...process.env, NODE_OPTIONS: spawnMock.options },
   }).trim().split('\n');
   const selectors = result.find(line => line.startsWith('selectors:'));
-  assert.equal(selectors?.slice('selectors:'.length), resolve(fixture.owned));
-  assert.ok(result.includes(resolve(fixture.manifest)));
+  assert.equal(await realpath(selectors?.slice('selectors:'.length)), await realpath(fixture.owned));
+  const reportedManifest = result.find(line => line !== selectors);
+  assert.equal(await realpath(reportedManifest), await realpath(fixture.manifest));
   assert.equal(await realpath(await readFile(spawnMock.marker, 'utf8')), await realpath(fixture.binary), 'identity helper checked the exact owned executable with --version after hashing');
 });
 
