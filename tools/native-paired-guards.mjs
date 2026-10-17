@@ -179,6 +179,10 @@ export function assertSelectedSourceHead(selectedCommit, checkoutHead) {
   return true;
 }
 
+export function resolveFixtureSourceRoot(plugin, executionRoot) {
+  return plugin ? resolve(plugin, '../..') : resolve(executionRoot);
+}
+
 export function assertSnapshotProvenance(provenance, { verifyArtifactFiles = false } = {}) {
   for (const key of ['binarySha256', 'binaryVersion', 'sourceCommit', 'sourceCheckoutHead', 'sourceTree',
     'sourceSnapshotSha256', 'packageLockSha256', 'dependencyNodeModulesRealpath',

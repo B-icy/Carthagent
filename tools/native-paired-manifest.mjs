@@ -44,6 +44,8 @@ export function createPairedManifest(fields) {
     hostSampling: 'one-second load-average and MemAvailable observations throughout each run\'s switch/input window',
     pairedConditions: 'one condition server at a time; fresh disposable profiles/databases with equivalent same-project session titles/prompts/markers; same pinned binary and 36x120 PTY; CTG loaded from complete selected source archive',
     pluginRequirement: 'the raw native plugin.list inventory must show carthagent active plus health RPC for CTG; no carthagent id or namespace for baseline; state is observed, never inferred from the mode flag',
+    sustainedMemoryAcceptance: 'no product-defined long-window memory ceiling exists; short-window RSS is descriptive only and excluded from acceptance',
+    sustainedMemoryDiagnosticDesign: 'future separately authorized observation only: proposed 30-minute hard-bounded window, first 5 minutes labeled warmup, then 1-second samples of host load/memory, independent TUI/server process-tree RSS, PTY/loopback stream activity, reconnects, errors and cleanup; no acceptance without owner-defined limits',
     sourceComponentSha256: fields.sourceComponentSha256,
     harnessComponentSha256: fields.harnessComponentSha256,
     acceptance: 'diagnostic until operator confirms controlled window and independent review; thresholds unchanged',
