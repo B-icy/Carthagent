@@ -77,8 +77,11 @@ tested separately using two offline models:
 the native picker showed current A and alternate B, ArrowDown changed rendered
 selection styling to B, Escape cleared the search filter and a second Escape
 dismissed the picker, no provider request occurred during cancellation, active
-session metadata remained A, and a unique post-cancel prompt reached the fixture
-with model A. The prior failed attempt remains retained as superseded evidence.
+the rendered active-session model label remained A, and a unique post-cancel
+prompt reached the fixture with model A. A later probe rerun also required exact
+expected version and independently supplied binary SHA-256 checks before
+execution, and verified that ArrowDown moved the captured selected styling from
+A to B. The prior failed attempt remains retained as superseded evidence.
 Recent-sessions cancellation and model-picker cancellation are separate checks.
 No physical clipboard claim is made.
 

@@ -45,8 +45,8 @@
   },
   "modelPickerNavigationAndEscapeUnchangedModel": {
     "status": "PASS_BOUNDED",
-    "evidence": "final-binary-model-picker-escape-unchanged-85bb44a.json",
-    "note": "Native model picker presented offline A/B options; current A was visible, ArrowDown changed selected styling to B, first Escape cleared the active filter and second Escape dismissed the dialog, no provider request occurred during cancel, active session metadata remained A, and a unique subsequent prompt used fixture model A. Earlier failed attempt is retained separately and superseded only for this lane."
+    "evidence": "final-binary-model-picker-exact-identity-85bb44a.json",
+    "note": "Native model picker presented offline A/B options; current A was visible, ArrowDown moved the captured selected styling from A to B, first Escape cleared the active filter and second Escape dismissed the dialog, no provider request occurred during cancel, the rendered active-session model label still showed A, and a unique subsequent prompt used fixture model A. The rerun required an exact expected version and independently supplied SHA-256 checked before binary execution. Earlier failed attempt is retained separately and superseded only for this lane."
   },
   "recentSessionsMenuEscapeAndComposerRestoration": {
     "status": "PASS",

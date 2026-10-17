@@ -1,0 +1,47 @@
+{
+  "startedAtUtc": "2026-10-17T19:46:59.225587+00:00",
+  "case": "native-model-picker-navigation-escape-unchanged-model",
+  "binary": "/tmp/opencode/ctg-final-runtime-build/resume-build/packages/cli/dist-ctg/cli-linux-x64/bin/opencode",
+  "expectedBinaryVersion": "opencode v0.0.0-ctg.2.0.32",
+  "binaryVersion": "opencode v0.0.0-ctg.2.0.32",
+  "expectedBinarySha256": "85bb44a65e8c185f4f33d41507d29acc77f2db0cdcb0103a14476021c8e43794",
+  "binarySha256": "85bb44a65e8c185f4f33d41507d29acc77f2db0cdcb0103a14476021c8e43794",
+  "sourceCommit": "0bb0950f816a9b33cc54be3e1c26eaaecff9396e",
+  "workingTreeDirty": false,
+  "probeSha256": "6d5fd125b1fad71976a56d0549c75aaf09ca376d1036ff954d66d5a23b0546b0",
+  "supportingHarnessSha256": "f35acbcd8e506a32c0ee5240b3cd53be34fe551c7166e3327017c69ab2a57809",
+  "provider": "loopback offline fixture",
+  "configuredModel": "ctgfixture/fixture",
+  "alternateModel": "ctgfixture/alternate",
+  "binaryPreflight": "sha256 verified against required external expected value before --version or TUI launch",
+  "physicalOSClipboardVerified": false,
+  "checks": {
+    "modelPickerNavigationEscapeUnchangedModel": {
+      "status": "PASS",
+      "modelPickerObserved": true,
+      "modelOptionsVisible": [
+        "CTG Picker A",
+        "CTG Picker B"
+      ],
+      "currentModelBeforeNavigationVisible": true,
+      "navigationKeySent": "ArrowDown",
+      "alternateOptionVisibleAfterNavigation": true,
+      "selectedOptionStyleAfterNavigation": "\u001b[38;2;10;10;10m\u001b[48;2;250;178;131m\u001b[1m",
+      "otherOptionStyleAfterNavigation": "\u001b[38;2;250;178;131m\u001b[48;2;20;20;20m",
+      "escapeDismissedPicker": true,
+      "composerRestored": true,
+      "providerRequestsDuringCancel": 0,
+      "renderedActiveSessionModelLabelStillShowsA": true,
+      "configuredModelIdBeforePicker": "fixture",
+      "postCancelProviderModels": [
+        "fixture"
+      ],
+      "postCancelUniquePromptAccepted": true,
+      "provider": "loopback offline fixture"
+    },
+    "physicalOSClipboardVerified": {
+      "status": "NOT_TESTED"
+    }
+  },
+  "status": "PASS_BOUNDED"
+}
