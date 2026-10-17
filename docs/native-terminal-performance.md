@@ -113,10 +113,13 @@ The command resolves the exact checkout HEAD at scheduling time; record that
 full SHA, tree ID, dirty status, package-lock hash, owned binary hash/version,
 physical dependency-install realpath/tree hash, and generated source/execution
 archive hashes from `manifest.json`. The runner verifies the committed source
-lockfile against the physical install and executes the archived commit plus the
-reviewed harness overlay, never mutable checkout source. A source/lock/install
-identity mismatch fails before fixture creation. Do not treat an older archived
-tree or an old benchmark run as current product acceptance evidence.
+lockfile against the physical install and requires `CTG_SOURCE_COMMIT` to equal
+the integration checkout HEAD observed by the runner before archive creation or
+fixture work. Selecting an older commit is rejected even if its package lockfile
+matches. The runner executes the archived current commit plus the reviewed
+harness overlay, never mutable checkout source. A source/lock/install identity
+mismatch fails before fixture creation. Do not treat an older archived tree or
+an old benchmark run as current product acceptance evidence.
 
 Requirements are Bash, `setsid`, Node.js, Python 3 with POSIX `pty`, and
 `@opencode/client` in the pinned integration install. The runner archives the

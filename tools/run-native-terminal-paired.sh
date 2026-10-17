@@ -6,6 +6,7 @@ set -u -o pipefail
 # operator must schedule it after competing CI/build/evaluation work has ended.
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$repo_root/tools/native-paired-orchestration.sh"
 binary="${CTG_OPENCODE_BIN:-/tmp/opencode/ctg-product-integration/node_modules/@opencode/cli/bin/opencode.exe}"
 source_root="${CTG_SOURCE_ROOT:-/tmp/opencode/ctg-product-integration}"
 source_commit="${CTG_SOURCE_COMMIT:-}"
@@ -26,6 +27,10 @@ if [[ ! "$source_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 source_root="$(cd "$source_root" && pwd)"
 source_head="$(git -C "$source_root" rev-parse HEAD)"
+node --input-type=module - "$repo_root/tools/native-paired-guards.mjs" "$source_commit" "$source_head" <<'NODE'
+const { assertSelectedSourceHead } = await import(process.argv[2]);
+assertSelectedSourceHead(process.argv[3], process.argv[4]);
+NODE
 if ! git -C "$source_root" cat-file -e "$source_commit^{commit}"; then
   printf 'Selected immutable source commit is unavailable: %s\n' "$source_commit" >&2
   exit 2
@@ -107,11 +112,11 @@ cleanup() {
     temp_path="$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")).temp)' "$active_fixture")"
     if [[ "$temp_path" == /tmp/ctg-native-fixture-* && "$temp_path" != *..* ]]; then rm -rf -- "$temp_path"; fi
   fi
-  if [[ -n "$work" ]]; then rm -rf -- "$work"; fi
+  if [[ -n "$work" ]]; then remove_paired_workdir "$work"; fi
 }
 on_int() { interrupted=1; exit 130; }
 on_term() { interrupted=1; exit 143; }
-trap cleanup EXIT
+register_paired_exit_cleanup cleanup
 trap on_int INT
 trap on_term TERM
 
@@ -128,7 +133,7 @@ mkdir -p "$runner/source/plugins/carthagent/node_modules/@opencode"
 ln -s "$binary_node_modules/@opencode/plugin" "$runner/source/plugins/carthagent/node_modules/@opencode/plugin"
 cp "$repo_root/tools/native-fixture.mjs" "$repo_root/tools/seed-native-switch-fixture.mjs" \
   "$repo_root/tools/native-paired-guards.mjs" "$repo_root/tools/native-paired-manifest.mjs" \
-  "$repo_root/tools/test-native-terminal-performance.py" "$runner/source/tools/"
+  "$repo_root/tools/native-paired-orchestration.sh" "$repo_root/tools/test-native-terminal-performance.py" "$runner/source/tools/"
 execution_archive="$output_root/execution-snapshot.tar"
 tar -C "$runner/source" --exclude=node_modules --exclude='*/node_modules' --exclude='**/node_modules' -cf "$execution_archive" .
 source_snapshot_sha256="$(sha256sum "$execution_archive" | awk '{print $1}')"
@@ -140,7 +145,7 @@ if [[ "$binary_version" != 2.0.32 ]]; then
   exit 2
 fi
 source_component_sha256="$(cd "$runner/source" && find lib plugins/carthagent -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}')"
-harness_component_sha256="$(cd "$runner/source" && sha256sum tools/native-fixture.mjs tools/seed-native-switch-fixture.mjs tools/native-paired-guards.mjs tools/native-paired-manifest.mjs tools/test-native-terminal-performance.py | sha256sum | awk '{print $1}')"
+harness_component_sha256="$(cd "$runner/source" && sha256sum tools/native-fixture.mjs tools/seed-native-switch-fixture.mjs tools/native-paired-guards.mjs tools/native-paired-manifest.mjs tools/native-paired-orchestration.sh tools/test-native-terminal-performance.py | sha256sum | awk '{print $1}')"
 git -C "$source_root" status --porcelain=v1 > "$work/source-checkout-dirty-status"
 git -C "$repo_root" status --porcelain=v1 > "$work/harness-dirty-status"
 node --input-type=module - "$runner/source/tools/native-paired-guards.mjs" "$binary_node_modules" "$runner/source/package.json" "$runner/source" > "$work/dependency-packages.json" <<'NODE'
@@ -349,21 +354,7 @@ const manifest = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 assertSnapshotProvenance(manifest, { verifyArtifactFiles: true });
 NODE
 
-run_condition baseline-1 baseline
-run_condition ctg-1 ctg
-run_condition ctg-2 ctg
-run_condition baseline-2 baseline
-set +e
-exit_status="$(node --input-type=module - "$statuses" "$runner/source/tools/native-paired-guards.mjs" "$interrupted" <<'NODE'
-import { readFileSync } from 'node:fs';
-const { aggregateConditionExit } = await import(process.argv[3]);
-const statuses = Object.fromEntries(readFileSync(process.argv[2], 'utf8').trim().split('\n').filter(Boolean).map(line => {
-  const [name, status] = line.split('\t');
-  return [name, Number(status)];
-}));
-process.stdout.write(String(aggregateConditionExit(statuses, process.argv[4] === '1')));
-NODE
-)"
-set -e
+run_paired_abba run_condition "$statuses" "$runner/source/tools/native-paired-guards.mjs" "$interrupted"
+exit_status="$paired_exit_status"
 printf 'Paired diagnostic artifacts: %s (aggregate exit %s)\n' "$output_root" "$exit_status"
 exit "$exit_status"
