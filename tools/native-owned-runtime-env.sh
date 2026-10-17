@@ -19,9 +19,16 @@ configure_native_owned_runtime() {
   canonical_binary="$(realpath "$binary")"
   canonical_root="$(realpath "$owned_root")"
   canonical_manifest="$(realpath "$release_manifest")"
+  if command -v cygpath >/dev/null 2>&1; then
+    runtime_helper="$(cygpath -w "$runtime_helper")"
+    canonical_binary="$(cygpath -w "$canonical_binary")"
+    canonical_root="$(cygpath -w "$canonical_root")"
+    canonical_manifest="$(cygpath -w "$canonical_manifest")"
+  fi
   if ! node --input-type=module - "$runtime_helper" "$canonical_binary" "$canonical_root" "$canonical_manifest" >/dev/null <<'NODE'
 import { readFile } from 'node:fs/promises';
-const { loadNativeTestRuntime } = await import(process.argv[2]);
+import { pathToFileURL } from 'node:url';
+const { loadNativeTestRuntime } = await import(pathToFileURL(process.argv[2]).href);
 const identity = await loadNativeTestRuntime({
   binary: process.argv[3],
   ownedRoot: process.argv[4],

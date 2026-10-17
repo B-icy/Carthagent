@@ -31,7 +31,8 @@ fi
 source_root="$(cd "$source_root" && pwd)"
 source_head="$(git -C "$source_root" rev-parse HEAD)"
 if ! node --input-type=module - "$repo_root/tools/native-paired-guards.mjs" "$source_commit" "$source_head" <<'NODE'
-const { assertSelectedSourceHead } = await import(process.argv[2]);
+import { pathToFileURL } from 'node:url';
+const { assertSelectedSourceHead } = await import(pathToFileURL(process.argv[2]).href);
 assertSelectedSourceHead(process.argv[3], process.argv[4]);
 NODE
 then
@@ -158,7 +159,8 @@ source_snapshot_sha256="$(sha256sum "$execution_archive" | awk '{print $1}')"
 binary_sha256="$(sha256sum "$binary" | awk '{print $1}')"
 source_tree="$(git -C "$source_root" rev-parse "$source_commit^{tree}")"
 runtime_identity_json="$(node --input-type=module - "$repo_root/tools/native-runtime-identity.mjs" "$binary" "$owned_root" "$release_manifest" <<'NODE'
-const { loadNativeTestRuntime } = await import(process.argv[2]);
+import { pathToFileURL } from 'node:url';
+const { loadNativeTestRuntime } = await import(pathToFileURL(process.argv[2]).href);
 const { readFile } = await import('node:fs/promises');
 const env = process.env.CTG_TEST_RUNTIME_SHA256
   ? { ...process.env, CTG_TEST_RUNTIME_SHA256: process.env.CTG_TEST_RUNTIME_SHA256 }
@@ -182,12 +184,14 @@ harness_component_sha256="$(cd "$runner/source" && sha256sum tools/native-fixtur
 git -C "$source_root" status --porcelain=v1 > "$work/source-checkout-dirty-status"
 git -C "$repo_root" status --porcelain=v1 > "$work/harness-dirty-status"
 node --input-type=module - "$runner/source/tools/native-paired-guards.mjs" "$binary_node_modules" "$runner/source/package.json" "$runner/source" > "$work/dependency-packages.json" <<'NODE'
-const { hashDependencyPackages } = await import(process.argv[2]);
+import { pathToFileURL } from 'node:url';
+const { hashDependencyPackages } = await import(pathToFileURL(process.argv[2]).href);
 process.stdout.write(JSON.stringify(hashDependencyPackages(process.argv[3], process.argv[4], process.argv[5])));
 NODE
 dependency_packages_json="$(cat "$work/dependency-packages.json")"
 dependency_install_json="$(node --input-type=module - "$runner/source/tools/native-paired-guards.mjs" "$binary_node_modules" <<'NODE'
-const { hashDependencyInstall } = await import(process.argv[2]);
+import { pathToFileURL } from 'node:url';
+const { hashDependencyInstall } = await import(pathToFileURL(process.argv[2]).href);
 process.stdout.write(JSON.stringify(hashDependencyInstall(process.argv[3])));
 NODE
 )"
@@ -246,7 +250,8 @@ run_one() {
   fi
   if ! node --input-type=module - "$active_fixture" "$output_root/$label-fixture.json" "$output_root/manifest.json" "$runner/source/tools/native-paired-guards.mjs" "$mode" <<'NODE'
 import { readFileSync, writeFileSync } from 'node:fs';
-const { verifySnapshotIdentity, assertPluginCondition } = await import(process.argv[5]);
+import { pathToFileURL } from 'node:url';
+const { verifySnapshotIdentity, assertPluginCondition } = await import(pathToFileURL(process.argv[5]).href);
 const f = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 const manifest = JSON.parse(readFileSync(process.argv[4], 'utf8'));
 verifySnapshotIdentity(manifest, f.provenance, { verifyArtifactFiles: true });
@@ -386,7 +391,8 @@ NODE
 
 node --input-type=module - "$output_root/manifest.json" "$runner/source/tools/native-paired-guards.mjs" <<'NODE'
 import { readFileSync } from 'node:fs';
-const { assertSnapshotProvenance } = await import(process.argv[3]);
+import { pathToFileURL } from 'node:url';
+const { assertSnapshotProvenance } = await import(pathToFileURL(process.argv[3]).href);
 const manifest = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 assertSnapshotProvenance(manifest, { verifyArtifactFiles: true });
 NODE

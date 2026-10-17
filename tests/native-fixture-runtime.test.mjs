@@ -9,13 +9,13 @@ import { resolveFixtureRuntime } from '../tools/native-fixture.mjs';
 test('owned staging hash mismatch is rejected before product resolver can execute --version', async t => {
   const root = await mkdtemp(join(tmpdir(), 'ctg-fixture-runtime-'));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const platform = `${process.platform}-${process.arch}`;
+  const platform = `${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch}`;
   const ownedRoot = join(root, 'owned');
   const binary = join(ownedRoot, `cli-${platform}`, 'bin', process.platform === 'win32' ? 'opencode.exe' : 'opencode');
   const marker = join(root, 'version-executed');
   await mkdir(join(ownedRoot, `cli-${platform}`, 'bin'), { recursive: true });
   await writeFile(binary, `#!/bin/sh\nprintf 'opencode v0.0.0-ctg.2.0.32\\n'\nprintf ran > '${marker}'\n`);
-  await chmod(binary, 0o755);
+  if (process.platform !== 'win32') await chmod(binary, 0o755);
   const digest = createHash('sha256').update(await (await import('node:fs/promises')).readFile(binary)).digest('hex');
   const releasePath = join(root, 'lib/opencode/runtime-release.json');
   await mkdir(join(root, 'lib/opencode'), { recursive: true });
@@ -48,7 +48,7 @@ test('owned staging hash mismatch is rejected before product resolver can execut
 test('product runtime selection is reverified by the trusted helper and preserves separate versions', async t => {
   const root = await mkdtemp(join(tmpdir(), 'ctg-fixture-runtime-selected-'));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const platform = `${process.platform}-${process.arch}`;
+  const platform = `${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch}`;
   const ownedRoot = join(root, 'owned');
   const binary = join(ownedRoot, `cli-${platform}`, 'bin', process.platform === 'win32' ? 'opencode.exe' : 'opencode');
   await mkdir(join(ownedRoot, `cli-${platform}`, 'bin'), { recursive: true });

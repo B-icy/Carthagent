@@ -1,7 +1,7 @@
 /** Fail-closed checks shared by paired native performance fixtures. */
 import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, readlinkSync, statSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { dirname, resolve, join } from 'node:path';
+import { dirname, resolve, join, relative, sep, extname } from 'node:path';
 
 export function assertCompletePluginSource(sourceRoot) {
   const root = resolve(sourceRoot);
@@ -128,11 +128,12 @@ export function assertPluginImportDependencies(pluginEntry) {
       imports.push(specifier);
       if (!specifier.startsWith('.')) continue;
       const importedPath = resolve(dirname(file), specifier);
-      const candidates = /\.[^/]+$/.test(importedPath)
+      const candidates = extname(importedPath)
         ? [importedPath]
         : [`${importedPath}.ts`, `${importedPath}.tsx`, `${importedPath}.mjs`, `${importedPath}.js`, `${importedPath}.json`, join(importedPath, 'index.ts'), join(importedPath, 'index.js')];
       const importedFile = candidates.find(candidate => existsSync(candidate));
-      if (!importedFile || !importedFile.startsWith(`${sourceRoot}/`)) {
+      const importedRelative = importedFile ? relative(sourceRoot, importedFile) : '';
+      if (!importedFile || importedRelative === '..' || importedRelative.startsWith(`..${sep}`) || isAbsoluteLike(importedRelative)) {
         throw new Error(`Plugin source import is missing from immutable tree: ${specifier} (${importedFile})`);
       }
       pending.push(importedFile);
@@ -142,6 +143,10 @@ export function assertPluginImportDependencies(pluginEntry) {
   const workspaceImports = imports.filter(specifier => specifier === '@opencode/plugin' || specifier.startsWith('@opencode/plugin/'));
   if (scan.size > 1 && !workspaceImports.includes('@opencode/plugin')) throw new Error('Plugin entry does not import the pinned @opencode/plugin runtime');
   return { sourceImports, workspaceImports };
+}
+
+function isAbsoluteLike(path) {
+  return path.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(path);
 }
 
 export function assertPluginCondition(inventory, enabled) {
