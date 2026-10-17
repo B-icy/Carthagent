@@ -20,14 +20,16 @@ bypass the acceptance trust chain. The runner launches two full TUI sessions in
 real PTYs, with isolated temporary home/config/data/state/cache/database and
 project directories: one with `CTG_TUI_GLYPHS=ascii`, one with
 `CTG_TUI_GLYPHS=unicode`. It stages (but does not submit) the exact text
-`CTG_USER_TEXT 漢字 café → • − …` in the composer. No model provider is used.
+`CTG_GLYPH_PAYLOAD 漢字 café → • − …` in the composer. The paired PTY parser
+tracks East Asian wide-cell width and combining marks locally to this probe; it
+requires the entire exact ordered payload on the rendered prompt row. No model
+provider is used.
 
 Assertions concern a small, named set of static prompt chrome tokens (the
 vertical prompt border and known chrome ellipsis, bullet, and minus mappings).
 They do not require the whole screen to be ASCII: arbitrary Unicode user text is
-checked as exact UTF-8 component echoes in the captured PTY stream (the compact
-screen model does not implement wide-cell positioning), and its composer row is
-excluded from the chrome-token checks.
+checked as an exact ordered payload on the rendered composer row. The composer
+row itself is excluded from the separate startup-logo chrome checks.
 The JSON artifact records the exact runtime version, compatibility version,
 binary SHA-256, source/patch/lock provenance, production resolver identity,
 mode-specific parsed screens, and captured-PTY digests. A PTY pass establishes
