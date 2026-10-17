@@ -1,7 +1,8 @@
 /** Fail-closed checks shared by paired native performance fixtures. */
 import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, readlinkSync, statSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { dirname, resolve, join, relative, sep, extname } from 'node:path';
+import path from 'node:path';
+import { dirname, resolve, join, extname } from 'node:path';
 
 export function assertCompletePluginSource(sourceRoot) {
   const root = resolve(sourceRoot);
@@ -132,8 +133,7 @@ export function assertPluginImportDependencies(pluginEntry) {
         ? [importedPath]
         : [`${importedPath}.ts`, `${importedPath}.tsx`, `${importedPath}.mjs`, `${importedPath}.js`, `${importedPath}.json`, join(importedPath, 'index.ts'), join(importedPath, 'index.js')];
       const importedFile = candidates.find(candidate => existsSync(candidate));
-      const importedRelative = importedFile ? relative(sourceRoot, importedFile) : '';
-      if (!importedFile || importedRelative === '..' || importedRelative.startsWith(`..${sep}`) || isAbsoluteLike(importedRelative)) {
+      if (!importedFile || !isPathWithinRoot(sourceRoot, importedFile)) {
         throw new Error(`Plugin source import is missing from immutable tree: ${specifier} (${importedFile})`);
       }
       pending.push(importedFile);
@@ -145,8 +145,11 @@ export function assertPluginImportDependencies(pluginEntry) {
   return { sourceImports, workspaceImports };
 }
 
-function isAbsoluteLike(path) {
-  return path.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(path);
+export function isPathWithinRoot(root, target, pathApi = path) {
+  const importedRelative = pathApi.relative(root, target);
+  return importedRelative === '' || (importedRelative !== '..' &&
+    !importedRelative.startsWith(`..${pathApi.sep}`) && !importedRelative.startsWith(pathApi.sep) &&
+    !/^[a-zA-Z]:[\\/]/.test(importedRelative));
 }
 
 export function assertPluginCondition(inventory, enabled) {
