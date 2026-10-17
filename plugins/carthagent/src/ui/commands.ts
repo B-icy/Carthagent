@@ -15,7 +15,7 @@ export interface CarthagentCommand {
 }
 
 export const COMMANDS: readonly CarthagentCommand[] = [
-  { id: "help", name: "ctg-help", description: "List Carthagent commands and native shortcuts" },
+  { id: "help", name: "help", aliases: ["ctg-help"], description: "List Carthagent commands and native shortcuts" },
   { id: "resume", name: "resume", aliases: ["sessions"], args: "[id|name]", description: "Resume a local session" },
   { id: "restart", name: "restart", aliases: ["kill"], description: "Recover the selected session by interrupting its active turn" },
   { id: "theme", name: "theme", args: "[name]", description: "Pick or set a Carthagent-compatible theme" },
@@ -55,4 +55,4 @@ export function resolveCommand(token: string, commands: readonly CarthagentComma
 
 // Host-owned commands take priority. These slash names are verified against
 // the V2.0.32 keybind command inventory and are intentionally not shadowed.
-export const NATIVE_COMMAND_COLLISIONS = ["themes", "settings", "help"] as const;
+export const NATIVE_COMMAND_COLLISIONS = ["themes", "settings"] as const;

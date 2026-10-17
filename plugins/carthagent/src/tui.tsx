@@ -7,8 +7,9 @@ import { framePrompt } from "../../../lib/tui/framing.mjs";
 import { carthagentConfigPath, loadCarthagentConfig, resolveReviewMode, saveCarthagentConfig } from "../../../lib/review.mjs";
 import { COMMANDS, NATIVE_COMMAND_COLLISIONS } from "./ui/commands.js";
 import { Workspace, rpcEventOptions, sessionControls, workspaceClient } from "./ui/client.js";
-import { cliConfigPath, readCliConfig, writeNativeTheme } from "./ui/host-state.js";
+import { cliConfigDirectory, cliConfigPath, readCliConfig, writeNativeTheme } from "./ui/host-state.js";
 import { WorkspacePage } from "./ui/workspace.js";
+import { provisionNativeThemes } from "./ui/theme-provision.mjs";
 
 const THEMES = ["carthage", "opencode", "tokyonight", "nebula", "ember", "forest", "mono", "obsidian", "midnight", "solarized-dark", "nord", "contrast-dark", "okabe-dark", "paper", "daylight", "solarized-light", "contrast-light", "okabe-light", "solarized", "okabe", "contrast", "system"];
 
@@ -61,7 +62,7 @@ export default Plugin.define({
       const sessionApi = sessionControls(context, location);
       switch (id) {
         case "help":
-          await context.ui.dialog.alert({ title: "Carthagent commands", message: COMMANDS.map((command) => `/${command.name}${command.args ? ` ${command.args}` : ""} — ${command.description}`).join("\n") + "\n\nCtrl+R sessions · Ctrl+T settings · Ctrl+N new session are native OpenCode actions." });
+          await context.ui.dialog.alert({ title: "Carthagent commands", message: COMMANDS.map((command) => `/${command.name}${command.args ? ` ${command.args}` : ""}${command.aliases?.length ? ` (${command.aliases.map((alias) => `/${alias}`).join(", ")})` : ""} — ${command.description}`).join("\n") + "\n\nCtrl+R sessions · Ctrl+T settings · Ctrl+N new session are native OpenCode actions." });
           return;
         case "resume": {
           const sessions = context.data.session.list().filter((session) => !session.parentID);
@@ -91,12 +92,25 @@ export default Plugin.define({
           const currentTheme = typeof currentConfig.theme === "string" ? currentConfig.theme : currentConfig.theme?.name;
           if (theme) {
             if (!THEMES.includes(theme)) { toast(`Unknown theme “${theme}”. Available compatibility names: ${THEMES.join(", ")}.`, "warning"); return; }
+            const provisioned = await provisionNativeThemes(cliConfigDirectory(), [theme]);
+            if (provisioned.installed.length) {
+              toast(`Installed native theme “${theme}” in ${provisioned.directory}. OpenCode discovers new theme files at startup; restart the TUI, then run /theme ${theme} again to select it.`, "warning");
+              return;
+            }
             await writeNativeTheme(cliConfigPath(), theme);
-            toast(`Theme “${theme}” saved to native OpenCode cli.json. OpenCode reloads valid CLI config changes while the TUI is running.`, "success");
+            toast(`Theme “${theme}” saved to native OpenCode cli.json. OpenCode reloads valid theme selections while the TUI is running.`, "success");
             return;
           }
           const selected = await context.ui.dialog.select({ title: "OpenCode themes", current: currentTheme, options: THEMES.map((name) => ({ title: name, value: name, description: name === "carthage" ? "Carthagent purple field, gold accent" : "OpenCode theme" })) });
-          if (selected) { await writeNativeTheme(cliConfigPath(), selected); toast(`Theme “${selected}” saved to native OpenCode cli.json. OpenCode reloads valid CLI config changes while the TUI is running.`, "success"); }
+          if (selected) {
+            const provisioned = await provisionNativeThemes(cliConfigDirectory(), [selected]);
+            if (provisioned.installed.length) {
+              toast(`Installed native theme “${selected}” in ${provisioned.directory}. OpenCode discovers new theme files at startup; restart the TUI, then select it again.`, "warning");
+              return;
+            }
+            await writeNativeTheme(cliPath, selected);
+            toast(`Theme “${selected}” saved to native OpenCode cli.json. OpenCode reloads valid theme selections while the TUI is running.`, "success");
+          }
           return;
         }
         case "model": {
@@ -151,13 +165,25 @@ export default Plugin.define({
         case "export":
           if (!sessionID) { toast("/export requires an open session.", "warning"); return; }
           {
-            const messages = await context.client.session.context({ sessionID });
+            await context.data.session.message.sync(sessionID);
+            const messages = context.data.session.message.list(sessionID);
             const session = context.data.session.get(sessionID);
             const title = session?.title ?? "Carthagent session";
             const content = messages.map((message) => {
               const who = message.type === "assistant" ? "Assistant" : message.type === "user" ? "You" : message.type;
-              const body = message.type === "assistant" ? message.content.filter((part) => part.type === "text").map((part) => part.text).join("\n")
-                : message.type === "user" ? message.text : message.type === "synthetic" ? message.text : "";
+              const body = message.type === "assistant" ? message.content.map((part) => {
+                if (part.type === "text" || part.type === "reasoning") return part.text;
+                if (part.type === "tool") {
+                  const state = part.state;
+                  const input = typeof state.input === "string" ? state.input : JSON.stringify(state.input, null, 2);
+                  const result = "content" in state && state.content ? `\nOutput: ${state.content.map((item) => item.type === "text" ? item.text : JSON.stringify(item)).join("\n")}` : "";
+                  const failure = state.status === "error" ? `\nError: ${state.error.message}` : "";
+                  return `[Tool ${part.name} · ${state.status}]\nInput: ${input}${result}${failure}`;
+                }
+                return "[Unsupported assistant content]";
+              }).join("\n")
+                : message.type === "user" || message.type === "synthetic" || message.type === "system" || message.type === "skill" ? message.text
+                  : message.type === "shell" ? `$ ${message.command}\n${message.output?.output ?? ""}` : message.type === "compaction" ? `[Compaction ${message.status}${message.status === "completed" || message.status === "running" ? `: ${message.summary}` : `: ${message.error.message}`}]` : "";
               return body ? `<article><h2>${escapeHtml(who)}</h2><pre>${escapeHtml(body)}</pre></article>` : "";
             }).join("\n");
             const html = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapeHtml(title)}</title><style>body{margin:3rem auto;max-width:52rem;padding:0 1rem;background:#160e20;color:#f6f0e7;font:16px/1.6 system-ui}h1{color:#e6c480}article{border-top:1px solid #49364f;padding:1rem 0}h2{color:#c0b3ca;font-size:.9rem}pre{white-space:pre-wrap;font:inherit}</style><h1>${escapeHtml(title)}</h1>${content}</html>`;
@@ -181,8 +207,27 @@ export default Plugin.define({
         case "stats": {
           if (!sessionID) { toast("/stats requires an open session.", "warning"); return; }
           const session = context.data.session.get(sessionID);
-          const cost = context.data.session.cost(sessionID);
-          await context.ui.dialog.alert({ title: "Session stats", message: `${session?.title ?? sessionID}\nCost: ${Number.isFinite(cost) ? `$${cost.toFixed(4)}` : "not reported"}` });
+          const cachedCost = context.data.session.cost(sessionID);
+          await context.data.session.message.sync(sessionID);
+          const messages = context.data.session.message.list(sessionID);
+          const assistants = messages.filter((message) => message.type === "assistant");
+          const totals = assistants.reduce((sum, message) => {
+            const tokens = message.tokens;
+            if (tokens) {
+              sum.input += tokens.input;
+              sum.output += tokens.output;
+              sum.reasoning += tokens.reasoning;
+              sum.cacheRead += tokens.cache.read;
+              sum.cacheWrite += tokens.cache.write;
+            }
+            if (message.cost !== undefined) sum.cost += message.cost;
+            return sum;
+          }, { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0 });
+          const hasMessageCost = assistants.some((message) => message.cost !== undefined);
+          if (!hasMessageCost && Number.isFinite(cachedCost) && cachedCost > 0) totals.cost = cachedCost;
+          const hasCost = hasMessageCost || Number.isFinite(cachedCost) && cachedCost > 0;
+          const hasTokens = assistants.some((message) => message.tokens !== undefined);
+          await context.ui.dialog.alert({ title: "Session stats", message: `${session?.title ?? sessionID}\nMessages: ${messages.length} (${assistants.length} assistant)\nInput tokens: ${hasTokens ? totals.input : "not reported"}\nOutput tokens: ${hasTokens ? totals.output : "not reported"}\nReasoning tokens: ${hasTokens ? totals.reasoning : "not reported"}\nCache read/write: ${hasTokens ? `${totals.cacheRead} / ${totals.cacheWrite}` : "not reported"}\nCost: ${hasCost ? `$${totals.cost.toFixed(4)}` : "not reported"}` });
           return;
         }
         case "clear":
