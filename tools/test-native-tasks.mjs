@@ -34,14 +34,27 @@ try {
   assert.deepEqual(new Set(snapshot.sessions.map(session => session.id)), new Set([first.sessionID, second.sessionID]));
   for (const task of [first, second]) {
     assert.deepEqual(await rpc('open', { sessionID: task.sessionID }), { opened: true, directory: task.directory });
+    await host.active({ directory: task.directory });
   }
+  await host.client.rpc.call({ rpcID: 'carthagent.session', method: 'framing',
+    input: { sessionID: first.sessionID, enabled: false }, location: { directory: first.directory } }, host.request());
+  await Promise.all([first, second].map((task, index) => host.client.session.prompt({
+    sessionID: task.sessionID, text: `WORKTREE_FIXTURE_${index}`,
+  }, host.request())));
+  assert.deepEqual(await Promise.all([first, second].map(task => host.outcome(task.sessionID))), ['succeeded', 'succeeded']);
+  const contexts = await Promise.all([first, second].map(task => host.client.session.context({ sessionID: task.sessionID }, host.request())));
+  const userTexts = contexts.map(messages => messages.filter(message => message.type === 'user').map(message => message.text));
+  assert.deepEqual(userTexts[0], ['WORKTREE_FIXTURE_0']);
+  assert.ok(userTexts[1].some(text => text.includes('WORKTREE_FIXTURE_1') && text !== 'WORKTREE_FIXTURE_1'), 'Neighboring worktree keeps its delivery framing');
+  assert.ok(!JSON.stringify(contexts[0]).includes('WORKTREE_FIXTURE_1'));
+  assert.ok(!JSON.stringify(contexts[1]).includes('WORKTREE_FIXTURE_0'));
   await host.stop();
   await host.start();
   await host.active();
   const restored = await rpc('snapshot', {});
   assert.deepEqual(restored.tasks.map(task => task.id).sort(), snapshot.tasks.map(task => task.id).sort());
   assert.deepEqual(restored.sessions.map(session => session.id).sort(), snapshot.sessions.map(session => session.id).sort());
-  console.log(JSON.stringify({ host: '2.0.32', worktrees: 2, rootSessions: 2, isolation: 'passed', restart: 'passed' }));
+  console.log(JSON.stringify({ host: '2.0.32', worktrees: 2, rootSessions: 2, isolation: 'passed', concurrentTurns: 'passed', restart: 'passed' }));
 } catch (error) {
   console.error(host.output);
   throw error;
