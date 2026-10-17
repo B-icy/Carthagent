@@ -31,7 +31,10 @@ jobs:
         run: node tools/verify-release-version.mjs "$RELEASE_TAG"
       - run: npm ci
       - run: npm run quality
-      - run: npm run test:native-package
+      - name: Accept the installed package with its owned runtime required
+        env:
+          CTG_REQUIRE_OWNED_RUNTIME: '1'
+        run: npm run test:native-package
       - id: commit
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
@@ -89,12 +92,34 @@ jobs:
           CARTHAGENT_CLI_RELEASE_TOKEN: ${{ secrets.CARTHAGENT_CLI_RELEASE_TOKEN }}
           CARTHAGENT_CLOUD_URL: ${{ vars.CARTHAGENT_CLOUD_URL || 'https://api.carthagent.xyz' }}
           RELEASE_TAG: ${{ inputs.release_tag }}
+          EXPECTED_SHA: ${{ needs.verify-release.outputs.tested_sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           if [ -z "${CARTHAGENT_CLI_RELEASE_TOKEN:-}" ]; then
             echo "::error::Set the CARTHAGENT_CLI_RELEASE_TOKEN repository secret to the backend's CARTHAGENT_CLI_RELEASE_ADMIN_TOKEN value." >&2
             exit 1
           fi
+
+          tag_ref="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}")"
+          tag_type="$(jq -r '.object.type' <<<"$tag_ref")"
+          tag_object="$(jq -r '.object.sha' <<<"$tag_ref")"
+          depth=0
+          while [ "$tag_type" = tag ]; do
+            depth=$((depth + 1))
+            if [ "$depth" -gt 5 ]; then
+              echo "::error::Release tag ${RELEASE_TAG} has excessive nested tag objects." >&2
+              exit 1
+            fi
+            tag_object_json="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_object}")"
+            tag_type="$(jq -r '.object.type' <<<"$tag_object_json")"
+            tag_object="$(jq -r '.object.sha' <<<"$tag_object_json")"
+          done
+          if [ "$tag_object" != "$EXPECTED_SHA" ]; then
+            echo "::error::Remote release tag ${RELEASE_TAG} resolves to ${tag_object}, not the tested commit ${EXPECTED_SHA}." >&2
+            exit 1
+          fi
+
           version="${RELEASE_TAG#v}"
           curl -fsS -X POST "${CARTHAGENT_CLOUD_URL}/v1/cli/releases" \
             -H "authorization: Bearer ${CARTHAGENT_CLI_RELEASE_TOKEN}" \
