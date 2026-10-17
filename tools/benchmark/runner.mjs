@@ -59,8 +59,7 @@ async function startNativeService({ workspace, config, mode, arm, smoke, toolLim
   };
   await provisionRuntime({ root:home, profile:configJson });
   const service=await serviceManager.ensureService({root:home,env:safeEnv({
-    BENCH_TOOL_LIMIT:String(toolLimit),BENCH_TURN_LIMIT:String(toolLimit),
-    BENCH_TURN_LOG:join(dirname(config),'turns.jsonl'),BENCH_GUARD_LOG:join(dirname(config),'guard.jsonl'),
+    BENCH_TOOL_LIMIT:String(toolLimit),BENCH_GUARD_LOG:join(dirname(config),'guard.jsonl'),
     BENCH_GATEWAY:gateway,BENCH_ADVISOR_LOG:join(dirname(config),'advisor.jsonl'),
     CTG_EVALUATION_MAX_TURNS:String(toolLimit),CTG_EVALUATION_MAX_COST:String(smoke ? .08 : 2.79),
     OPENROUTER_API_KEY:apiKey || '',
@@ -73,9 +72,9 @@ async function startNativeService({ workspace, config, mode, arm, smoke, toolLim
     const deadline=Date.now()+15000;
     while(Date.now()<deadline){
       const loaded=await listPlugins(service,request).catch(()=>null);
-      const expected = arm === 'plain' ? 'ctg.evaluation-budget' : 'ctg.benchmark';
-      const active = loaded?.find(plugin=>plugin.id===expected&&plugin.state?.status==='active');
-      const failure=loaded?.find(plugin=>plugin.id===expected&&plugin.state?.status==='failed');
+      const expected = ['ctg.evaluation-budget', ...(arm === 'plain' ? [] : ['ctg.benchmark'])];
+      const active = expected.every(id=>loaded?.some(plugin=>plugin.id===id&&plugin.state?.status==='active'));
+      const failure=loaded?.find(plugin=>expected.includes(plugin.id)&&plugin.state?.status==='failed');
       if(active) break;
       if(failure) throw Error(`Native OpenCode plugin failed to activate: ${JSON.stringify(failure)}`);
       if(Date.now()+100>=deadline) throw Error(`Native benchmark plugin did not become active: ${JSON.stringify(loaded)}`);
@@ -90,6 +89,7 @@ async function startNativeService({ workspace, config, mode, arm, smoke, toolLim
 }
 export async function runCandidate(task, arm, { smoke = false, key, root = ROOT, campaignPath = CAMPAIGN, fetchImpl, promptOverride, toolLimit = 120, nativeRunner = runNativeEvaluation, serviceManager = { ensureService, stopService } } = {}) {
   if ((!TASKS[task] && !smoke) || !['plain','harness','jev'].includes(arm)) throw Error('Invalid run');
+  if (process.env.CTG_OPENCODE_URL) throw Error('CTG_OPENCODE_URL is not accepted by the benchmark: service ownership and authentication must be established by this runner.');
   if (!smoke) { if (promptOverride || toolLimit !== 120 || fetchImpl) throw Error('Candidate overrides forbidden'); verifyFreeze(root); }
   const apiKey = key || process.env.OPENROUTER_API_KEY;
   if (!apiKey && !nativeRunner.fixture) throw Error('Set OPENROUTER_API_KEY explicitly; credential discovery is disabled.');
@@ -128,9 +128,8 @@ export async function runCandidate(task, arm, { smoke = false, key, root = ROOT,
     }
   const classification = terminalStatus(events,{code:result.exitCode},stopReason,gateway.budget,result.outcome);
     if (result.errors?.some(error => /usage|cost/i.test(error)) || result.budgetReason === 'unknown usage; fail-closed') gateway.budget.stopped = 'unknown-or-excess-billing';
-    const turnRows=existsSync(join(run,'turns.jsonl'))?readFileSync(join(run,'turns.jsonl'),'utf8').trim().split('\n').filter(Boolean).map(JSON.parse):[];
     const guardRows=existsSync(join(run,'guard.jsonl'))?readFileSync(join(run,'guard.jsonl'),'utf8').trim().split('\n').filter(Boolean).map(JSON.parse):[];
-    const final = { task,arm,smoke,...classification,status:classification.status,smokePassed:smoke ? result.exitCode===0 && result.outcome==='succeeded' && !result.budgetReason : undefined, stopReason:result.budgetReason || stopReason, outcome:result.outcome||null, interruptionStatus:result.interruptionStatus||'unknown', terminalAuthority:'session.outcome', costScope:'session', usageSource:'session.get', toolStarts:Object.values(result.tools||{}).reduce((a,b)=>a+b,0), toolAdmittedByBudget:guardRows.filter(row=>!row.blocked).length, toolBlockedByBudget:guardRows.filter(row=>row.blocked).length, wallMs:Date.now()-started,budget:gateway.budget,runtime:ENGINE_RUNTIME,openCodeVersion:result.opencodeVersion||nativeService?.version||'2.0.32',productiveTurns:result.productiveTurns||0, turnAdmission:turnRows,reportedCost:result.cost,finishedAt:new Date().toISOString() };
+    const final = { task,arm,smoke,...classification,status:classification.status,smokePassed:smoke ? result.exitCode===0 && result.outcome==='succeeded' && !result.budgetReason : undefined, stopReason:result.budgetReason || stopReason, outcome:result.outcome||null, interruptionStatus:result.interruptionStatus||'unknown', terminalAuthority:'session.outcome', costScope:'session', usageSource:'session.get', toolStarts:Object.values(result.tools||{}).reduce((a,b)=>a+b,0), toolAdmittedByBudget:guardRows.filter(row=>!row.blocked).length, toolBlockedByBudget:guardRows.filter(row=>row.blocked).length, wallMs:Date.now()-started,budget:gateway.budget,runtime:ENGINE_RUNTIME,openCodeVersion:result.opencodeVersion||nativeService?.version||'2.0.32',productiveTurns:result.productiveTurns||0, productiveTurnEvidence:'paginated-session-transcript',reportedCost:result.cost,finishedAt:new Date().toISOString() };
     writeFileSync(join(run,'result.json'),JSON.stringify(final,null,2)); console.log(JSON.stringify(final)); return final;
   } finally { await nativeService?.close(); await fixtureService?.close(); await gateway.close(); }
 }

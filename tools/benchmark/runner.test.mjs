@@ -40,14 +40,31 @@ test('offline fixture runner logs runtime and uses no provider credentials', asy
   assert.equal(existsSync(join(root,'smoke-plain','config','runtime.json')),true);
 });
 
+test('benchmark refuses arbitrary service endpoints before creating a run', async () => {
+  const root=mk(), campaignPath=join(root,'campaign.json');
+  initializeCampaign(campaignPath,{historicalCandidate:0,historicalSmoke:0});
+  const before=process.env.CTG_OPENCODE_URL;
+  process.env.CTG_OPENCODE_URL='http://127.0.0.1:1';
+  try {
+    await assert.rejects(runCandidate('smoke','plain',{smoke:true,root,campaignPath,nativeRunner:Object.assign(async()=>{throw Error('must not execute');},{fixture:true})}),/ownership and authentication/);
+    assert.equal(existsSync(join(root,'smoke-plain')),false,'rejected endpoint must be rejected before allocating a run');
+  } finally {
+    if(before===undefined) delete process.env.CTG_OPENCODE_URL;
+    else process.env.CTG_OPENCODE_URL=before;
+  }
+});
+
 test('native benchmark plugin loads in OpenCode 2 with both session and tool hooks', async () => {
   const root=mk();
   const host=await nativeFixture({
-    plugin:join(process.cwd(),'tools/benchmark/native-plugin'),
-    env:{BENCH_TOOL_LIMIT:'4',BENCH_TURN_LIMIT:'4',BENCH_TURN_LOG:join(root,'turns.jsonl'),BENCH_GUARD_LOG:join(root,'guard.jsonl'),BENCH_ADVISOR_LOG:join(root,'advisor.jsonl'),BENCH_GATEWAY:'http://127.0.0.1:1',CTG_EVALUATION_MAX_TURNS:'4',CTG_EVALUATION_MAX_COST:'1'},
+    plugin:join(process.cwd(),'lib/opencode/evaluation-budget-plugin'),
+    plugins:[join(process.cwd(),'tools/benchmark/native-plugin')],
+    env:{BENCH_TOOL_LIMIT:'4',BENCH_GUARD_LOG:join(root,'guard.jsonl'),BENCH_ADVISOR_LOG:join(root,'advisor.jsonl'),BENCH_GATEWAY:'http://127.0.0.1:1',CTG_EVALUATION_MAX_TURNS:'4',CTG_EVALUATION_MAX_COST:'1'},
   });
   try {
     await host.active('ctg.benchmark');
+    const inventory=await host.client.plugin.list({location:host.location},host.request());
+    assert.ok(inventory.data.some(plugin=>plugin.id==='ctg.evaluation-budget'&&plugin.state.status==='active'),JSON.stringify(inventory.data));
     const response=await host.client.session.create({location:host.location,model:host.model,title:'hook initialization probe'},host.request());
     assert.ok(response.id);
   } finally { await host.close(); }
