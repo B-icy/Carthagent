@@ -13,7 +13,7 @@ on:
         required: true
         type: string
       source_commit:
-        description: Reviewed commit on the default branch (must equal this dispatch's workflow commit)
+        description: Exact reviewed prebuild source SHA (must equal this dispatch's commit)
         required: false
         type: string
       prebuild_run_id:
@@ -60,8 +60,7 @@ jobs:
           set -euo pipefail
           [[ "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]
           if [[ "$MODE" == prebuild ]]; then
-            default_branch="$(gh api "repos/$GITHUB_REPOSITORY" --jq '.default_branch')"
-            [[ "$GITHUB_REF" == "refs/heads/$default_branch" ]]
+            [[ "$GITHUB_REF" == refs/heads/* ]]
             [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
             [[ "$SOURCE_COMMIT" == "$GITHUB_SHA" ]]
             gh api "repos/$GITHUB_REPOSITORY/commits/$SOURCE_COMMIT" --jq '.sha' | grep -qx "$SOURCE_COMMIT"
@@ -78,8 +77,11 @@ jobs:
             [[ "$(jq -r .head_repository.full_name <<<"$prebuild_run")" == "$GITHUB_REPOSITORY" ]]
             workflow_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/publish-owned-opencode-runtime.yml" --jq '.id')"
             [[ "$(jq -r .workflow_id <<<"$prebuild_run")" == "$workflow_id" ]]
-            [[ "$(jq -r .head_branch <<<"$prebuild_run")" == "$default_branch" ]]
-            echo "source_commit=$(jq -r .head_sha <<<"$prebuild_run")" >> "$GITHUB_OUTPUT"
+            prebuild_branch="$(jq -r .head_branch <<<"$prebuild_run")"
+            prebuild_sha="$(jq -r .head_sha <<<"$prebuild_run")"
+            [[ "$prebuild_branch" =~ ^[A-Za-z0-9._/-]+$ ]]
+            [[ "$prebuild_sha" =~ ^[0-9a-f]{40}$ ]]
+            echo "source_commit=$prebuild_sha" >> "$GITHUB_OUTPUT"
             tag_commit="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq '.object.sha')"
             tag_type="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq '.object.type')"
             if [[ "$tag_type" == tag ]]; then tag_commit="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_commit" --jq '.object.sha')"; fi
