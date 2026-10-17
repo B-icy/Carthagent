@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -47,11 +48,21 @@ if (preflight) {
 const artifact = process.env.CTG_GLYPH_ARTIFACT;
 const scratch = await mkdtemp(join(tmpdir(), 'ctg-glyph-proof-'));
 const ptyArtifact = join(scratch, 'pty.json');
+const pythonCandidates = [process.env.PYTHON,
+  join(root, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'),
+  process.platform === 'win32' ? 'python.exe' : 'python3', 'python'].filter(Boolean);
+const findExecutable = candidate => {
+  if (existsSync(candidate)) return candidate;
+  return (process.env.PATH || '').split(process.platform === 'win32' ? ';' : ':')
+    .map(directory => join(directory, candidate)).find(existsSync) ?? null;
+};
+const python = pythonCandidates.map(findExecutable).find(Boolean);
+if (!python) throw new Error('Python was not found; set PYTHON to an interpreter path');
 const args = [join(root, 'tools/native-glyph-pty.py'), '--binary', binary];
 args.push('--artifact', ptyArtifact);
 const probeEnv = Object.fromEntries(['PATH', 'LANG', 'LC_ALL'].filter(key => process.env[key])
   .map(key => [key, process.env[key]]));
-const probe = spawnSync('python3', args, { cwd: root, encoding: 'utf8', timeout: 120_000, env: probeEnv });
+const probe = spawnSync(python, args, { cwd: root, encoding: 'utf8', timeout: 120_000, env: probeEnv });
 if (probe.stderr) process.stderr.write(probe.stderr);
 if (probe.status !== 0) {
   if (probe.stdout) process.stderr.write(probe.stdout);

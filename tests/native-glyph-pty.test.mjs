@@ -1,15 +1,32 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const probe = join(root, 'tools/native-glyph-pty.py');
+const helpers = join(root, 'tools/native-glyph-helpers.py');
+const candidates = [
+  process.env.PYTHON,
+  join(root, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'),
+  process.platform === 'win32' ? 'python.exe' : 'python3',
+  'python',
+].filter(Boolean);
+const resolveExecutable = candidate => {
+  if (existsSync(candidate)) return candidate;
+  for (const directory of (process.env.PATH || '').split(delimiter)) {
+    const path = join(directory, candidate);
+    if (existsSync(path)) return path;
+  }
+  return null;
+};
+const python = candidates.map(resolveExecutable).find(Boolean);
+const skipPython = python ? false : 'Python was not found; set PYTHON to an interpreter path';
 
-test('glyph PTY child environment does not inherit the draft-runtime release token', () => {
-  const result = spawnSync('python3', ['-c', `import importlib.util, pathlib
-spec=importlib.util.spec_from_file_location('probe', ${JSON.stringify(probe)})
+test('glyph child environment does not inherit the draft-runtime release token', { skip: skipPython }, () => {
+  const result = spawnSync(python, ['-c', `import importlib.util, pathlib
+spec=importlib.util.spec_from_file_location('helpers', ${JSON.stringify(helpers)})
 module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
 root=pathlib.Path('/tmp/isolated')
 env=module.child_environment(root, root/'config', 'ascii', {'PATH':'/bin', 'CTG_RUNTIME_GITHUB_TOKEN':'sentinel'})
@@ -21,9 +38,9 @@ print('PASS')`], { encoding: 'utf8' });
   assert.match(result.stdout, /PASS/);
 });
 
-test('composer assertion requires the exact ordered Unicode payload on its rendered row', () => {
-  const result = spawnSync('python3', ['-c', `import importlib.util
-spec=importlib.util.spec_from_file_location('probe', ${JSON.stringify(probe)})
+test('composer assertion requires the exact ordered Unicode payload on its rendered row', { skip: skipPython }, () => {
+  const result = spawnSync(python, ['-c', `import importlib.util
+spec=importlib.util.spec_from_file_location('helpers', ${JSON.stringify(helpers)})
 module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
 expected=module.USER_TEXT
 assert module.assert_composer_payload('logo █▀▀ OpenCode\\n┃  '+expected+'\\n')
@@ -42,9 +59,9 @@ print('PASS')`], { encoding: 'utf8' });
   assert.match(result.stdout, /PASS/);
 });
 
-test('glyph screen tracks CJK wide cells and combining marks without losing exact composer text', () => {
-  const result = spawnSync('python3', ['-c', `import importlib.util
-spec=importlib.util.spec_from_file_location('probe', ${JSON.stringify(probe)})
+test('glyph screen tracks CJK wide cells and combining marks without losing exact composer text', { skip: skipPython }, () => {
+  const result = spawnSync(python, ['-c', `import importlib.util
+spec=importlib.util.spec_from_file_location('helpers', ${JSON.stringify(helpers)})
 module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
 screen=module.GlyphScreen(rows=3, columns=50)
 text=module.USER_TEXT
