@@ -1,8 +1,12 @@
 name: Release
 
 on:
-  push:
-    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag that has passed package acceptance and has runtime assets
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -10,8 +14,13 @@ permissions:
 jobs:
   verify-release:
     runs-on: ubuntu-latest
+    outputs:
+      tested_sha: ${{ steps.commit.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag }}
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -19,22 +28,68 @@ jobs:
       - run: npm ci
       - run: npm run quality
       - run: npm run test:native-package
+      - name: Verify release tag and package versions
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: node tools/verify-release-version.mjs "$RELEASE_TAG"
+      - id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
   publish-release-manifest:
     needs: verify-release
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify tag still points to the tested commit
+        env:
+          EXPECTED_SHA: ${{ needs.verify-release.outputs.tested_sha }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          git fetch origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+          tag_sha="$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
+          if [ "$tag_sha" != "$EXPECTED_SHA" ]; then
+            echo "::error::Release tag ${RELEASE_TAG} resolves to ${tag_sha}, not tested commit ${EXPECTED_SHA}." >&2
+            exit 1
+          fi
+      # Sequence: pass packed-package acceptance, create the GitHub release,
+      # dispatch the owned-runtime workflow to attach its assets, then dispatch
+      # this workflow to publish the control-plane manifest.
+      - name: Require the completed GitHub release and runtime assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          release="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,assets)"
+          if [ "$(jq -r '.isDraft' <<<"$release")" != false ]; then
+            echo "::error::Publish the GitHub release with its runtime assets before publishing the control-plane manifest." >&2
+            exit 1
+          fi
+          for asset in \
+            opencode-linux-x64.tar.gz \
+            opencode-darwin-arm64.tar.gz \
+            opencode-darwin-x64.tar.gz \
+            opencode-windows-x64.tar.gz; do
+            if ! jq -e --arg name "$asset" '.assets | any(.name == $name)' <<<"$release" >/dev/null; then
+              echo "::error::Missing runtime asset ${asset}; complete the owned-runtime publish workflow before publishing the control-plane manifest." >&2
+              exit 1
+            fi
+          done
       - name: Publish the CLI release manifest to the control plane
         env:
           CARTHAGENT_CLI_RELEASE_TOKEN: ${{ secrets.CARTHAGENT_CLI_RELEASE_TOKEN }}
           CARTHAGENT_CLOUD_URL: ${{ vars.CARTHAGENT_CLOUD_URL || 'https://api.carthagent.xyz' }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
           if [ -z "${CARTHAGENT_CLI_RELEASE_TOKEN:-}" ]; then
             echo "::error::Set the CARTHAGENT_CLI_RELEASE_TOKEN repository secret to the backend's CARTHAGENT_CLI_RELEASE_ADMIN_TOKEN value." >&2
             exit 1
           fi
-          version="${GITHUB_REF_NAME#v}"
+          version="${RELEASE_TAG#v}"
           curl -fsS -X POST "${CARTHAGENT_CLOUD_URL}/v1/cli/releases" \
             -H "authorization: Bearer ${CARTHAGENT_CLI_RELEASE_TOKEN}" \
             -H 'content-type: application/json' \
