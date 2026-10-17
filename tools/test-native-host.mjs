@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /** Offline real-host test. Uses a disposable HOME and never discovers the user's service. */
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { randomBytes } from 'node:crypto';
@@ -10,19 +11,25 @@ import { OpenCode } from '@opencode/client';
 
 const root = resolve(import.meta.dirname, '..');
 const plugin = resolve(process.argv[2] ?? join(root, 'plugins/carthagent'));
-const temp = await mkdtemp('/tmp/opencode/ctg-host-smoke-');
+const archiveFixture = resolve(root, 'tests/fixtures/archive-plugin');
+const binary = process.env.CTG_OPENCODE_BIN ?? join(root, 'node_modules/@opencode/cli/bin/opencode.exe');
+const temp = await mkdtemp(join(tmpdir(), 'ctg-host-smoke-'));
 const password = randomBytes(24).toString('hex');
 let child;
 let output = '';
 try {
   const cwd = join(temp, 'project');
   const config = join(temp, 'config/opencode');
-  await Promise.all([mkdir(cwd), mkdir(config, { recursive: true }), mkdir(join(temp, 'home'))]);
+  const legacy = join(temp, 'home/.carthagent/agent/sessions');
+  await Promise.all([mkdir(cwd), mkdir(config, { recursive: true }), mkdir(legacy, { recursive: true })]);
+  await writeFile(join(legacy, 'legacy.jsonl'), '{"type":"session","id":"legacy-fixture"}\n{"type":"message","message":{"role":"user","content":"fixture needle"}}\nmalformed\n');
   await writeFile(join(config, 'opencode.json'), JSON.stringify({
-    plugins: [plugin], update: 'disable',
+    plugins: [plugin, archiveFixture], update: 'disable',
   }));
-  const env = {
-    PATH: process.env.PATH,
+  const env = Object.fromEntries(['PATH', 'SystemRoot', 'WINDIR', 'ComSpec', 'PATHEXT', 'USERPROFILE']
+    .filter((key) => process.env[key])
+    .map((key) => [key, process.env[key]]));
+  Object.assign(env, {
     HOME: join(temp, 'home'),
     XDG_CONFIG_HOME: join(temp, 'config'),
     XDG_DATA_HOME: join(temp, 'data'),
@@ -30,8 +37,8 @@ try {
     XDG_CACHE_HOME: join(temp, 'cache'),
     OPENCODE_DB: join(temp, 'database.sqlite'),
     OPENCODE_SERVER_PASSWORD: password,
-  };
-  child = spawn(process.env.CTG_OPENCODE_BIN ?? 'opencode', [
+  });
+  child = spawn(binary, [
     'serve', '--hostname', '127.0.0.1', '--port', '0', '--print-logs', '--log-level', 'debug',
   ], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
   const endpoint = await new Promise((resolveEndpoint, reject) => {
@@ -64,8 +71,10 @@ try {
     await new Promise((done) => setTimeout(done, 200));
   } while (Date.now() < deadline);
   const nativePlugin = plugins.data.find((entry) => entry.id === 'carthagent');
+  const archivePlugin = plugins.data.find((entry) => entry.id === 'ctg-archive-fixture');
   assert.ok(nativePlugin, 'Carthagent plugin must become visible');
   assert.equal(nativePlugin.state.status, 'active');
+  assert.equal(archivePlugin?.state.status, 'active', 'archive registration fixture must become visible');
   const health = await client.rpc.call({
     rpcID: 'carthagent', method: 'health', input: {}, location: { directory: cwd },
   }, request);
@@ -75,7 +84,27 @@ try {
   await assert.rejects(client.rpc.call({
     rpcID: 'carthagent', method: 'health', input: { unexpected: true }, location: { directory: cwd },
   }, request));
-  console.log('Native plugin and validated RPC passed against OpenCode 2.0.32.');
+  const archiveCall = (method, input) => client.rpc.call({
+    rpcID: 'carthagent.archive', method, input, location: { directory: cwd },
+  }, request);
+  const listed = await archiveCall('list', {});
+  assert.equal(listed.output.total, 1);
+  const archiveID = listed.output.items[0].id;
+  assert.match(archiveID, /^[a-f0-9]{64}$/);
+  assert.equal('path' in listed.output.items[0], false);
+  const searched = await archiveCall('search', { query: 'needle' });
+  assert.equal(searched.output.items[0].id, archiveID);
+  const transcript = await archiveCall('read', { id: archiveID });
+  assert.equal(transcript.output.archiveOnly, true);
+  assert.equal(transcript.output.records.length, 2);
+  assert.deepEqual(transcript.output.malformedLines, [{ line: 3 }]);
+  const exported = await archiveCall('export', { id: archiveID, format: 'jsonl' });
+  assert.match(exported.output.content, /legacy-fixture/);
+  await assert.rejects(archiveCall('read', { id: join(temp, 'outside.jsonl') }), (error) => error.type === 'archive_error');
+  await assert.rejects(archiveCall('search', { query: '   ' }), (error) => error.type === 'archive_error');
+  await assert.rejects(archiveCall('list', { limit: 101 }), (error) => error.type === 'rpc.invalid_input');
+  assert.equal(await readFile(join(legacy, 'legacy.jsonl'), 'utf8'), '{"type":"session","id":"legacy-fixture"}\n{"type":"message","message":{"role":"user","content":"fixture needle"}}\nmalformed\n');
+  console.log('Native plugin, archive RPC methods, output schemas, and declared failures passed against OpenCode 2.0.32.');
 } catch (error) {
   console.error(output.replaceAll(password, '[redacted]'));
   throw error;
