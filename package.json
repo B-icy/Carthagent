@@ -73,6 +73,7 @@
     "test:native-package": "node tools/test-native-package.mjs",
     "test:native-controls": "node tools/test-native-controls.mjs",
     "test:owned-host-controls": "node tools/test-owned-host-controls.mjs",
+    "test:owned-visual-clear-env": "python3 tools/test-owned-visual-clear-env.py",
     "test:native-terminal-semantics": "python3 tools/native-terminal-semantics.py",
     "test:native-outcomes": "node tools/test-native-outcomes.mjs",
     "test:native-pty": "node tools/test-native-pty.mjs",
