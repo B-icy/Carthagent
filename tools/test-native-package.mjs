@@ -53,7 +53,7 @@ try {
   for (const test of [
     'test-native-host.mjs', 'test-native-controls.mjs', 'test-native-outcomes.mjs',
     'test-native-product.mjs', 'test-native-runtime.mjs', 'test-native-tasks.mjs',
-    'test-native-review.mjs', 'test-native-pty.mjs',
+    'test-native-review.mjs', 'test-native-swe-host.mjs', 'test-native-pty.mjs',
   ]) {
     run(process.execPath, [join(installed, 'tools', test), installedPlugin], { cwd: install, env });
   }

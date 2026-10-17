@@ -33,7 +33,7 @@ async function bounded(promise, message) {
 
 try {
   const { client, location, model, request } = host;
-  await host.active();
+  await host.active('carthagent', location);
   const create = title => client.session.create({ location, title, model,
     metadata: { 'carthagent.options': { guide: false } } }, request());
   const [failed, interrupted, healthy] = await Promise.all(['Failure', 'Cancellation', 'Healthy'].map(create));

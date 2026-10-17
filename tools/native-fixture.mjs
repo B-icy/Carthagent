@@ -98,6 +98,7 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
     await once(provider, 'listening');
     await writeFile(join(config, 'opencode.json'), JSON.stringify({
       ...(plugin ? { plugins: [pluginOptions ? { package: resolve(plugin), options: pluginOptions } : resolve(plugin)] } : {}), update: 'disable', model: 'ctg-fixture/fixture',
+      default_agent: 'build',
       providers: { 'ctg-fixture': {
         package: '@opencode/ai/providers/openai-compatible',
         settings: { baseURL: `http://127.0.0.1:${provider.address().port}/v1`, apiKey: 'offline-fixture' },
@@ -135,7 +136,7 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
         const plugin = inventory.data.find(item => item.id === pluginID);
         if (plugin?.state.status === 'active') return;
         if (plugin?.state.status === 'error') throw Error(`Native fixture plugin failed: ${JSON.stringify(plugin)}\n${output}`);
-        if (Date.now() >= deadline) throw Error(`CTG plugin activation timed out: ${JSON.stringify(plugin)}\n${output}`);
+        if (Date.now() >= deadline) throw Error(`Native plugin ${pluginID} activation timed out: ${JSON.stringify(plugin)}\n${output}`);
         await new Promise(done => setTimeout(done, 50));
       }
     },
