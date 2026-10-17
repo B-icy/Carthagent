@@ -156,6 +156,11 @@ The `d5ad57c` follow-up adds current-HEAD validation and shared ABBA/cleanup tes
 code is ignored before `set -e`, and a callback's nonzero exit can be hidden by
 an already-recorded zero status. Actual shell-exit regressions and corrections
 are assigned; independent review is in progress and ABBA remains on hold.
+At `198e66b`, independent review approves the harness for a scheduled run. Parent
+isolated execution passes all 15 guard tests, including actual stale-source
+rejection, cleanup, and conflicting callback-status/nonzero process-exit cases.
+A quiet measurement window is being coordinated; no timed result or performance
+acceptance is established by these harness checks.
 Short idle observations showed no PTY output; they do not establish long-running
 memory bounds.
 
