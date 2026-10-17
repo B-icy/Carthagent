@@ -9,6 +9,13 @@ test('release workflow requires owned runtime during installed package acceptanc
   assert.ok(acceptance, 'installed acceptance step exists');
   assert.match(acceptance, /CTG_REQUIRE_OWNED_RUNTIME:\s*['"]?1/);
   assert.match(acceptance, /npm run test:native-package/);
+  assert.match(acceptance, /CTG_RUNTIME_GITHUB_TOKEN:\s*['"]{2}/);
+});
+
+test('published release runtime verification explicitly uses the anonymous asset path', () => {
+  const verify = workflow.match(/- name: Verify runtime archives against the packaged immutable manifest([\s\S]*?)(?=\n      - |\n\s+run:)/)?.[1];
+  assert.ok(verify);
+  assert.match(verify, /CTG_RUNTIME_GITHUB_TOKEN:\s*['"]{2}/);
 });
 
 test('the final publish step resolves the remote lightweight or annotated tag immediately before POST', () => {

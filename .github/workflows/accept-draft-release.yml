@@ -1,0 +1,62 @@
+name: Accept draft runtime release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing v<package-version> GitHub draft release with the five reviewed runtime assets
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  accept-draft:
+    runs-on: ubuntu-latest
+    outputs:
+      tested_sha: ${{ steps.precheck.outputs.tested_sha }}
+      release_id: ${{ steps.precheck.outputs.release_id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Verify exact draft tag, target, assets, and checkout before acceptance
+        id: precheck
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: node tools/verify-draft-runtime-gate.mjs before "$RELEASE_TAG"
+      - name: Install dependencies
+        run: npm ci
+      - name: Run full repository quality gate
+        run: npm run quality
+      - name: Recheck the exact draft immediately before installed acceptance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          EXPECTED_SHA: ${{ steps.precheck.outputs.tested_sha }}
+          EXPECTED_RELEASE_ID: ${{ steps.precheck.outputs.release_id }}
+        run: node tools/verify-draft-runtime-gate.mjs recheck "$RELEASE_TAG"
+      - name: Accept the complete installed package through the default resolver
+        env:
+          CTG_REQUIRE_OWNED_RUNTIME: '1'
+          GH_TOKEN: ''
+          CTG_RUNTIME_GITHUB_TOKEN: ${{ github.token }}
+        run: npm run test:native-package
+      - name: Verify the release remains the same draft at the tested commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          EXPECTED_SHA: ${{ steps.precheck.outputs.tested_sha }}
+          EXPECTED_RELEASE_ID: ${{ steps.precheck.outputs.release_id }}
+        run: node tools/verify-draft-runtime-gate.mjs after "$RELEASE_TAG"
