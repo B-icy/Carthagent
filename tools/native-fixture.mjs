@@ -73,7 +73,10 @@ export function streamText(res, text = 'Fixture response complete.') {
 export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'), pluginOptions, plugins: additionalPlugins = [], respond = (_body, res) => streamText(res), env: extraEnv = {} } = {}) {
   const pluginEntries = [
     ...(plugin ? [pluginOptions ? { package: resolve(plugin), options: pluginOptions } : resolve(plugin)] : []),
-    ...additionalPlugins.map(path => resolve(path)),
+    ...additionalPlugins.map(plugin => typeof plugin === 'string' ? resolve(plugin) : {
+      ...plugin,
+      package: resolve(plugin.package),
+    }),
   ];
   const temp = await mkdtemp(join(tmpdir(), 'ctg-native-fixture-'));
   const cwd = join(temp, 'project');
@@ -126,7 +129,7 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
       OPENCODE_CONFIG_PROJECT_DISABLE: 'true',
     });
     child = spawn(await resolveOpenCode(),
-      ['serve', '--hostname', '127.0.0.1', '--port', '0'], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+      ['serve', '--hostname', '127.0.0.1', '--port', '0', ...(extraEnv.CTG_NATIVE_DEBUG === '1' ? ['--print-logs', '--log-level', 'debug'] : [])], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
     const baseUrl = await new Promise((done, reject) => {
       const timer = setTimeout(() => reject(Error(`Host startup timeout: ${output}`)), 30_000);
       const collect = chunk => {
