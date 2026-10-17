@@ -94,6 +94,7 @@ jobs:
             script/ctg/build-owned-runtime.sh \
             docs/opencode-owned-runtime.md
           (cd release-assets && sha256sum "${{ matrix.target }}.tar.gz" "${{ matrix.target }}-source.tar.gz" > "${{ matrix.target }}-SHA256SUMS.txt")
+          cat "release-assets/${{ matrix.target }}-SHA256SUMS.txt" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
           name: opencode-ctg-${{ matrix.target }}
@@ -125,6 +126,21 @@ jobs:
           fi
           test "$tag_commit" = "${{ needs.validate-release-target.outputs.release_commit }}"
           gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft == true' | grep -qx true
-          find runtime-assets -type f \( -name '*.tar.gz' -o -name '*-SHA256SUMS.txt' \) -print0 | while IFS= read -r -d '' asset; do
-            gh release upload "$RELEASE_TAG" "$asset#$(basename "$asset")" --repo "$GITHUB_REPOSITORY"
+          : > runtime-release-SHA256SUMS.txt
+          expected=(opencode-linux-x64 opencode-linux-arm64 opencode-darwin-x64 opencode-darwin-arm64 opencode-windows-x64)
+          for target in "${expected[@]}"; do
+            directory="runtime-assets/opencode-ctg-$target"
+            test -f "$directory/$target.tar.gz"
+            test -f "$directory/$target-source.tar.gz"
+            test -f "$directory/$target-SHA256SUMS.txt"
+            (cd "$directory" && sha256sum -c "$target-SHA256SUMS.txt")
+            cat "$directory/$target-SHA256SUMS.txt" >> runtime-release-SHA256SUMS.txt
           done
+          test "$(awk '{print $2}' runtime-release-SHA256SUMS.txt | sort -u | wc -l | tr -d ' ')" = 10
+          awk '{print $1 "  " $2}' runtime-release-SHA256SUMS.txt | sha256sum -c -
+          test "$(find runtime-assets -type f -name '*.tar.gz' | wc -l | tr -d ' ')" = 10
+          test "$(wc -l < runtime-release-SHA256SUMS.txt | tr -d ' ')" = 10
+          while IFS= read -r asset; do
+            gh release upload "$RELEASE_TAG" "$asset#$(basename "$asset")" --repo "$GITHUB_REPOSITORY"
+          done < <(find runtime-assets -type f \( -name '*.tar.gz' -o -name '*-SHA256SUMS.txt' \) -print | sort)
+          gh release upload "$RELEASE_TAG" runtime-release-SHA256SUMS.txt --repo "$GITHUB_REPOSITORY"

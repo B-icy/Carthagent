@@ -313,7 +313,10 @@ test('Windows PATH lookup does not append PATHEXT to an already suffixed executa
     await mkdir(bin);
     const executable = path.join(bin, 'foo.exe');
     await writeFile(executable, 'fixture');
+    const extensionless = path.join(bin, 'foo.COM');
+    await writeFile(extensionless, 'fixture');
     assert.equal(resolvePathCommand('foo.exe', { PATH: bin, PATHEXT: '.COM;.EXE;.CMD' }, 'win32'), executable);
+    assert.equal(resolvePathCommand('foo', { PATH: bin, PATHEXT: '.COM;.EXE;.CMD' }, 'win32'), extensionless);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
