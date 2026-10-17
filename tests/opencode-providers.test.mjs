@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { readLegacyCarthagentCredential, refreshSingleFlight, credentialStorageKey } from '../lib/opencode/credentials.mjs';
 import { createSessionIdentity, managedRequestIdentity, shipTelemetryHeaders } from '../plugins/carthagent/src/server/telemetry.ts';
 import { registerProviders, providerConstants } from '../plugins/carthagent/src/server/providers.ts';
+import { createDeviceAuthController } from '../plugins/carthagent/src/server/device-auth.ts';
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function fakeContext({ integrations = ['experiential-labs', 'anthropic', 'openai-codex'], connections = {} } = {}) {
   const hooks = [];
@@ -67,7 +70,7 @@ test('session telemetry uses stable session-derived thread IDs and request-kind 
   assert.notEqual(identities.request('same-session', 'primary'), identities.request('same-session', 'primary'));
   const headers = shipTelemetryHeaders({ sessionID: 'ses_native_non_uuid', kind: 'generate', body: '{}', env: {}, agentDir: '/missing' , identity: identities, requestSecret: 'x', version: 'test' });
   assert.equal(headers['x-carthagent-thread-id'], alpha);
-  assert.equal(headers['x-carthagent-turn'], '0');
+  assert.equal(headers['x-carthagent-turn'], '1');
   assert.ok(headers['x-carthagent-request-id']);
   assert.equal(headers['x-carthagent-version'], 'test');
 });
@@ -91,6 +94,38 @@ test('parallel token refresh callers share one rotation result and failures can 
   assert.equal(await refreshSingleFlight('credential-2', async () => 'recovered'), 'recovered');
 });
 
+test('CTG device-auth generations cancel polling, expire, and clean up on unload', async () => {
+  const requests = [];
+  const controller = createDeviceAuthController({
+    env: { CARTHAGENT_CLOUD_URL: 'https://cloud.test' }, agentDir: '/tmp/device-auth-test',
+    fetchImpl: async (url, options) => {
+      requests.push({ url: String(url), options });
+      if (String(url).endsWith('/v1/device/authorizations')) return new Response(JSON.stringify({
+        deviceCode: 'device', userCode: 'ABCD', verificationUri: 'https://verify.test', expiresIn: 30, interval: 1,
+      }), { status: 201 });
+      return new Promise((resolve, reject) => {
+        options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
+      });
+    },
+    sleep: async (_ms, signal) => {
+      if (signal?.aborted) throw signal.reason;
+    },
+  });
+  const flow = await controller.start();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(JSON.parse(requests[0].options.body).installId, UUID);
+  assert.equal(requests[1].url, 'https://cloud.test/v1/device/token');
+  assert.equal(controller.cancel(flow.flowId), true);
+  await assert.rejects(flow.callback, /cancelled/);
+  assert.equal(controller.cancel(flow.flowId), false);
+
+  const next = await controller.start();
+  await new Promise(resolve => setImmediate(resolve));
+  await controller.cleanup();
+  await assert.rejects(next.callback, /plugin_unloaded/);
+  assert.equal(controller.cancel(next.flowId), false);
+});
+
 test('legacy credential migration reads Ship OAuth and BYOK without writing Pi store', async () => {
   const source = JSON.stringify({
     'experiential-labs': { type: 'oauth', access: 'a', refresh: 'r', expires: 123 },
@@ -104,11 +139,11 @@ test('legacy credential migration reads Ship OAuth and BYOK without writing Pi s
 test('provider registration uses native provider transforms and cleanup; refresh discovers subscriptions through injected APIs', async () => {
   const token = `x.${Buffer.from(JSON.stringify({ sub: 'acct', sid: 'sid', scope: 'gateway:invoke' })).toString('base64url')}.x`;
   const connections = {
-    'carthagent-ship': { connection: { id: 'ship', credential: { type: 'oauth', access: token, refresh: 'refresh', expires: Date.now() + 100000 } } },
+    'experiential-labs': { connection: { id: 'ship', credential: { type: 'oauth', access: token, refresh: 'refresh', expires: Date.now() + 100000 } } },
     anthropic: { connection: { id: 'claude', credential: { type: 'oauth', access: 'claude-token' } } },
     'openai-codex': { connection: { id: 'codex', credential: { type: 'oauth', access: 'codex-token' } } },
   };
-  const fake = fakeContext({ integrations: ['carthagent-ship', 'experiential-labs', 'anthropic', 'openai-codex'], connections });
+  const fake = fakeContext({ integrations: ['experiential-labs', 'anthropic', 'openai-codex'], connections });
   const fetchCalls = [];
   const fetchImpl = async (url, init) => {
     fetchCalls.push([String(url), init]);
@@ -124,7 +159,7 @@ test('provider registration uses native provider transforms and cleanup; refresh
     openBrowser: () => false, requestSecret: 'test-secret',
   });
   assert.equal(typeof cleanup, 'function');
-  assert.deepEqual(fake.integrationTransforms[0].map(item => item.integrationID), ['carthagent-ship', 'carthagent-ship']);
+  assert.deepEqual(fake.integrationTransforms[0].map(item => item.integrationID), ['experiential-labs', 'experiential-labs']);
   assert.equal(fake.integrationTransforms[0][0].method.id, 'carthagent-device');
   assert.equal(fake.integrationTransforms[0][1].method.type, 'key');
   assert.equal(fake.providerTransforms.find(item => item.info?.id === providerConstants.SHIP_PROVIDER_ID).info.package,
@@ -133,11 +168,27 @@ test('provider registration uses native provider transforms and cleanup; refresh
   assert.ok(fake.hooks.some(item => item.name === 'http.response'));
   const hooksByName = Object.fromEntries(fake.hooks.map(item => [item.name, item]));
   const nativeSession = { sessionID: 'ses_non_uuid_123', kind: 'primary', model: { providerID: 'experiential-labs' } };
+  const modelRequest = { ...nativeSession, headers: {} };
+  await hooksByName['model.request'].callback(modelRequest);
+  const nextModelRequest = { ...nativeSession, headers: {} };
+  await hooksByName['model.request'].callback(nextModelRequest);
+  assert.ok(modelRequest.headers['x-carthagent-request-id']);
+  assert.notEqual(modelRequest.headers['x-carthagent-request-id'], nextModelRequest.headers['x-carthagent-request-id'],
+    'separate native requests in one session must have distinct idempotency identities');
+  const auxiliaryRequest = { ...nativeSession, kind: 'title', headers: {} };
+  await hooksByName['model.request'].callback(auxiliaryRequest);
+  assert.notEqual(modelRequest.headers['x-carthagent-request-id'], auxiliaryRequest.headers['x-carthagent-request-id'],
+    'auxiliary request kinds must have independent identities');
   const request = new Request('https://gateway.example/v1/chat/completions', { method: 'POST', body: JSON.stringify({ model: 'gpt-6-luna', messages: [] }) });
-  const hookedRequestEvent = { ...nativeSession, request };
+  const hookedRequestEvent = { ...nativeSession, request: new Request(request, { headers: { 'x-carthagent-request-id': modelRequest.headers['x-carthagent-request-id'] } }) };
   await hooksByName['http.request'].callback(hookedRequestEvent);
   assert.equal(hookedRequestEvent.request.headers.get('x-carthagent-thread-id')?.length, 36);
-  assert.ok(hookedRequestEvent.request.headers.get('Idempotency-Key'));
+  assert.equal(hookedRequestEvent.request.headers.get('Idempotency-Key'), modelRequest.headers['x-carthagent-request-id']);
+  const retry = new Request('https://gateway.example/v1/chat/completions', { method: 'POST', headers: { 'x-carthagent-request-id': modelRequest.headers['x-carthagent-request-id'] }, body: JSON.stringify({ model: 'gpt-6-luna', messages: [] }) });
+  const retryRequestEvent = { ...nativeSession, request: retry };
+  await hooksByName['http.request'].callback(retryRequestEvent);
+  assert.equal(retryRequestEvent.request.headers.get('Idempotency-Key'), hookedRequestEvent.request.headers.get('Idempotency-Key'),
+    'transport retry identity must remain stable');
   const retryEvent = { ...nativeSession, attempt: 1, decision: { retry: true, delay: 0 }, error: {} };
   await hooksByName.retry.callback(retryEvent);
   assert.deepEqual(retryEvent.decision, { retry: false });
