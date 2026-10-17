@@ -73,11 +73,11 @@ integration check before its PR merges. In-progress does not mean shipped.
 | Providers/auth/telemetry | In progress | Concurrent requests/refreshes maintain credential and session identity |
 | Delivery/policy/budgets | In progress | Native execution preserves evidence, validators and recovery |
 | Native theme/commands/panels | In progress | CTG commands work; host owns input/rendering; semantic themes |
-| Workspace/worktrees | In progress | Independent worktrees and durable task/session mappings |
-| Review | In progress | Fresh-context findings bound to source and PR head; bounded admission |
-| Legacy archive | In progress | Read-only searchable transcripts; no implicit continuation |
+| Workspace/worktrees | Backend merged #138, #146; terminal integration in progress | Independent worktrees and durable task/session mappings |
+| Review | Backend merged #146; terminal integration in progress | Fresh-context findings bound to source and PR head; bounded admission |
+| Legacy archive | Merged #150; launcher discovery integration in progress | Read-only searchable transcripts; no implicit continuation |
 | CLI/headless/dashboard | CLI/headless in progress; dashboard lease fix merged #142 | Output/exit/locking behavior verified against native runtime |
-| Packaging/upgrade | #151, #143, #149 merged; composed Solid runtime dependency fix pending | Fresh installation and migration tested from packaged artifact |
+| Packaging/upgrade | #151, #143, #149 merged; installed renderer fix #159 under review | Fresh installation and migration tested from packaged artifact |
 | Terminal/performance | Pending | PTY, interaction, streaming and reconnect evidence |
 | Default switch/retirement | Pending | No supported default execution path depends on Pi |
 
@@ -107,10 +107,12 @@ output; they do not establish long-running memory bounds.
 
 Native runtime-wrapper acceptance, delivery enforcement, provider authentication,
 command compatibility, installed SWE workflows, reconnect behavior, and performance
-remain release gates. The legacy seconds-budget shutdown test still fails at exact
-PR #154 head `44939d1` in a clean parent reproduction despite green CI; a prior
-dirty-worktree pass is not approval evidence. Per-stream destruction of the shared
-dispatcher also needs correction before merge.
+remain release gates. PR #154 removes per-stream shared-dispatcher destruction and
+uses captured-dispatcher cleanup at print-mode shutdown. Parent verification of
+`46c9ae9` reproduced the pristine patch exactly; seconds and repairs tests passed,
+while tool-mode startup hit its total watchdog. The subsequent `d85579b` fixture
+separates a bounded startup phase from its 15-second post-stop shutdown deadline;
+fresh independent review and parent exact-head verification remain required.
 Native execution remains opt-in until these gates pass.
 
 Pinned-host extension gaps remain for visual-only transcript `/clear` and
