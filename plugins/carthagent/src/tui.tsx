@@ -23,6 +23,8 @@ export default Plugin.define({
     cleanups.push(() => lifecycle.abort());
     const workspaceEvents = context.client.rpc(Workspace);
     cleanups.push(workspaceEvents.events.on("updated", (event) => {
+      // Promise RPC exposes the server event envelope (including location)
+      // separately from the declared event data ({ revision }).
       const route = context.ui.router.current();
       const sessionID = route.type === "session" ? route.sessionID : route.type === "plugin" && route.name === "carthagent" && typeof route.data?.sessionID === "string" ? route.data.sessionID : undefined;
       const expected = (sessionID ? context.data.session.get(sessionID)?.location : undefined) ?? context.location ?? context.data.location.default();

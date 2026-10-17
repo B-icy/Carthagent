@@ -2,22 +2,26 @@ import type { Context } from "@opencode/plugin/tui/context";
 import type { LocationRef } from "@opencode/client";
 import { Workspace, type WorkspaceDelivery, type WorkspaceSnapshot } from "../workspace-rpc.js";
 import { SessionControls } from "../session-rpc.js";
+import { PullRequests, type PullRequestRecord } from "../pull-request-rpc.js";
 
-export { Workspace, SessionControls };
-export type { WorkspaceDelivery, WorkspaceSnapshot };
+export { Workspace, SessionControls, PullRequests };
+export type { WorkspaceDelivery, WorkspaceSnapshot, PullRequestRecord };
 
 const REQUEST_TIMEOUT_MS = 15_000;
 
 type RpcContext = Pick<Context, "client" | "location" | "data">;
 
-function requestOptions(context: RpcContext, selectedLocation?: LocationRef, signal?: AbortSignal) {
+type SelectedLocation = LocationRef | (() => LocationRef | undefined);
+
+function requestOptions(context: RpcContext, selectedLocation?: SelectedLocation, signal?: AbortSignal) {
+  const location = typeof selectedLocation === "function" ? selectedLocation() : selectedLocation;
   return {
-    location: selectedLocation ?? context.location ?? context.data.location.default(),
+    location: location ?? context.location ?? context.data.location.default(),
     signal: signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   };
 }
 
-export function workspaceClient(context: RpcContext, selectedLocation?: LocationRef) {
+export function workspaceClient(context: RpcContext, selectedLocation?: SelectedLocation) {
   const rpc = context.client.rpc(Workspace);
   return {
     snapshot: (input?: { projectID?: string }, signal?: AbortSignal) => rpc.snapshot(input ?? {}, requestOptions(context, selectedLocation, signal)) as Promise<WorkspaceSnapshot>,
@@ -31,11 +35,20 @@ export function workspaceClient(context: RpcContext, selectedLocation?: Location
   };
 }
 
-export function sessionControls(context: RpcContext, selectedLocation?: LocationRef) {
+export function sessionControls(context: RpcContext, selectedLocation?: SelectedLocation) {
   const rpc = context.client.rpc(SessionControls);
   return {
     framing: (input: { sessionID: string; enabled?: boolean }, signal?: AbortSignal) => rpc.framing(input, requestOptions(context, selectedLocation, signal)) as Promise<{ enabled: boolean }>,
     compact: (input: { sessionID: string; notes?: string }, signal?: AbortSignal) => rpc.compact(input, requestOptions(context, selectedLocation, signal)) as Promise<{ admitted: boolean }>,
+  };
+}
+
+export function pullRequestClient(context: RpcContext, selectedLocation?: SelectedLocation) {
+  const rpc = context.client.rpc(PullRequests);
+  return {
+    list: (input: { sessionID: string; taskID: string }, signal?: AbortSignal) => rpc.list(input, requestOptions(context, selectedLocation, signal)) as Promise<{ pullRequests: PullRequestRecord[] }>,
+    associate: (input: { sessionID: string; taskID: string; number: number }, signal?: AbortSignal) => rpc.associate(input, requestOptions(context, selectedLocation, signal)) as Promise<{ pullRequest: PullRequestRecord }>,
+    refresh: (input: { sessionID: string; taskID: string; number?: number }, signal?: AbortSignal) => rpc.refresh(input, requestOptions(context, selectedLocation, signal)) as Promise<{ pullRequest: PullRequestRecord }>,
   };
 }
 

@@ -1,7 +1,8 @@
 /** @jsxImportSource @opentui/solid */
 import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { usePlugin } from "@opencode/plugin/tui";
-import { rpcEventOptions, workspaceClient, type WorkspaceDelivery, type WorkspaceSnapshot } from "./client.js";
+import { pullRequestClient, rpcEventOptions, workspaceClient, type PullRequestRecord, type WorkspaceDelivery, type WorkspaceSnapshot } from "./client.js";
+import { createLatestRequestGate, onWorkspaceUpdated } from "./workspace-live.js";
 
 function sessionAttention(context: ReturnType<typeof usePlugin>, sessionID: string) {
   return (context.data.session.permission.list(sessionID)?.length ?? 0) + (context.data.session.form.list(sessionID)?.length ?? 0);
@@ -17,32 +18,41 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
   const [query, setQuery] = createSignal("");
   const [error, setError] = createSignal("");
   const [rpcConnected, setRpcConnected] = createSignal(true);
-  let snapshotRequest = 0;
-  const route = context.ui.router.current();
-  const currentSessionID = () => props.sessionID ?? (route.type === "session" ? route.sessionID : undefined);
+  const [pullRequests, setPullRequests] = createSignal<Record<string, PullRequestRecord[]>>({});
+  const snapshotRequests = createLatestRequestGate();
+  const evidenceRequests = createLatestRequestGate();
+  const currentSessionID = () => {
+    const currentRoute = context.ui.router.current();
+    return props.sessionID ?? (currentRoute.type === "session" ? currentRoute.sessionID : currentRoute.type === "plugin" && currentRoute.name === "carthagent" && typeof currentRoute.data?.sessionID === "string" ? currentRoute.data.sessionID : undefined);
+  };
   const sessionLocation = () => currentSessionID() ? context.data.session.get(currentSessionID()!)?.location : undefined;
-  const api = workspaceClient(context, sessionLocation());
+  const api = workspaceClient(context, sessionLocation);
   const currentLocation = () => sessionLocation() ?? context.location ?? context.data.location.default();
   const activeSession = () => {
     const activeRoute = context.ui.router.current();
     return activeRoute.type === "plugin" ? activeRoute.data?.sessionID ?? props.sessionID : activeRoute.type === "session" ? activeRoute.sessionID : props.sessionID;
   };
   const localSessions = () => inventorySessions().filter((session) => !session.parentID);
-  const syncNativeSessions = async () => {
+  const syncNativeSessions = async (isCurrent: () => boolean, signal: AbortSignal) => {
     const all = [] as ReturnType<typeof context.data.session.list>;
     let cursor: string | undefined;
     do {
-      const page = await context.client.session.list({ limit: 100, order: "desc", ...(cursor ? { cursor } : {}) });
+      const page = await context.client.session.list({ limit: 100, order: "desc", ...(cursor ? { cursor } : {}) }, { signal });
+      if (!isCurrent()) return;
       all.push(...page.data);
       cursor = page.cursor.next ?? undefined;
     } while (cursor);
-    setInventorySessions(all);
+    if (!isCurrent()) return;
     const sessions = all.filter((session) => !session.parentID);
-    await Promise.allSettled(sessions.flatMap((session) => [
-      context.data.session.sync(session.id),
-      context.data.session.permission.sync(session.id),
-      context.data.session.form.sync(session.id, session.location),
-    ]));
+    for (const session of sessions) {
+      if (!isCurrent()) return;
+      await Promise.allSettled([
+        context.data.session.sync(session.id),
+        context.data.session.permission.sync(session.id),
+        context.data.session.form.sync(session.id, session.location),
+      ]);
+    }
+    if (isCurrent()) setInventorySessions(all);
   };
   type WorkspaceSession = { id: string; title: string; directory: string; status: string; projectID?: string; attention?: number };
   const workspaceSessions = (): WorkspaceSession[] => {
@@ -58,17 +68,18 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
     ].filter((session) => !query() || `${session.title} ${session.id} ${session.directory}`.toLowerCase().includes(query().toLowerCase()));
   };
 
-  const refresh = async () => {
-    if (!api) { setError("Workspace service is not connected. Start the CTG-local workspace server to browse tasks and worktrees."); return; }
-    const request = ++snapshotRequest;
+  const refresh = async (signal?: AbortSignal) => {
+    const request = snapshotRequests.begin();
+    if (!api) { if (request.isCurrent()) setError("Workspace service is not connected. Start the CTG-local workspace server to browse tasks and worktrees."); return; }
+    const requestSignal = signal ? AbortSignal.any([signal, request.signal]) : request.signal;
     try {
-      const result = await api.snapshot();
-      if (request !== snapshotRequest) return;
+      const result = await api.snapshot(undefined, requestSignal);
+      if (!request.isCurrent()) return;
       setSnapshot(result);
       setRpcConnected(true);
       setError("");
     } catch (cause) {
-      if (request === snapshotRequest) {
+      if (request.isCurrent()) {
         setRpcConnected(false);
         setError(cause instanceof Error ? cause.message : String(cause));
       }
@@ -76,6 +87,9 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
   };
   onMount(() => {
     let generation = 0;
+    let observedDirectory = currentLocation().directory;
+    let nativeAbort: AbortController | undefined;
+    let rehydrateAbort: AbortController | undefined;
     let rpcAbort: AbortController | undefined;
     let stopRpc: (() => void) | undefined;
     const subscribeRpc = () => {
@@ -83,9 +97,10 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
       stopRpc?.();
       if (!api) return;
       rpcAbort = new AbortController();
-      stopRpc = api.events.on("updated", (event: { location?: { directory: string } }) => {
-        const expected = currentLocation();
-        if (event.location?.directory === expected.directory) void refresh();
+      stopRpc = onWorkspaceUpdated(api.events, () => currentLocation().directory, () => {
+        snapshotRequests.invalidate();
+        evidenceRequests.invalidate();
+        void refresh();
       }, rpcEventOptions(context, rpcAbort.signal));
     };
     const queueRehydrate = (() => {
@@ -98,31 +113,53 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
     })();
     const rehydrate = async () => {
       const currentGeneration = ++generation;
+      snapshotRequests.invalidate();
+      evidenceRequests.invalidate();
+      rehydrateAbort?.abort();
+      rehydrateAbort = new AbortController();
+      nativeAbort?.abort();
+      nativeAbort = rehydrateAbort;
+      const isCurrent = () => currentGeneration === generation && !rehydrateAbort?.signal.aborted;
       const [projects, active] = await Promise.allSettled([
         context.data.project.sync(),
-        context.client.session.active(),
+        context.client.session.active({ signal: rehydrateAbort.signal }),
       ]);
-      if (currentGeneration !== generation) return;
+      if (!isCurrent()) return;
       if (projects.status === "rejected") setError(String(projects.reason));
       if (active.status === "fulfilled") setActiveSessions(active.value);
       else setError(String(active.reason));
-      try { await syncNativeSessions(); }
-      catch (cause) { setError(String(cause)); }
-      if (currentGeneration !== generation) return;
-      await refresh();
+      try { await syncNativeSessions(isCurrent, nativeAbort.signal); }
+      catch (cause) { if (isCurrent()) setError(String(cause)); }
+      if (!isCurrent()) return;
+      await refresh(rehydrateAbort.signal);
+      if (!isCurrent()) return;
       if (props.view === "evidence" || props.view === "workflow" || props.view === "architecture") {
         const selected = activeSession();
         if (selected) await refreshEvidence(selected);
       }
     };
+    const refreshLocationBinding = () => {
+      const directory = currentLocation().directory;
+      if (directory === observedDirectory) return false;
+      observedDirectory = directory;
+      generation++;
+      snapshotRequests.invalidate();
+      evidenceRequests.invalidate();
+      rehydrateAbort?.abort();
+      nativeAbort?.abort();
+      rpcAbort?.abort();
+      stopRpc?.();
+      subscribeRpc();
+      void rehydrate();
+      return true;
+    };
     const invalidateFromHostEvent = (details: unknown) => {
       const event = details as { type: string; data?: { sessionID?: string; form?: { sessionID?: string; info?: { sessionID?: string } } }; location?: { directory: string } };
       const sessionID = event.data?.sessionID ?? event.data?.form?.sessionID ?? event.data?.form?.info?.sessionID;
       if (sessionID) {
-        const location = event.location ?? currentLocation();
         context.data.session.invalidate(sessionID);
         context.data.session.permission.invalidate(sessionID);
-        context.data.session.form.invalidate(sessionID, location);
+        context.data.session.form.invalidate(sessionID, event.location ?? currentLocation());
       }
       if (["session.created", "session.deleted", "session.updated", "session.status", "session.idle", "session.execution.started", "session.execution.succeeded", "session.execution.failed", "session.execution.interrupted", "permission.asked", "permission.replied", "form.created", "form.updated", "form.deleted", "form.replied", "form.cancelled"].includes(event.type)) {
         queueRehydrate();
@@ -131,6 +168,7 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
     void rehydrate();
     subscribeRpc();
     const stopEvents = context.data.listen(({ details }) => {
+      if (refreshLocationBinding()) return;
       if (details.type === "server.connected") {
         setRpcConnected(true);
         subscribeRpc();
@@ -139,12 +177,15 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
         if ((details as { type: string }).type === "server.disconnected") {
           setRpcConnected(false);
           generation++;
+          snapshotRequests.invalidate();
+          evidenceRequests.invalidate();
+          nativeAbort?.abort();
           rpcAbort?.abort();
           stopRpc?.();
         } else invalidateFromHostEvent(details);
       }
     });
-    onCleanup(() => { generation++; snapshotRequest++; rpcAbort?.abort(); stopRpc?.(); stopEvents(); });
+    onCleanup(() => { generation++; snapshotRequests.invalidate(); evidenceRequests.invalidate(); rehydrateAbort?.abort(); nativeAbort?.abort(); rpcAbort?.abort(); stopRpc?.(); stopEvents(); });
   });
   const filteredProjects = () => (snapshot()?.projects ?? []).filter((project) =>
     `${project.name ?? ""} ${project.directory}`.toLowerCase().includes(query().toLowerCase()));
@@ -187,12 +228,43 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
   };
 
   const evidenceSessions = () => workspaceSessions().filter((session) => !activeSession() || session.id === activeSession());
+  const taskForSession = (sessionID: string) => snapshot()?.sessions.find((session) => session.id === sessionID)?.taskID;
+  const loadPullRequests = async (sessionID: string) => {
+    const taskID = taskForSession(sessionID);
+    if (!taskID) { setError("This session is not attached to a CTG task."); return; }
+    try {
+      const result = await pullRequestClient(context, sessionLocation).list({ sessionID, taskID });
+      setPullRequests((current) => ({ ...current, [taskID]: result.pullRequests }));
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+  };
+  const associatePullRequest = async (sessionID: string) => {
+    const taskID = taskForSession(sessionID);
+    if (!taskID) { setError("Associate a pull request from a session attached to a CTG task."); return; }
+    const answer = await context.ui.dialog.prompt({ title: "Associate GitHub pull request", placeholder: "Pull request number" });
+    if (!answer) return;
+    const number = Number(answer.trim());
+    if (!Number.isSafeInteger(number) || number < 1) { setError("Enter a positive pull request number."); return; }
+    try {
+      const result = await pullRequestClient(context, sessionLocation).associate({ sessionID, taskID, number });
+      setPullRequests((current) => ({ ...current, [taskID]: [...(current[taskID] ?? []).filter((item) => item.number !== number), result.pullRequest] }));
+      setError("");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+  };
+  const refreshPullRequest = async (sessionID: string, taskID: string, number: number) => {
+    try {
+      const result = await pullRequestClient(context, sessionLocation).refresh({ sessionID, taskID, number });
+      setPullRequests((current) => ({ ...current, [taskID]: (current[taskID] ?? []).map((item) => item.number === number ? result.pullRequest : item) }));
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+  };
   const refreshEvidence = async (sessionID: string) => {
     if (!api) return;
+    const request = evidenceRequests.begin();
+    const signal = request.signal;
     const [delivery, review] = await Promise.allSettled([
-      api.delivery({ sessionID }),
-      api.review({ sessionID }),
+      api.delivery({ sessionID }, signal),
+      api.review({ sessionID }, signal),
     ]);
+    if (!request.isCurrent() || activeSession() !== sessionID) return;
     setDeliveryEvidence(delivery.status === "fulfilled" ? delivery.value : { status: "invalid", error: String(delivery.reason) });
     setReviewEvidence(review.status === "fulfilled" ? review.value : { error: String(review.reason) });
   };
@@ -219,6 +291,16 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
             <text fg={context.theme.text.action.secondary.base} on:click={() => void api?.review({ sessionID: active() }).then((value) => context.ui.dialog.alert({ title: "Review status", message: `${value.status}${value.summary ? `\n\n${value.summary}` : ""}` })).catch((cause: unknown) => setError(String(cause)))}>View review status</text>
           </Show>
         </box>}</For>
+      <Show when={taskForSession(active())}>
+        <text fg={context.theme.text.action.primary.base}>Task pull requests · GitHub is queried only by explicit actions</text>
+        <text fg={context.theme.text.action.secondary.base} on:click={() => void loadPullRequests(active())}>Load cached pull requests</text>
+        <text fg={context.theme.text.action.secondary.base} on:click={() => void associatePullRequest(active())}>+ Associate pull request…</text>
+        <For each={pullRequests()[taskForSession(active())!] ?? []}>{(pr) => <box flexDirection="column">
+          <text fg={context.theme.text.base}>#{pr.number} · {pr.state}{pr.draft ? " · draft" : ""} · checks {pr.checks} · review {pr.review} · {pr.source}</text>
+          <text fg={context.theme.text.muted}>{pr.headRef} → {pr.baseRef} · {pr.head.slice(0, 10)} · updated {pr.updatedAt}</text>
+          <text fg={context.theme.text.action.secondary.base} on:click={() => void refreshPullRequest(active(), pr.taskID, pr.number)}>↻ Refresh #{pr.number} from GitHub</text>
+        </box>}</For>
+      </Show>
     </box>}</Show>
     <Show when={snapshot()} fallback={<text fg={context.theme.text.faint}>{error() || "Loading local workspace…"}</text>}>
       <Show when={props.view === "workflow"}>
