@@ -101,10 +101,12 @@ The following probes use a disposable profile and deterministic loopback provide
 package-owned `node_modules/@opencode/cli/bin/opencode.exe`. An optional first
 argument selects an installed plugin directory.
 
-The interactive help command is intentionally checked with both `/help` and
-`/ctg-help`. On OpenCode 2.0.32, `/help` dispatches to the Carthagent command
-in the supported plugin PTY; `/ctg-help` remains the unambiguous compatibility
-name for terminals or contexts where the host claims `/help`.
+The interactive help command must be checked with both `/help` and `/ctg-help`.
+Strict post-submit probes on the pinned OpenCode 2.0.32 host currently show
+`/help` opening native Help. Earlier positive results could match autocomplete
+text before submission. `/ctg-help` works, but neither that alias nor dismissing
+autocomplete before submitting `/help` satisfies the required command behavior.
+Native command precedence remains an open acceptance gate.
 
 - `node tools/test-native-controls.mjs`: concurrent framing/raw admission,
   persisted launcher settings and framing overrides, compaction notes reaching
