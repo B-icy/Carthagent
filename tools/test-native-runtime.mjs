@@ -103,7 +103,13 @@ try {
   assert.ok(unroutable.error || unroutable.outcome === 'failed' || unroutable.session?.outcome === 'failed',
     `A failure without an assistant must expose a failed terminal outcome: ${JSON.stringify(unroutable)}`);
   assert.equal(await stopService(options), true);
-  console.log(JSON.stringify({ host: '2.0.32', serviceReuse: 'passed', repeatedTurns: 'passed', finalAnswerAfterTool: 'passed', successMetadata: 'passed', failure: 'passed', recovery: 'passed', cancellation: 'passed', neighboringSession: 'passed' }));
+  const restarted = await ensureService(options);
+  assert.notEqual(restarted.info.id, service.info.id, 'Restart registers a fresh owned service identity');
+  const resumed = await runHeadless(restarted, host.cwd, 'WRAPPER_SECOND', { ...common, sessionID: first.session.id });
+  assert.equal(resumed.session.id, first.session.id);
+  assert.equal(resumed.result?.text, 'SECOND_TURN', 'Session state remains usable after the owned service restarts');
+  assert.equal(await stopService(options), true);
+  console.log(JSON.stringify({ host: '2.0.32', serviceReuse: 'passed', repeatedTurns: 'passed', finalAnswerAfterTool: 'passed', successMetadata: 'passed', failure: 'passed', recovery: 'passed', cancellation: 'passed', neighboringSession: 'passed', serviceRestart: 'passed' }));
 } finally {
   try { await stopService(options); }
   finally { await host.close(); }
