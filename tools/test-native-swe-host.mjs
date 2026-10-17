@@ -18,7 +18,6 @@ const host = await nativeFixture({
   respond(body, res) {
     const root = host.cwd;
     const fixedFile = join(root, 'src/value.mjs');
-    const testFile = join(root, 'src/value.test.mjs');
     const messages = body.messages ?? [];
     const tools = (body.tools ?? []).map(tool => tool.function?.name);
     const calls = [];
