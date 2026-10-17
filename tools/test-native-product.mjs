@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { nativeFixture } from './native-fixture.mjs';
 
 const host = await nativeFixture({ plugin: process.argv[2] });
+const identity = host.runtimeIdentity;
 let stream = new AbortController();
 let watching;
 try {
@@ -13,7 +14,7 @@ try {
   const session = await client.session.create({ location, model, title: 'Product entrypoint probe' }, request());
   const health = await rpc('carthagent', 'health', {});
   assert.equal(health.directory, host.cwd);
-  assert.equal(health.hostVersion, '2.0.32');
+  assert.equal(health.hostVersion, identity.runtimeVersion);
   const snapshot = await rpc('carthagent.workspace', 'snapshot', {});
   assert.equal(snapshot.projects.length, 1);
   assert.equal(snapshot.projects[0].id, session.projectID);
@@ -76,7 +77,9 @@ try {
     assert.equal(await host.outcome(session.id), 'succeeded');
     assert.equal(typeof (await Promise.race([refreshed, reconnectTimeout])).data.revision, 'string');
   } finally { clearTimeout(timer); }
-  console.log(JSON.stringify({ host: '2.0.32', entrypoint: 'passed', workspace: 'passed', archive: 'passed', controls: 'passed', eventInvalidation: 'passed', reconnectSnapshot: 'passed', reconnectEvents: 'passed' }));
+  console.log(JSON.stringify({ host: identity.runtimeVersion, compatibilityVersion: identity.compatibilityVersion,
+    ...(identity.binarySha256 ? { binarySha256: identity.binarySha256 } : {}),
+    entrypoint: 'passed', workspace: 'passed', archive: 'passed', controls: 'passed', eventInvalidation: 'passed', reconnectSnapshot: 'passed', reconnectEvents: 'passed' }));
 } catch (error) {
   console.error(host.output);
   throw error;

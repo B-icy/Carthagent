@@ -21,6 +21,7 @@ const host = await nativeFixture({
     } else streamText(res);
   },
 });
+const identity = host.runtimeIdentity;
 
 async function bounded(promise, message) {
   let timer;
@@ -63,7 +64,8 @@ try {
   assert.ok(history.some(message => message.type === 'idle' && message.outcome === 'interrupted'));
   assert.equal(history.at(-1).outcome, 'succeeded');
   assert.deepEqual(host.providerErrors, []);
-  console.log(JSON.stringify({ host: '2.0.32', failure: 'passed', cancellation: 'passed',
+  console.log(JSON.stringify({ host: identity.runtimeVersion, compatibilityVersion: identity.compatibilityVersion,
+    ...(identity.binarySha256 ? { binarySha256: identity.binarySha256 } : {}), failure: 'passed', cancellation: 'passed',
     concurrentIsolation: 'passed', recovery: 'passed', queuedInterruption: 'passed', cancellationMs }));
 } catch (error) {
   console.error(host.output);
