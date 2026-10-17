@@ -24,10 +24,17 @@ run_paired_abba() {
     "$callback" "$label" "$mode"
     status=$?
     set -e
-    # A callback may own richer failure reporting. If it did not record its
-    # condition, guarantee a retained nonzero status before continuing ABBA.
-    if ! awk -F '\t' -v name="$label" '$1 == name { found=1 } END { exit !found }' "$statuses_file" 2>/dev/null; then
-      printf '%s\t%s\n' "$label" "$((status == 0 ? 1 : status))" >> "$statuses_file"
+    # A callback may own richer failure reporting, but it cannot erase its
+    # process failure by having already recorded a success status.
+    if [[ "$status" -ne 0 ]]; then
+      local status_tmp="${statuses_file}.update.$$"
+      if ! awk -F '\t' -v name="$label" -v failed_status="$status" 'BEGIN { OFS="\t" } $1 == name { $2=failed_status; found=1 } { print } END { if (!found) print name, failed_status }' \
+        "$statuses_file" > "$status_tmp" 2>/dev/null; then
+        printf '%s\t%s\n' "$label" "$status" > "$status_tmp"
+      fi
+      mv -- "$status_tmp" "$statuses_file"
+    elif ! awk -F '\t' -v name="$label" '$1 == name { found=1 } END { exit !found }' "$statuses_file" 2>/dev/null; then
+      printf '%s\t1\n' "$label" >> "$statuses_file"
     fi
   done
   paired_exit_status="$(node --input-type=module - "$statuses_file" "$guard_module" "$interrupted_flag" <<'NODE'

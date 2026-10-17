@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { access, mkdtemp, mkdir, rm, writeFile, symlink } from 'node:fs/promises';
+import { access, chmod, mkdtemp, mkdir, rm, writeFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -99,13 +99,14 @@ fake_condition() {
   local label="$1" mode="$2" status=0
   [[ "$label" == ctg-1 ]] && status=17
   printf '%s %s\\n' "$label" "$mode" >> "$CALLS"
-  printf '%s\\t%s\\n' "$label" "$status" >> "$STATUSES"
+  printf '%s\\t0\\n' "$label" >> "$STATUSES"
   return "$status"
 }
 run_paired_abba fake_condition "$STATUSES" "$GUARDS" 0
-printf 'aggregate=%s\\n' "$paired_exit_status"`;
+printf 'aggregate=%s\\n' "$paired_exit_status"
+exit "$paired_exit_status"`;
     const run = spawnSync('bash', ['-c', program, 'test-abba', helper, calls, statuses, guardModule], { encoding: 'utf8' });
-    assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.status, 1, run.stderr);
     assert.match(run.stdout, /aggregate=1/);
     assert.deepEqual((await (await import('node:fs/promises')).readFile(calls, 'utf8')).trim().split('\n'), [
       'baseline-1 baseline', 'ctg-1 ctg', 'ctg-2 ctg', 'baseline-2 baseline',
@@ -145,6 +146,50 @@ test('scheduled source commit must be the current integration checkout HEAD', ()
   // Older commit has the same lockfile identity but is not current acceptance source.
   assert.throws(() => assertSelectedSourceHead('b'.repeat(40), head), /must equal the current integration checkout HEAD/);
   assert.throws(() => assertSelectedSourceHead(head, 'malformed'), /must equal the current integration checkout HEAD/);
+});
+
+test('actual runner rejects a stale same-lockfile commit before creating output or staging artifacts', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'native-paired-stale-head-runner-'));
+  const source = join(root, 'integration');
+  const modules = join(source, 'node_modules');
+  const binary = join(modules, '@opencode/cli/bin/opencode.exe');
+  const output = join(root, 'should-not-exist');
+  const runner = fileURLToPath(new URL('../tools/run-native-terminal-paired.sh', import.meta.url));
+  try {
+    await mkdir(join(source, 'plugins/carthagent'), { recursive: true });
+    await mkdir(join(modules, '@opencode/client'), { recursive: true });
+    await mkdir(dirname(binary), { recursive: true });
+    await writeFile(join(source, 'package.json'), JSON.stringify({ dependencies: {
+      '@opencode/cli': '2.0.32', '@opencode/client': '2.0.32', '@opencode/plugin': '2.0.32',
+    } }));
+    await writeFile(join(source, 'package-lock.json'), '{"lockfileVersion":3}\n');
+    await writeFile(join(source, 'plugins/carthagent/package.json'), '{"dependencies":{"@opencode/plugin":"2.0.32"}}\n');
+    await writeFile(join(modules, '@opencode/cli/package.json'), '{"version":"2.0.32"}\n');
+    await writeFile(join(modules, '@opencode/client/package.json'), '{"version":"2.0.32"}\n');
+    await writeFile(binary, '#!/bin/sh\nprintf "opencode 2.0.32\\n"\n');
+    await chmod(binary, 0o755);
+    execFileSync('git', ['init', '-q', source]);
+    execFileSync('git', ['-C', source, 'config', 'user.email', 'offline@example.invalid']);
+    execFileSync('git', ['-C', source, 'config', 'user.name', 'Offline Fixture']);
+    execFileSync('git', ['-C', source, 'add', '.']);
+    execFileSync('git', ['-C', source, 'commit', '-qm', 'older source']);
+    const oldCommit = execFileSync('git', ['-C', source, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    await writeFile(join(source, 'lib-current.txt'), 'advance without lockfile change\n');
+    execFileSync('git', ['-C', source, 'add', 'lib-current.txt']);
+    execFileSync('git', ['-C', source, 'commit', '-qm', 'current source']);
+    const lockAtHead = execFileSync('git', ['-C', source, 'show', 'HEAD:package-lock.json'], { encoding: 'utf8' });
+    assert.equal(lockAtHead, await (await import('node:fs/promises')).readFile(join(source, 'package-lock.json'), 'utf8'));
+    const result = spawnSync('bash', [runner], { encoding: 'utf8', env: {
+      ...process.env, CTG_SOURCE_ROOT: source, CTG_SOURCE_COMMIT: oldCommit,
+      CTG_OPENCODE_BIN: binary, OUTPUT_DIR: output, SAMPLES: '30',
+    } });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Selected source commit must equal the current integration checkout HEAD/);
+    await assert.rejects(access(output));
+    assert.deepEqual((await (await import('node:fs/promises')).readdir(root)).sort(), ['integration']);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('dependency identity comparison fails closed when the physical install changes', () => {

@@ -27,10 +27,14 @@ if [[ ! "$source_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 source_root="$(cd "$source_root" && pwd)"
 source_head="$(git -C "$source_root" rev-parse HEAD)"
-node --input-type=module - "$repo_root/tools/native-paired-guards.mjs" "$source_commit" "$source_head" <<'NODE'
+if ! node --input-type=module - "$repo_root/tools/native-paired-guards.mjs" "$source_commit" "$source_head" <<'NODE'
 const { assertSelectedSourceHead } = await import(process.argv[2]);
 assertSelectedSourceHead(process.argv[3], process.argv[4]);
 NODE
+then
+  printf 'Selected source commit is stale; refusing to stage or run fixtures.\n' >&2
+  exit 2
+fi
 if ! git -C "$source_root" cat-file -e "$source_commit^{commit}"; then
   printf 'Selected immutable source commit is unavailable: %s\n' "$source_commit" >&2
   exit 2
