@@ -14,6 +14,18 @@ type TaskState = { tasks: TaskRecord[]; operations: OperationRecord[] };
 type NativeSession = Awaited<ReturnType<Context['session']['get']>>;
 type DeliveryCheck = { id: string } & Record<string, unknown>;
 type DeliveryState = { runId: string; revision: number; status?: string; plan: { checks?: DeliveryCheck[] } & Record<string, unknown>; evidence?: Record<string, unknown> };
+type ReviewModel = { providerID: string; id: string; variant?: string };
+
+function configuredReviewModel(value: unknown): ReviewModel | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== 'object' || !('providerID' in value) || typeof value.providerID !== 'string' || !value.providerID.trim() || !('id' in value) || typeof value.id !== 'string' || !value.id.trim()) {
+    throw new Error('Invalid server reviewModel: providerID and id must be non-empty strings');
+  }
+  if ('variant' in value && value.variant !== undefined && (typeof value.variant !== 'string' || !value.variant.trim())) {
+    throw new Error('Invalid server reviewModel: variant must be a non-empty string when provided');
+  }
+  return { providerID: value.providerID.trim(), id: value.id.trim(), ...('variant' in value && typeof value.variant === 'string' ? { variant: value.variant.trim() } : {}) };
+}
 
 function taskStatus(session?: NativeSession, running = false) {
   if (!session) return 'unavailable';
@@ -23,9 +35,11 @@ function taskStatus(session?: NativeSession, running = false) {
   return 'unknown';
 }
 
-function reportFor(directory: string) {
+function reportFor(directory: string, sessionID: string) {
   const path = activeReportPath(directory);
   if (!path || !existsSync(path)) return { status: 'unavailable' };
+  const reportRelative = relative(directory, path).split(sep);
+  if (reportRelative.length < 3 || reportRelative[0] !== '.harness' || reportRelative[1] !== sessionID) return { status: 'unavailable' };
   const state = JSON.parse(readFileSync(path, 'utf8')) as DeliveryState;
   if (!state || typeof state !== 'object' || !state.plan || !state.runId || !Number.isInteger(state.revision)) return { status: 'invalid' };
   assertActiveReport(directory, path);
@@ -38,7 +52,9 @@ function reportFor(directory: string) {
  * must be verified through the location-scoped native API; the TUI adds its full native list. */
 export async function registerWorkspaceRpc(ctx: Context, options: {
   notify?: (summary: WorkspaceSnapshot) => void;
-}) {
+  reviewModel?: ReviewModel;
+} = {}) {
+  const reviewModel = configuredReviewModel(options.reviewModel);
   const root = resolve(ctx.location.project.canonical);
   const locationDirectory = resolve(ctx.location.directory);
   const projectID = ctx.location.project.id;
@@ -75,7 +91,7 @@ export async function registerWorkspaceRpc(ctx: Context, options: {
       return {
         id: record.id, projectID, title: record.task, status: taskStatus(session, running.has(record.sessionID)),
         ...(!session || session.outcome === 'failed' || session.outcome === 'interrupted' ? { attention: true } : {}),
-        directory: record.worktree, branch: record.branch,
+        directory: record.worktree, ...(record.branch ? { branch: record.branch } : {}),
       };
     });
     for (const op of taskState.operations) if (op.status !== 'complete' && op.status !== 'reconciled') {
@@ -142,7 +158,7 @@ export async function registerWorkspaceRpc(ctx: Context, options: {
     review: async (value, call) => {
       const input = value as { sessionID: string };
       const session = await owns(input.sessionID, call.signal);
-      const report = reportFor(session.location.directory);
+      const report = reportFor(session.location.directory, session.id);
       const receiptPath = resolve(session.location.directory, '.harness', 'reviews', `${createHash('sha256').update(`session:${session.id}`).digest('hex')}.json`);
       if (!existsSync(receiptPath)) return { status: report.status === 'stale' || report.status === 'invalid' ? report.status : 'unreviewed' };
       const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));
@@ -155,8 +171,13 @@ export async function registerWorkspaceRpc(ctx: Context, options: {
     startReview: async (value, call) => {
       const input = value as { sessionID: string };
       const session = await owns(input.sessionID, call.signal);
-      const result = await startReview({ ctx, cwd: session.location.directory, identity: `session:${session.id}`, signal: call.signal });
-      return { status: result.verdict === 'APPROVE' ? 'approved' : 'changes-requested', summary: `${result.findings.findings.length} findings · ${result.snapshot}`, sessionID: result.reviewerSessionID };
+      try {
+        const result = await startReview({ ctx, cwd: session.location.directory, identity: `session:${session.id}`, model: reviewModel, signal: call.signal });
+        return { status: result.verdict === 'APPROVE' ? 'approved' : 'changes-requested', summary: `${result.findings.findings.length} findings · ${result.snapshot}`, sessionID: result.reviewerSessionID };
+      } catch (error) {
+        if (call.signal.aborted) throw error;
+        return call.error('reviewFailed', error instanceof Error ? error.message : String(error), { message: error instanceof Error ? error.message : String(error) });
+      }
     },
   });
 

@@ -169,15 +169,15 @@ test('local source snapshot includes tracked diff bytes and durable review recei
   const ctx = {
     agent: { async list() { return { data: [{ id: 'build' }] }; } },
     session: {
-      async create(input) { assert.equal(input.agent, 'build'); assert.ok(input.permissions.some(rule => rule.action === 'shell' && rule.effect === 'deny')); assert.ok(input.permissions.some(rule => rule.action === 'execute' && rule.effect === 'deny')); assert.ok(input.permissions.some(rule => rule.action === 'edit' && rule.effect === 'deny')); return { id: 'reviewer-findings' }; },
-      async prompt({ text }) { promptText = text; }, async wait() {}, async get() { return { outcome: 'succeeded' }; },
+      async create(input) { assert.equal(input.agent, 'build'); assert.deepEqual(input.model, { providerID: 'fixture', id: 'review-model', variant: 'low' }); assert.ok(input.permissions.some(rule => rule.action === 'shell' && rule.effect === 'deny')); assert.ok(input.permissions.some(rule => rule.action === 'execute' && rule.effect === 'deny')); assert.ok(input.permissions.some(rule => rule.action === 'edit' && rule.effect === 'deny')); return { id: 'reviewer-findings' }; },
+      async prompt(input) { promptText = input.text; assert.deepEqual(input.metadata, { 'ctg.raw': true }); }, async wait() {}, async get() { return { outcome: 'succeeded' }; },
       async context() {
         const head = git(root, 'rev-parse', 'HEAD'); const snapshot = promptText.match(/Snapshot SHA-256: ([a-f0-9]+)/)[1];
         return [{ type: 'assistant', finish: 'stop', content: [{ type: 'text', text: `REVIEW_JSON: ${JSON.stringify({ version: 1, snapshot, head, findings: [finding] })}\nVERDICT: CHANGES-REQUESTED` }] }, { type: 'idle', outcome: 'succeeded' }];
       }, async interrupt() {},
     },
   };
-  const result = await startReview({ ctx, cwd: root });
+  const result = await startReview({ ctx, cwd: root, model: { providerID: 'fixture', id: 'review-model', variant: 'low' } });
   assert.equal(result.verdict, 'CHANGES-REQUESTED');
   assert.match(promptText, /tracked change/);
   const reviewState = JSON.parse(readFileSync(join(root, '.harness/reviews', `${(await import('node:crypto')).createHash('sha256').update('local-delivery').digest('hex')}.json`), 'utf8'));
