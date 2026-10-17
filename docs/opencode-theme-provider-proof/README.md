@@ -32,14 +32,11 @@ service are test-local. No host API changes beyond the approved patch are made.
 Run against the exact upstream base plus the two approved patch files, with Bun
 1.4.2:
 
-```text
-1 pass
-0 fail
-18 expect() calls
-```
+All five consecutive reruns passed (each **1 pass, 0 fail, 18 expectations**).
 
 The test-only source patch is `plugin-theme-provider.patch`.
 
-The TUI package typecheck command was started in the isolated worktree, but the
-worktree's Git common directory was removed by the environment restart. The
-test itself was rerun after a fresh frozen-lockfile install and passed.
+`bun typecheck` from `packages/tui` also passed. The isolated source checkout's
+Git common directory was removed by an environment restart, but its source tree
+and test remain at `/tmp/opencode/ctg-live-theme-proof-clean` for evidence. The
+test was rerun after a fresh frozen-lockfile install and passed.
