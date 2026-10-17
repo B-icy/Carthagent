@@ -37,6 +37,10 @@ def option_style_bytes(transcript, option):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--binary', default=os.environ.get('CTG_OPENCODE_BIN'))
+    parser.add_argument('--expected-version', required=True,
+                        help='exact --version output expected for the trusted supplied executable')
+    parser.add_argument('--expected-sha256', required=True,
+                        help='independently sourced expected SHA-256; binary is hashed before execution')
     parser.add_argument('--timeout', type=int, default=60)
     parser.add_argument('--artifact')
     args = parser.parse_args()
@@ -45,9 +49,15 @@ def main():
     binary = os.path.realpath(os.path.abspath(args.binary))
     if not os.path.isfile(binary):
         parser.error(f'binary not found: {binary}')
+    if not re.fullmatch(r'[0-9a-f]{64}', args.expected_sha256):
+        parser.error('--expected-sha256 must be 64 lowercase hexadecimal characters')
+    actual_sha256 = sha256_file(binary)
+    if actual_sha256 != args.expected_sha256:
+        parser.error(f'binary SHA-256 mismatch before execution: expected {args.expected_sha256}, got {actual_sha256}')
     version = subprocess.run([binary, '--version'], text=True, capture_output=True, timeout=20)
-    if version.returncode or '2.0.32' not in version.stdout + version.stderr:
-        parser.error(f'expected identified OpenCode 2.0.32 executable, got {version.stdout!r}')
+    version_output = (version.stdout + version.stderr).strip()
+    if version.returncode or version_output != args.expected_version:
+        parser.error(f'expected exact version {args.expected_version!r}, got {version_output!r}')
 
     harness_path = Path(__file__).with_name('native-terminal-semantics.py')
     loader = importlib.machinery.SourceFileLoader('native_terminal_semantics', str(harness_path))
@@ -68,8 +78,10 @@ def main():
         'startedAtUtc': datetime.now(timezone.utc).isoformat(),
         'case': 'native-model-picker-navigation-escape-unchanged-model',
         'binary': binary,
-        'binaryVersion': (version.stdout + version.stderr).strip(),
-        'binarySha256': sha256_file(binary),
+        'expectedBinaryVersion': args.expected_version,
+        'binaryVersion': version_output,
+        'expectedBinarySha256': args.expected_sha256,
+        'binarySha256': actual_sha256,
         'sourceCommit': source_commit,
         'workingTreeDirty': bool(dirty),
         'probeSha256': sha256_file(__file__),
@@ -77,6 +89,7 @@ def main():
         'provider': 'loopback offline fixture',
         'configuredModel': 'ctgfixture/fixture',
         'alternateModel': 'ctgfixture/alternate',
+        'binaryPreflight': 'sha256 verified against required external expected value before --version or TUI launch',
         'physicalOSClipboardVerified': False,
         'checks': {},
     }
@@ -152,12 +165,12 @@ def main():
                                    f'transcript={bytes(transcript[-3000:])!r}')
 
             until(lambda: 'ask anything' in screen.visible().lower() or
-                  'what is the tech' in screen.visible().lower(), 'home composer')
+                  'what is the tech' in screen.visible().lower(), 'home composer', timeout=args.timeout)
             # Open a native session first so the footer/model state is explicit.
             os.write(master, b'\r')
             until(lambda: 'Build · CTG Picker A' in screen.visible(), 'active session with configured model A')
             # Native runtime binding: Ctrl+X leader then m => model.list.
-            baseline_model = 'fixture'
+            configured_model_id = 'fixture'
             if 'Build · CTG Picker A' not in screen.visible():
                 raise AssertionError('configured model A is not visible in active session metadata before picker')
             os.write(master, b'\x18')
@@ -175,6 +188,9 @@ def main():
             if '● CTG Picker A' not in picker_before:
                 raise AssertionError(f'current model A not visibly selected before navigation: {picker_before[-1200:]}')
             raw_before_navigation = bytes(transcript)
+            style_a_before = option_style_bytes(raw_before_navigation, 'CTG Picker A')
+            if not style_a_before:
+                raise AssertionError('could not capture the currently selected A option style before navigation')
             os.write(master, b'\x1b[B')
             pump(.25)
             picker_after_down = screen.visible()
@@ -182,10 +198,10 @@ def main():
                 raise AssertionError(f'model picker did not remain with alternate option after ArrowDown: {picker_after_down[-1200:]}')
             style_a = option_style_bytes(bytes(transcript), 'CTG Picker A')
             style_b = option_style_bytes(bytes(transcript), 'CTG Picker B')
-            if (not style_a or not style_b or style_a == style_b or
-                    style_a == option_style_bytes(raw_before_navigation, 'CTG Picker A') or
-                    style_b == option_style_bytes(raw_before_navigation, 'CTG Picker B')):
-                raise AssertionError(f'ArrowDown did not produce independently distinguishable A/B option styling: A={style_a!r}, B={style_b!r}')
+            if (not style_a or not style_b or style_b != style_a_before or
+                    style_a == style_a_before or style_a == style_b):
+                raise AssertionError('ArrowDown did not move the prior selected styling from A to B: '
+                                     f'before selected A={style_a_before!r}; after A={style_a!r}, B={style_b!r}')
             # In this dialog Escape first clears the active model-search filter;
             # a second Escape closes the picker without submitting the highlight.
             os.write(master, b'\x1b')
@@ -201,8 +217,9 @@ def main():
             if requests_after_cancel != requests_before_cancel:
                 raise AssertionError('provider request occurred during model-picker navigation/cancel')
 
-            if 'Build · CTG Picker A CTG Picker Fixture' not in after_cancel:
-                raise AssertionError(f'configured model A not retained in active session metadata after cancel: {after_cancel[-1200:]}')
+            rendered_model_label_after_cancel = 'Build · CTG Picker A CTG Picker Fixture' in after_cancel
+            if not rendered_model_label_after_cancel:
+                raise AssertionError(f'rendered active-session model label no longer shows A after cancel: {after_cancel[-1200:]}')
 
             # Enter the session, then submit a new unique prompt from the session
             # composer so model selection is evidenced by a real provider request.
@@ -244,8 +261,8 @@ def main():
                 'escapeDismissedPicker': True,
                 'composerRestored': True,
                 'providerRequestsDuringCancel': requests_after_cancel - requests_before_cancel,
-                'activeSessionMetadataStillShowsModelA': 'Build · CTG Picker A CTG Picker Fixture' in after_cancel,
-                'baselineProviderModel': baseline_model,
+                'renderedActiveSessionModelLabelStillShowsA': rendered_model_label_after_cancel,
+                'configuredModelIdBeforePicker': configured_model_id,
                 'postCancelProviderModels': after_models,
                 'postCancelUniquePromptAccepted': exact_prompt,
                 'provider': 'loopback offline fixture',
