@@ -129,10 +129,11 @@ test('native-vault refresh rereads after cross-process lease acquisition and rot
   const moduleUrl = new URL('../lib/opencode/credentials.mjs', import.meta.url).href;
   const worker = join(directory, 'worker.mjs');
   await writeFile(worker, `
-    import { readFile, writeFile } from 'node:fs/promises';
+    import { readFile, rename, writeFile } from 'node:fs/promises';
     import { refreshNativeCredential } from ${JSON.stringify(moduleUrl)};
     const [vault, profile, name, gate, rotating, resultFile] = process.argv.slice(2);
     while (true) { try { await readFile(gate); break; } catch { await new Promise(resolve => setTimeout(resolve, 5)); } }
+    let rotatedByThisWorker = false;
     const result = await refreshNativeCredential({
       credential: { type: 'oauth', methodID: 'carthagent-device', refresh: 'issued-old-token', access: 'old-access' },
       credentialFile: profile,
@@ -141,9 +142,18 @@ test('native-vault refresh rereads after cross-process lease acquisition and rot
         if (current.refresh !== 'issued-old-token') throw new Error('unexpected stale vault read');
         await writeFile(rotating, name, { flag: 'wx' });
         const rotated = { refresh: 'rotated-token', access: 'new-access' };
+        rotatedByThisWorker = true;
         return { type: 'oauth', methodID: 'carthagent-device', ...rotated };
       },
     });
+    // Model the native host: the same process that owns the refresh callback
+    // persists its result atomically before exiting. Do not let the parent
+    // mutate the vault after observing this worker's exit.
+    if (rotatedByThisWorker) {
+      const temporary = vault + '.' + name + '.tmp';
+      await writeFile(temporary, JSON.stringify({ refresh: result.refresh, access: result.access }), { mode: 0o600 });
+      await rename(temporary, vault);
+    }
     await writeFile(resultFile, JSON.stringify({ refresh: result.refresh, access: result.access }));
     console.log(JSON.stringify({ name, refreshed: true }));
   `);
@@ -166,9 +176,7 @@ test('native-vault refresh rereads after cross-process lease acquisition and rot
     }
     throw new Error('Timed out waiting for cross-process refresh fixture state.');
   };
-  const winner = await waitForFile(rotating);
-  await waitForFile(join(directory, `${winner}.result`));
-  await writeFile(vault, JSON.stringify({ refresh: 'rotated-token', access: 'new-access' }), { mode: 0o600 });
+  await waitForFile(rotating);
   const outputs = await outputsPromise;
   assert.deepEqual(outputs.map(output => output.refreshed), [true, true]);
   for (const resultFile of resultFiles) {
@@ -205,6 +213,33 @@ test('native refresh waits are bounded and never retry an uncertain rotation', a
   assert.equal(refreshCalls, 0, 'a contender must not submit the old single-use token again');
   const receipt = await readFile(pending, 'utf8');
   assert.doesNotMatch(receipt, /issued-old-token|old-access/);
+});
+
+test('native refresh fails closed when its owner crashes before vault persistence', async t => {
+  const directory = await mkdtemp(join(os.tmpdir(), 'ctg-refresh-owner-crash-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const profile = join(directory, 'auth.json');
+  const credential = { type: 'oauth', methodID: 'carthagent-device', refresh: 'issued-old-token', access: 'old-access' };
+  const digest = createHash('sha256').update(`${credential.methodID}\0${credential.refresh}`).digest('hex').slice(0, 32);
+  const pending = `${profile}.ctg-refresh-${digest}.lock.pending`;
+  await writeFile(pending, JSON.stringify({
+    pid: Number.MAX_SAFE_INTEGER,
+    owner: 'crashed-owner',
+    from: digest,
+    stage: 'refreshing',
+    createdAt: Date.now(),
+  }), { mode: 0o600 });
+
+  let refreshCalls = 0;
+  await assert.rejects(refreshNativeCredential({
+    credential,
+    credentialFile: profile,
+    processAliveImpl: () => false,
+    reread: async () => credential,
+    refresh: async () => { refreshCalls++; return credential; },
+  }), /ended before its vault write could be confirmed/);
+  assert.equal(refreshCalls, 0, 'do not replay a potentially consumed refresh token');
+  assert.equal(await readFile(pending, 'utf8').then(Boolean), true, 'preserve the receipt for recovery diagnostics');
 });
 
 test('native refresh accepts a vault rotation persisted just before its owner exits', async t => {
