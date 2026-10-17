@@ -1,12 +1,18 @@
 # CTG-owned OpenCode v2.0.32 UI runtime (opt-in)
 
-This change packages the UI/session extension as a source-pinned, CTG-owned
-OpenCode runtime. It does not change CTG's default runtime selection, fetch a
-binary automatically, touch a user's OpenCode install/profile, or commit a
-large executable. The opt-in runtime can be selected by setting
+This change defines a source-pinned, CTG-owned OpenCode runtime. The explicit
+`CTG_OWNED_OPENCODE_RUNTIME` directory selector is a staging/developer override,
+not an end-user release path. A complete release must bundle or install a
+platform artifact pinned to its exact manifest and verify its checksum before
+launch, without replacing an upstream OpenCode install or mutating the
+package-owned `@opencode/cli`. Until that delivery path is implemented and the
+installed-package default resolver selects the owned artifact, ordinary CTG
+installs continue to use the compatibility runtime and do not receive the UI
+features in this patch. This branch does not commit a large executable. The
+staging opt-in can be selected by setting
 `CTG_OWNED_OPENCODE_RUNTIME` to an extracted artifact directory containing
 `ctg-runtime.json`, `SHA256SUMS`, and the platform-specific CLI artifact.
-Without that variable, CTG resolves the package-owned `@opencode/cli@2.0.32`
+Without that variable, current code resolves the package-owned `@opencode/cli@2.0.32`
 dependency with Node's package resolver and reads its `bin.opencode` entry,
 working for both nested and npm-hoisted installs. An explicit
 `CTG_OPENCODE_BIN`/`--engine-cli` continues to use the exact compatibility-version
@@ -52,6 +58,14 @@ an unlisted or modified executable, or an unexpected runtime version before it
 starts a service. The TUI is pointed at the already-owned temporary-profile
 service just as for the existing package-owned runtime.
 
+Release installation must use only a canonical CTG tag-bound asset/version,
+cache under a CTG-owned data directory, validate the asset manifest and exact
+runtime binary digest, and fail clearly offline or on unsupported platforms.
+It must never silently fall back to `@opencode/cli` after selecting the owned
+runtime, nor rewrite that package's binary. The release gate must install the
+normal package with no runtime environment override and prove it starts this
+owned runtime. No release asset has yet been published.
+
 Use a matching native OS/architecture for other upstream-supported targets;
 cross-compilation is rejected. The script fails closed on source revision,
 Bun version, patch hash, and `git apply --check`; it applies the patch, runs
@@ -70,14 +84,16 @@ under the release environment, publishes the patch/recipe and matching
 per-platform runtime artifacts plus checksums/manifest, and the installed
 package opt-in is tested against those published artifacts.
 
-## Full-TUI glyph compatibility is not implemented
+## Full-TUI glyph compatibility
 
-The pinned full TUI currently has no public equivalent of CTG's legacy
-`--ascii` / `--glyphs auto|ascii|unicode` contract. OpenCode's documented
-`mini.mono` setting applies to Mini mode only and is not a substitute for the
-full workspace TUI. Do not claim ASCII-mode compatibility for this runtime.
+The pinned full TUI did not provide a public equivalent of CTG's legacy
+`--ascii` / `--glyphs auto|ascii|unicode` contract. The assigned glyph patch is
+being developed separately against the pinned source; it must be composed into
+the final patch and rebuilt before this runtime can claim ASCII compatibility.
+OpenCode's documented `mini.mono` setting applies to Mini mode only and is not
+a substitute for the full workspace TUI.
 
-The implementation contract for a future owned-host change is deliberately
+The implementation contract for the owned-host change is deliberately
 narrow: introduce or use a central registry for **host chrome glyphs** (borders,
 selection/status markers, spinners, and structural tree/connector marks) and
 resolve the mode once for the full TUI. In ASCII mode, map only those registered
@@ -88,10 +104,15 @@ must remain unchanged. Auto detection and explicit overrides must be specified
 and tested on the actual full TUI, including unknown/legacy terminals; Mini's
 setting and platform guesses alone do not satisfy this contract.
 
-This glyph work is separate from the current patch freeze. Any source-patch
-change for it changes the patch digest and invalidates the current binary,
-manifest, and title evidence; rebuild and revalidate the exact resulting
+Any glyph patch changes the source-patch digest and invalidates the current
+binary, manifest, and title evidence; rebuild and revalidate the exact resulting
 artifact before making terminal-compatibility claims.
+
+The normal full-TUI `/help` contract is also not established as CTG-owned.
+Autocomplete currently selects OpenCode Host Help; invoking `/ctg-help` or a
+submitted command with arguments does not prove bare `/help` parity. The exact
+final binary must demonstrate the agreed bare-help UI behavior before that is
+claimed.
 
 ## Recorded artifact and bounded title evidence
 
