@@ -5,6 +5,9 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
+import { createReport } from '../lib/reports.mjs';
+import { checkDigest, fingerprint } from '../lib/delivery.mjs';
+import { selectReport } from '../lib/workspace.mjs';
 
 const require = createRequire(import.meta.url);
 const { createJiti } = require('jiti');
@@ -107,4 +110,69 @@ test('durable task creation propagates cancellation into native worktree creatio
   await assert.rejects(registered.createTask({ task: 'cancel me' }, { signal: controller.signal }), /cancelled create/);
   const journal = JSON.parse(readFileSync(join(root, '.harness/opencode-tasks.json'), 'utf8'));
   assert.equal(journal.operations[0].status, 'recovery-required');
+});
+
+test('delivery RPC returns bounded authoritative session report projections and rejects stale, foreign, and corrupt reports', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'workspace-rpc-delivery-')); t.after(() => rmSync(root, { recursive: true, force: true }));
+  git(root, 'init', '-q');
+  writeFileSync(join(root, 'source.txt'), 'before');
+  const sessionID = 'delivery-session';
+  const session = { id: sessionID, projectID: 'project-id', location: { directory: root }, title: 'Delivery', time: { updated: Date.now() } };
+  const sessions = new Map([[sessionID, session], ['foreign-session', { ...session, id: 'foreign-session' }]]);
+  const registered = {};
+  let workspaceContract;
+  const ctx = {
+    location: { directory: root, project: { id: 'project-id', canonical: root } },
+    session: { async get({ sessionID: id }) { const value = sessions.get(id); if (!value) throw Error('missing'); return value; } },
+    worktree: {},
+    rpc: { async register(definition, handlers) { workspaceContract = definition; Object.assign(registered, handlers); return { events: { async emit() {} }, dispose() {} }; } },
+    event: { subscribe: () => ({ async *[Symbol.asyncIterator]() {} }) },
+  };
+  const dispose = await registerWorkspaceRpc(ctx); t.after(dispose);
+  const check = { id: 'unit', kind: 'test', argv: ['node', '--test'], timeoutSeconds: 20 };
+  const plan = {
+    goal: 'Deliver a visible feature', verification: 'required', artifacts: ['.'], outputs: [],
+    steps: [{ id: 'implement', title: 'Implement feature', dependsOn: [], checks: ['unit'] }],
+    acceptance: [{ requirement: 'Feature is visible', checks: ['unit'] }], checks: [check],
+    design: { components: [{ id: 'core', responsibility: 'Own feature behavior', layer: 'core', excludes: ['UI'], dependencies: [], requirements: ['Feature is visible'] }], ports: [] },
+  };
+  const runId = 'run-1';
+  const current = fingerprint(root, ['.']);
+  const report = createReport(root, { runId, revision: 2, status: 'implementing', plan,
+    stepStatus: { step0: 'active' }, evidence: { unit: { runId, revision: 2, checkDigest: checkDigest(check), passed: true, fingerprint: current, executedRevision: 2, durationMs: 9, code: 0, logPath: join(root, '.harness', sessionID, runId, 'logs', 'unit.log'), outputTail: 'must not leave the report DTO' } },
+  }, sessionID);
+  selectReport(root, report.path);
+  const signal = new AbortController().signal;
+  const result = await registered.delivery({ sessionID }, { signal });
+  assert.equal(result.status, 'implementing');
+  assert.equal(result.freshness, 'current');
+  assert.equal(result.runId, runId);
+  assert.equal(result.revision, 2);
+  assert.deepEqual(result.plan.acceptance, [{ requirement: 'Feature is visible', checks: ['unit'] }]);
+  assert.equal(result.plan.steps[0].status, 'active');
+  assert.ok(result.workflow.nodes.some(node => node.id === 'gate_verify'));
+  assert.equal(result.architecture.nodes[0].title, 'Own feature behavior');
+  assert.deepEqual(result.evidence, [{ id: 'unit', status: 'fresh', executedRevision: 2, code: 0, filename: 'unit.log' }]);
+  assert.equal(JSON.stringify(result).includes('must not leave the report DTO'), false);
+  assert.equal(JSON.stringify(result).includes(root), false, 'only a log filename, never the report’s absolute path, is exposed');
+  const deliverySchema = workspaceContract.methods.delivery.output;
+  assert.equal(deliverySchema.additionalProperties, false);
+  assert.deepEqual(Object.keys(deliverySchema.properties).sort(), ['architecture', 'evidence', 'fingerprint', 'freshness', 'plan', 'revision', 'runId', 'status', 'workflow']);
+  assert.equal(deliverySchema.properties.plan.additionalProperties, false);
+
+  writeFileSync(join(root, 'source.txt'), 'edited');
+  const stale = await registered.delivery({ sessionID }, { signal });
+  assert.equal(stale.freshness, 'stale');
+  assert.equal(stale.evidence[0].status, 'stale');
+
+  const foreign = createReport(root, { runId: 'foreign-run', revision: 1, status: 'verified', plan, evidence: {} }, 'foreign-session');
+  selectReport(root, foreign.path);
+  assert.deepEqual(await registered.delivery({ sessionID }, { signal }), { status: 'unavailable' });
+
+  selectReport(root, report.path);
+  writeFileSync(report.path, '{corrupt');
+  assert.deepEqual(await registered.delivery({ sessionID }, { signal }), { status: 'invalid' });
+
+  writeFileSync(join(root, '.harness', 'active.json'), '{corrupt');
+  assert.deepEqual(await registered.delivery({ sessionID }, { signal }), { status: 'invalid' });
 });
