@@ -13,6 +13,11 @@ harness_worktree="$(cd "$3" && pwd)"
 binary="$(realpath "$4")"
 manifest="$(realpath "$5")"
 mode="$6"
+owned_root="${CTG_OWNED_OPENCODE_RUNTIME:-}"
+if [[ -z "$owned_root" ]]; then owned_root="$(dirname "$(dirname "$(dirname "$binary")")")"; fi
+release_manifest="${CTG_TEST_RUNTIME_RELEASE_MANIFEST:-$harness_worktree/lib/opencode/runtime-release.json}"
+source "$harness_worktree/tools/native-owned-runtime-env.sh"
+configure_native_owned_runtime "$binary" "$owned_root" "$release_manifest"
 source_commit="$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")).sourceCommit)' "$manifest")"
 snapshot_sha="$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")).sourceSnapshotSha256)' "$manifest")"
 execution_sha="$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")).executionSnapshotSha256)' "$manifest")"
@@ -49,6 +54,7 @@ tar -xf "$execution_snapshot" -C "$source_root"
 deps="$(realpath "$source_checkout/node_modules")"
 cp "$harness_worktree/tools/native-fixture.mjs" "$harness_worktree/tools/seed-native-switch-fixture.mjs" \
   "$harness_worktree/tools/native-paired-guards.mjs" "$harness_worktree/tools/native-runtime-identity.mjs" \
+  "$harness_worktree/tools/native-owned-runtime-env.sh" \
   "$harness_worktree/tools/test-native-terminal-performance.py" \
   "$source_root/tools/"
 ln -s "$deps" "$source_root/node_modules"
@@ -57,7 +63,7 @@ ln -s "$deps/@opencode/plugin" "$source_root/plugins/carthagent/node_modules/@op
 seed=("$source_root/tools/seed-native-switch-fixture.mjs" "$source_root/plugins/carthagent" --serve "--ready-file=$ready")
 expected=active
 if [[ "$mode" == baseline ]]; then seed+=(--no-plugin); expected=absent; fi
-CTG_PERF_MANIFEST="$manifest" NODE_PATH="$deps" CTG_OPENCODE_BIN="$binary" node "${seed[@]}" >"$seeder_log" 2>&1 &
+CTG_PERF_MANIFEST="$manifest" NODE_PATH="$deps" node "${seed[@]}" >"$seeder_log" 2>&1 &
 server_pid=$!
 for _ in $(seq 1 900); do
   if [[ -s "$ready" ]]; then break; fi

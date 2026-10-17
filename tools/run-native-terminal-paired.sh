@@ -7,6 +7,7 @@ set -u -o pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$repo_root/tools/native-paired-orchestration.sh"
+source "$repo_root/tools/native-owned-runtime-env.sh"
 binary="${CTG_OPENCODE_BIN:-/tmp/opencode/ctg-product-integration/node_modules/@opencode/cli/bin/opencode.exe}"
 source_root="${CTG_SOURCE_ROOT:-/tmp/opencode/ctg-product-integration}"
 source_commit="${CTG_SOURCE_COMMIT:-}"
@@ -146,6 +147,7 @@ ln -s "$binary_node_modules/@opencode/plugin" "$runner/source/plugins/carthagent
 cp "$repo_root/tools/native-fixture.mjs" "$repo_root/tools/seed-native-switch-fixture.mjs" \
   "$repo_root/tools/native-paired-guards.mjs" "$repo_root/tools/native-paired-manifest.mjs" \
   "$repo_root/tools/native-runtime-identity.mjs" \
+  "$repo_root/tools/native-owned-runtime-env.sh" \
   "$repo_root/tools/native-paired-orchestration.sh" "$repo_root/tools/test-native-terminal-performance.py" \
   "$repo_root/tools/test-native-terminal-readiness.sh" "$runner/source/tools/"
 mkdir -p "$runner/source/docs"
@@ -176,7 +178,7 @@ runtime_lock_sha256="$(node -e 'process.stdout.write(JSON.parse(process.argv[1])
 binary_sha256="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).binarySha256)' "$runtime_identity_json")"
 binary_version=2.0.32
 source_component_sha256="$(cd "$runner/source" && find lib plugins/carthagent -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}')"
-harness_component_sha256="$(cd "$runner/source" && sha256sum tools/native-fixture.mjs tools/native-runtime-identity.mjs tools/seed-native-switch-fixture.mjs tools/native-paired-guards.mjs tools/native-paired-manifest.mjs tools/native-paired-orchestration.sh tools/test-native-terminal-performance.py tools/test-native-terminal-readiness.sh docs/native-terminal-paired-failure-2026-10-17.md | sha256sum | awk '{print $1}')"
+harness_component_sha256="$(cd "$runner/source" && sha256sum tools/native-fixture.mjs tools/native-runtime-identity.mjs tools/native-owned-runtime-env.sh tools/seed-native-switch-fixture.mjs tools/native-paired-guards.mjs tools/native-paired-manifest.mjs tools/native-paired-orchestration.sh tools/test-native-terminal-performance.py tools/test-native-terminal-readiness.sh docs/native-terminal-paired-failure-2026-10-17.md | sha256sum | awk '{print $1}')"
 git -C "$source_root" status --porcelain=v1 > "$work/source-checkout-dirty-status"
 git -C "$repo_root" status --porcelain=v1 > "$work/harness-dirty-status"
 node --input-type=module - "$runner/source/tools/native-paired-guards.mjs" "$binary_node_modules" "$runner/source/package.json" "$runner/source" > "$work/dependency-packages.json" <<'NODE'
@@ -192,9 +194,7 @@ NODE
 dependency_install_sha256="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).treeSha256)' "$dependency_install_json")"
 dependency_install_realpath="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).realpath)' "$dependency_install_json")"
 
-unset CTG_OPENCODE_BIN
-export CTG_OWNED_OPENCODE_RUNTIME="$owned_root"
-export CTG_TEST_RUNTIME_RELEASE_MANIFEST="$release_manifest"
+configure_native_owned_runtime "$binary" "$owned_root" "$release_manifest"
 export CTG_PERF_SOURCE_COMMIT="$source_commit"
 export CTG_PERF_SOURCE_DIR="$runner/source"
 export CTG_PERF_SOURCE_SNAPSHOT_SHA256="$source_snapshot_sha256"
