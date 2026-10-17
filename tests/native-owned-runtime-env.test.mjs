@@ -89,9 +89,10 @@ test('shell child verifies owned runtime before passing trusted selectors to fix
   `, 'test', shellPath(helper), shellPath(fixture.binary), shellPath(fixture.owned), shellPath(fixture.manifest)], {
     encoding: 'utf8', env: { ...process.env, NODE_OPTIONS: spawnMock.options },
   }).trim().split('\n');
-  const selectors = result.find(line => line.startsWith('selectors:'));
-  assert.equal(await realpath(selectors?.slice('selectors:'.length)), await realpath(fixture.owned));
-  const reportedManifest = result.find(line => line !== selectors);
+  assert.equal(result.length, 2, 'shell handoff emits only the owned-root and release-manifest selectors');
+  const [selectors, reportedManifest] = result;
+  assert.ok(selectors.startsWith('selectors:'), 'first output line identifies the owned-root selector');
+  assert.equal(await realpath(selectors.slice('selectors:'.length)), await realpath(fixture.owned));
   assert.equal(await realpath(reportedManifest), await realpath(fixture.manifest));
   assert.equal(await realpath(await readFile(spawnMock.marker, 'utf8')), await realpath(fixture.binary), 'identity helper checked the exact owned executable with --version after hashing');
 });
