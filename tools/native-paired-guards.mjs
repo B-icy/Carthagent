@@ -116,9 +116,13 @@ export function assertDependencyPackageIdentity(expected, observed) {
 }
 
 export function assertPluginImportDependencies(pluginEntry) {
-  const sourceRoot = resolve(dirname(pluginEntry), '../../..');
+  const sourceRoot = realpathSync(resolve(dirname(pluginEntry), '../../..'));
+  const canonicalEntry = realpathSync(resolve(pluginEntry));
+  if (!isPathWithinRoot(sourceRoot, canonicalEntry)) {
+    throw new Error(`Plugin source entry resolves outside immutable tree: ${canonicalEntry}`);
+  }
   const scan = new Set();
-  const pending = [resolve(pluginEntry)];
+  const pending = [canonicalEntry];
   const imports = [];
   while (pending.length) {
     const file = pending.pop();
@@ -133,10 +137,14 @@ export function assertPluginImportDependencies(pluginEntry) {
         ? [importedPath]
         : [`${importedPath}.ts`, `${importedPath}.tsx`, `${importedPath}.mjs`, `${importedPath}.js`, `${importedPath}.json`, join(importedPath, 'index.ts'), join(importedPath, 'index.js')];
       const importedFile = candidates.find(candidate => existsSync(candidate));
-      if (!importedFile || !isPathWithinRoot(sourceRoot, importedFile)) {
+      let canonicalImportedFile;
+      try {
+        if (importedFile) canonicalImportedFile = realpathSync(importedFile);
+      } catch {}
+      if (!canonicalImportedFile || !isPathWithinRoot(sourceRoot, canonicalImportedFile)) {
         throw new Error(`Plugin source import is missing from immutable tree: ${specifier} (${importedFile})`);
       }
-      pending.push(importedFile);
+      pending.push(canonicalImportedFile);
     }
   }
   const sourceImports = [...new Set(imports.filter(specifier => specifier.startsWith('.')))];
