@@ -379,6 +379,27 @@ test('native run resolves and persists the enforced codegraph index cap per sess
   assert.equal(settings.codegraphMaxFiles, 300);
 });
 
+test('interactive native session persists an explicit no-guide setting before launching the TUI', async t => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-interactive-no-guide-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const calls = [];
+  const runtime = await createOpenCodeCliRuntime({ cwd, stdout: { write() {} }, native: {
+    runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }), launchTui: (_service, _cwd, options) => { calls.push(['launch', options.sessionID]); return { once(event, callback) { if (event === 'exit') queueMicrotask(() => callback(0)); return this; }, kill() {} }; } },
+    rpcDefinitions: { Carthagent: {}, SessionControls: {} },
+    headless: { createSession: async (_service, _cwd, { body }) => { calls.push(['create', body.metadata['carthagent.options']]); return { id: 'ses_no_guide' }; } },
+    clientFactory: async () => ({ rpc: () => ({ health: async () => ({ capabilities: ['delivery.session-options.v1'] }), framing: async input => { calls.push(['framing', input.sessionID, input.enabled]); return { enabled: input.enabled }; } }) }),
+  } });
+  assert.equal(await runtime.run({ mode: 'interactive', options: { autoFraming: false }, prompt: '' }), 0);
+  assert.deepEqual(calls, [
+    ['create', { guide: false }],
+    ['framing', 'ses_no_guide', false],
+    ['launch', 'ses_no_guide'],
+  ]);
+});
+
 test('resumed native sessions merge explicit launcher options into their own workspace metadata', async t => {
   const { mkdtempSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
