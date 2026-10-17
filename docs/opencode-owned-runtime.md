@@ -126,19 +126,19 @@ source with the exact patch hash above. It is at
 - Source patch hash: the pinned hash above
 - Manifest lock SHA-256: `9d78379cd264584a495440a217b9d2ecab524c9a56f7f8b4b5bed3926daa330d`
 
-This exact-patch executable has not yet had a focused PTY title-lifecycle run
-or physical terminal title readback. The earlier `30a3bb65…` artifact and its
-controlled terminal model are historical only and predate the final title
-adjustment. A terminal author reported an empty final title using a binary
-identified as upstream v2.0.32; binary hashes are still needed to reconcile
-those results. Do not claim title acceptance until the final binary is probed.
+This exact-patch executable's headless PTY emitted the VT title-stack save
+(`ESC[22;0t`) and title OSC sequence. The smoke probe terminated with Ctrl-C,
+so no restore sequence was observed; title restoration and physical terminal
+readback remain unproven. Any glyph/help source change requires a new artifact
+and a repeated title test.
 
-No paid provider traffic or real profile was used for the recorded source and
-unit tests. Package typechecks and focused compaction, shell-retention, shell
-HTTP-provenance, and renderer tests passed for this source patch. The clear UI
-test had three assertions pass but emitted a session-tab lock cleanup error;
-that test is not claimed clean. Full two-session state isolation across a
-server stop/start, visual clear preservation, automatic-overflow on/off,
-manual-compact availability, concurrent authoritative shell attribution, and
-final-binary title probing remain release gates. Independent review and
-product-owner architecture approval are also pending.
+No paid provider traffic or real profile was used. Core compaction and shell
+retention tests passed 16/16, server shell HTTP-provenance passed 1/1, renderer
+tests passed 5/5, and the clear UI test reported 3 passing assertions with a
+cleanup lock warning. The native build recipe includes all focused source
+gates; Bun's upstream provenance verification was independently reviewed but
+could not be rerun in the review environment. Full two-session state isolation
+across restart, visual clear preservation in a real service, auto-compaction
+on/off through overflow, manual compact, concurrent authoritative shell
+attribution, final title restoration, glyph/help behavior, approved artifact
+distribution, and installed default selection remain release gates.
