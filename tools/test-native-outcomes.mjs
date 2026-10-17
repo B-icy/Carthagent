@@ -45,11 +45,15 @@ try {
 
   await client.session.prompt({ sessionID: interrupted.id, text: 'CTG_FIXTURE_CANCEL' }, request());
   await bounded(pending, 'Cancellable provider request was never issued');
+  const queued = await client.session.prompt({ sessionID: interrupted.id, text: 'CTG_FIXTURE_QUEUED', delivery: 'queue', resume: false }, request());
   await client.session.prompt({ sessionID: healthy.id, text: 'Independent healthy request' }, request());
   const started = performance.now();
-  await client.session.interrupt({ sessionID: interrupted.id, continue: false }, request(10_000));
+  await client.session.interrupt({ sessionID: interrupted.id, resume: false }, request(10_000));
   await bounded(cancelled, 'Interrupt did not cancel the underlying provider HTTP request');
   assert.deepEqual(await Promise.all([host.outcome(interrupted.id), host.outcome(healthy.id)]), ['interrupted', 'succeeded']);
+  assert.ok((await client.session.inbox.list({ sessionID: interrupted.id }, request())).some(item => item.id === queued.id), 'Queued prompt remains pending after interruption');
+  assert.ok(!host.requests.some(body => JSON.stringify(body.messages).includes('CTG_FIXTURE_QUEUED')), 'Queued prompt did not resume execution');
+  await client.session.inbox.cancel({ sessionID: interrupted.id, inboxID: queued.id }, request());
   const cancellationMs = Math.round(performance.now() - started);
 
   // An interrupted session remains usable without restarting its neighbor.
@@ -60,7 +64,7 @@ try {
   assert.equal(history.at(-1).outcome, 'succeeded');
   assert.deepEqual(host.providerErrors, []);
   console.log(JSON.stringify({ host: '2.0.32', failure: 'passed', cancellation: 'passed',
-    concurrentIsolation: 'passed', recovery: 'passed', cancellationMs }));
+    concurrentIsolation: 'passed', recovery: 'passed', queuedInterruption: 'passed', cancellationMs }));
 } catch (error) {
   console.error(host.output);
   throw error;
