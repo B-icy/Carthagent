@@ -10,6 +10,10 @@ if (process.platform === 'win32') {
 }
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
+const ptyEnv = { ...process.env };
+for (const key of Object.keys(ptyEnv)) {
+  if (key.toUpperCase() === 'CTG_RUNTIME_GITHUB_TOKEN') delete ptyEnv[key];
+}
 const binary = process.env.CTG_OPENCODE_BIN ?? resolve(root, 'node_modules/@opencode/cli/bin/opencode.exe');
 const plugin = resolve(process.argv[2] ?? resolve(root, 'plugins/carthagent'));
 const probes = [
@@ -31,7 +35,7 @@ for (const probe of probes) {
     ...(probe.secondEnter ? ['--second-enter'] : ['--confirm'])];
   for (const next of probe.next ?? []) args.push('--after-command', next.command, '--after-expect', next.expect);
   if (probe.color) args.push('--expect-color', probe.color);
-  const result = spawnSync('python3', args, { cwd: root, stdio: 'inherit', timeout: 90_000 });
+  const result = spawnSync('python3', args, { cwd: root, env: ptyEnv, stdio: 'inherit', timeout: 90_000 });
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
