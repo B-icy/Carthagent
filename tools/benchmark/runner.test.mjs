@@ -7,7 +7,7 @@ import { initializeCampaign } from './campaign.mjs';
 import { runCandidate, terminalStatus } from './runner.mjs';
 import { createFreeze, verifyFreeze, frozenFiles } from './freeze.mjs';
 import { sha } from './runtime.mjs';
-import { nativeFixture } from '../native-fixture.mjs';
+import { nativeFixture, streamText } from '../native-fixture.mjs';
 const mk = () => mkdtempSync(join(tmpdir(), 'benchmark-runner-'));
 
 test('native terminal classification does not mistake process success for model success', () => {
@@ -56,15 +56,18 @@ test('benchmark refuses arbitrary service endpoints before creating a run', asyn
 
 test('native benchmark plugin loads in OpenCode 2 with both session and tool hooks', async () => {
   const root=mk();
+  let probeSent=false;
   const host=await nativeFixture({
     plugin:join(process.cwd(),'lib/opencode/evaluation-budget-plugin'),
-    plugins:[join(process.cwd(),'tools/benchmark/native-plugin'),join(process.cwd(),'plugins/carthagent')],
+    // Keep this admission probe independent of the delivery plugin's plan gate.
+    plugins:[join(process.cwd(),'tools/benchmark/native-plugin')],
     env:{BENCH_TOOL_LIMIT:'1',BENCH_RETRY_LIMIT:'0',BENCH_GUARD_LOG:join(root,'guard.jsonl'),BENCH_ADVISOR_LOG:join(root,'advisor.jsonl'),BENCH_GATEWAY:'http://127.0.0.1:1',CTG_EVALUATION_MAX_TURNS:'4',CTG_EVALUATION_MAX_COST:'1'},
     respond(body,res) {
-      if(JSON.stringify(body.messages).includes('CTG_PARALLEL_GUARD_PROBE')) {
-        const shell=body.tools.find(tool=>tool.function?.name==='shell');
-        assert.ok(shell,'native host must advertise shell for the concurrent tool admission probe');
-        const calls=Array.from({length:8},(_,index)=>({index,id:`parallel-${index}`,type:'function',function:{name:'shell',arguments:JSON.stringify({command:`printf parallel-${index}`})}}));
+      if(!probeSent && JSON.stringify(body.messages).includes('CTG_PARALLEL_GUARD_PROBE')) {
+        probeSent=true;
+        const read=body.tools.find(tool=>tool.function?.name==='read');
+        assert.ok(read,'native host must advertise read for the concurrent tool admission probe');
+        const calls=Array.from({length:8},(_,index)=>({index,id:`parallel-${index}`,type:'function',function:{name:'read',arguments:JSON.stringify({filePath:join(process.cwd(),'README.md')})}}));
         const chunk=(delta,finish_reason=null)=>`data: ${JSON.stringify({id:'parallel-guard-probe',object:'chat.completion.chunk',created:1,model:'fixture',choices:[{index:0,delta,finish_reason}]})}\n\n`;
         res.writeHead(200,{'content-type':'text/event-stream'});
         res.end(`${chunk({role:'assistant',tool_calls:calls})}${chunk({},'tool_calls')}data: [DONE]\n\n`);
@@ -83,10 +86,12 @@ test('native benchmark plugin loads in OpenCode 2 with both session and tool hoo
     await host.client.session.prompt({sessionID:session.id,text:'CTG_PARALLEL_GUARD_PROBE'},host.request());
     await host.client.session.wait({sessionID:session.id},host.request());
     assert.ok(existsSync(join(root,'guard.jsonl')),`${host.output}\n${JSON.stringify(host.requests)}`);
+    assert.deepEqual(host.providerErrors,[],'offline provider requests must complete without fixture errors');
     const rows=readFileSync(join(root,'guard.jsonl'),'utf8').trim().split('\n').map(JSON.parse).filter(row=>row.sessionID===session.id);
     assert.equal(rows.length,8,JSON.stringify(rows));
     assert.equal(rows.filter(row=>!row.blocked).length,1,JSON.stringify(rows));
     assert.equal(rows.filter(row=>row.blocked).length,7,JSON.stringify(rows));
+    assert.ok(host.requests.some(request=>request.messages.some(message=>message.role==='tool'&&message.content)), 'one admitted read call must return a real tool result');
     const ledger=await host.client.session.context({sessionID:session.id},host.request());
     assert.ok(ledger.at(-1)?.outcome,JSON.stringify(ledger.at(-1)));
   } finally { await host.close(); }
