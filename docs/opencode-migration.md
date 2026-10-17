@@ -103,11 +103,13 @@ passing domain fixture alone does not satisfy these gates:
 | Composed SWE at `d07f4c0` | Run succeeded and external final test passed, but only one native shell call was recorded: the fixture incorrectly accepted the failing baseline's “tests 1” text as success. This does **not** prove post-edit native verification; #153 must require baseline shell failure → edit → a second successful shell check → final response |
 | `test:native-performance` | Cached workspace RPC: 30 samples, p95 64.8 ms, maximum 181.6 ms; input and session-switch latency require separate terminal measurements |
 
-PR #157 adds a real-terminal measurement harness. Initial input measurements
-exceed the 50 ms target, but its echo detector can mistake unrelated redraws for
-editor input and requires correction before those values are acceptance evidence.
-Warm session switching remains unmeasured. Short idle observations showed no PTY
-output; they do not establish long-running memory bounds.
+PR #157 adds a real-terminal measurement harness. Its corrected editor-cell input
+detector still needs a controlled paired assessment against the 50 ms target.
+At `22109cb`, a 30-switch diagnostic reports p95 573.526 ms and maximum 696.095 ms,
+above the 150 ms target. This is not a controlled acceptance result; independent
+review of the warm-switch measurement and a quiet-window paired run remain pending.
+Short idle observations showed no PTY output; they do not establish long-running
+memory bounds.
 
 Native runtime-wrapper acceptance, delivery enforcement, provider authentication,
 command compatibility, installed SWE workflows, reconnect behavior, and performance
