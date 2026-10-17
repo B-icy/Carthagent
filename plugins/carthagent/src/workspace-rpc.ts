@@ -118,3 +118,38 @@ export interface WorkspaceSnapshot {
   tasks: Array<{ id: string; projectID: string; title: string; status: string; attention?: boolean; directory?: string; branch?: string }>;
   sessions: Array<{ id: string; taskID?: string; projectID?: string; title: string; status: string; updatedAt?: string; directory: string }>;
 }
+
+export interface WorkspaceDelivery {
+  status: string;
+  freshness?: "current" | "stale";
+  completion?: "ready" | "incomplete";
+  gate?: "locked" | "open";
+  runId?: string;
+  revision?: number;
+  fingerprint?: string;
+  plan?: {
+    goal: string;
+    verification: string;
+    acceptance: Array<{ requirement: string; checks: string[] }>;
+    artifacts: string[];
+    outputs: string[];
+    assumptions: string[];
+    checks: Array<{ id: string; kind: string; argv: string[]; timeoutSeconds: number }>;
+    steps: Array<{ id: string; title: string; status: string; dependsOn: string[]; checks: string[] }>;
+    scenarios: Array<{ id: string; requirement: string; kind: string; path: string[]; checks: string[]; input: string; expected: string; assertion: string }>;
+    risks: Array<{ id: string; description: string; status: string; blocking: boolean; evidence: string }>;
+  };
+  workflow?: {
+    authored: boolean;
+    semantics: string;
+    nodes: Array<{ id: string; title: string; type: string; status: string; step?: string; requirements: string[]; components: string[]; checks: string[]; inputs: string[]; artifacts: string[]; effects: string[]; condition?: string }>;
+    edges: Array<{ from: string; to: string; kind: string; label?: string; when?: string; stop?: string; maxAttempts?: number }>;
+  };
+  architecture?: {
+    nodes: Array<{ id: string; title: string; type?: string; status?: string; layer?: string; excludes?: string[]; requirements?: string[] }>;
+    edges: Array<{ from: string; to: string; kind: string; label?: string }>;
+    ports: Array<{ id: string; owner: string; adapter: string; compositionRoot: string; input: string; output: string; errors: string; injection: string; testDouble: string; integrationAssertion: string }>;
+  };
+  evidence?: Array<{ id: string; status: "pending" | "failed" | "fresh" | "stale"; executedRevision?: number; code?: number; filename?: string }>;
+  error?: string;
+}

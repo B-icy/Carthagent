@@ -1,10 +1,10 @@
 import type { Context } from "@opencode/plugin/tui/context";
 import type { LocationRef } from "@opencode/client";
-import { Workspace, type WorkspaceSnapshot } from "../workspace-rpc.js";
+import { Workspace, type WorkspaceDelivery, type WorkspaceSnapshot } from "../workspace-rpc.js";
 import { SessionControls } from "../session-rpc.js";
 
 export { Workspace, SessionControls };
-export type { WorkspaceSnapshot };
+export type { WorkspaceDelivery, WorkspaceSnapshot };
 
 const REQUEST_TIMEOUT_MS = 15_000;
 
@@ -24,7 +24,7 @@ export function workspaceClient(context: RpcContext, selectedLocation?: Location
     open: (input: { sessionID: string }, signal?: AbortSignal) => rpc.open(input, requestOptions(context, selectedLocation, signal)) as Promise<{ opened: boolean; directory: string }>,
     createWorktree: (input: { projectID: string; name: string }, signal?: AbortSignal) => rpc.createWorktree(input, requestOptions(context, selectedLocation, signal)) as Promise<{ directory: string }>,
     createTask: (input: { task: string; branch?: string }, signal?: AbortSignal) => rpc.createTask(input, requestOptions(context, selectedLocation, signal)) as Promise<{ taskID: string; sessionID: string; directory: string }>,
-    delivery: (input: { sessionID: string }, signal?: AbortSignal) => rpc.delivery(input, requestOptions(context, selectedLocation, signal)) as Promise<{ plan?: unknown; evidence?: unknown; status: string }>,
+    delivery: (input: { sessionID: string }, signal?: AbortSignal) => rpc.delivery(input, requestOptions(context, selectedLocation, signal)) as Promise<WorkspaceDelivery>,
     review: (input: { sessionID: string }, signal?: AbortSignal) => rpc.review(input, requestOptions(context, selectedLocation, signal)) as Promise<{ status: string; summary?: string }>,
     startReview: (input: { sessionID: string }, signal?: AbortSignal) => rpc.startReview(input, requestOptions(context, selectedLocation, signal)) as Promise<{ status: string; summary: string; sessionID?: string }>,
     events: rpc.events,

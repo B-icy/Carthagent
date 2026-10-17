@@ -12,6 +12,7 @@ import { provisionNativeThemes } from "../src/ui/theme-provision.mjs";
 test("Carthagent command manifest resolves visible CTG commands", () => {
   assert.equal(resolveCommand("/help")?.id, "help");
   assert.equal(resolveCommand("/ctg-help")?.id, "help");
+  assert.deepEqual(COMMANDS.find((item) => item.id === "help")?.aliases, ["ctg-help"]);
   assert.equal(resolveCommand("/review")?.id, "review");
   assert.equal(resolveCommand("/review-mode")?.id, "review");
   for (const name of ["workflow", "architecture", "evidence"]) assert.equal(resolveCommand(name)?.hidden, undefined);
@@ -23,7 +24,7 @@ test("Carthagent command manifest resolves visible CTG commands", () => {
 test("manifest prevents collisions with native OpenCode slash commands", () => {
   for (const name of NATIVE_COMMAND_COLLISIONS) assert.equal(COMMANDS.some((item) => item.name === name || item.aliases?.includes(name)), false, name);
   assert.equal(NATIVE_COMMAND_COLLISIONS.includes("help" as typeof NATIVE_COMMAND_COLLISIONS[number]), false);
-  assert.deepEqual(COMMANDS.filter((item) => ["model", "compact", "abort", "resume"].includes(item.name)).map((item) => item.name), ["model", "compact", "abort", "resume"]);
+  assert.deepEqual(COMMANDS.filter((item) => ["model", "compact", "abort", "resume"].includes(item.name)).map((item) => item.name).sort(), ["abort", "compact", "model", "resume"]);
 });
 
 test("theme provisioning installs the startup default through its launcher-facing export", async () => {
@@ -31,9 +32,25 @@ test("theme provisioning installs the startup default through its launcher-facin
   const directory = await mkdtemp(join(tmpdir(), "ctg-default-theme-"));
   try {
     const result = await provisionDefaultNativeTheme(directory);
-    assert.deepEqual(result.installed, ["carthage"]);
+    assert.ok(result.installed.includes("carthage"));
     const theme = parseThemeDocument(JSON.parse(await readFile(join(result.directory, "carthage.json"), "utf8")), "carthage");
     assert.equal(theme.dark.hue.yellow[400], "#d5af66");
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("startup theme provisioning covers compatibility themes and preserves host/user themes", async () => {
+  const { provisionDefaultNativeTheme } = await import("../src/ui/theme-provision.mjs");
+  const directory = await mkdtemp(join(tmpdir(), "ctg-startup-themes-"));
+  try {
+    await mkdir(join(directory, "themes"), { recursive: true });
+    await writeFile(join(directory, "themes", "forest.json"), '{"userOwned":true}');
+    const result = await provisionDefaultNativeTheme(directory);
+    assert.ok(result.installed.includes("carthage"));
+    assert.ok(result.installed.includes("forest") === false);
+    assert.ok(result.conflicts.includes("forest"));
+    assert.ok(result.installed.includes("opencode") === false);
+    assert.ok(result.installed.includes("tokyonight") === false);
+    assert.deepEqual(JSON.parse(await readFile(join(directory, "themes", "forest.json"), "utf8")), { userOwned: true });
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
@@ -66,14 +83,14 @@ test("native theme provisioning converts legacy palettes inside the selected Ope
   try {
     await mkdir(themeDirectory, { recursive: true });
     await writeFile(join(themeDirectory, "user-theme.json"), '{"custom":true}');
-    const result = await provisionNativeThemes(directory, ["carthage", "tokyonight"]);
-    assert.deepEqual(result.installed.sort(), ["carthage", "tokyonight"]);
+    const result = await provisionNativeThemes(directory, ["carthage", "nebula"]);
+    assert.deepEqual(result.installed.sort(), ["carthage", "nebula"]);
     assert.deepEqual(JSON.parse(await readFile(join(themeDirectory, "user-theme.json"), "utf8")), { custom: true });
     const carthage = parseThemeDocument(JSON.parse(await readFile(join(themeDirectory, "carthage.json"), "utf8")), "carthage");
-    const tokyonight = parseThemeDocument(JSON.parse(await readFile(join(themeDirectory, "tokyonight.json"), "utf8")), "tokyonight");
+    const nebula = parseThemeDocument(JSON.parse(await readFile(join(themeDirectory, "nebula.json"), "utf8")), "nebula");
     assert.equal(carthage.dark.hue.yellow[400], "#d5af66");
     assert.equal(carthage.dark.hue.yellow[300], "#e6c480");
-    assert.ok(tokyonight.dark.hue.blue[400]);
+    assert.ok(nebula.dark.hue.blue[400]);
     const again = await provisionNativeThemes(directory, ["carthage"]);
     assert.deepEqual(again.installed, []);
     await writeFile(join(themeDirectory, "forest.json"), '{"userOwned":true}');

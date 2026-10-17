@@ -12,6 +12,7 @@ import { WorkspacePage } from "./ui/workspace.js";
 import { provisionNativeThemes } from "./ui/theme-provision.mjs";
 
 const THEMES = ["carthage", "opencode", "tokyonight", "nebula", "ember", "forest", "mono", "obsidian", "midnight", "solarized-dark", "nord", "contrast-dark", "okabe-dark", "paper", "daylight", "solarized-light", "contrast-light", "okabe-light", "solarized", "okabe", "contrast", "system"];
+const OPENCODE_BUILTIN_THEMES = new Set(["opencode", "tokyonight"]);
 
 export default Plugin.define({
   id: "carthagent.tui",
@@ -61,7 +62,7 @@ export default Plugin.define({
       const selectedModel = context.ui.model.current();
       const sessionApi = sessionControls(context, location);
       switch (id) {
-        case "help":
+        case "help": case "ctg-help":
           await context.ui.dialog.alert({ title: "Carthagent commands", message: COMMANDS.map((command) => `/${command.name}${command.args ? ` ${command.args}` : ""}${command.aliases?.length ? ` (${command.aliases.map((alias) => `/${alias}`).join(", ")})` : ""} — ${command.description}`).join("\n") + "\n\nCtrl+R sessions · Ctrl+T settings · Ctrl+N new session are native OpenCode actions." });
           return;
         case "resume": {
@@ -92,9 +93,9 @@ export default Plugin.define({
           const currentTheme = typeof currentConfig.theme === "string" ? currentConfig.theme : currentConfig.theme?.name;
           if (theme) {
             if (!THEMES.includes(theme)) { toast(`Unknown theme “${theme}”. Available compatibility names: ${THEMES.join(", ")}.`, "warning"); return; }
-            const provisioned = await provisionNativeThemes(cliConfigDirectory(), [theme]);
+            const provisioned: { directory?: string; installed: string[] } = OPENCODE_BUILTIN_THEMES.has(theme) ? { installed: [] } : await provisionNativeThemes(cliConfigDirectory(), [theme]);
             if (provisioned.installed.length) {
-              toast(`Installed native theme “${theme}” in ${provisioned.directory}. OpenCode discovers new theme files at startup; restart the TUI, then run /theme ${theme} again to select it.`, "warning");
+              toast(`Installed native theme “${theme}” in ${provisioned.directory ?? cliConfigDirectory()}. OpenCode discovers new theme files at startup; restart the TUI, then run /theme ${theme} again to select it.`, "warning");
               return;
             }
             await writeNativeTheme(cliConfigPath(), theme);
@@ -103,9 +104,9 @@ export default Plugin.define({
           }
           const selected = await context.ui.dialog.select({ title: "OpenCode themes", current: currentTheme, options: THEMES.map((name) => ({ title: name, value: name, description: name === "carthage" ? "Carthagent purple field, gold accent" : "OpenCode theme" })) });
           if (selected) {
-            const provisioned = await provisionNativeThemes(cliConfigDirectory(), [selected]);
+            const provisioned: { directory?: string; installed: string[] } = OPENCODE_BUILTIN_THEMES.has(selected) ? { installed: [] } : await provisionNativeThemes(cliConfigDirectory(), [selected]);
             if (provisioned.installed.length) {
-              toast(`Installed native theme “${selected}” in ${provisioned.directory}. OpenCode discovers new theme files at startup; restart the TUI, then select it again.`, "warning");
+              toast(`Installed native theme “${selected}” in ${provisioned.directory ?? cliConfigDirectory()}. OpenCode discovers new theme files at startup; restart the TUI, then select it again.`, "warning");
               return;
             }
             await writeNativeTheme(cliPath, selected);
@@ -165,8 +166,8 @@ export default Plugin.define({
         case "export":
           if (!sessionID) { toast("/export requires an open session.", "warning"); return; }
           {
-            await context.data.session.message.sync(sessionID);
-            const messages = context.data.session.message.list(sessionID);
+            const transfer = await context.client.session.export({ sessionID }, { signal: AbortSignal.timeout(60_000) });
+            const messages = transfer.messages;
             const session = context.data.session.get(sessionID);
             const title = session?.title ?? "Carthagent session";
             const content = messages.map((message) => {
@@ -196,8 +197,9 @@ export default Plugin.define({
           return;
         case "copy": {
           if (!sessionID) { toast("/copy requires an open session.", "warning"); return; }
-          const messages = await context.client.session.context({ sessionID });
-          const latest = [...messages].reverse().find((message) => message.type === "assistant");
+          const { messages } = await context.client.session.export({ sessionID }, { signal: AbortSignal.timeout(60_000) });
+          const latest = messages.filter((message) => message.type === "assistant")
+            .sort((left, right) => (right.time.completed ?? right.time.created) - (left.time.completed ?? left.time.created))[0];
           const text = latest?.content.filter((part) => part.type === "text").map((part) => part.text).join("\n");
           if (!text) { toast("No assistant response to copy yet.", "warning"); return; }
           await copyWithHost(text);
