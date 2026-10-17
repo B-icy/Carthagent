@@ -100,7 +100,10 @@ jobs:
           tar -xzf "release-assets/${{ matrix.target }}-source.tar.gz" -C archive-check/source
           cmp opencode/packages/cli/dist-ctg/ctg-runtime.json archive-check/runtime/ctg-runtime.json
           cmp ctg/docs/patches/opencode-v2.0.32-session-ui.patch archive-check/source/docs/patches/opencode-v2.0.32-session-ui.patch
-          (cd release-assets && sha256sum "${{ matrix.target }}.tar.gz" "${{ matrix.target }}-source.tar.gz" > "${{ matrix.target }}-SHA256SUMS.txt")
+          checksum() {
+            if command -v sha256sum >/dev/null 2>&1; then sha256sum "$@"; else shasum -a 256 "$@"; fi
+          }
+          (cd release-assets && checksum "${{ matrix.target }}.tar.gz" "${{ matrix.target }}-source.tar.gz" > "${{ matrix.target }}-SHA256SUMS.txt")
           cat "release-assets/${{ matrix.target }}-SHA256SUMS.txt" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
@@ -109,7 +112,7 @@ jobs:
           if-no-files-found: error
 
   publish-existing-release:
-    needs: build
+    needs: [validate-release-target, build]
     runs-on: ubuntu-latest
     environment: ctg-runtime-release
     permissions:
@@ -141,12 +144,16 @@ jobs:
             test -f "$directory/$target.tar.gz"
             test -f "$directory/$target-source.tar.gz"
             test -f "$directory/$target-SHA256SUMS.txt"
-            (cd "$directory" && sha256sum -c "$target-SHA256SUMS.txt")
+            (cd "$directory" && if command -v sha256sum >/dev/null 2>&1; then sha256sum -c "$target-SHA256SUMS.txt"; else shasum -a 256 -c "$target-SHA256SUMS.txt"; fi)
             sed "s|  |  $directory/|" "$directory/$target-SHA256SUMS.txt" >> "$combined"
           done
           test "$(awk '{print $2}' "$combined" | sort -u | wc -l | tr -d ' ')" = 10
           test "$(awk '{print $1}' "$combined" | wc -l | tr -d ' ')" = 10
-          awk '{print $1 "  " $2}' "$combined" | sha256sum -c -
+          if command -v sha256sum >/dev/null 2>&1; then
+            awk '{print $1 "  " $2}' "$combined" | sha256sum -c -
+          else
+            awk '{print $1 "  " $2}' "$combined" | shasum -a 256 -c -
+          fi
           test "$(find runtime-assets -type f -name '*.tar.gz' | wc -l | tr -d ' ')" = 10
           test "$(wc -l < "$combined" | tr -d ' ')" = 10
           while IFS= read -r asset; do
