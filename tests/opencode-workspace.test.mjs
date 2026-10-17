@@ -289,12 +289,23 @@ test('review rejects unsuccessful execution and bounds timeout/cancellation whil
     agent: { async list() { return { data: [{ id: 'build' }] }; } },
     session: {
       async create() { return { id: 'reviewer-timeout' }; }, async prompt() {},
-      async wait(_input, { signal }) { await new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true })); },
+      async wait(_input, { signal }) {
+        await new Promise((_, reject) => {
+          // AbortSignal.timeout() is unref'ed. Model a live native wait so Node 22
+          // cannot exit while the timeout assertion is still pending.
+          const keepAlive = setTimeout(() => {}, 60_000);
+          const onAbort = () => { clearTimeout(keepAlive); reject(signal.reason); };
+          signal.addEventListener('abort', onAbort, { once: true });
+          if (signal.aborted) onAbort();
+        });
+      },
       async interrupt({ sessionID, resume }, { signal }) { assert.equal(sessionID, 'reviewer-timeout'); assert.equal(resume, false); assert.ok(signal); interrupted++; return { interrupted: true }; },
       async get() { return { outcome: 'interrupted' }; }, async context() { return []; },
     },
   };
+  const timeoutStarted = Date.now();
   await assert.rejects(startReview({ ctx, cwd: root, timeoutMs: 15 }), /timed out/);
+  assert.ok(Date.now() - timeoutStarted >= 10, 'review timeout honors its configured deadline');
   assert.equal(interrupted, 1);
   await assert.rejects(startReview({ ctx, cwd: root, timeoutMs: 300_001 }), /timeout/);
   const hangingInterrupt = {
