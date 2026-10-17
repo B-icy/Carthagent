@@ -32,6 +32,7 @@
     "guidance",
     "lib",
     "plugins",
+    "!plugins/**/node_modules/**",
     "themes",
     "prompts",
     "public",

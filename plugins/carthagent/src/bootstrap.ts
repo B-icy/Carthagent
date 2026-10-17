@@ -6,6 +6,7 @@ export default Plugin.define({
   id: 'carthagent.tui',
   setup(context) {
     context.keymap.layer(() => ({
+      mode: 'global',
       commands: [{
         id: 'carthagent.health',
         title: 'Carthagent runtime status',
@@ -13,7 +14,10 @@ export default Plugin.define({
         slash: { name: 'ctg-status' },
         async run() {
           try {
-            const result = await context.client.rpc(Carthagent).health({});
+            const result = await context.client.rpc(Carthagent).health({}, {
+              location: context.location ?? context.data.location.default(),
+              signal: AbortSignal.timeout(10_000),
+            });
             const health = result as { hostVersion: string; directory: string };
             context.ui.toast.show({
               title: 'Carthagent',
