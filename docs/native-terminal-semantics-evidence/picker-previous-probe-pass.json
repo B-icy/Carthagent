@@ -1,0 +1,61 @@
+{
+  "startedAtUtc": "2026-10-17T14:34:42.707210+00:00",
+  "binary": "/tmp/opencode/ctg-parity-prototype/opencode-src/packages/cli/dist-ctg/cli-linux-x64/bin/opencode",
+  "binaryResolvedPath": "/tmp/opencode/ctg-parity-prototype/opencode-src/packages/cli/dist-ctg/cli-linux-x64/bin/opencode",
+  "binarySha256": "30a3bb65d4d005c7a12e82d3b97579dc97e451c23b0dac660123f91534c9f484",
+  "buildHash": "30a3bb65d4d005c7a12e82d3b97579dc97e451c23b0dac660123f91534c9f484",
+  "binaryVersion": "opencode v0.0.0-ctg.2.0.32",
+  "probeSha256": "61bf1116d951b41a94b5d1fbf97ee89c45cde225aa07f45153ebcb350a75bfcf",
+  "pluginSha256": "f162e6184bcb7980c7ec61e3c5c675563351aa814127cbb0a7fa1b6f79f116e6",
+  "sourceCommit": "608ea09855edafbe97bad47a799b9f4bc3cdf51d",
+  "workingTreeDirty": true,
+  "sourceDiffDirty": true,
+  "provider": "loopback offline fixture",
+  "terminal": {
+    "initialRows": 32,
+    "initialColumns": 100,
+    "resizeRows": 12,
+    "resizeColumns": 40,
+    "TERM": "xterm-256color"
+  },
+  "controlledHostClipboardModel": true,
+  "physicalOSClipboardVerified": false,
+  "checks": {
+    "pickerEscapeCancel": {
+      "status": "PASS",
+      "pickerObserved": true,
+      "cancelKey": "Escape",
+      "dismissed": true,
+      "composerRestored": true,
+      "providerRequestsBeforePrompt": 0,
+      "noPromptProviderRequestBeforeAcceptance": true
+    },
+    "promptSubmission": {
+      "status": "PASS",
+      "providerRequests": 0,
+      "noPromptSentDuringPickerAcceptance": true
+    },
+    "narrowLayout": {
+      "status": "NOT_RUN",
+      "reason": "picker-only case does not resize terminal"
+    },
+    "focusedPromptTransport": {
+      "status": "NOT_RUN",
+      "reason": "picker-only case intentionally submits no prompt"
+    },
+    "terminalTitleRestoration": {
+      "status": "NOT_RUN",
+      "reason": "picker-only case exits without title acceptance"
+    },
+    "selectionClipboard": {
+      "status": "NOT_RUN",
+      "reason": "picker-only case does not exercise selection"
+    },
+    "clipboardOSC52": {
+      "status": "NOT_RUN",
+      "reason": "picker-only case does not exercise /copy"
+    }
+  },
+  "status": "PASS",
+  "incompleteChecks": []
+}
