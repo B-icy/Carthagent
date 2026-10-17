@@ -49,6 +49,7 @@ try {
     fixtures[name] = { id: session.id, title, marker, directory: roots[name] };
   }
   const fixture = { temp: host.temp, roots, sessions: fixtures,
+    serverPid: host.serverPid(),
     pluginObservation: host.pluginObservation, pluginInventory: host.pluginInventory,
     pluginHealth: host.pluginHealth, provenance };
   fixture.baseUrl = host.baseUrl;

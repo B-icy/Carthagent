@@ -137,7 +137,10 @@ mkdir -p "$runner/source/plugins/carthagent/node_modules/@opencode"
 ln -s "$binary_node_modules/@opencode/plugin" "$runner/source/plugins/carthagent/node_modules/@opencode/plugin"
 cp "$repo_root/tools/native-fixture.mjs" "$repo_root/tools/seed-native-switch-fixture.mjs" \
   "$repo_root/tools/native-paired-guards.mjs" "$repo_root/tools/native-paired-manifest.mjs" \
-  "$repo_root/tools/native-paired-orchestration.sh" "$repo_root/tools/test-native-terminal-performance.py" "$runner/source/tools/"
+  "$repo_root/tools/native-paired-orchestration.sh" "$repo_root/tools/test-native-terminal-performance.py" \
+  "$repo_root/tools/test-native-terminal-readiness.sh" "$runner/source/tools/"
+mkdir -p "$runner/source/docs"
+cp "$repo_root/docs/native-terminal-paired-failure-2026-10-17.md" "$runner/source/docs/"
 execution_archive="$output_root/execution-snapshot.tar"
 tar -C "$runner/source" --exclude=node_modules --exclude='*/node_modules' --exclude='**/node_modules' -cf "$execution_archive" .
 source_snapshot_sha256="$(sha256sum "$execution_archive" | awk '{print $1}')"
@@ -149,7 +152,7 @@ if [[ "$binary_version" != 2.0.32 ]]; then
   exit 2
 fi
 source_component_sha256="$(cd "$runner/source" && find lib plugins/carthagent -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}')"
-harness_component_sha256="$(cd "$runner/source" && sha256sum tools/native-fixture.mjs tools/seed-native-switch-fixture.mjs tools/native-paired-guards.mjs tools/native-paired-manifest.mjs tools/native-paired-orchestration.sh tools/test-native-terminal-performance.py | sha256sum | awk '{print $1}')"
+harness_component_sha256="$(cd "$runner/source" && sha256sum tools/native-fixture.mjs tools/seed-native-switch-fixture.mjs tools/native-paired-guards.mjs tools/native-paired-manifest.mjs tools/native-paired-orchestration.sh tools/test-native-terminal-performance.py tools/test-native-terminal-readiness.sh docs/native-terminal-paired-failure-2026-10-17.md | sha256sum | awk '{print $1}')"
 git -C "$source_root" status --porcelain=v1 > "$work/source-checkout-dirty-status"
 git -C "$repo_root" status --porcelain=v1 > "$work/harness-dirty-status"
 node --input-type=module - "$runner/source/tools/native-paired-guards.mjs" "$binary_node_modules" "$runner/source/package.json" "$runner/source" > "$work/dependency-packages.json" <<'NODE'

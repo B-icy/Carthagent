@@ -262,6 +262,9 @@ def locate_text(screen, text):
     return None
 
 
+NATIVE_EDITOR_PLACEHOLDER = "Message carthagent…"
+
+
 def editor_contains_typed_cell(screen, marker, before, row, editor_col):
     # The native placeholder's starting cell is the input origin. Restrict the
     # assertion to that exact cell; other changes on the editor row do not count.
@@ -274,6 +277,8 @@ def main():
     parser.add_argument("--binary", default=os.environ.get("CTG_OPENCODE_BIN") or shutil.which("opencode"))
     parser.add_argument("--plugin", default=str(pathlib.Path(__file__).resolve().parents[1] / "plugins/carthagent"))
     parser.add_argument("--switch-fixture", help="JSON emitted by seed-native-switch-fixture.mjs; enables native Open Sessions switching")
+    parser.add_argument("--readiness-only", action="store_true",
+                        help="bounded, non-timed real-PTY editor echo/backspace check; no performance samples")
     parser.add_argument("--no-plugin", action="store_true",
                         help="measure the native baseline without registering the CTG plugin")
     parser.add_argument("--samples", type=int, default=SAMPLES)
@@ -283,15 +288,15 @@ def main():
                         help="bounded idle observation window (default: 10s; max: 300s)")
     parser.add_argument("--idle-byte-limit", type=int, default=65536,
                         help="report idle-output budget; status-clock bytes are reported, not presumed a defect")
-    parser.add_argument("--memory-growth-limit-mb", type=int, default=128,
-                        help="documented RSS growth budget during idle window")
+    parser.add_argument("--memory-growth-limit-mb", type=int, default=None,
+                        help="optional operator-approved RSS growth threshold; no product threshold is currently defined")
     parser.add_argument("--report", help="write machine-readable report JSON")
     args = parser.parse_args()
     if os.name != "posix":
         parser.error("real PTY performance probe requires POSIX")
     if not args.binary:
         parser.error("provide --binary or CTG_OPENCODE_BIN for the owned 2.0.32 executable")
-    if args.samples < 30:
+    if args.samples < 30 and not args.readiness_only:
         parser.error("at least 30 samples are required")
     if not 1 <= args.idle_seconds <= 300:
         parser.error("idle window must be between 1 and 300 seconds")
@@ -413,8 +418,8 @@ def main():
         # Wait on actual TUI readiness; never charge fixed sleeps to an input latency.
         terminal.collect_until(
             (lambda _output: terminal.screen.contains(fixture["sessions"]["alpha"]["marker"])) if fixture else
-            (lambda output: b"Ask anything" in output and b"2.0.32" in output),
-            90, "native 2.0.32 editor/session")
+            (lambda _output: locate_text(terminal.screen, NATIVE_EDITOR_PLACEHOLDER) is not None),
+            90, "native editor placeholder/session")
         # Allow the first genuine frame/plugin setup to settle, outside all sample clocks.
         terminal.drain(0.5)
         switch_ms = []
@@ -423,7 +428,7 @@ def main():
         input_warmup_observation = None
         sampler = HostSampler(args.host_sample_interval)
         switch_note = "not measured: provide --switch-fixture with two preloaded native sessions"
-        if fixture:
+        if fixture and not args.readiness_only:
             sampler.start()
             def select_native_session(session, timed):
                 title = session["title"]
@@ -504,14 +509,44 @@ def main():
                     except Exception:
                         pass
             switch_note = f"{args.samples} alternating native Open Sessions menu selections; Enter-to-unique-assistant-history-marker render; both destinations explicitly prewarmed"
-        editor_anchor = locate_text(terminal.screen, "Ask anything")
+        if args.readiness_only:
+            terminal.collect_until(lambda _output: locate_text(terminal.screen, NATIVE_EDITOR_PLACEHOLDER) is not None,
+                                   10, "native editor placeholder")
+        editor_anchor = locate_text(terminal.screen, NATIVE_EDITOR_PLACEHOLDER)
         editor_origin = None
         if editor_anchor is None:
-            raise RuntimeError("native editor placeholder was not present in parsed screen")
+            raise RuntimeError(f"native editor placeholder {NATIVE_EDITOR_PLACEHOLDER!r} was not present; parsed screen: {terminal.screen.dump()[-1800:]}")
         else:
             editor_row, editor_col = editor_anchor
             editor_origin = (editor_row, editor_col)
         editor_empty_cell = terminal.screen.cells[editor_origin[0]][editor_origin[1]]
+        if args.readiness_only:
+            if fixture:
+                sampler.start()
+            before = [row[:] for row in terminal.screen.cells]
+            terminal.send(b"z")
+            terminal.collect_until(lambda _output: editor_contains_typed_cell(terminal.screen, "z", before, *editor_origin),
+                                   2, "changed typed cell at native editor input origin", poll_interval=0.001)
+            typed_cell = terminal.screen.cells[editor_origin[0]][editor_origin[1]]
+            terminal.send(b"\x7f")
+            terminal.collect_until(lambda _output: terminal.screen.cells[editor_origin[0]][editor_origin[1]] == editor_empty_cell and
+                                   locate_text(terminal.screen, NATIVE_EDITOR_PLACEHOLDER) == editor_origin,
+                                   1, "native editor placeholder restored after backspace", poll_interval=0.001)
+            readiness = {"readinessOnly": True, "timedSamplesRun": False,
+                         "nativeEditorPlaceholder": NATIVE_EDITOR_PLACEHOLDER,
+                         "inputOrigin": {"row": editor_origin[0], "column": editor_origin[1]},
+                         "placeholderCell": editor_empty_cell, "typedCell": typed_cell,
+                         "changedCellAtInputOrigin": before[editor_origin[0]][editor_origin[1]] != typed_cell,
+                         "restoredPlaceholderVerified": True,
+                         "pluginObservation": fixture.get("pluginObservation") if fixture else None,
+                         "measurementScope": "bounded real-PTY readiness/echo only; no latency samples or performance claim"}
+            if fixture:
+                readiness["hostConditionsDuringReadiness"] = sampler.stop()
+            text = json.dumps(readiness, indent=2)
+            print(text)
+            if args.report:
+                pathlib.Path(args.report).write_text(text + "\n")
+            return
         input_ms = []
 
         def send_and_verify_input(marker, sample_index, timed):
@@ -629,7 +664,7 @@ def main():
                            "finalScreen": terminal.screen.lines(),
                            "finalEditorCell": terminal.screen.cells[editor_origin[0]][editor_origin[1]],
                            "finalEditorCellExpected": editor_empty_cell,
-                           "finalEditorPlaceholderVerified": (locate_text(terminal.screen, "Ask anything") == editor_origin and
+                           "finalEditorPlaceholderVerified": (locate_text(terminal.screen, NATIVE_EDITOR_PLACEHOLDER) == editor_origin and
                                                               terminal.screen.cells[editor_origin[0]][editor_origin[1]] == editor_empty_cell),
                            "rawSamples": input_observations}
         switch_failed_samples = sum(item.get("status") == "failed" for item in switch_observations)
@@ -647,10 +682,13 @@ def main():
         result["observerTotals"] = terminal.observer_snapshot()
         # Bounded idle observation; report all bytes and RSS trend. Native status
         # clocks may legitimately redraw, so byte activity alone is not a failure.
-        def process_tree_rss_kb():
+        def process_tree_rss_kb(root_pid):
             # Include plugin/runtime descendants when Linux exposes process stats.
             try:
-                parent = {child.pid}
+                root_pid = int(root_pid)
+                if not pathlib.Path(f"/proc/{root_pid}/status").exists():
+                    return None
+                parent = {root_pid}
                 rss_total = 0
                 while parent:
                     discovered = set()
@@ -672,12 +710,22 @@ def main():
                 return None
         idle_start_bytes = len(terminal.transcript)
         rss = []
+        tui_rss = []
+        server_rss = []
         idle_deadline = time.monotonic() + args.idle_seconds
         while time.monotonic() < idle_deadline:
             terminal.drain(0.1)
-            sample = process_tree_rss_kb()
+            tui_sample = process_tree_rss_kb(child.pid)
+            server_pid = fixture.get("serverPid") if fixture else None
+            server_sample = process_tree_rss_kb(server_pid) if server_pid else None
+            sample = ((tui_sample or 0) + (server_sample or 0)
+                      if tui_sample is not None or server_sample is not None else None)
             if sample is not None:
                 rss.append(sample)
+            if tui_sample is not None:
+                tui_rss.append(tui_sample)
+            if server_sample is not None:
+                server_rss.append(server_sample)
         idle_bytes = len(terminal.transcript) - idle_start_bytes
         growth_mb = ((max(rss) - min(rss)) / 1024) if rss else None
         result["idle"] = {"windowSeconds": args.idle_seconds, "ptyBytes": idle_bytes,
@@ -685,15 +733,21 @@ def main():
                            "rssSamples": len(rss), "rssMinMb": round(min(rss) / 1024, 2) if rss else None,
                            "rssMaxMb": round(max(rss) / 1024, 2) if rss else None,
                            "rssGrowthMb": round(growth_mb, 2) if growth_mb is not None else None,
+                           "tuiProcessTreeRssMinMb": round(min(tui_rss) / 1024, 2) if tui_rss else None,
+                           "tuiProcessTreeRssMaxMb": round(max(tui_rss) / 1024, 2) if tui_rss else None,
+                           "ownedServerProcessTreeRssMinMb": round(min(server_rss) / 1024, 2) if server_rss else None,
+                           "ownedServerProcessTreeRssMaxMb": round(max(server_rss) / 1024, 2) if server_rss else None,
+                           "serverPid": fixture.get("serverPid") if fixture else None,
                            "rssGrowthBudgetMb": args.memory_growth_limit_mb,
-                           "rssGrowthBudgetMet": growth_mb <= args.memory_growth_limit_mb if growth_mb is not None else None,
+                           "rssGrowthBudgetMet": (growth_mb <= args.memory_growth_limit_mb
+                                                  if growth_mb is not None and args.memory_growth_limit_mb is not None else None),
                            "rssScope": "native process plus descendants where /proc is available",
-                           "interpretation": "PTY bytes are observational only; native status redraws are not assumed plugin defects"}
+                           "acceptance": "diagnostic only; no product-defined sustained-memory ceiling exists",
+                           "interpretation": "PTY bytes and short-window RSS are observations only; native status redraws are not assumed plugin defects"}
         result["hostConditionsAtRunEnd"] = host_conditions()
         result["overallTargetsMet"] = bool(result["input"]["targetMet"] and
                                             result["warmSessionSwitch"]["targetMet"] is True and
-                                            result["input"]["finalEditorPlaceholderVerified"] and
-                                            result["idle"]["rssGrowthBudgetMet"] is True)
+                                            result["input"]["finalEditorPlaceholderVerified"])
         text = json.dumps(result, indent=2)
         print(text)
         if args.report:

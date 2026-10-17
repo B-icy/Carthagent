@@ -25,13 +25,36 @@ controlled host for comparisons, and do not attribute a paired delta to CTG
 unless the run is actually paired/alternated on the same host window.
 
 The harness also observes a bounded idle window (default 10 seconds, maximum
-300 seconds), captures terminal-output bytes, and samples process RSS. The
-default observation budgets are 64 KiB of output and 128 MiB RSS range. Output
-is informational, not a failure by itself: OpenCode's native status clock can
-legitimately redraw. RSS range is a short-window trend, not proof of a global
-memory bound or leak-free long-running behavior. Use `--idle-seconds`,
-`--idle-byte-limit`, and `--memory-growth-limit-mb` to make the measured window
-and limits explicit. `--report path.json` saves the output.
+300 seconds), captures terminal-output bytes, and reports separate process-tree
+RSS for the TUI and its owned fixture server when available. Output is
+informational, not a failure by itself: OpenCode's native status clock can
+legitimately redraw. This brief RSS range is descriptive only. No product-defined
+sustained-memory ceiling exists, and a short idle sample cannot establish a
+long-term bound or absence of leaks. `--idle-seconds` and `--idle-byte-limit`
+control the brief observation; `--memory-growth-limit-mb` is opt-in and only
+reports comparison with an explicitly operator-approved diagnostic threshold.
+It does not affect `overallTargetsMet`. `--report path.json` saves the output.
+
+### Sustained-memory and streaming evidence (separate, not yet acceptance)
+
+The original acceptance defines terminal input p95 (50 ms) and warm session
+switch p95 (150 ms), but no sustained-memory ceiling, streaming/reconnect
+reliability threshold, or long-window duration. Do not invent a pass/fail bound
+from the short idle observation. A future separately authorized real-host
+diagnostic should be bounded (proposed diagnostic shape: 30 minutes total, first
+5 minutes labeled warmup/excluded from trend summaries, then 1-second
+observations until a hard stop at 30 minutes; these are proposed observation
+parameters, not accepted product thresholds). It should record frozen
+source/binary/dependency identity, start/end host load/memory, actual duration
+and cadence, excluded warmup, TUI and owned-server process-tree RSS samples
+independently and combined, PTY bytes/events, loopback stream request counts,
+reconnect attempts/results, timeouts/exceptions, missing samples, and cleanup
+status. Use only the disposable loopback provider and fixture profile. Preserve
+raw timestamps and report absolute values and growth/trend without calling it a
+bound. Parent/product owners must approve or change the proposed workload and
+define an acceptance ceiling/error policy before any such observation can be
+considered acceptance. Do not run it while authors or other material workloads
+are active.
 
 Warm-session-switch target is 150 ms. The opt-in `--switch-fixture` mode uses
 two prepopulated OpenCode sessions in the pinned host's disposable database,
@@ -51,6 +74,51 @@ RPC only. Its samples must not be described as terminal input or session-switch
 latency.
 
 ## Recorded host run (2026-10-17)
+
+The authorized 2026-10-17 controlled-window attempt is **failed diagnostic
+evidence only** (runner aggregate exit 1; no valid latency samples). Retained
+artifacts are at
+`/tmp/opencode/ctg-native-terminal-paired-approved-20261017T181325Z`. Its
+manifest records frozen source `38ad06f7d439bc7c15b901f7b2c741b31486e93a`,
+owned CLI 2.0.32, and the selected dependency identity. Both baseline passes
+failed before measurement because dependency provenance attempted to resolve
+the null plugin path. Both CTG passes passed raw native inventory/health checks,
+then failed readiness because the detector expected `Ask anything`, while the
+actual native editor hint is `Message carthagent…`. The remediation adds a
+strict bounded readiness mode and actual loopback fixture script; no latency
+threshold or editor-cell criterion is relaxed. Their reports are marked
+failed and contain no valid input/switch sample arrays. Do not quote them as
+latency evidence. Private seeder logs and fixture credentials remain only in
+the mode-0700 artifact directory; do not copy them into source control.
+
+The runner stopped with aggregate status 1 as designed. A malformed timestamp
+format in the preliminary window-recording command occurred before the runner
+was invoked; identities/load were rechecked and recorded before the one
+authorized attempt.
+
+No rerun is authorized by this record. The non-timed readiness check below is
+for regression validation only; another ABBA needs fresh independent review
+and a new controlled quiet-window confirmation.
+
+After a fresh review approves the readiness changes, a bounded non-timed real
+integration readiness check can be invoked with the archived execution snapshot
+and retained manifest (it does not run the ABBA or latency samples):
+
+```bash
+tools/test-native-terminal-readiness.sh \
+  /tmp/opencode/ctg-product-integration \
+  /tmp/opencode/ctg-native-terminal-paired-approved-20261017T181325Z/execution-snapshot.tar \
+  "$HARNESS_WORKTREE" \
+  /tmp/opencode/ctg-product-integration/node_modules/@opencode/cli/bin/opencode.exe \
+  /tmp/opencode/ctg-native-terminal-paired-approved-20261017T181325Z/manifest.json \
+  baseline
+```
+
+Use `ctg` instead of `baseline` to verify active plugin inventory and health.
+This command starts one disposable loopback fixture and performs only a
+placeholder-anchored key echo/backspace check. It is not latency or long-window
+acceptance evidence, and must not be run concurrently with authors/material
+workloads without the operator's permission.
 
 Earlier input figures (140.464 ms plugin-configured and 121.098 ms plugin-
 disabled) are withdrawn as invalid: the old detector could match an arbitrary
@@ -154,7 +222,8 @@ disposable profiles and local servers are cleaned up on exit.
 The harness leaves the thresholds unchanged (50 ms input p95, 150 ms switch
 p95). These are terminal-to-parsed-PTY-screen proxies, not compositor timing;
 do not subtract observer measurements or claim such a correction. A short RSS
-range remains a short-window observation, not a memory bound. Preserve the
+range remains descriptive only and is not included in overall target acceptance;
+there is no product memory ceiling in this assessment. Preserve the
 existing **573.526 ms p95** switch observation as a loaded-host diagnostic;
 the paired run, too, is diagnostic unless the operator confirms the controlled
 window and independent review accepts the evidence. Deliberate fixed waits are

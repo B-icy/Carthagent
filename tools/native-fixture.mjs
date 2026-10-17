@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { createHash, randomBytes } from 'node:crypto';
 import { OpenCode } from '@opencode/client';
-import { assertCompletePluginSource, assertPluginCondition, verifySnapshotIdentity } from './native-paired-guards.mjs';
+import { assertCompletePluginSource, assertPluginCondition, resolveFixtureSourceRoot, verifySnapshotIdentity } from './native-paired-guards.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 
@@ -157,7 +157,9 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
         if (provenance.binarySha256 !== createHash('sha256').update(await readFile(binary)).digest('hex')) {
           throw new Error('Native fixture binary hash does not match selected executable');
         }
-        const sourceRoot = resolve(plugin, '../..');
+        // Baseline fixtures intentionally pass plugin=null; resolve dependency
+        // provenance from this immutable execution snapshot in that condition.
+        const sourceRoot = resolveFixtureSourceRoot(plugin, root);
         const dependencyRoot = provenance.dependencyNodeModulesRealpath;
         const dependencies = hashDependencyPackages(dependencyRoot, join(sourceRoot, 'package.json'), sourceRoot);
         if (JSON.stringify(dependencies) !== JSON.stringify(provenance.dependencyPackages)) throw new Error('Native fixture dependency package identity mismatch');
@@ -187,7 +189,9 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
     throw error;
   }
   return {
-    temp, cwd, baseUrl, password, requests, providerErrors, hostErrors, request, start, stop, close, pluginObservation, pluginInventory, pluginHealth, provenance,
+    temp, cwd, baseUrl, password, requests, providerErrors, hostErrors, request, start, stop, close,
+    serverPid: () => child?.pid ?? null,
+    pluginObservation, pluginInventory, pluginHealth, provenance,
     model: { providerID: 'ctg-fixture', id: 'fixture' },
     location: { directory: cwd },
     get client() { return client; },

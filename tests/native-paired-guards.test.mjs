@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { aggregateConditionExit, assertCompletePluginSource, assertDependencyPackageIdentity, assertPluginCondition, assertPluginImportDependencies, assertSelectedSourceHead, assertSnapshotProvenance, verifySnapshotIdentity } from '../tools/native-paired-guards.mjs';
+import { aggregateConditionExit, assertCompletePluginSource, assertDependencyPackageIdentity, assertPluginCondition, assertPluginImportDependencies, assertSelectedSourceHead, assertSnapshotProvenance, resolveFixtureSourceRoot, verifySnapshotIdentity } from '../tools/native-paired-guards.mjs';
 
 test('paired CTG fixture fails closed unless inventory says active', () => {
   assert.deepEqual(assertPluginCondition([{ id: 'carthagent', state: { status: 'active' } }], true),
@@ -201,6 +201,11 @@ test('dependency identity comparison fails closed when the physical install chan
 
 test('baseline absence rejects plugin-provided namespaces, not only exact id', () => {
   assert.throws(() => assertPluginCondition([{ id: 'carthagent.session', state: { status: 'active' } }], false), /Baseline must have no Carthagent plugin/);
+});
+
+test('baseline fixture dependency provenance resolves from the immutable execution root when plugin is null', () => {
+  assert.equal(resolveFixtureSourceRoot(null, '/archived/execution'), '/archived/execution');
+  assert.equal(resolveFixtureSourceRoot('/archived/execution/plugins/carthagent', '/unused'), '/archived/execution');
 });
 
 test('paired provenance requires the immutable source snapshot and pinned binary identity', () => {
