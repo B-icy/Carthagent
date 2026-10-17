@@ -77,7 +77,7 @@ integration check before its PR merges. In-progress does not mean shipped.
 | Review | Backend merged #146; terminal integration in progress | Fresh-context findings bound to source and PR head; bounded admission |
 | Legacy archive | Merged #150; launcher discovery integration in progress | Read-only searchable transcripts; no implicit continuation |
 | CLI/headless/dashboard | CLI/headless in progress; dashboard lease fix merged #142 | Output/exit/locking behavior verified against native runtime |
-| Packaging/upgrade | #151, #143, #149 merged; #159 installed renderer passes but clean source `npm ci` has a peer conflict under repair | Fresh installation and migration tested from packaged artifact |
+| Packaging/upgrade | #151, #143, #149 merged; #164 parser split passes parent plain `npm ci`, codegraph tests, lint and typechecks; green composed CI remains required | Fresh installation and migration tested from packaged artifact |
 | Terminal/performance | Pending | PTY, interaction, streaming and reconnect evidence |
 | Default switch/retirement | Pending | No supported default execution path depends on Pi |
 
