@@ -51,9 +51,9 @@ try {
   const other = { directory: join(host.temp, 'other') };
   await mkdir(other.directory);
   await host.active(other);
-  // The host intentionally redacts ordinary handler errors at the RPC boundary.
-  await assert.rejects(rpc('framing', { sessionID: a.id, enabled: false }, other), { name: 'RpcInternalError' });
-  await assert.rejects(rpc('compact', { sessionID: a.id, notes: 'Must not be admitted' }, other), { name: 'RpcInternalError' });
+  const wrongWorkspace = error => error.message.includes('another workspace') && JSON.stringify(error).includes('wrong_workspace');
+  await assert.rejects(rpc('framing', { sessionID: a.id, enabled: false }, other), wrongWorkspace);
+  await assert.rejects(rpc('compact', { sessionID: a.id, notes: 'Must not be admitted' }, other), wrongWorkspace);
   assert.deepEqual(await client.session.context({ sessionID: a.id }, request()), compacted);
 
   // Persisted controls and launcher metadata must survive losing the whole service.
