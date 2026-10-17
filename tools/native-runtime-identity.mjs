@@ -103,6 +103,30 @@ export async function loadNativeTestRuntime({
   });
 }
 
+/** Verify a test-supplied artifact against explicit trusted metadata before a resolver can execute it. */
+export async function preflightNativeTestRuntimeArtifact({
+  ownedRoot,
+  expectedManifestPath,
+  env = process.env,
+  platform = nativePlatform(),
+  spawnImpl = spawn,
+} = {}) {
+  if (typeof ownedRoot !== 'string' || !ownedRoot.trim()) throw new Error('ownedRoot must be a non-empty test artifact path');
+  if (typeof expectedManifestPath !== 'string' || !expectedManifestPath.trim()) {
+    throw new Error('A trusted CTG_TEST_RUNTIME_RELEASE_MANIFEST is required with CTG_TEST_RUNTIME_ARTIFACT_ROOT');
+  }
+  let expectedManifest;
+  try {
+    expectedManifest = JSON.parse(await readFile(expectedManifestPath, 'utf8'));
+  } catch (error) {
+    throw new Error(`Could not read trusted native runtime release manifest at ${expectedManifestPath}: ${error.message}`, { cause: error });
+  }
+  const executableName = platform.startsWith('windows-') ? 'opencode.exe' : 'opencode';
+  const binary = join(resolve(ownedRoot), `cli-${platform}`, 'bin', executableName);
+  const identity = await loadNativeTestRuntime({ binary, ownedRoot, expectedManifest, env, platform, spawnImpl });
+  return Object.freeze({ identity, expectedManifest });
+}
+
 function validateTrustedRelease(release, platform) {
   const invalid = reason => { throw new Error(`Invalid trusted native runtime release manifest: ${reason}`); };
   if (!release || release.version !== 1 || !RELEASE_VERSION.test(release.releaseVersion ?? '')
