@@ -25,7 +25,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
 
 /**
  * Verify five build outputs through the production USTAR acquisition parser,
- * then emit a candidate outer trust manifest. Per-target build records must be
+ * then emit a candidate outer trust manifest. Pinned build records must be
  * made by the native build job from its binary before it is archived; records
  * are claims until the acquisition module verifies them against archive bytes.
  */
@@ -93,6 +93,7 @@ export async function generateOwnedRuntimeRelease({
       if (sha256(verifiedExecutable) !== expectedExecutableSha256) {
         throw new Error(`Acquisition returned an unexpected executable for ${key}`);
       }
+      await validateRuntimeTree(verifiedRoot, { key, executablePath, runtimeVersion: provenance.runtimeVersion });
       assets[key] = { name, archiveSha256, executableSha256: expectedExecutableSha256 };
     }
   } finally {
@@ -169,6 +170,51 @@ function validateBuildRecord(record, { key, platform, arch, provenance }) {
     || typeof record.executableSha256 !== 'string'
     || !/^[a-f0-9]{64}$/i.test(record.executableSha256)) {
     throw new Error(`Build record for ${key} does not match the pinned recipe and target`);
+  }
+}
+
+async function validateRuntimeTree(root, { key, executablePath, runtimeVersion }) {
+  const expectedDirectories = new Set(['', `cli-${key}`, `cli-${key}/bin`]);
+  const expectedFiles = new Set([
+    'LICENSE',
+    'SHA256SUMS',
+    'ctg-runtime.json',
+    executablePath,
+    `cli-${key}/package.json`,
+  ]);
+  const actualDirectories = new Set();
+  const actualFiles = new Set();
+  const visit = async (directory, relative) => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const childRelative = relative ? `${relative}/${entry.name}` : entry.name;
+      if (entry.isSymbolicLink()) throw new Error(`Runtime archive contains a symlink: ${childRelative}`);
+      if (entry.isDirectory()) {
+        actualDirectories.add(childRelative);
+        await visit(path.join(directory, entry.name), childRelative);
+      } else if (entry.isFile()) actualFiles.add(childRelative);
+      else throw new Error(`Runtime archive contains a non-regular member: ${childRelative}`);
+    }
+  };
+  await visit(root, '');
+  for (const member of actualDirectories) {
+    if (!expectedDirectories.has(member)) throw new Error(`Runtime archive contains an unexpected directory: ${member}`);
+  }
+  for (const member of actualFiles) {
+    if (!expectedFiles.has(member)) throw new Error(`Runtime archive contains an unexpected file: ${member}`);
+  }
+  for (const member of expectedDirectories) {
+    if (member && !actualDirectories.has(member)) throw new Error(`Runtime archive is missing directory: ${member}`);
+  }
+  for (const member of expectedFiles) {
+    if (!actualFiles.has(member)) throw new Error(`Runtime archive is missing file: ${member}`);
+  }
+  const packageMetadata = JSON.parse(await readFile(path.join(root, `cli-${key}/package.json`), 'utf8'));
+  const [, platform, arch] = key.match(/^(linux|darwin|windows)-(x64|arm64)$/) ?? [];
+  if (packageMetadata.name !== `@opencode/cli-${key}`
+    || packageMetadata.version !== runtimeVersion
+    || packageMetadata.os?.length !== 1 || packageMetadata.os[0] !== platform
+    || packageMetadata.cpu?.length !== 1 || packageMetadata.cpu[0] !== arch) {
+    throw new Error(`Runtime archive package metadata does not match ${key} and ${runtimeVersion}`);
   }
 }
 
