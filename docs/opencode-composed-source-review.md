@@ -38,14 +38,20 @@ asset retrieval through the production resolver, preserving the packaged
 manifest/digests and default no-override selection. No credential values or
 transport code were used here.
 
-The corrected publish verification shell block was extracted directly from the
-workflow and run against a disposable fixture containing five tiny valid USTAR
-runtime archives and build records, generated through the pinned manifest
-generator against a fixture final-package trust root. With canned, read-only
-`gh` run metadata, the untouched candidate passed through manifest regeneration
-and reached `candidate=verified`. Appending bytes to the Linux archive made that
-same extracted block fail at `sha256sum -c` before writing the verified output.
-The fixture and mocks contain no credentials and are outside the repository.
+Workflow fixture evidence is now complete for the extracted validate, verify,
+and upload run blocks. A positive fixture used the candidate generator and
+packaged trust root, canned read-only GitHub API metadata for a reviewed-branch
+prebuild and annotated draft tag, and a fake `gh release upload` that only copied
+files to a temporary capture directory. The workflow reached
+`candidate=verified`; all five captured archives and the generated manifest
+were byte-identical to their candidate inputs, and exactly seven expected asset
+names were captured. A modified archive failed verification before any upload
+call. A stale annotated-tag target passed initial validation but failed the
+upload step's immutable-target recheck before any upload call. Earlier fixture
+attempts did not complete the positive path and are superseded by this full
+three-step run. These are mocked workflow checks, not a real dispatch or release;
+no credentials or real uploads were used. The fixture and logs are outside the
+repository.
 
 The release workflow permits a non-publishing prebuild from a reviewed branch
 to avoid requiring product merge before native candidate generation. It binds

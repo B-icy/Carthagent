@@ -297,8 +297,8 @@ jobs:
           [[ "$(jq -r .head_repository.full_name <<<"$run")" == "$GITHUB_REPOSITORY" ]]
           workflow_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/publish-owned-opencode-runtime.yml" --jq '.id')"
           [[ "$(jq -r .workflow_id <<<"$run")" == "$workflow_id" ]]
-          default_branch="$(gh api "repos/$GITHUB_REPOSITORY" --jq '.default_branch')"
-          [[ "$(jq -r .head_branch <<<"$run")" == "$default_branch" ]]
+          prebuild_branch="$(jq -r .head_branch <<<"$run")"
+          [[ "$prebuild_branch" =~ ^[A-Za-z0-9._/-]+$ ]]
           EXPECTED_SOURCE="$(jq -r .head_sha <<<"$run")"
           [[ "$EXPECTED_SOURCE" =~ ^[0-9a-f]{40}$ ]]
           candidate_dir=candidate
@@ -345,8 +345,8 @@ jobs:
             echo "Refusing to overwrite existing owned runtime release assets" >&2
             exit 1
           fi
-          cp candidate-bytes/runtime-release.json.candidate candidate-bytes/runtime-release.json
-          (cd candidate-bytes && sha256sum opencode-*.tar.gz runtime-release.json > runtime-release-SHA256SUMS.txt)
-          for key in linux-x64 linux-arm64 darwin-x64 darwin-arm64 windows-x64; do gh release upload "$RELEASE_TAG" "candidate-bytes/opencode-$key.tar.gz#opencode-$key.tar.gz" --repo "$GITHUB_REPOSITORY"; done
-          gh release upload "$RELEASE_TAG" candidate-bytes/runtime-release.json#runtime-release.json --repo "$GITHUB_REPOSITORY"
-          gh release upload "$RELEASE_TAG" candidate-bytes/runtime-release-SHA256SUMS.txt#runtime-release-SHA256SUMS.txt --repo "$GITHUB_REPOSITORY"
+          cp candidate/runtime-release.json.candidate candidate/runtime-release.json
+          (cd candidate && sha256sum opencode-*.tar.gz runtime-release.json > runtime-release-SHA256SUMS.txt)
+          for key in linux-x64 linux-arm64 darwin-x64 darwin-arm64 windows-x64; do gh release upload "$RELEASE_TAG" "candidate/opencode-$key.tar.gz#opencode-$key.tar.gz" --repo "$GITHUB_REPOSITORY"; done
+          gh release upload "$RELEASE_TAG" candidate/runtime-release.json#runtime-release.json --repo "$GITHUB_REPOSITORY"
+          gh release upload "$RELEASE_TAG" candidate/runtime-release-SHA256SUMS.txt#runtime-release-SHA256SUMS.txt --repo "$GITHUB_REPOSITORY"
