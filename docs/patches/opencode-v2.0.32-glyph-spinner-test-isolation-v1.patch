@@ -1,0 +1,50 @@
+--- a/packages/tui/test/glyphs.test.ts
++++ b/packages/tui/test/glyphs.test.ts
+@@ -1,4 +1,5 @@
+ import { describe, expect, test } from "bun:test"
++import { fileURLToPath } from "node:url"
+ 
+ describe("host chrome glyph compatibility", () => {
+   test("maps known chrome symbols only in ASCII mode", async () => {
+@@ -36,9 +37,7 @@
+ 
+   test("selects ASCII spinner and border chrome without changing Unicode defaults", async () => {
+     process.env.CTG_TUI_GLYPHS = "ascii"
+-    const { SPINNER_FRAMES } = await import("../src/component/spinner-frames")
+     const { SplitBorder, EmptyBorder } = await import("../src/ui/border")
+-    expect(SPINNER_FRAMES).toEqual(["-", "\\", "|", "/"])
+     expect(SplitBorder.customBorderChars).toEqual({
+       topLeft: "+", bottomLeft: "+", vertical: "|", topRight: "+", bottomRight: "+",
+       horizontal: "-", bottomT: "+", topT: "+", cross: "+", leftT: "+", rightT: "+",
+@@ -47,6 +46,31 @@
+     process.env.CTG_TUI_GLYPHS = "unicode"
+     // Border characters are resolved at render time, so explicit Unicode remains intact.
+     expect(SplitBorder.customBorderChars).toEqual({ ...EmptyBorder, vertical: "┃" })
++
++    const entry = fileURLToPath(new URL("../src/component/spinner-frames.ts", import.meta.url))
++    for (const [mode, expected] of [
++      ["ascii", ["-", "\\", "|", "/"]],
++      ["unicode", ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]],
++    ] as const) {
++      const child = Bun.spawnSync(
++        [
++          process.execPath,
++          "-e",
++          [
++            'import assert from "node:assert/strict"',
++            `const { SPINNER_FRAMES } = await import(${JSON.stringify(entry)})`,
++            `assert.deepEqual(SPINNER_FRAMES, ${JSON.stringify(expected)})`,
++          ].join("\n"),
++        ],
++        {
++          cwd: fileURLToPath(new URL("..", import.meta.url)),
++          env: { ...process.env, CTG_TUI_GLYPHS: mode },
++          stdout: "pipe",
++          stderr: "pipe",
++        },
++      )
++      expect({ mode, exit: child.exitCode, stderr: child.stderr.toString() }).toEqual({ mode, exit: 0, stderr: "" })
++    }
+   })
+ 
+   test("keeps Unicode by default and supports explicit Unicode", async () => {
