@@ -35,26 +35,46 @@ control the brief observation; `--memory-growth-limit-mb` is opt-in and only
 reports comparison with an explicitly operator-approved diagnostic threshold.
 It does not affect `overallTargetsMet`. `--report path.json` saves the output.
 
-### Sustained-memory and streaming evidence (separate, not yet acceptance)
+### Workspace render acceptance and bounded-memory evidence
 
-The original acceptance defines terminal input p95 (50 ms) and warm session
-switch p95 (150 ms), but no sustained-memory ceiling, streaming/reconnect
-reliability threshold, or long-window duration. Do not invent a pass/fail bound
-from the short idle observation. A future separately authorized real-host
-diagnostic should be bounded (proposed diagnostic shape: 30 minutes total, first
-5 minutes labeled warmup/excluded from trend summaries, then 1-second
-observations until a hard stop at 30 minutes; these are proposed observation
-parameters, not accepted product thresholds). It should record frozen
-source/binary/dependency identity, start/end host load/memory, actual duration
-and cadence, excluded warmup, TUI and owned-server process-tree RSS samples
-independently and combined, PTY bytes/events, loopback stream request counts,
-reconnect attempts/results, timeouts/exceptions, missing samples, and cleanup
-status. Use only the disposable loopback provider and fixture profile. Preserve
-raw timestamps and report absolute values and growth/trend without calling it a
-bound. Parent/product owners must approve or change the proposed workload and
-define an acceptance ceiling/error policy before any such observation can be
-considered acceptance. Do not run it while authors or other material workloads
-are active.
+The native compatibility acceptance additionally requires cached `/ctg-workspace`
+load within 300 ms and bounded plugin memory. The existing workspace benchmark
+is RPC-only and does not establish visible TUI completion. Paired acceptance
+must include a separate real-PTY `/ctg-workspace` path: resolve slash
+autocomplete first, prove the command is staged in the editor and no completion
+dialog is active, then anchor the start timestamp to the submission Enter write;
+stop only when the command's plugin
+route has opened and a required, exact workspace-render success sentinel is
+parsed from the PTY. The sentinel and setup must prove a post-submit render
+phase—not slash autocomplete, the old session screen, a dialog, or a blank
+workspace. A missing sentinel/blank render is a hard failure with no latency
+metric. Record select/read, VT-feed, parser, and detection observer durations;
+report them without subtraction. The 300 ms maximum applies to the complete
+Enter-to-render observation.
+
+The strict post-submit workspace-render probe is implemented, but remains
+unverified on the live UI while the workspace pane is blank/being fixed. It must
+fail closed until the route and data-backed sentinel actually render.
+
+For bounded memory release evidence, the parent has proposed—not inherited from
+the original compatibility document—this explicit 30-minute offline comparison
+gate: baseline and CTG each have a 5-minute warmup, followed by 25 minutes of
+1-second RSS observations; record TUI process-tree RSS and owned-server
+process-tree RSS independently and combined. The parent-proposed gates are (1)
+CTG incremental retained RSS growth over baseline at most 128 MiB, and (2) CTG
+median RSS growth in the final measured 5-minute block relative to the first
+measured 5-minute block at most 32 MiB. Preserve both raw condition traces.
+Before execution, parent/product review must specify whether gate (1) compares
+growth from each condition's first measured block, the elapsed-time alignment,
+and the exact process-tree aggregation; missing samples must fail rather than be
+interpolated or dropped. These are proposed engineering release gates, not proof
+of a mathematical long-term bound. Review must approve the workload and
+calculation before execution. The bounded workload must
+exercise only disposable loopback streaming and reconnects; capture stream
+request counts, reconnect attempts/results, timeouts/exceptions, missing RSS
+samples, host load/memory, exact durations and cleanup status. Any failure,
+missed sample, or threshold exceedance is reported as failure, not dropped. Do
+not run beside active authors; no such timed observation is authorized here.
 
 Warm-session-switch target is 150 ms. The opt-in `--switch-fixture` mode uses
 two prepopulated OpenCode sessions in the pinned host's disposable database,
@@ -70,8 +90,9 @@ Open Sessions picker scopes session rows to the active project. Switch mode is
 diagnostic-only; input p95 is not measured in that mode.
 
 The separate `npm run test:native-performance` probe measures cached workspace
-RPC only. Its samples must not be described as terminal input or session-switch
-latency.
+RPC only. Its samples must not be described as terminal input, session-switch,
+or `/ctg-workspace` visible-render latency. The actual paired PTY benchmark must
+include the strict post-submit UI-render sample described above.
 
 ## Recorded host run (2026-10-17)
 
@@ -90,6 +111,26 @@ threshold or editor-cell criterion is relaxed. Their reports are marked
 failed and contain no valid input/switch sample arrays. Do not quote them as
 latency evidence. Private seeder logs and fixture credentials remain only in
 the mode-0700 artifact directory; do not copy them into source control.
+
+### Authorized non-timed readiness follow-up
+
+On the clean product checkout `2d8efc1561f26ae40d1f29cd329a8c01c2bd4c72`
+(tree `c116b9b3337f64bc70a8bc11b2eedf9478a1294a`), the explicitly authorized
+upstream-CLI-only readiness diagnostic used OpenCode `2.0.32`, binary SHA-256
+`489b51816a77809e841310e80c88e834c28c19ad1639e12ba8a19f08b47ab607`, and
+initially matched dependency tree
+`a25d9aed67019a73dcf6e8a77746a043f4b76c633bbb02184350aaaa5d22c24d`.
+Baseline passed: native inventory reported Carthagent absent and the seeded
+fixture session rendered; `timedSamplesRun` was false. CTG inventory/health
+activation passed, but strict editor readiness failed: neither the completed
+fixture session nor a separately seeded empty session produced the required
+`Message carthagent…` input anchor. No keystroke echo or timing metric was
+recorded. Later, while authors were active, the dependency-install hash changed
+to `ed47a3314dff75ea40151544f900da80c57dcfce82356da577cecd09ba728937` (while
+the lockfile and pinned CLI hash remained unchanged), so further CTG attempts
+were stopped. The upstream-binary check verifies the harness fix only; it does
+not establish final shipping-runtime identity or acceptance. Preserve the exact
+baseline result and CTG fail-closed outcome; do not call the latter a pass.
 
 The runner stopped with aggregate status 1 as designed. A malformed timestamp
 format in the preliminary window-recording command occurred before the runner

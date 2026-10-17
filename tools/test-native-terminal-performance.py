@@ -263,6 +263,7 @@ def locate_text(screen, text):
 
 
 NATIVE_EDITOR_PLACEHOLDER = "Message carthagent…"
+WORKSPACE_RENDER_SENTINELS = ("CARTHAGENT · WORKSPACE", "Workspace native sessions")
 
 
 def editor_contains_typed_cell(screen, marker, before, row, editor_col):
@@ -270,6 +271,23 @@ def editor_contains_typed_cell(screen, marker, before, row, editor_col):
     # assertion to that exact cell; other changes on the editor row do not count.
     return (screen.cells[row][editor_col] == marker and
             before[row][editor_col] != marker)
+
+
+def workspace_render_completed(screen, before_lines):
+    """Require fresh, visible plugin route and data-backed workspace section."""
+    current = screen.lines()
+    previous = "\n".join(before_lines)
+    rendered = "\n".join(current)
+    return all(sentinel in rendered and sentinel not in previous
+               for sentinel in WORKSPACE_RENDER_SENTINELS)
+
+
+def workspace_command_staged(screen):
+    rendered = "\n".join(screen.lines())
+    return ("/ctg-workspace" in rendered and
+            "Carthagent commands" not in rendered and
+            "Search commands" not in rendered and
+            NATIVE_EDITOR_PLACEHOLDER not in rendered)
 
 
 def main():
@@ -325,6 +343,8 @@ def main():
             parser.error("CTG fixture is missing a successful native health RPC verification")
         if fixture.get("provenance", {}).get("binarySha256") != hashlib.sha256(pathlib.Path(binary).read_bytes()).hexdigest():
             parser.error("fixture binary hash does not match the executable being measured")
+        if fixture.get("provenance", {}).get("binaryVersion") != "2.0.32":
+            parser.error("fixture provenance lacks compatibility version 2.0.32")
         if not os.environ.get("CTG_PERF_SOURCE_COMMIT") or fixture.get("provenance", {}).get("sourceCommit") != os.environ["CTG_PERF_SOURCE_COMMIT"]:
             parser.error("fixture source commit does not match selected immutable execution snapshot")
         if fixture.get("provenance", {}).get("sourceSnapshotSha256") != os.environ.get("CTG_PERF_SOURCE_SNAPSHOT_SHA256"):
@@ -357,7 +377,9 @@ def main():
         env["HOME"] = str(root / "home")
         env["NODE_PATH"] = os.environ.get("NODE_PATH", "")
         cwd = pathlib.Path(fixture["roots"]["alpha"])
-        startup_session = fixture["sessions"]["alpha"]["id"]
+        startup_session = (fixture.get("readinessSession", {}).get("id")
+                           if args.readiness_only and fixture.get("pluginObservation", {}).get("observed") == "active"
+                           else fixture["sessions"]["alpha"]["id"])
         cwd.mkdir(parents=True, exist_ok=True)
         # The seeder has already started the pinned server once, so the host's
         # plugin/config/profile layout and database are all initialized here.
@@ -417,11 +439,33 @@ def main():
     try:
         # Wait on actual TUI readiness; never charge fixed sleeps to an input latency.
         terminal.collect_until(
+            (lambda _output: terminal.screen.contains(fixture["readinessSession"]["title"]))
+            if args.readiness_only and fixture and fixture.get("pluginObservation", {}).get("observed") == "active" else
             (lambda _output: terminal.screen.contains(fixture["sessions"]["alpha"]["marker"])) if fixture else
             (lambda _output: locate_text(terminal.screen, NATIVE_EDITOR_PLACEHOLDER) is not None),
             90, "native editor placeholder/session")
         # Allow the first genuine frame/plugin setup to settle, outside all sample clocks.
         terminal.drain(0.5)
+        if (args.readiness_only and fixture and
+                fixture.get("pluginObservation", {}).get("observed") == "absent"):
+            readiness = {"readinessOnly": True, "timedSamplesRun": False,
+                         "readinessType": "baseline-native-plugin-inventory",
+                         "pluginObservation": fixture.get("pluginObservation"),
+                         "pluginAbsentVerified": fixture.get("pluginObservation", {}).get("observed") == "absent",
+                         "fixtureSessionRendered": terminal.screen.contains(fixture["sessions"]["alpha"]["marker"]),
+                         "measurementScope": "bounded disposable fixture/plugin absence verification; no latency samples or performance claim"}
+            if not readiness["pluginAbsentVerified"] or not readiness["fixtureSessionRendered"]:
+                raise RuntimeError("Baseline plugin-absence/session readiness was not verified")
+            text = json.dumps(readiness, indent=2)
+            print(text)
+            if args.report:
+                pathlib.Path(args.report).write_text(text + "\n")
+            return
+        if args.readiness_only and fixture:
+            # Attach directly to a separately seeded empty session; do not
+            # infer or navigate the native new-session keybinding here.
+            terminal.collect_until(lambda _output: locate_text(terminal.screen, NATIVE_EDITOR_PLACEHOLDER) is not None,
+                                   90, "native editor placeholder in fresh session")
         switch_ms = []
         switch_observations = []
         input_observations = []
@@ -641,6 +685,46 @@ def main():
             result_warmup_failure = "warmup key not verified at editor input origin"
         else:
             result_warmup_failure = None
+        input_editor_restored_verified = (
+            locate_text(terminal.screen, NATIVE_EDITOR_PLACEHOLDER) == editor_origin and
+            terminal.screen.cells[editor_origin[0]][editor_origin[1]] == editor_empty_cell)
+        workspace_render = {"status": "not-run", "timedSamplesRun": 0,
+                            "targetMs": 300, "targetMet": False,
+                            "failure": "native CTG fixture required"}
+        if fixture and fixture.get("pluginObservation", {}).get("observed") == "active":
+            # First Enter accepts slash autocomplete. Require the command to
+            # remain visible as staged editor text before starting the clock.
+            terminal.send(b"/ctg-workspace")
+            terminal.collect_until(lambda _output: terminal.screen.contains("/ctg-workspace"),
+                                   5, "submitted workspace command visible before Enter")
+            terminal.send(b"\r")
+            terminal.collect_until(lambda _output: workspace_command_staged(terminal.screen),
+                                   5, "selected workspace command after autocomplete dismissal")
+            before_workspace = terminal.screen.lines()
+            observer_before = terminal.observer_snapshot()
+            started_at = utc_now()
+            started = time.perf_counter_ns()
+            terminal.send(b"\r")
+            try:
+                terminal.collect_until(lambda _output: workspace_render_completed(terminal.screen, before_workspace),
+                                       15, "fresh rendered CTG workspace route and sessions section", poll_interval=0.001)
+                elapsed_ns = time.perf_counter_ns() - started
+                workspace_render = {"status": "complete", "timedSamplesRun": 1,
+                                    "startedAt": started_at, "completedAt": utc_now(),
+                                    "elapsedNs": elapsed_ns, "elapsedMs": elapsed_ns / 1_000_000,
+                                    "targetMs": 300, "targetMet": elapsed_ns / 1_000_000 <= 300,
+                                    "sentinels": list(WORKSPACE_RENDER_SENTINELS),
+                                    "observerWork": terminal.observer_delta(observer_before),
+                                    "timingScope": "submission Enter write through PTY select/read, VT parse and fresh parsed route/data render; autocomplete acceptance excluded; observer work is not subtracted; not compositor presentation"}
+            except Exception as error:
+                workspace_render = {"status": "failed", "timedSamplesRun": 0,
+                                    "startedAt": started_at, "failedAt": utc_now(),
+                                    "targetMs": 300, "targetMet": False,
+                                    "failure": f"{type(error).__name__}: {error}",
+                                    "sentinels": list(WORKSPACE_RENDER_SENTINELS),
+                                    "observerWork": terminal.observer_delta(observer_before),
+                                    "finalScreen": terminal.screen.lines()}
+        result["workspaceRender"] = workspace_render
         if fixture:
             host_samples = sampler.stop()
         else:
@@ -664,8 +748,7 @@ def main():
                            "finalScreen": terminal.screen.lines(),
                            "finalEditorCell": terminal.screen.cells[editor_origin[0]][editor_origin[1]],
                            "finalEditorCellExpected": editor_empty_cell,
-                           "finalEditorPlaceholderVerified": (locate_text(terminal.screen, NATIVE_EDITOR_PLACEHOLDER) == editor_origin and
-                                                              terminal.screen.cells[editor_origin[0]][editor_origin[1]] == editor_empty_cell),
+                           "finalEditorPlaceholderVerified": input_editor_restored_verified,
                            "rawSamples": input_observations}
         switch_failed_samples = sum(item.get("status") == "failed" for item in switch_observations)
         result["warmSessionSwitch"] = {"samples": args.samples if fixture else 0, "successfulSamples": len(successful_switch_ms),
@@ -747,7 +830,9 @@ def main():
         result["hostConditionsAtRunEnd"] = host_conditions()
         result["overallTargetsMet"] = bool(result["input"]["targetMet"] and
                                             result["warmSessionSwitch"]["targetMet"] is True and
-                                            result["input"]["finalEditorPlaceholderVerified"])
+                                            result["input"]["finalEditorPlaceholderVerified"] and
+                                            (not fixture or fixture.get("pluginObservation", {}).get("observed") != "active" or
+                                             result["workspaceRender"]["targetMet"] is True))
         text = json.dumps(result, indent=2)
         print(text)
         if args.report:

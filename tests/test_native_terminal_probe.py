@@ -41,6 +41,33 @@ class EditorEchoTests(unittest.TestCase):
         self.assertEqual(PROBE.locate_text(screen, PROBE.NATIVE_EDITOR_PLACEHOLDER), (2, 5))
         self.assertNotEqual(PROBE.NATIVE_EDITOR_PLACEHOLDER, "Ask anything")
 
+    def test_workspace_render_requires_fresh_post_submit_route_and_loaded_section(self):
+        screen = PROBE.Screen(rows=5, cols=80)
+        screen.cells[1][2:25] = list("CARTHAGENT · WORKSPACE")
+        before = ["old session", "slash autocomplete /ctg-workspace", "", "", ""]
+        screen.cells[3][2:26] = list("Workspace native sessions")
+        self.assertTrue(PROBE.workspace_render_completed(screen, before))
+
+    def test_workspace_render_rejects_blank_partial_and_stale_frames(self):
+        screen = PROBE.Screen(rows=5, cols=80)
+        before = ["old session", "", "", "", ""]
+        screen.cells[1][2:25] = list("CARTHAGENT · WORKSPACE")
+        self.assertFalse(PROBE.workspace_render_completed(screen, before))
+        screen.cells[3][2:26] = list("Workspace native sessions")
+        stale = ["", "CARTHAGENT · WORKSPACE", "", "Workspace native sessions", ""]
+        self.assertFalse(PROBE.workspace_render_completed(screen, stale))
+
+    def test_workspace_command_is_not_timed_while_completion_or_old_editor_is_visible(self):
+        screen = PROBE.Screen(rows=5, cols=80)
+        screen.cells[1][2:16] = list("/ctg-workspace")
+        screen.cells[2][2:20] = list("Carthagent commands")
+        self.assertFalse(PROBE.workspace_command_staged(screen))
+        screen.cells[2][2:20] = list("                  ")
+        screen.cells[3][2:20] = list(PROBE.NATIVE_EDITOR_PLACEHOLDER)
+        self.assertFalse(PROBE.workspace_command_staged(screen))
+        screen.cells[3][2:20] = list("                  ")
+        self.assertTrue(PROBE.workspace_command_staged(screen))
+
 
 if __name__ == "__main__":
     unittest.main()

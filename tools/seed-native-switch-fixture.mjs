@@ -48,7 +48,11 @@ try {
     }
     fixtures[name] = { id: session.id, title, marker, directory: roots[name] };
   }
+  const readinessSession = await host.client.session.create({
+    location: { directory: roots.alpha }, model: host.model, title: 'PERF READINESS EMPTY SESSION',
+  }, host.request());
   const fixture = { temp: host.temp, roots, sessions: fixtures,
+    readinessSession: { id: readinessSession.id, directory: roots.alpha },
     serverPid: host.serverPid(),
     pluginObservation: host.pluginObservation, pluginInventory: host.pluginInventory,
     pluginHealth: host.pluginHealth, provenance };
