@@ -8,6 +8,7 @@ import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { withoutRuntimeGithubToken } from './runtime-token-env.mjs';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const temp = await mkdtemp(join(tmpdir(), 'ctg-native-package-'));
@@ -48,8 +49,7 @@ Object.assign(env, {
 
 try {
   await mkdir(isolatedHome, { recursive: true });
-  const npmEnv = { ...env };
-  delete npmEnv.CTG_RUNTIME_GITHUB_TOKEN;
+  const npmEnv = withoutRuntimeGithubToken(env);
   const packed = JSON.parse(run('npm', ['pack', '--json', '--pack-destination', temp], { env: npmEnv }));
   const tarball = join(temp, packed[0].filename);
   const paths = packed[0].files.map((file) => file.path);
