@@ -10,6 +10,7 @@ export default Plugin.define({
         hostVersion: context.app.version,
         directory: context.location.directory,
       }),
+      echo: async (input) => ({ text: (input as { text: string }).text }),
     });
     return () => registration.dispose();
   },

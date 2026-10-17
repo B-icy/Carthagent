@@ -65,6 +65,7 @@
     "test:python": "node tools/test-python.mjs"
   },
   "dependencies": {
+    "@opencode/cli": "2.0.32",
     "@opencode/client": "2.0.32",
     "@opencode/plugin": "2.0.32",
     "express": "^5.2.1",
