@@ -17,9 +17,24 @@ import termios
 import time
 
 
+def resolve_binary(value):
+    """Resolve PATH names before path normalization; otherwise use only the pinned package binary."""
+    if value and (os.path.isabs(value) or os.sep in value or (os.altsep and os.altsep in value)):
+        candidate = pathlib.Path(value).expanduser().resolve()
+        return str(candidate) if candidate.is_file() else None
+    if value:
+        found = shutil.which(value)
+        if found:
+            return str(pathlib.Path(found).resolve())
+    owned = pathlib.Path(__file__).resolve().parents[1] / 'node_modules/@opencode/cli/bin/opencode.exe'
+    if value in (None, '', 'opencode') and owned.is_file():
+        return str(owned.resolve())
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--binary', default=shutil.which('opencode'))
+    parser.add_argument('--binary', default=os.environ.get('CTG_OPENCODE_BIN') or os.environ.get('OPENCODE_BIN') or 'opencode')
     parser.add_argument('--plugin', default=str(pathlib.Path(__file__).resolve().parents[1] / 'plugins/carthagent'))
     parser.add_argument('--command', default='/ctg-status')
     parser.add_argument('--after-command', action='append', help='Submit another command after expected output; may be repeated')
@@ -30,9 +45,9 @@ def main():
     parser.add_argument('--confirm', action='store_true', help='Press Enter again after selecting slash completion')
     parser.add_argument('--second-enter', action='store_true', help='Send a second Enter after the initial command submission')
     args = parser.parse_args()
+    args.binary = resolve_binary(args.binary)
     if not args.binary:
-        parser.error('OpenCode binary is required')
-    args.binary = str(pathlib.Path(args.binary).resolve())
+        parser.error('OpenCode binary was not found on PATH or at the owned package path node_modules/@opencode/cli/bin/opencode.exe')
     with tempfile.TemporaryDirectory(prefix='ctg-pty-') as temp:
         root = pathlib.Path(temp)
         for name in ['home', 'project', 'config/opencode', 'data', 'state', 'cache']:

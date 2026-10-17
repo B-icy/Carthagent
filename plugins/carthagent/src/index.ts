@@ -5,6 +5,7 @@ import { createDeviceAuthController } from './server/device-auth.ts';
 import { shipAgentDir } from '../../../lib/ship-auth.mjs';
 import { registerSessionControls } from './server/session-controls';
 import { registerWorkspaceRpc } from './server/workspace-rpc';
+import { registerPullRequests } from './server/pull-request-rpc';
 
 async function cleanup(resources: Array<() => Promise<void>>, originalError?: unknown) {
   const failures: unknown[] = [];
@@ -26,6 +27,7 @@ export default Plugin.define({
     try {
       cleanups.push(await registerSessionControls(context));
       cleanups.push(await registerWorkspaceRpc(context));
+      cleanups.push(await registerPullRequests(context));
       const deviceAuth = createDeviceAuthController({ env: process.env, agentDir: shipAgentDir() });
       cleanups.push(() => deviceAuth.cleanup());
       const rpcRegistration = await context.rpc.register(Carthagent, {
