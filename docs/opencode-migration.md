@@ -95,8 +95,8 @@ passing domain fixture alone does not satisfy these gates:
 | `test:native-tasks` | Two real Git worktrees, concurrent isolated turns and framing settings, independent root sessions, and restart reconciliation passed |
 | `test:native-review` | Configured-model independent review, receipt persistence, source-change invalidation, and three-review admission cap across restart passed |
 | `test:native-runtime` | Service reuse, repeated turns, provider rejection, recovery, unavailable-provider failure, final response after tools, correct success metadata, active cancellation, neighbor isolation, pre-aborted invocation isolation, and persisted-session continuation after service restart passed |
-| `test:native-pty` | Both production health and workspace commands passed after plugin readiness and slash-completion confirmation |
-| `test:native-package` | Clean production install passed host/controls/outcome/product probes; expanded PTY gate exposed missing `@opentui/solid` in the production artifact |
+| `test:native-pty` | Installed production status, workspace, help, and CTG compact precedence passed after plugin readiness and slash-completion confirmation |
+| `test:native-package` | Clean production tarball at integration `2b300c0` passed host, controls, outcomes, product reconnect, runtime, tasks, review, and PTY gates with shared renderer resolution; real native SWE passed its separate evaluation-guard fixture, pending composed CTG delivery coverage |
 | `test:native-performance` | Cached workspace RPC: 30 samples, p95 64.8 ms, maximum 181.6 ms; input and session-switch latency require separate terminal measurements |
 
 PR #157 adds a real-terminal measurement harness. Initial input measurements
