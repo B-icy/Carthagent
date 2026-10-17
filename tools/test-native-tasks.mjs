@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { nativeFixture } from './native-fixture.mjs';
 
 const host = await nativeFixture({ plugin: process.argv[2] });
+const identity = host.runtimeIdentity;
 try {
   const git = (...args) => execFileSync('git', args, { cwd: host.cwd, encoding: 'utf8' });
   git('init', '--initial-branch=main');
@@ -65,7 +66,9 @@ try {
   assert.deepEqual(restored.tasks.map(task => task.id).sort(), snapshot.tasks.map(task => task.id).sort());
   assert.deepEqual(restored.sessions.map(session => session.id).sort(), snapshot.sessions.map(session => session.id).sort());
   assert.deepEqual(await tracked(first), { pullRequests: [] });
-  console.log(JSON.stringify({ host: '2.0.32', worktrees: 2, rootSessions: 2, isolation: 'passed', concurrentTurns: 'passed', restart: 'passed' }));
+  console.log(JSON.stringify({ host: identity.runtimeVersion, compatibilityVersion: identity.compatibilityVersion,
+    ...(identity.binarySha256 ? { binarySha256: identity.binarySha256 } : {}),
+    worktrees: 2, rootSessions: 2, isolation: 'passed', concurrentTurns: 'passed', restart: 'passed' }));
 } catch (error) {
   console.error(host.output);
   throw error;

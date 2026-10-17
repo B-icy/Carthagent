@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import {
   loadNativeTestRuntime,
+  preflightNativeTestRuntimeArtifact,
   NATIVE_TEST_COMPATIBILITY_VERSION,
 } from '../tools/native-runtime-identity.mjs';
 
@@ -113,6 +114,24 @@ test('uses the explicit developer hash input when no trusted release record is p
     spawnImpl: versionSpawner(`opencode v${runtimeVersion}`),
   });
   assert.equal(runtime.binarySha256, digest);
+});
+
+test('preflights an injected artifact against an explicit trusted manifest before runtime selection', async t => {
+  const { ownedRoot, binary, release } = await fixture(t);
+  const expectedManifestPath = join(ownedRoot, 'trusted-release.json');
+  await writeFile(expectedManifestPath, JSON.stringify(release));
+  const result = await preflightNativeTestRuntimeArtifact({
+    ownedRoot,
+    expectedManifestPath,
+    spawnImpl: versionSpawner(`opencode v${runtimeVersion}`),
+  });
+  assert.equal(result.identity.binary, binary);
+  assert.deepEqual(result.expectedManifest, release);
+});
+
+test('requires a trusted test manifest before preflighting an injected artifact', async t => {
+  const { ownedRoot } = await fixture(t);
+  await assert.rejects(preflightNativeTestRuntimeArtifact({ ownedRoot }), /trusted CTG_TEST_RUNTIME_RELEASE_MANIFEST is required/);
 });
 
 test('rejects versions that merely contain the compatibility version', async t => {
