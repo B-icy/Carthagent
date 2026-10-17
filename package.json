@@ -64,6 +64,7 @@
     "test:native-product": "node tools/test-native-product.mjs",
     "test:native-tasks": "node tools/test-native-tasks.mjs",
     "test:native-review": "node tools/test-native-review.mjs",
+    "test:native-runtime": "node tools/test-native-runtime.mjs",
     "test:native-package": "node tools/test-native-package.mjs",
     "test:native-controls": "node tools/test-native-controls.mjs",
     "test:native-outcomes": "node tools/test-native-outcomes.mjs",

@@ -38,6 +38,14 @@ try {
     `Provider failure must not return a previous successful assistant: ${JSON.stringify(failure)}`);
   const recovered = await runHeadless(service, host.cwd, 'WRAPPER_SECOND', { ...common, sessionID: first.session.id });
   assert.equal(recovered.result?.text, 'SECOND_TURN');
+  let unroutable;
+  try {
+    unroutable = await runHeadless(service, host.cwd, 'UNAVAILABLE_MODEL', {
+      ...common, session: { model: { providerID: 'absent-fixture', id: 'missing' } },
+    });
+  } catch (error) { unroutable = { error }; }
+  assert.ok(unroutable.error || unroutable.outcome === 'failed' || unroutable.session?.outcome === 'failed',
+    `A failure without an assistant must expose a failed terminal outcome: ${JSON.stringify(unroutable)}`);
   assert.equal(await stopService(options), true);
   console.log(JSON.stringify({ host: '2.0.32', serviceReuse: 'passed', repeatedTurns: 'passed', failure: 'passed', recovery: 'passed' }));
 } finally {
