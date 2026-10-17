@@ -298,30 +298,31 @@ jobs:
           default_branch="$(gh api "repos/$GITHUB_REPOSITORY" --jq '.default_branch')"
           [[ "$(jq -r .head_branch <<<"$run")" == "$default_branch" ]]
           EXPECTED_SOURCE="$(jq -r .head_sha <<<"$run")"
-          candidate-bytes=candidate
+          [[ "$EXPECTED_SOURCE" =~ ^[0-9a-f]{40}$ ]]
+          candidate_dir=candidate
           expected_files=(candidate-provenance.json runtime-archives-SHA256SUMS.txt runtime-release.json.candidate)
           for key in linux-x64 linux-arm64 darwin-x64 darwin-arm64 windows-x64; do
             expected_files+=("opencode-$key.tar.gz" "opencode-$key.tar.gz.build.json")
           done
-          test -z "$(find "$candidate-bytes" -mindepth 1 -maxdepth 1 ! -type f -print -quit)"
-          actual_files=($(find "$candidate-bytes" -maxdepth 1 -type f -exec basename {} \; | sort))
-          expected_sorted=($(printf '%s\n' "${expected_files[@]}" | sort))
+          test -z "$(find "$candidate_dir" -mindepth 1 -maxdepth 1 ! -type f -print -quit)"
+          mapfile -t actual_files < <(find "$candidate_dir" -maxdepth 1 -type f -exec basename {} \; | sort)
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected_files[@]}" | sort)
           [[ "${actual_files[*]}" == "${expected_sorted[*]}" ]]
-          test -f candidate-bytes/candidate-provenance.json
-          test -f candidate-bytes/runtime-archives-SHA256SUMS.txt
-          (cd candidate-bytes && sha256sum -c runtime-archives-SHA256SUMS.txt)
-          PREBUILD_RUN_ID="$PREBUILD_RUN_ID" RELEASE_VERSION="$RELEASE_VERSION" EXPECTED_SOURCE="$EXPECTED_SOURCE" \
-            node -e 'const fs=require("node:fs");const m=JSON.parse(fs.readFileSync("candidate-bytes/candidate-provenance.json"));if(m.version!==1||m.runId!==Number(process.env.PREBUILD_RUN_ID)||m.sourceCommit!==process.env.EXPECTED_SOURCE||m.releaseVersion!==process.env.RELEASE_VERSION||m.workflowPath!==".github/workflows/publish-owned-opencode-runtime.yml")process.exit(1)'
+          test -f "$candidate_dir/candidate-provenance.json"
+          test -f "$candidate_dir/runtime-archives-SHA256SUMS.txt"
+          (cd "$candidate_dir" && sha256sum -c runtime-archives-SHA256SUMS.txt)
+          PREBUILD_RUN_ID="$PREBUILD_RUN_ID" RELEASE_VERSION="$RELEASE_VERSION" EXPECTED_SOURCE="$EXPECTED_SOURCE" CANDIDATE_DIR="$candidate_dir" \
+            node -e 'const fs=require("node:fs");const m=JSON.parse(fs.readFileSync(process.env.CANDIDATE_DIR+"/candidate-provenance.json"));if(m.version!==1||m.runId!==Number(process.env.PREBUILD_RUN_ID)||m.sourceCommit!==process.env.EXPECTED_SOURCE||m.releaseVersion!==process.env.RELEASE_VERSION||m.workflowPath!==".github/workflows/publish-owned-opencode-runtime.yml")process.exit(1)'
           for key in linux-x64 linux-arm64 darwin-x64 darwin-arm64 windows-x64; do
-            test -f "candidate-bytes/opencode-$key.tar.gz"
-            test -f "candidate-bytes/opencode-$key.tar.gz.build.json"
+            test -f "$candidate_dir/opencode-$key.tar.gz"
+            test -f "$candidate_dir/opencode-$key.tar.gz.build.json"
           done
           mkdir regenerated-assets
-          for key in linux-x64 linux-arm64 darwin-x64 darwin-arm64 windows-x64; do cp "candidate-bytes/opencode-$key.tar.gz" "candidate-bytes/opencode-$key.tar.gz.build.json" regenerated-assets/; done
+          for key in linux-x64 linux-arm64 darwin-x64 darwin-arm64 windows-x64; do cp "$candidate_dir/opencode-$key.tar.gz" "$candidate_dir/opencode-$key.tar.gz.build.json" regenerated-assets/; done
           node release-generator/tools/generate-owned-runtime-release.mjs "$RELEASE_VERSION" regenerated-assets "$GITHUB_WORKSPACE/ctg" > /dev/null
-          cmp candidate-bytes/runtime-release.json.candidate "$GITHUB_WORKSPACE/runtime-release.json.candidate"
-          (cd candidate-bytes && sha256sum --check runtime-archives-SHA256SUMS.txt)
-          node -e 'const fs=require("node:fs");const assert=require("node:assert/strict");const actual=JSON.parse(fs.readFileSync("candidate-bytes/runtime-release.json.candidate"));const packaged=JSON.parse(fs.readFileSync("ctg/lib/opencode/runtime-release.json"));assert.deepStrictEqual(actual,packaged,"prebuild candidate differs from packaged runtime-release.json")'
+          cmp "$candidate_dir/runtime-release.json.candidate" "$GITHUB_WORKSPACE/runtime-release.json.candidate"
+          (cd "$candidate_dir" && sha256sum --check runtime-archives-SHA256SUMS.txt)
+          CANDIDATE_DIR="$candidate_dir" node -e 'const fs=require("node:fs");const assert=require("node:assert/strict");const actual=JSON.parse(fs.readFileSync(process.env.CANDIDATE_DIR+"/runtime-release.json.candidate"));const packaged=JSON.parse(fs.readFileSync("ctg/lib/opencode/runtime-release.json"));assert.deepStrictEqual(actual,packaged,"prebuild candidate differs from packaged runtime-release.json")'
           [[ "$RELEASE_TAG" == "v$RELEASE_VERSION" ]]
           [[ "$(node -p 'require("./ctg/package.json").version')" == "$RELEASE_VERSION" ]]
           echo "candidate=verified" >> "$GITHUB_OUTPUT"
