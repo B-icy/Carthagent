@@ -52,6 +52,26 @@ function aborted(signal: AbortSignal) {
   if (signal.aborted) throw signal.reason ?? new DOMException('Operation aborted', 'AbortError');
 }
 
+function sameFile(left: Awaited<ReturnType<import('node:fs/promises').FileHandle['stat']>>, right: Awaited<ReturnType<import('node:fs/promises').FileHandle['stat']>>) {
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
+/** Bind path containment and opened descriptor identity before any bytes are consumed. */
+export async function verifyOpenedTarget(file: Pick<FileInfo, 'path' | 'root'>, handle: Awaited<ReturnType<typeof open>>) {
+  let canonical: string;
+  let pathStat;
+  let descriptorStat;
+  try {
+    [canonical, pathStat, descriptorStat] = await Promise.all([realpath(file.path), stat(file.path), handle.stat()]);
+  } catch {
+    throw new ArchiveFailure('not_found', 'Archive transcript changed while opening');
+  }
+  if (!inside(file.root, canonical) || canonical !== file.path || !pathStat.isFile() || !descriptorStat.isFile() || !sameFile(pathStat, descriptorStat)) {
+    throw new ArchiveFailure('not_found', 'Archive transcript target changed outside its configured root');
+  }
+  return descriptorStat;
+}
+
 async function enumerate(roots: string[], signal: AbortSignal): Promise<FileInfo[]> {
   let entriesSeen = 0;
   let totalBytes = 0;
@@ -111,7 +131,7 @@ async function enumerate(roots: string[], signal: AbortSignal): Promise<FileInfo
     aborted(signal);
     const handle = await openReadHandle(file.path);
     try {
-      const info = await handle.stat();
+      const info = await verifyOpenedTarget(file, handle);
       if (!info.isFile()) continue;
       if (info.size > MAX_FILE_BYTES) throw new ArchiveFailure('limit_exceeded', `Archive transcript exceeds the ${MAX_FILE_BYTES} byte limit`);
       totalBytes += info.size;
@@ -131,8 +151,7 @@ async function readBounded(file: FileInfo, signal: AbortSignal, maxBytes = MAX_F
   aborted(signal);
   const handle = await openReadHandle(file.path);
   try {
-    const info = await handle.stat();
-    if (!info.isFile()) throw new ArchiveFailure('not_found', 'Archive transcript is no longer available');
+    const info = await verifyOpenedTarget(file, handle);
     if (info.size > MAX_FILE_BYTES) throw new ArchiveFailure('limit_exceeded', `Archive transcript exceeds the ${MAX_FILE_BYTES} byte limit`);
     if (info.size > maxBytes) throw new ArchiveFailure('limit_exceeded', `Archive exceeds the ${MAX_TOTAL_BYTES} byte scan limit`);
     totalLimitCheck(info.size);
