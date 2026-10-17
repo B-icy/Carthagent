@@ -1,0 +1,104 @@
+name: Publish CTG-owned OpenCode runtime
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing CTG release tag to attach runtime assets to
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: opencode-linux-x64
+          - os: macos-latest
+            target: opencode-darwin-arm64
+          - os: macos-13
+            target: opencode-darwin-x64
+          - os: windows-latest
+            target: opencode-windows-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: ctg
+      - uses: actions/checkout@v4
+        with:
+          repository: anomalyco/opencode
+          ref: 843a6c514e606b436a7fe713422ace0a93ad3d61
+          path: opencode
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Build pinned runtime
+        shell: bash
+        run: |
+          mkdir -p opencode/docs/patches opencode/script/ctg
+          cp ctg/docs/patches/opencode-v2.0.32-session-ui.patch opencode/docs/patches/
+          cp ctg/script/ctg/build-owned-runtime.sh opencode/script/ctg/
+          git -C opencode status --short
+          cd opencode
+          script/ctg/build-owned-runtime.sh "${{ matrix.target }}"
+      - name: Verify artifact provenance
+        shell: bash
+        run: |
+          cd opencode/packages/cli/dist-ctg
+          cat ctg-runtime.json
+          cat SHA256SUMS
+          if command -v sha256sum >/dev/null 2>&1; then sha256sum -c SHA256SUMS; else shasum -a 256 -c SHA256SUMS; fi
+          mkdir -p "$GITHUB_WORKSPACE/release-assets"
+          tar -czf "$GITHUB_WORKSPACE/release-assets/${{ matrix.target }}.tar.gz" .
+          cd "$GITHUB_WORKSPACE"
+      - name: Archive source recipe with platform output
+        shell: bash
+        run: |
+          mkdir -p release-assets
+          tar -C ctg -czf "release-assets/${{ matrix.target }}-source.tar.gz" \
+            docs/patches/opencode-v2.0.32-session-ui.patch \
+            script/ctg/build-owned-runtime.sh \
+            docs/opencode-owned-runtime.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: opencode-ctg-${{ matrix.target }}
+          path: release-assets/*.tar.gz
+          if-no-files-found: error
+
+  publish-existing-release:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: ctg-runtime-release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag }}
+      - name: Require an existing CTG release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY"
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft == true' | grep -qx false
+          test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$GITHUB_SHA"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: opencode-ctg-*
+          path: runtime-assets
+          merge-multiple: false
+      - name: Publish provenance-paired runtime assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          find runtime-assets -type f -name '*.tar.gz' -print0 | while IFS= read -r -d '' asset; do
+            gh release upload "$RELEASE_TAG" "$asset#$(basename "$asset")" --repo "$GITHUB_REPOSITORY" --clobber
+          done

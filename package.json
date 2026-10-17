@@ -28,6 +28,7 @@
   "files": [
     "bin",
     "docs",
+    "script/ctg/build-owned-runtime.sh",
     "extensions",
     "guidance",
     "lib",
