@@ -180,14 +180,27 @@ test('review persists admission limits across fresh native CLI processes', async
   assert.doesNotMatch(exhausted.stdout, /VERDICT:/);
 });
 
-test('native PR review rejects remote mutation and invalid execution bounds', async t => {
+test('native PR review detects an authoritative PR-head advance after source capture', async t => {
   const fixture = await nativeCliFixture(t);
   initPrRepository(fixture);
   mutatePullRequestRemote(fixture);
   const mutation = await fixture.run('review', '14');
+  assert.match(mutation.stderr, /Authoritative GitHub PR refs or source moved while review was running/);
+  assert.equal(fixture.reviewRequests.length, 1, 'the reviewer must receive the source before the PR head advances');
+  assert.match(fixture.reviewRequests[0].head, /^[a-f0-9]{40}$/);
+  assert.match(fixture.reviewRequests[0].snapshot, /^[a-f0-9]{64}$/);
+  assert.equal(fixture.reviewRequests[0].sourceIncluded, true);
+  assert.equal(fixture.reviewRequests[0].providerResponseFinished, true, 'the model response must finish before refs advance');
+  assert.equal(fixture.reviewRequests[0].headAdvancedAfterResponse, true);
+  assert.equal(fixture.mutationError, undefined);
+  assert.match(fixture.advancedPullRequestHead, /^[a-f0-9]{40}$/);
+  assert.notEqual(fixture.advancedPullRequestHead, fixture.reviewRequests[0].head);
   assert.equal(mutation.status, 2, mutation.stderr);
-  assert.match(mutation.stderr, /refs or source moved while review was running/);
+});
 
+test('native PR review validates invalid execution bounds', async t => {
+  const fixture = await nativeCliFixture(t);
+  initPrRepository(fixture);
   for (const value of ['0', '301', 'Infinity', 'invalid']) {
     setPullRequestFixture(fixture);
     const invalid = await fixture.run('review', '14', '--timeout', value);

@@ -1,6 +1,6 @@
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
 import { once } from 'node:events';
@@ -56,9 +56,23 @@ export async function nativeCliFixture(t, { verdict = 'APPROVE', omitVerdict = f
       response.writeHead(200, { 'content-type': 'text/event-stream' });
       const messages = body.messages || [];
       const prompt = [...messages].reverse().find(message => message.role === 'user')?.content || '';
-      if (fixtureState.onReviewRequest && prompt.includes('Review this exact GitHub pull request source snapshot')) {
-        try { await fixtureState.onReviewRequest(); }
-        catch (error) { fixtureState.mutationError = error; }
+      const isPRReview = prompt.includes('Review this exact GitHub pull request source snapshot');
+      if (isPRReview) {
+        fixtureState.reviewRequests ||= [];
+        fixtureState.reviewRequests.push({
+          head: /Verified PR head: ([a-f0-9]{40})/.exec(prompt)?.[1],
+          snapshot: /Snapshot SHA-256: ([a-f0-9]{64})/.exec(prompt)?.[1],
+          sourceIncluded: prompt.includes('native fixture source'),
+        });
+      }
+      if (isPRReview && fixtureState.onReviewRequest) {
+        response.once('finish', () => {
+          fixtureState.reviewRequests.at(-1).providerResponseFinished = true;
+          try {
+            fixtureState.onReviewRequest();
+            fixtureState.reviewRequests.at(-1).headAdvancedAfterResponse = true;
+          } catch (error) { fixtureState.mutationError = error; }
+        });
       }
       response.end(modelResponse(messages, { verdict, omitVerdict }));
     })().catch(error => {
@@ -134,7 +148,14 @@ echo unsupported gh fixture request >&2; exit 2
     if (Date.now() >= activatedBy) throw new Error(`Native review fixture did not activate plugin/build agent: ${JSON.stringify({ plugins: plugins.data, agents: agents.data })}`);
     await new Promise(resolveDelay => setTimeout(resolveDelay, 50));
   }
-  return { cwd, env, temp, run, git, setReviewMutation(callback) { fixtureState.onReviewRequest = callback; } };
+  return {
+    cwd, env, temp, run, git,
+    get reviewRequests() { return fixtureState.reviewRequests || []; },
+    get mutationError() { return fixtureState.mutationError; },
+    get advancedPullRequestHead() { return fixtureState.advancedPullRequestHead; },
+    set advancedPullRequestHead(value) { fixtureState.advancedPullRequestHead = value; },
+    setReviewMutation(callback) { fixtureState.onReviewRequest = callback; },
+  };
 }
 
 export function initPrRepository(fixture, { source = 'native fixture source\n' } = {}) {
@@ -200,5 +221,6 @@ export function mutatePullRequestRemote(fixture) {
     const metadata = JSON.parse(readFileSync(metadataPath, 'utf8'));
     metadata.head.sha = commit;
     writeFileSync(metadataPath, JSON.stringify(metadata));
+    fixture.advancedPullRequestHead = commit;
   });
 }
