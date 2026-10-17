@@ -20,9 +20,14 @@ after reconnect.
 - Development package: 1.0.3; local installed package at discovery: 1.0.1.
 - Target host: OpenCode 2.0.32.
 - Authoring/client packages: `@opencode/plugin` and `@opencode/client` 2.0.32.
+- Runtime package: pinned `@opencode/cli` 2.0.32. Its platform-specific optional
+  package is installed/materialized by npm postinstall; CTG must invoke this
+  package-owned binary, never replace or upgrade a user's global OpenCode.
 - Authoring renderer peer baseline: OpenTUI 0.5.17, Solid 1.9.12 (the exact
   Solid peer required by the published OpenTUI package). The host owns runtime
-  module resolution; installed-package tests must prove compatibility.
+  module resolution; installed-package tests must prove compatibility. The npm
+  lock pins transitive `seroval` to patched 1.6.9 (compatible with Solid's
+  `^1.0` range) while the required Solid peer is still 1.9.12.
 - The user's original checkout contains unrelated in-progress work and is not
   the integration checkout. Title and copy/paste fixes are in the baseline.
 - Baseline quality passed: lint, typecheck, syntax build, 474/474 tests.
@@ -37,6 +42,22 @@ after reconnect.
   `npm install <tarball> --omit=dev`: server plugin discovery, authenticated RPC,
   rejection of unauthenticated requests and invalid RPC input. The TUI feature
   is discoverable; rendering and interaction still need their separate gate.
+- `npm run test:native-package` verifies the npm tarball excludes `node_modules`,
+  contains the server and TUI entrypoints, installs with production dependencies
+  into a clean prefix, resolves the platform binary from
+  `node_modules/@opencode/cli/bin/opencode.exe`, and starts the isolated server
+  using that exact binary. CI also runs the owned binary server test on each
+  supported OS/Node matrix row; the PTY check is explicitly Unix-only.
+- Linux PTY diagnostic passed with the native `/ctg-status` command rendering
+  its RPC result. Global commands need `mode: 'global'` in the keymap layer;
+  omitting it registered a plugin but left its slash command undiscoverable.
+  This is a bootstrap test, not approval of the upcoming full product UI.
+- `node tools/test-native-controls.mjs` exercises two concurrent sessions through
+  a local deterministic provider on the real 2.0.32 host: delivery framing,
+  explicit raw bypass, successful terminal outcomes and compaction notes in the
+  actual summary request. Compaction notes use a queued synthetic message because
+  the native compact API has no notes parameter; the host can process that
+  message in a primary turn before summarizing it.
 
 ## Delivery ledger
 
