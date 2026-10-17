@@ -2,10 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createJiti } from 'jiti';
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync, readFileSync } from 'node:fs';
+import { open } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, isAbsolute } from 'node:path';
 const jiti = createJiti(import.meta.url);
-const { registerArchive } = await jiti.import('../plugins/carthagent/src/server/archive-rpc.ts');
+const { registerArchive, verifyOpenedTarget } = await jiti.import('../plugins/carthagent/src/server/archive-rpc.ts');
 
 test('archive RPC uses opaque IDs, confines roots, skips symlinks, and never changes legacy bytes', async t => {
   const root = mkdtempSync(join(tmpdir(), 'ctg archive rpc ')); t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -64,4 +65,18 @@ test('archive refuses oversized transcripts before parsing and honors cancellati
   assert.equal((await methods.list({}, call)).code, 'limit_exceeded');
   const canceled = { signal: AbortSignal.abort() };
   await assert.rejects(methods.list({}, canceled), /abort/i);
+});
+
+test('opened descriptor is rejected when an intermediate directory was swapped to an escaping symlink', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'ctg archive race ')); t.after(() => rmSync(root, { recursive: true, force: true }));
+  const trusted = join(root, 'trusted'); const selected = join(trusted, 'sessions'); const moved = join(trusted, 'sessions-original'); const outside = join(root, 'outside');
+  mkdirSync(selected, { recursive: true }); mkdirSync(outside);
+  const lexical = join(selected, 'transcript.jsonl');
+  writeFileSync(lexical, '{"inside":true}\n'); writeFileSync(join(outside, 'transcript.jsonl'), '{"secret":"outside"}\n');
+  // Simulate an intermediate directory replacement between traversal and open.
+  const fs = await import('node:fs/promises');
+  await fs.rename(selected, moved); symlinkSync(outside, selected, process.platform === 'win32' ? 'junction' : 'dir');
+  const handle = await open(lexical, 'r');
+  try { await assert.rejects(verifyOpenedTarget({ path: lexical, root: trusted }, handle), /changed outside/); }
+  finally { await handle.close(); }
 });
