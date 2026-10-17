@@ -12,7 +12,8 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const temp = await mkdtemp(join(tmpdir(), 'ctg-native-package-'));
 const run = (command, args, options = {}) => {
-  const result = spawnSync(command, args, { cwd: root, encoding: 'utf8', ...options });
+  const result = spawnSync(command, args, { cwd: root, encoding: 'utf8', timeout: 300_000, ...options });
+  if (result.error) throw new Error(`${command} ${args.join(' ')} failed: ${result.error.message}`, { cause: result.error });
   if (result.status !== 0) throw new Error(`${command} ${args.join(' ')} failed:\n${result.stdout}\n${result.stderr}`);
   return result.stdout;
 };
@@ -77,14 +78,21 @@ try {
   };
   // Run the acceptance harness from the installed artifact itself so its
   // imports (including @opencode/client) resolve only through that install.
+  const probes = [];
   for (const test of [
     'test-native-host.mjs', 'test-native-controls.mjs', 'test-native-outcomes.mjs',
     'test-native-product.mjs', 'test-native-runtime.mjs', 'test-native-tasks.mjs',
     'test-native-review.mjs', 'test-native-swe-host.mjs', 'test-native-pty.mjs',
   ]) {
+    if (test === 'test-native-pty.mjs' && process.platform === 'win32') {
+      probes.push({ test, status: 'skipped', reason: 'Unix-only Python PTY harness' });
+      continue;
+    }
+    const started = performance.now();
     run(process.execPath, [join(installed, 'tools', test), installedPlugin], { cwd: install, env });
+    probes.push({ test, status: 'passed', elapsedMs: Math.round(performance.now() - started) });
   }
-  console.log(JSON.stringify({ tarball: packed[0].filename, unpackedSize: packed[0].unpackedSize, binary, version }, null, 2));
+  console.log(JSON.stringify({ tarball: packed[0].filename, unpackedSize: packed[0].unpackedSize, binary, version, probes }, null, 2));
 } finally {
   await rm(temp, { recursive: true, force: true });
 }
