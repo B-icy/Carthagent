@@ -23,6 +23,38 @@ function run(cwd, ...args) {
   return spawnSync(process.execPath, [cli, ...args], { cwd, encoding: 'utf8' });
 }
 
+test('ctg defaults to native domain routing and keeps help/version independent of providers', t => {
+  const cwd = fixture(t);
+  const runtimeRoot = join(cwd, 'native-runtime');
+  mkdirSync(join(runtimeRoot, 'lib', 'opencode'), { recursive: true });
+  writeFileSync(join(runtimeRoot, 'lib', 'opencode', 'runtime.mjs'), 'export const runtimeEnvironment = () => ({});\n');
+  writeFileSync(join(runtimeRoot, 'lib', 'opencode', 'service.mjs'), 'export const ensureService = async () => { throw new Error("native launcher route reached"); };\n');
+  writeFileSync(join(runtimeRoot, 'lib', 'opencode', 'headless.mjs'), 'export {};\n');
+  const env = { ...process.env, CTG_NATIVE: '0', CTG_NATIVE_RUNTIME_ROOT: runtimeRoot };
+  const invoke = (...args) => spawnSync(process.execPath, [cli, ...args], { cwd, env, encoding: 'utf8' });
+
+  const status = invoke('status', '--json');
+  assert.equal(status.status, 0, status.stderr);
+  assert.equal(JSON.parse(status.stdout).workspace, cwd);
+
+  const hash = invoke('hash');
+  assert.equal(hash.status, 0, hash.stderr);
+  assert.match(hash.stdout.trim(), /^[a-f0-9]{64}$/);
+
+  const account = invoke('account');
+  assert.equal(account.status, 1);
+  assert.match(account.stderr, /native launcher route reached/);
+
+  const version = invoke('--version');
+  assert.equal(version.status, 0, version.stderr);
+  assert.match(version.stdout.trim(), /^\d+\.\d+\.\d+$/);
+
+  const help = invoke('--help');
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /native OpenCode delivery console/);
+  assert.doesNotMatch(help.stdout, /split-terminal/);
+});
+
 test('status reads the newest persisted extension report', t => {
   const cwd = fixture(t);
   createReport(cwd, {
