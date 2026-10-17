@@ -4,10 +4,11 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { randomBytes } from 'node:crypto';
+import { promisify } from 'node:util';
 import { OpenCode } from '@opencode/client';
 import { resolveOpenCode } from '../lib/opencode/runtime.mjs';
 import { cancelSession } from '../lib/opencode/service.mjs';
@@ -16,6 +17,7 @@ import { runHeadless } from '../lib/opencode/headless.mjs';
 const root = resolve(import.meta.dirname, '..');
 const plugin = resolve(process.argv[2] ?? join(root, 'plugins/carthagent'));
 const binary = await resolveOpenCode();
+const execFileAsync = promisify(execFile);
 const temp = await mkdtemp(join(tmpdir(), 'ctg-host-smoke-'));
 const password = randomBytes(24).toString('hex');
 const providerKey = `sentinel-${randomBytes(24).toString('hex')}`;
@@ -293,7 +295,7 @@ try {
     attached.stdout.setEncoding('utf8').on('data', (chunk) => { stdout += chunk; });
     attached.stderr.setEncoding('utf8').on('data', (chunk) => { stderr += chunk; });
     attached.once('error', (error) => { clearTimeout(timer); reject(error); });
-    attached.once('exit', (code, signal) => {
+    attached.once('close', (code, signal) => {
       clearTimeout(timer);
       if (code === 0) resolveRun(stdout);
       else reject(new Error(`Attached native CLI exited ${code ?? signal}: ${stderr}`));
@@ -359,15 +361,28 @@ try {
   console.error(output.replaceAll(password, '[redacted]'));
   throw error;
 } finally {
-  if (child && child.exitCode === null && child.signalCode === null) {
-    const exited = once(child, 'exit');
-    child.kill('SIGTERM');
-    const timer = setTimeout(() => child.kill('SIGKILL'), 5_000);
-    await exited;
-    clearTimeout(timer);
+  if (child) {
+    const closed = child.closed ? Promise.resolve() : once(child, 'close');
+    if (child.exitCode === null && child.signalCode === null) {
+      if (process.platform === 'win32') {
+        // This PID is the exact host process spawned above; /T is needed to
+        // close any descendants that can keep the temporary workspace locked.
+        await execFileAsync('taskkill.exe', ['/PID', String(child.pid), '/T', '/F']).catch(() => {});
+      } else {
+        child.kill('SIGTERM');
+        const timer = setTimeout(() => {
+          if (!child.closed && child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+        }, 5_000);
+        await closed;
+        clearTimeout(timer);
+      }
+      if (!child.closed) await closed;
+    } else {
+      await closed;
+    }
   }
   await new Promise((resolveClose) => fixture.close(resolveClose));
-  await rm(temp, { recursive: true, force: true });
   await new Promise((resolveClose) => authServer.close(resolveClose));
   await new Promise((resolveClose) => gatewayServer.close(resolveClose));
+  await rm(temp, { recursive: true, force: true, maxRetries: 12, retryDelay: 250 });
 }

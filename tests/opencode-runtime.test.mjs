@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
+import { getEventListeners } from 'node:events';
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { nativeCommandConfig } from '../lib/opencode/compatibility.mjs';
@@ -312,17 +313,21 @@ test('pre-aborted headless calls do not create or resume a session or return pri
     const controller = new AbortController();
     controller.abort(new Error('already cancelled'));
     const service = { url: 'http://127.0.0.1:3333', headers: {} };
-    const created = await runHeadless(service, '/workspace', 'new work', { signal: controller.signal });
-    assert.equal(created.outcome, 'interrupted');
-    assert.equal(created.result, undefined);
-    assert.deepEqual(created.messages, []);
-    assert.equal(created.accepted, undefined);
-    assert.equal(created.budgetReason, undefined);
-    const resumed = await runHeadless(service, '/workspace', 'more work', { sessionID: 'ses_old_success', signal: controller.signal });
-    assert.equal(resumed.outcome, 'interrupted');
-    assert.equal(resumed.session.id, 'ses_old_success');
-    assert.equal(resumed.result, undefined, 'must not reuse a prior successful assistant from the resumed session');
-    assert.deepEqual(resumed.messages, []);
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const created = await runHeadless(service, '/workspace', 'new work', { signal: controller.signal });
+      assert.equal(created.outcome, 'interrupted');
+      assert.equal(created.result, undefined);
+      assert.deepEqual(created.messages, []);
+      assert.equal(created.accepted, undefined);
+      assert.equal(created.budgetReason, undefined);
+      assert.equal(getEventListeners(controller.signal, 'abort').length, 0, 'pre-aborted initial calls must not leak forwarding listeners');
+      const resumed = await runHeadless(service, '/workspace', 'more work', { sessionID: 'ses_old_success', signal: controller.signal });
+      assert.equal(resumed.outcome, 'interrupted');
+      assert.equal(resumed.session.id, 'ses_old_success');
+      assert.equal(resumed.result, undefined, 'must not reuse a prior successful assistant from the resumed session');
+      assert.deepEqual(resumed.messages, []);
+      assert.equal(getEventListeners(controller.signal, 'abort').length, 0, 'pre-aborted resumed calls must not leak forwarding listeners');
+    }
     assert.equal(requests, 0);
   } finally { globalThis.fetch = original; }
 });
