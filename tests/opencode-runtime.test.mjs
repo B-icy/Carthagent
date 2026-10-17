@@ -216,6 +216,7 @@ test('packaged release manifest automatically acquires the pinned owned runtime 
   const target = `${hostPlatform}-${process.arch}`;
   const binary = path.join(artifact, `cli-${target}`, 'bin', process.platform === 'win32' ? 'opencode.exe' : 'opencode');
   const { createHash } = await import('node:crypto');
+  const packageMetadata = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
   const binaryBytes = Buffer.from('pinned acquired executable');
   const binaryHash = createHash('sha256').update(binaryBytes).digest('hex');
   const platformKeys = ['linux-x64', 'linux-arm64', 'darwin-x64', 'darwin-arm64', 'windows-x64'];
@@ -223,7 +224,7 @@ test('packaged release manifest automatically acquires the pinned owned runtime 
     name: `opencode-${key}.tar.gz`, archiveSha256: 'a'.repeat(64), executableSha256: 'b'.repeat(64),
   }]));
   const release = {
-    version: 1, releaseVersion: '1.2.3', compatibilityVersion: OPENCODE_VERSION,
+    version: 1, releaseVersion: packageMetadata.version, compatibilityVersion: OPENCODE_VERSION,
     runtimeVersion: CTG_RUNTIME_VERSION, sourceRevision: CTG_RUNTIME_SOURCE,
     patchSha256: CTG_RUNTIME_PATCH_SHA256, lockSha256: CTG_RUNTIME_LOCK_SHA256, assets,
   };
@@ -244,13 +245,13 @@ test('packaged release manifest automatically acquires the pinned owned runtime 
     const resolved = await resolveOpenCode({
       runtimeReleaseManifestPath: manifestPath,
       runtimeCacheRoot: path.join(root, 'owned-cache'),
-      runtimeReleaseBaseUrl: 'https://example.test/releases/v1.2.3',
+      runtimeReleaseBaseUrl: `https://example.test/releases/v${packageMetadata.version}`,
       acquireOwnedRuntime: async (input) => { calls.push(input); return artifact; },
       spawnImpl,
     });
     assert.equal(resolved, binary);
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].releaseVersion, '1.2.3');
+    assert.equal(calls[0].releaseVersion, packageMetadata.version);
     assert.equal(calls[0].expectedArchiveSha256, assets[target].archiveSha256);
     assert.equal(calls[0].expectedExecutableSha256, assets[target].executableSha256);
     assert.equal(calls[0].expectedChannel, `ctg.${OPENCODE_VERSION}`);
@@ -267,6 +268,52 @@ test('present but invalid runtime release manifest fails closed instead of selec
     await writeFile(manifestPath, JSON.stringify({ version: 1, releaseVersion: '1.2.3', assets: {} }));
     await assert.rejects(resolveOpenCode({ runtimeReleaseManifestPath: manifestPath }), /Invalid or incompatible CTG OpenCode release manifest/);
     await assert.rejects(readRuntimeReleaseManifest(manifestPath), /Invalid or incompatible CTG OpenCode release manifest/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('incomplete release platform matrix fails closed without acquisition', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-unsupported-release-target-'));
+  const manifestPath = path.join(root, 'runtime-release.json');
+  const packageMetadata = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+  const keys = ['linux-x64', 'linux-arm64', 'darwin-x64', 'darwin-arm64', 'windows-x64'];
+  const assets = Object.fromEntries(keys.map((key) => [key, {
+    name: `opencode-${key}.tar.gz`, archiveSha256: 'a'.repeat(64), executableSha256: 'b'.repeat(64),
+  }]));
+  delete assets[`${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch}`];
+  try {
+    await writeFile(manifestPath, JSON.stringify({
+      version: 1, releaseVersion: packageMetadata.version,
+      compatibilityVersion: OPENCODE_VERSION, runtimeVersion: CTG_RUNTIME_VERSION,
+      sourceRevision: CTG_RUNTIME_SOURCE, patchSha256: CTG_RUNTIME_PATCH_SHA256,
+      lockSha256: CTG_RUNTIME_LOCK_SHA256, assets,
+    }));
+    let acquired = false;
+    await assert.rejects(resolveOpenCode({
+      runtimeReleaseManifestPath: manifestPath,
+      acquireOwnedRuntime: async () => { acquired = true; throw new Error('must not acquire'); },
+    }), /Invalid or incompatible CTG OpenCode release manifest/);
+    assert.equal(acquired, false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('missing runtime release manifest keeps the developer-preview package resolver available', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-missing-release-manifest-'));
+  const packageRoot = path.join(root, 'node_modules', 'carthagent');
+  const dependencyRoot = path.join(root, 'node_modules', '@opencode', 'cli');
+  try {
+    await mkdir(path.join(packageRoot, 'lib', 'opencode'), { recursive: true });
+    await mkdir(path.join(dependencyRoot, 'bin'), { recursive: true });
+    for (const name of ['runtime.mjs', 'runtime-artifact.mjs']) {
+      await writeFile(path.join(packageRoot, 'lib', 'opencode', name), await readFile(new URL(`../lib/opencode/${name}`, import.meta.url), 'utf8'));
+    }
+    await writeFile(path.join(packageRoot, 'package.json'), JSON.stringify({ name: 'carthagent', version: '1.0.0', type: 'module' }));
+    await writeFile(path.join(dependencyRoot, 'package.json'), JSON.stringify({ name: '@opencode/cli', version: OPENCODE_VERSION, bin: { opencode: './bin/opencode' } }));
+    const binary = path.join(dependencyRoot, 'bin', 'opencode');
+    await writeFile(binary, 'preview fixture');
+    const { pathToFileURL } = await import('node:url');
+    const imported = await import(`${pathToFileURL(path.join(packageRoot, 'lib/opencode/runtime.mjs')).href}?missing=${Date.now()}`);
+    const spawnImpl = (_command, _args, options) => spawn(process.execPath, ['-e', `process.stdout.write('opencode v${OPENCODE_VERSION}')`], options);
+    assert.equal(await imported.resolveOpenCode({ spawnImpl }), binary);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
