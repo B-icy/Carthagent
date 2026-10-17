@@ -70,7 +70,7 @@ export function streamText(res, text = 'Fixture response complete.') {
   res.end(`${chunk({}, 'stop')}data: [DONE]\n\n`);
 }
 
-export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'), pluginOptions, plugins: additionalPlugins = [], respond = (_body, res) => streamText(res), env: extraEnv = {} } = {}) {
+export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'), pluginOptions, plugins: additionalPlugins = [], respond = (_body, res) => streamText(res), env: extraEnv = {}, preserveTemp = false } = {}) {
   const pluginEntries = [
     ...(plugin ? [pluginOptions ? { package: resolve(plugin), options: pluginOptions } : resolve(plugin)] : []),
     ...additionalPlugins.map(plugin => typeof plugin === 'string' ? resolve(plugin) : {
@@ -85,6 +85,8 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
   const providerErrors = [];
   let child;
   let client;
+  let baseUrl;
+  let password;
   let output = '';
   const provider = createServer((req, res) => {
     void (async () => {
@@ -99,7 +101,7 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
       res.end('Fixture provider failed');
     });
   });
-  const password = randomBytes(24).toString('hex');
+  password = randomBytes(24).toString('hex');
   const stop = async () => {
     if (!child || child.exitCode !== null || child.signalCode !== null) return;
     const exited = once(child, 'exit');
@@ -107,11 +109,11 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
     const timer = setTimeout(() => child.kill('SIGKILL'), 5000);
     try { await exited; } finally { clearTimeout(timer); }
   };
-  const close = async () => {
+  const close = async ({ preserveTemp: keepTemp = preserveTemp } = {}) => {
     await stop();
     provider.closeAllConnections();
     if (provider.listening) await new Promise(done => provider.close(done));
-    await rm(temp, { recursive: true, force: true });
+    if (!keepTemp) await rm(temp, { recursive: true, force: true });
   };
   const request = (milliseconds = 30_000) => ({ signal: AbortSignal.timeout(milliseconds) });
   const start = async () => {
@@ -122,6 +124,8 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
     Object.assign(env, {
       ...extraEnv,
       HOME: join(temp, 'home'), USERPROFILE: join(temp, 'home'),
+      CARTHAGENT_CODING_AGENT_DIR: join(temp, 'home/.carthagent/agent'),
+      PI_CODING_AGENT_DIR: join(temp, 'home/.carthagent/agent'),
       APPDATA: join(temp, 'appdata'), LOCALAPPDATA: join(temp, 'localappdata'),
       XDG_CONFIG_HOME: join(temp, 'config'), XDG_DATA_HOME: join(temp, 'data'),
       XDG_CACHE_HOME: join(temp, 'cache'), XDG_STATE_HOME: join(temp, 'state'),
@@ -130,7 +134,7 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
     });
     child = spawn(await resolveOpenCode(),
       ['serve', '--hostname', '127.0.0.1', '--port', '0', ...(extraEnv.CTG_NATIVE_DEBUG === '1' ? ['--print-logs', '--log-level', 'debug'] : [])], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
-    const baseUrl = await new Promise((done, reject) => {
+    baseUrl = await new Promise((done, reject) => {
       const timer = setTimeout(() => reject(Error(`Host startup timeout: ${output}`)), 30_000);
       const collect = chunk => {
         output = (output + chunk).slice(-16384);
@@ -167,7 +171,7 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
     throw error;
   }
   return {
-    temp, cwd, requests, providerErrors, request, start, stop, close,
+    temp, cwd, baseUrl, password, requests, providerErrors, request, start, stop, close,
     model: { providerID: 'ctg-fixture', id: 'fixture' },
     location: { directory: cwd },
     get client() { return client; },

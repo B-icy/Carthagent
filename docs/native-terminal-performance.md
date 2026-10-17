@@ -30,14 +30,15 @@ memory bound or leak-free long-running behavior. Use `--idle-seconds`,
 `--idle-byte-limit`, and `--memory-growth-limit-mb` to make the measured window
 and limits explicit. `--report path.json` saves the output.
 
-Warm-session-switch target is 150 ms. It remains **not measured**. The pinned
-bundle's session-resume action is exposed through its native editor keybinding,
-but fixture work has not yet verified a selector launch and destination render
-from the same native session store. A PTY attempt did not show the selector, so
-no selection-to-destination latency is reported. Do not substitute selector-
-open time or RPC. Resolve and validate the native selector entry point before
-enabling switch samples; then require 30 alternating selections and a unique
-rendered destination marker.
+Warm-session-switch target is 150 ms. The opt-in `--switch-fixture` mode uses
+two prepopulated OpenCode sessions in the pinned host's disposable database,
+opens the actual native Open Sessions menu (`open.menu`, bound to Ctrl+O in the
+isolated profile), and times Enter acceptance to the selected session's unique
+persisted assistant-history marker. It visits both histories before 30
+alternating samples to warm them. It excludes menu-open/search time and does
+not use RPC timing. Sessions must be in the same project because this build's
+Open Sessions picker scopes session rows to the active project. Switch mode is
+diagnostic-only; input p95 is not measured in that mode.
 
 The separate `npm run test:native-performance` probe measures cached workspace
 RPC only. Its samples must not be described as terminal input or session-switch
@@ -59,7 +60,16 @@ average 14.25/14.70/17.17; 4,130 MiB available memory; end load
 14.25/14.68/17.14; 3,708 MiB available). It is valid evidence for that loaded
 host window, not a controlled baseline. Idle observation was 1 second, 121 PTY
 bytes, and 7.11 MiB process-tree RSS range. A controlled paired plugin/baseline
-run remains pending. The attempted switch path did not open the native selector
-and produced no valid switch samples. Host load and available memory are now
-captured at run start and end in JSON; rerun only in a controlled window after
-the native session-selection route is verified.
+run remains pending. A separate native switch-only run successfully recorded
+30 alternating same-project session changes. It measured **1,025.493 ms p95**
+(1,391.240 ms max), missing the unchanged 150 ms target. The host was loaded:
+8 CPUs; load 16.57/15.64/15.22 at start and 15.79/15.62/15.23 at end, with
+3,914 MiB available memory at start and 4,467 MiB at end. The switch result is
+valid for that loaded host window, not a controlled acceptance measurement.
+Both sessions were previsited, and unique destination history markers were
+checked before and after each actual selection. A follow-up switch-only run
+completed under lower, though still non-idle, load: **573.526 ms p95**
+(696.095 ms max), with load 6.50/6.18/9.84 at start and 8.62/6.70/9.94 at end;
+available memory was 5,587 MiB at start and 5,199 MiB at end. Both runs miss
+the 150 ms target; neither is a controlled acceptance measurement. Host load
+and available memory are captured at start and end in JSON.
