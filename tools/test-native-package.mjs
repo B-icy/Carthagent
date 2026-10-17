@@ -47,7 +47,7 @@ try {
   const installedPlugin = join(installed, 'plugins/carthagent');
   // Run the acceptance harness from the installed artifact itself so its
   // imports (including @opencode/client) resolve only through that install.
-  for (const test of ['test-native-host.mjs', 'test-native-controls.mjs', 'test-native-outcomes.mjs']) {
+  for (const test of ['test-native-host.mjs', 'test-native-controls.mjs', 'test-native-outcomes.mjs', 'test-native-swe-host.mjs']) {
     run(process.execPath, [join(installed, 'tools', test), installedPlugin], { cwd: install, env });
   }
   console.log(JSON.stringify({ tarball: packed[0].filename, unpackedSize: packed[0].unpackedSize, binary, version }, null, 2));
