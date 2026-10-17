@@ -35,8 +35,10 @@ Run against the exact upstream base plus the two approved patch files, with Bun
 ```text
 1 pass
 0 fail
-16 expect() calls
+18 expect() calls
 ```
 
-The test source is included as `plugin-theme-provider.test.tsx` alongside the
-patch for review.
+The test-only source patch is `plugin-theme-provider.patch`.
+
+The test typecheck is being checked in the isolated upstream worktree; its
+result will be recorded before this PR is considered complete.
