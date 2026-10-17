@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Paired real-PTY glyph probe. Only known host chrome is normalized/asserted."""
 import argparse
+import codecs
 import fcntl
 import hashlib
 import importlib.util
@@ -8,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import pty
+import re
 import select
 import signal
 import struct
@@ -15,6 +17,7 @@ import subprocess
 import tempfile
 import termios
 import time
+import unicodedata
 
 _screen_spec = importlib.util.spec_from_file_location(
     'native_terminal_semantics', Path(__file__).with_name('native-terminal-semantics.py'))
@@ -23,8 +26,88 @@ _screen_spec.loader.exec_module(_screen_module)
 Screen = _screen_module.Screen
 
 
-USER_TEXT = 'CTG_USER_TEXT 漢字 café → • − …'
+USER_MARKER = 'CTG_GLYPH_PAYLOAD'
+USER_TEXT = USER_MARKER + ' 漢字 café → • − …'
 CHROME_PAIRS = [('█▀▀', 'O P E N C O D E')]
+
+
+class GlyphScreen(Screen):
+    """PTY screen model with Unicode cell widths, local to this acceptance probe."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.decoder = codecs.getincrementaldecoder('utf8')('replace')
+
+    @staticmethod
+    def char_width(char):
+        if unicodedata.combining(char):
+            return 0
+        return 2 if unicodedata.east_asian_width(char) in ('W', 'F') else 1
+
+    def feed(self, data):
+        for char in self.decoder.decode(data):
+            if self.mode == 'osc':
+                if char == '\x07' or (self.osc_escape and char == '\\'):
+                    self._osc(self.osc)
+                    self.osc = ''
+                    self.mode = 'text'
+                elif char != '\x1b':
+                    self.osc += char
+                self.osc_escape = char == '\x1b'
+                continue
+            if self.mode == 'csi':
+                if '@' <= char <= '~':
+                    if char == 't':
+                        self.csi_sequences.append((self.csi, char))
+                    self._csi(char, self.csi)
+                    self.mode, self.csi = 'text', ''
+                else:
+                    self.csi += char
+                continue
+            if self.mode == 'esc':
+                if char == '[':
+                    self.mode, self.csi = 'csi', ''
+                elif char == ']':
+                    self.mode = 'osc'
+                else:
+                    self.mode = 'text'
+                continue
+            if char == '\x1b':
+                self.mode = 'esc'
+            elif char == '\r':
+                self.x = 0
+            elif char == '\n':
+                self.y = min(self.y + 1, self.rows - 1)
+            elif char == '\b':
+                self.x = max(0, self.x - 1)
+            elif char >= ' ':
+                width = self.char_width(char)
+                if width == 0:
+                    if self.x > 0:
+                        previous = min(self.columns - 1, self.x - 1)
+                        while previous > 0 and self.cells[self.y][previous] == '':
+                            previous -= 1
+                        self.cells[self.y][previous] += char
+                    continue
+                if self.x + width > self.columns:
+                    self.wrapCount += 1
+                    self.x, self.y = 0, min(self.y + 1, self.rows - 1)
+                self.cells[self.y][self.x] = char
+                if width == 2 and self.x + 1 < self.columns:
+                    self.cells[self.y][self.x + 1] = ''
+                self.x += width
+
+    def visible(self):
+        return '\n'.join(''.join(row).rstrip() for row in self.cells)
+
+
+def assert_composer_payload(screen_text, expected=USER_TEXT):
+    """Require the complete ordered payload on the actual marker-bearing composer row."""
+    pattern = re.compile(r'^\s*[┃|]\s*' + re.escape(expected) + r'\s*$')
+    rows = [row for row in screen_text.splitlines() if pattern.fullmatch(row)]
+    if not rows:
+        raise AssertionError('exact staged user payload is not preserved in the rendered composer row')
+    return rows[0]
 
 
 def child_environment(root, config, mode, source=None):
@@ -54,7 +137,7 @@ def run_mode(binary, mode, timeout):
         child = subprocess.Popen([binary, '--standalone'], cwd=project, env=env,
                                  stdin=slave, stdout=slave, stderr=slave, start_new_session=True)
         os.close(slave)
-        screen = Screen()
+        screen = GlyphScreen()
         raw = bytearray()
         started = time.monotonic()
         pasted = False
@@ -82,23 +165,17 @@ def run_mode(binary, mode, timeout):
                     # observable in the genuine composer without contacting a provider.
                     os.write(master, b'\x1b[200~' + USER_TEXT.encode() + b'\x1b[201~')
                     pasted = True
-                if pasted and USER_TEXT in screen.visible():
+                if pasted and any(re.fullmatch(r'\s*[┃|]\s*' + re.escape(USER_TEXT) + r'\s*', row)
+                                  for row in screen.visible().splitlines()):
                     break
             visible = screen.visible()
-            if not home_seen or not pasted or 'CTG_USER_TEXT' not in visible:
-                raise AssertionError(f'{mode}: home/composer user-text marker not observed; screen={visible[-1600:]!r}')
-            paint_text = raw.decode('utf8', errors='replace')
-            user_components = ['CTG_USER_TEXT', '漢', '字', 'café', '→', '•', '−', '…']
-            missing_components = [part for part in user_components if part not in paint_text]
-            if missing_components:
-                raise AssertionError(f'{mode}: PTY paint stream omitted staged user-text components: {missing_components!r}')
-            # The compact Screen model does not calculate wide-cell positions;
-            # exclude the composer row containing our unique user marker, not
-            # arbitrary Unicode elsewhere on screen, from static-chrome checks.
+            if not home_seen or not pasted:
+                raise AssertionError(f'{mode}: home/composer was not reached; screen={visible[-1600:]!r}')
+            composer_row = assert_composer_payload(visible)
+            # Exclude the rendered composer row from static chrome checks.
             lines = visible.splitlines()
-            marker_rows = [index for index, line in enumerate(lines) if 'CTG_USER_TEXT' in line]
-            user_row_neighborhood = {row + delta for row in marker_rows for delta in (-1, 0, 1)}
-            chrome_region = '\n'.join(line for index, line in enumerate(lines) if index not in user_row_neighborhood)
+            marker_rows = [index for index, line in enumerate(lines) if USER_TEXT in line]
+            chrome_region = '\n'.join(line for index, line in enumerate(lines) if index not in marker_rows)
             chrome = {}
             for unicode_token, ascii_token in CHROME_PAIRS:
                 chrome[unicode_token] = {'asciiAlternative': ascii_token,
@@ -112,8 +189,8 @@ def run_mode(binary, mode, timeout):
             else:
                 if '█▀▀' not in chrome_region:
                     raise AssertionError(f'Unicode startup logo not observed; screen={visible[-1200:]!r}')
-            return {'mode': mode, 'homeObserved': home_seen, 'composerMarkerVisible': 'CTG_USER_TEXT' in visible,
-                    'userTextComponentsInPtyPaint': user_components,
+            return {'mode': mode, 'homeObserved': home_seen, 'composerPayloadExact': True,
+                    'composerRow': composer_row,
                     'userText': USER_TEXT, 'hostChrome': chrome, 'screen': visible,
                     'ptyOutputSha256': hashlib.sha256(raw).hexdigest(), 'ptyOutputBytes': len(raw)}
         finally:
