@@ -20,6 +20,65 @@ const session = {
     updatedAt: string, directory: string,
   }, required: ['id', 'title', 'status', 'directory'], additionalProperties: false,
 } as const;
+const evidenceItem = {
+  type: 'object', properties: {
+    id: string, status: { type: 'string', enum: ['pending', 'failed', 'fresh', 'stale'] },
+    executedRevision: { type: 'integer' }, code: { type: 'integer' }, filename: string,
+  }, required: ['id', 'status'], additionalProperties: false,
+} as const;
+const deliveryPlan = {
+  type: 'object', properties: {
+    goal: { type: 'string' }, verification: { type: 'string' },
+    acceptance: { type: 'array', items: { type: 'object', properties: { requirement: { type: 'string' }, checks: { type: 'array', items: string } }, required: ['requirement', 'checks'], additionalProperties: false } },
+    artifacts: { type: 'array', items: { type: 'string' } }, outputs: { type: 'array', items: { type: 'string' } }, assumptions: { type: 'array', items: { type: 'string' } },
+    checks: { type: 'array', items: { type: 'object', properties: { id: string, kind: { type: 'string' }, argv: { type: 'array', items: { type: 'string' } }, timeoutSeconds: { type: 'integer' } }, required: ['id', 'kind', 'argv', 'timeoutSeconds'], additionalProperties: false } },
+    steps: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, title: { type: 'string' }, status: { type: 'string' }, dependsOn: { type: 'array', items: { type: 'string' } }, checks: { type: 'array', items: { type: 'string' } } }, required: ['id', 'title', 'status', 'dependsOn', 'checks'], additionalProperties: false } },
+    scenarios: { type: 'array', items: { type: 'object', properties: { id: string, requirement: { type: 'string' }, kind: { type: 'string' }, path: { type: 'array', items: { type: 'string' } }, checks: { type: 'array', items: { type: 'string' } }, input: { type: 'string' }, expected: { type: 'string' }, assertion: { type: 'string' } }, required: ['id', 'requirement', 'kind', 'path', 'checks', 'input', 'expected', 'assertion'], additionalProperties: false } },
+    risks: { type: 'array', items: { type: 'object', properties: { id: string, description: { type: 'string' }, status: { type: 'string' }, blocking: { type: 'boolean' }, evidence: { type: 'string' } }, required: ['id', 'description', 'status', 'blocking', 'evidence'], additionalProperties: false } },
+  }, required: ['goal', 'verification', 'acceptance', 'steps', 'artifacts', 'outputs', 'assumptions', 'checks', 'scenarios', 'risks'], additionalProperties: false,
+} as const;
+const graphNodes = { type: 'array', items: { type: 'object', properties: { id: string, title: { type: 'string' }, type: { type: 'string' }, status: { type: 'string' }, layer: { type: 'string' }, excludes: { type: 'array', items: { type: 'string' } }, requirements: { type: 'array', items: { type: 'string' } } }, required: ['id', 'title'], additionalProperties: false } } as const;
+const graphEdges = { type: 'array', items: { type: 'object', properties: { from: { type: 'string' }, to: { type: 'string' }, kind: { type: 'string' }, label: { type: 'string' } }, required: ['from', 'to', 'kind'], additionalProperties: false } } as const;
+const workflowGraph = {
+  type: 'object', properties: {
+    authored: { type: 'boolean' }, semantics: { type: 'string' },
+    nodes: { type: 'array', items: { type: 'object', properties: {
+      id: string, title: { type: 'string' }, type: { type: 'string' }, status: { type: 'string' }, step: { type: 'string' },
+      requirements: { type: 'array', items: { type: 'string' } }, components: { type: 'array', items: { type: 'string' } }, checks: { type: 'array', items: { type: 'string' } },
+      inputs: { type: 'array', items: { type: 'string' } }, artifacts: { type: 'array', items: { type: 'string' } }, effects: { type: 'array', items: { type: 'string' } }, condition: { type: 'string' },
+    }, required: ['id', 'title', 'type', 'status', 'requirements', 'components', 'checks', 'inputs', 'artifacts', 'effects'], additionalProperties: false } },
+    edges: { type: 'array', items: { type: 'object', properties: { from: { type: 'string' }, to: { type: 'string' }, kind: { type: 'string' }, label: { type: 'string' }, when: { type: 'string' }, stop: { type: 'string' }, maxAttempts: { type: 'integer' } }, required: ['from', 'to', 'kind'], additionalProperties: false } },
+  }, required: ['authored', 'semantics', 'nodes', 'edges'], additionalProperties: false,
+} as const;
+const architectureGraph = {
+  type: 'object', properties: {
+    nodes: graphNodes, edges: graphEdges,
+    ports: { type: 'array', items: { type: 'object', properties: { id: string, owner: string, adapter: string, compositionRoot: string, input: { type: 'string' }, output: { type: 'string' }, errors: { type: 'string' }, injection: { type: 'string' }, testDouble: { type: 'string' }, integrationAssertion: { type: 'string' } }, required: ['id', 'owner', 'adapter', 'compositionRoot', 'input', 'output', 'errors', 'injection', 'testDouble', 'integrationAssertion'], additionalProperties: false } },
+  }, required: ['nodes', 'edges', 'ports'], additionalProperties: false,
+} as const;
+const deliveryTruncation = {
+  type: 'object', properties: Object.fromEntries(['checks', 'acceptance', 'steps', 'artifacts', 'outputs', 'assumptions', 'scenarios', 'risks', 'workflowNodes', 'workflowEdges', 'architectureNodes', 'architectureEdges', 'architecturePorts'].map(key => [key, { type: 'object', properties: { returned: { type: 'integer' }, total: { type: 'integer' } }, required: ['returned', 'total'], additionalProperties: false }])), required: ['checks', 'acceptance', 'steps', 'artifacts', 'outputs', 'assumptions', 'scenarios', 'risks', 'workflowNodes', 'workflowEdges', 'architectureNodes', 'architectureEdges', 'architecturePorts'], additionalProperties: false,
+} as const;
+const deliveryFullProperties = {
+  status: { type: 'string', enum: ['active', 'implementing', 'verifying', 'verified', 'blocked', 'stale'] },
+  freshness: { type: 'string', enum: ['current', 'stale'] },
+  completion: { type: 'string', enum: ['ready', 'incomplete'] },
+  gate: { type: 'string', enum: ['locked', 'open'] },
+  runId: string,
+  revision: { type: 'integer' },
+  fingerprint: { type: 'string', minLength: 64, maxLength: 64 },
+  plan: deliveryPlan,
+  workflow: workflowGraph,
+  architecture: architectureGraph,
+  evidence: { type: 'array', items: evidenceItem },
+  truncation: deliveryTruncation,
+} as const;
+const deliveryOutput = {
+  oneOf: [
+    { type: 'object', properties: deliveryFullProperties, required: Object.keys(deliveryFullProperties), additionalProperties: false },
+    { type: 'object', properties: { status: { type: 'string', enum: ['unavailable', 'invalid'] } }, required: ['status'], additionalProperties: false },
+  ],
+} as const;
 
 /** Shared server/TUI contract. Callers supply the intended native location on every call. */
 export const Workspace = Rpc.define({
@@ -48,7 +107,7 @@ export const Workspace = Rpc.define({
     },
     delivery: {
       input: sessionInput,
-      output: { type: 'object', properties: { plan: {}, evidence: {}, status: string }, required: ['status'], additionalProperties: false },
+      output: deliveryOutput,
     },
     review: {
       input: sessionInput,
@@ -71,4 +130,40 @@ export interface WorkspaceSnapshot {
   projects: Array<{ id: string; directory: string; name?: string }>;
   tasks: Array<{ id: string; projectID: string; title: string; status: string; attention?: boolean; directory?: string; branch?: string }>;
   sessions: Array<{ id: string; taskID?: string; projectID?: string; title: string; status: string; updatedAt?: string; directory: string }>;
+}
+
+export interface WorkspaceDelivery {
+  status: string;
+  freshness?: "current" | "stale";
+  completion?: "ready" | "incomplete";
+  gate?: "locked" | "open";
+  runId?: string;
+  revision?: number;
+  fingerprint?: string;
+  truncation?: Record<string, { returned: number; total: number }>;
+  plan?: {
+    goal: string;
+    verification: string;
+    acceptance: Array<{ requirement: string; checks: string[] }>;
+    artifacts: string[];
+    outputs: string[];
+    assumptions: string[];
+    checks: Array<{ id: string; kind: string; argv: string[]; timeoutSeconds: number }>;
+    steps: Array<{ id: string; title: string; status: string; dependsOn: string[]; checks: string[] }>;
+    scenarios: Array<{ id: string; requirement: string; kind: string; path: string[]; checks: string[]; input: string; expected: string; assertion: string }>;
+    risks: Array<{ id: string; description: string; status: string; blocking: boolean; evidence: string }>;
+  };
+  workflow?: {
+    authored: boolean;
+    semantics: string;
+    nodes: Array<{ id: string; title: string; type: string; status: string; step?: string; requirements: string[]; components: string[]; checks: string[]; inputs: string[]; artifacts: string[]; effects: string[]; condition?: string }>;
+    edges: Array<{ from: string; to: string; kind: string; label?: string; when?: string; stop?: string; maxAttempts?: number }>;
+  };
+  architecture?: {
+    nodes: Array<{ id: string; title: string; type?: string; status?: string; layer?: string; excludes?: string[]; requirements?: string[] }>;
+    edges: Array<{ from: string; to: string; kind: string; label?: string }>;
+    ports: Array<{ id: string; owner: string; adapter: string; compositionRoot: string; input: string; output: string; errors: string; injection: string; testDouble: string; integrationAssertion: string }>;
+  };
+  evidence?: Array<{ id: string; status: "pending" | "failed" | "fresh" | "stale"; executedRevision?: number; code?: number; filename?: string }>;
+  error?: string;
 }

@@ -261,6 +261,7 @@ test('ensure and stop serialize on the same lifecycle lock', async () => {
     const options = { root, binary: process.execPath, spawnImpl, startupTimeout: 5000, stopTimeout: 3000 };
     const [ensured, stopped] = await Promise.all([ensureService(options), stopService(options)]);
     assert.equal(typeof stopped, 'boolean');
+    assert.ok((await readFile(path.join(runtimePaths({ root }).configDir, 'themes', 'carthage.json'), 'utf8')).includes('opencode.ai/theme.json'), 'production service startup provisions the native Carthage theme before host scan');
     if (ensured?.pid) {
       // It either remains the correctly registered live service or stop removed it.
       const current = await readFile(runtimePaths({ root }).serviceFile, 'utf8').then(JSON.parse).catch(() => undefined);

@@ -4,6 +4,8 @@ import { registerProviders } from './server/providers';
 import { createDeviceAuthController } from './server/device-auth.ts';
 import { shipAgentDir } from '../../../lib/ship-auth.mjs';
 import { registerSessionControls } from './server/session-controls';
+import { registerWorkspaceRpc } from './server/workspace-rpc';
+import { registerPullRequests } from './server/pull-request-rpc';
 import { registerArchive } from './server/archive-rpc';
 import { createShipRpcHandlers } from './server/ship-rpc';
 import { registerNativeDelivery } from './server/native-delivery';
@@ -32,6 +34,8 @@ export async function setupCarthagent(context: Parameters<typeof registerSession
       const archiveRegistration = await registerArchive(context, { archiveRoots: roots });
       cleanups.push(() => archiveRegistration.dispose());
       cleanups.push(await registerSessionControls(context));
+      cleanups.push(await registerWorkspaceRpc(context));
+      cleanups.push(await registerPullRequests(context));
       if (options.delivery !== false) cleanups.push(await registerNativeDelivery(context, { ...options.deliveryOptions, ...sessionOptionDefaults(context.options) }));
       const deviceAuth = createDeviceAuthController({ env: process.env, agentDir: shipAgentDir() });
       cleanups.push(() => deviceAuth.cleanup());

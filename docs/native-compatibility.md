@@ -10,11 +10,11 @@ the installed native package.
 | Command | Aliases / arguments | Required behavior |
 | --- | --- | --- |
 | `/help` | | CTG commands, arguments and actual native shortcuts |
-| `/resume` | `/sessions`, `[id\|name]` | Search and open native sessions; legacy results explicitly archive-only |
+| `/resume` | `/sessions`, `[id\|name]` | Search every native session page and open one; legacy results explicitly archive-only |
 | `/new` | | New independent native session, without deleting current work |
 | `/restart` | `/kill` | Interrupt/recover the selected session without restarting other sessions |
-| `/theme` | `[name]` | Native theme picker; explicit name applies; confirmation commits selection |
-| `/model` | `[name]` | Provider-aware search/selection; explicit name actually selects a model |
+| `/theme` | `[name]` | Native theme picker; explicit name persists selection; custom compatibility themes require pre-launch provisioning and native CLI restart to apply |
+| `/model` | `[name]` | Provider-aware search/selection; exact provider/model or unique name actually selects a model |
 | `/thinking` | | Supported variant selection, honest errors for unsupported levels |
 | `/compact` | `[notes]` | Await or report admitted compaction correctly; notes reach summary context |
 | `/autocompact` | `[on\|off]` | Preserve the requested session policy, not a misleading UI-only switch |
@@ -29,6 +29,8 @@ the installed native package.
 | `/login` | `/auth` | Native CTG-scoped provider connection |
 | `/account` | `/cloud` | Ship credit, plan, grants, sessions |
 | `/usage` | | Recent Ship usage from the control plane |
+| `/archive` | `[list|search <query>|read <id>|export <id>]` | Paginated list/search with returned/total counts, continued reads, complete exports, reject unknown operations |
+| `/demo` | | Execute the disposable offline fixture, report actual subprocess output/status and cancellation; never represent the current project |
 | `/billing` | `[checkout [plan]\|portal]` | Open the authenticated billing destination |
 | `/logout-cloud` | `[session-id]` | Revoke/remove current connection or revoke specified Ship session |
 | `/update` | `/upgrade`, `[check]` | Check/update CTG without upgrading regular OpenCode |
@@ -61,6 +63,15 @@ bounded cancellation, and a documented JSONL contract for evaluation consumers.
 
 ## Cross-cutting gates
 
+The PR #152 TUI scope owns theme provisioning, workspace presentation, and
+session-scoped host commands. `/login`, `/auth`, `/account`, `/cloud`, `/usage`,
+`/billing`, `/logout-cloud`, `/update`, and `/upgrade` remain CLI-authoritative
+operations and must be integrated through the separate CLI author RPC; this TUI
+must not create a second provider/cloud/update implementation. `/quit`, `/q`,
+and `/exit` remain native host lifecycle commands rather than plugin aliases.
+These responsibilities are not counted as complete by listing them in a command
+manifest.
+
 - Two simultaneous tasks in different worktrees cannot share active contracts,
   budget counters, Ship telemetry identities, or review receipts.
 - Normal OpenCode configuration, credentials, service and sessions remain
@@ -91,6 +102,11 @@ The following probes use a disposable profile and deterministic loopback provide
 `CTG_OPENCODE_BIN` can select an explicit test binary; the default is the pinned
 package-owned `node_modules/@opencode/cli/bin/opencode.exe`. An optional first
 argument selects an installed plugin directory.
+
+The interactive help command is intentionally checked with both `/help` and
+`/ctg-help`. On OpenCode 2.0.32, `/help` dispatches to the Carthagent command
+in the supported plugin PTY; `/ctg-help` remains the unambiguous compatibility
+name for terminals or contexts where the host claims `/help`.
 
 - `node tools/test-native-controls.mjs`: concurrent framing/raw admission,
   persisted launcher settings and framing overrides, compaction notes reaching
