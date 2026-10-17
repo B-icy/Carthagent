@@ -1,0 +1,42 @@
+{
+  "status": "INCOMPLETE",
+  "generatedAtUtc": "2026-10-17",
+  "sourceCommit": "608ea09855edafbe97bad47a799b9f4bc3cdf51d",
+  "workingTreeDirtyAtEvidenceCapture": true,
+  "harnessSourceSha256AtEvidenceCapture": "91b432ae3447d2997e4a659ea1f873bdce97d8f37a90437a1bcf3315b917d95e",
+  "finalAuthorBinary": {
+    "path": null,
+    "version": null,
+    "sha256": null,
+    "status": "NOT_PROVIDED_YET"
+  },
+  "checks": {
+    "controlledHostModelSelfTest": {
+      "status": "PASS",
+      "scope": "parser/state-model only; not native acceptance"
+    },
+    "pickerEscapeCancel": {
+      "status": "PASS",
+      "evidence": "picker-previous-probe-pass.json",
+      "note": "Previously recorded native picker pass retained; no rerun performed."
+    },
+    "narrowLayout": {
+      "status": "UNVERIFIED",
+      "note": "Previous 40x12 observation used a binary that predates the final title patch; rerun on the exact final binary is pending."
+    },
+    "selectionClipboard": {
+      "status": "UNVERIFIED",
+      "note": "Native exact-selection result on the final author binary is pending. Physical OS clipboard is not verified."
+    },
+    "clipboardOSC52": {
+      "status": "UNVERIFIED",
+      "note": "Distinct latest /copy payload and readback on the final author binary are pending. Physical OS clipboard is not verified."
+    },
+    "terminalTitleRestoration": {
+      "status": "UNVERIFIED",
+      "note": "Prior title pass used a pre-final author binary and is explicitly superseded. Require ordered save/restore, seeded final modeled title, drained PTY EOF, and normal exit code 0 on the exact final binary."
+    }
+  },
+  "physicalOSClipboardVerified": false,
+  "paidProviderTraffic": false
+}
