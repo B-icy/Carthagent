@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { nativeFixture } from './native-fixture.mjs';
 
 const host = await nativeFixture({ plugin: process.argv[2] });
+const identity = host.runtimeIdentity;
 try {
   let { client } = host;
   const { location, request, model, requests } = host;
@@ -74,7 +75,8 @@ try {
   assert.equal(afterA.at(-1).outcome, 'succeeded');
   assert.equal(afterB.at(-1).outcome, 'succeeded');
   assert.deepEqual(host.providerErrors, []);
-  console.log(JSON.stringify({ host: '2.0.32', sessions: 2, providerRequests: requests.length,
+  console.log(JSON.stringify({ host: identity.runtimeVersion, compatibilityVersion: identity.compatibilityVersion,
+    ...(identity.binarySha256 ? { binarySha256: identity.binarySha256 } : {}), sessions: 2, providerRequests: requests.length,
     framing: 'passed', raw: 'passed', compaction: 'passed', locationOwnership: 'passed', serviceRestart: 'passed' }));
 } catch (error) {
   console.error(host.output);

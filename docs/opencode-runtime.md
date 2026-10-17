@@ -5,7 +5,19 @@ CTG runs the package-owned native OpenCode v2.0.32 CLI from the pinned
 user installation. An explicitly supplied `CTG_OPENCODE_BIN` is accepted only
 when its version is exactly 2.0.32.
 
+Runtime identity records the concrete executable path and SHA-256, including
+when an explicit bare command is resolved through the supplied `PATH`. A
+healthy process registered to a different runtime remains untouched and blocks
+selection changes. A dead registration, including a legacy record without an
+identity, is removed only after its PID is confirmed dead, so it cannot
+permanently prevent startup.
+
 ## Isolation and persistence
+
+An additional separately distributed pinned source variant is documented in
+[`opencode-owned-runtime.md`](./opencode-owned-runtime.md). It is opt-in via
+`CTG_OWNED_OPENCODE_RUNTIME`; unset behavior remains the package-owned
+`@opencode/cli@2.0.32` runtime described here.
 
 The default CTG profile is `~/.carthagent/opencode`. `CTG_OPENCODE_HOME` (or a
 `root` argument in the runtime API) can select another profile. CTG applies

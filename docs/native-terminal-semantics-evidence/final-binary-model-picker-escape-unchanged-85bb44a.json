@@ -1,0 +1,44 @@
+{
+  "startedAtUtc": "2026-10-17T19:31:38.804106+00:00",
+  "case": "native-model-picker-navigation-escape-unchanged-model",
+  "binary": "/tmp/opencode/ctg-final-runtime-build/resume-build/packages/cli/dist-ctg/cli-linux-x64/bin/opencode",
+  "binaryVersion": "opencode v0.0.0-ctg.2.0.32",
+  "binarySha256": "85bb44a65e8c185f4f33d41507d29acc77f2db0cdcb0103a14476021c8e43794",
+  "sourceCommit": "802a20bdc2178839ae8131fa6c4ad2c11018aa1f",
+  "workingTreeDirty": false,
+  "probeSha256": "b1158e68816ecf6c269807c0ca2a9623cd5e35ab1a71d842c4b70e8a9e2681b4",
+  "supportingHarnessSha256": "f35acbcd8e506a32c0ee5240b3cd53be34fe551c7166e3327017c69ab2a57809",
+  "provider": "loopback offline fixture",
+  "configuredModel": "ctgfixture/fixture",
+  "alternateModel": "ctgfixture/alternate",
+  "physicalOSClipboardVerified": false,
+  "checks": {
+    "modelPickerNavigationEscapeUnchangedModel": {
+      "status": "PASS",
+      "modelPickerObserved": true,
+      "modelOptionsVisible": [
+        "CTG Picker A",
+        "CTG Picker B"
+      ],
+      "currentModelBeforeNavigationVisible": true,
+      "navigationKeySent": "ArrowDown",
+      "alternateOptionVisibleAfterNavigation": true,
+      "selectedOptionStyleAfterNavigation": "\u001b[38;2;10;10;10m\u001b[48;2;250;178;131m\u001b[1m",
+      "otherOptionStyleAfterNavigation": "\u001b[38;2;250;178;131m\u001b[48;2;20;20;20m",
+      "escapeDismissedPicker": true,
+      "composerRestored": true,
+      "providerRequestsDuringCancel": 0,
+      "activeSessionMetadataStillShowsModelA": true,
+      "baselineProviderModel": "fixture",
+      "postCancelProviderModels": [
+        "fixture"
+      ],
+      "postCancelUniquePromptAccepted": true,
+      "provider": "loopback offline fixture"
+    },
+    "physicalOSClipboardVerified": {
+      "status": "NOT_TESTED"
+    }
+  },
+  "status": "PASS_BOUNDED"
+}

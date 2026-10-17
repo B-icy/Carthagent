@@ -1,0 +1,1 @@
+src/plugin/api.tsx(152,3): error TS2741: Property 'transcript' is missing in type '{ options: Readonly<Record<string, any>>; readonly location: LocationPublicInfo | undefined; app: { version: string; channel: string; }; renderer: CliRenderer; ... 8 more ...; ui: { ...; }; }' but required in type 'Context'.

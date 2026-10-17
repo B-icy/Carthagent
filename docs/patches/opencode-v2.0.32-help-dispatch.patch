@@ -1,0 +1,156 @@
+diff --git a/packages/tui/src/component/prompt/autocomplete.tsx b/packages/tui/src/component/prompt/autocomplete.tsx
+index c669491..2c0c63a 100644
+--- a/packages/tui/src/component/prompt/autocomplete.tsx
++++ b/packages/tui/src/component/prompt/autocomplete.tsx
+@@ -472,15 +472,28 @@ export function Autocomplete(props: {
+   }
+ 
+   const commands = createMemo((): AutocompleteOption[] => {
+-    const results: AutocompleteOption[] = keymapCommands().flatMap((command) => {
++    const registered = keymapCommands()
++    let help: KeymapCommand | undefined
++    const results: AutocompleteOption[] = registered.flatMap((command) => {
+       const slash = command.slash
+       if (!slash) return []
+-      return [slash.name, ...(slash.aliases ?? [])].map((name) => ({
++      const names = [slash.name, ...(slash.aliases ?? [])]
++      if (names.includes("help") && command.id !== "help.show") help = command
++      return names.filter((name) => name !== "help").map((name) => ({
+         display: `/${name}`,
+         description: command.description ?? command.title,
+         onSelect: slash.arguments ? () => insertSlash(name) : command.run,
+       }))
+     })
++    const helpCommand = help ?? registered.find((command) => command.id === "help.show")
++    if (helpCommand?.slash) {
++      const slash = helpCommand.slash
++      results.push({
++        display: "/help",
++        description: helpCommand.description ?? helpCommand.title,
++        onSelect: slash.arguments ? () => insertSlash("help") : helpCommand.run,
++      })
++    }
+     const commandNames = new Set<string>()
+ 
+     for (const serverCommand of data.location.command.list(location.current) ?? []) {
+diff --git a/packages/tui/src/component/prompt/index.tsx b/packages/tui/src/component/prompt/index.tsx
+index a9f699c..63fe438 100644
+--- a/packages/tui/src/component/prompt/index.tsx
++++ b/packages/tui/src/component/prompt/index.tsx
+@@ -173,11 +173,15 @@ function formatEditorContext(selection: EditorSelection) {
+ function argumentSlash(input: string, commands: readonly KeymapCommand[]) {
+   const head = parseSlashHead(input, /\s/)
+   if (!head) return
+-  const command = commands.find(
++  const matches = commands.filter(
+     (command) =>
+       command.slash?.arguments &&
+       (command.slash.name === head.name || command.slash.aliases?.includes(head.name) === true),
+   )
++  // The built-in help action is a fallback; let an extension own the natural
++  // `/help` spelling regardless of which layer happened to register first.
++  const command =
++    head.name === "help" ? (matches.findLast((item) => item.id !== "help.show") ?? matches[0]) : matches[0]
+   if (!command) return
+   return { command, input: head.arguments }
+ }
+diff --git a/packages/tui/test/plugin-keymap.test.tsx b/packages/tui/test/plugin-keymap.test.tsx
+index 0790e9a..23f502c 100644
+--- a/packages/tui/test/plugin-keymap.test.tsx
++++ b/packages/tui/test/plugin-keymap.test.tsx
+@@ -59,6 +59,38 @@ test("setup layers before and after await reach keyboard, palette, and slash acr
+   await setup.waitForFrame((frame) => frame.includes("Sync keymap ran 1"))
+ })
+ 
++test("a plugin /help overrides native /help for natural autocomplete selection and restores it on disable", async () => {
++  await using plugin = await copyHelpPlugin()
++  const requests: URL[] = []
++  await using setup = await createAppFixture({
++    config: { animations: false, plugins: [plugin.directory] },
++    fetch(url) {
++      requests.push(url)
++    },
++  })
++  await setup.ready
++  await setup.waitForFrame((frame) => frame.includes("Help override ready"))
++
++  await setup.mockInput.typeText("/help")
++  await setup.waitForFrame((frame) => frame.includes("/help"))
++  setup.mockInput.pressEnter()
++  await setup.waitForFrame((frame) => frame.includes("Plugin help handler 2"))
++  expect(requests.some((url) => url.pathname === "/session")).toBe(false)
++
++  setup.mockInput.pressEscape()
++  await openPlugin(setup, "help-override")
++  await setup.waitForFrame((frame) => frame.includes("disable"))
++  setup.mockInput.pressEnter()
++  await setup.waitForFrame((frame) => frame.includes("inactive"))
++  setup.mockInput.pressEscape()
++
++  await setup.mockInput.typeText("/help")
++  await setup.waitForFrame((frame) => frame.includes("/help"))
++  setup.mockInput.pressEnter()
++  await setup.waitForFrame((frame) => frame.includes("Press ctrl+p to see all available actions"))
++  expect(requests.some((url) => url.pathname === "/session")).toBe(false)
++})
++
+ test("a component layer ends when its component unmounts while the plugin stays active", async () => {
+   await using plugin = await copyPlugin()
+   await using setup = await createAppFixture({ config: { animations: false, plugins: [plugin.directory] } })
+@@ -138,6 +170,41 @@ async function copyPlugin() {
+   return { directory, entry, [Symbol.asyncDispose]: root[Symbol.asyncDispose] }
+ }
+ 
++async function copyHelpPlugin() {
++  const root = await tmpdir()
++  const directory = path.join(root.path, "help-override")
++  const entry = path.join(directory, "tui.tsx")
++  await mkdir(directory)
++  await symlink(path.join(import.meta.dir, "../node_modules"), path.join(directory, "node_modules"))
++  await Bun.write(entry, `
++    import { Plugin } from "@opencode/plugin/tui"
++    export default Plugin.define({
++      id: "fixture.help-override",
++      setup(context) {
++        context.keymap.layer(() => ({
++          mode: "global",
++          commands: [
++            {
++              id: "fixture.help-override.first",
++              title: "First plugin help",
++              slash: { name: "help" },
++              run: () => context.ui.dialog.show(() => <text>Plugin help handler 1</text>),
++            },
++            {
++              id: "fixture.help-override.second",
++              title: "Second plugin help",
++              slash: { name: "help" },
++              run: () => context.ui.dialog.show(() => <text>Plugin help handler 2</text>),
++            },
++          ],
++        }))
++        context.ui.toast.show({ message: "Help override ready" })
++      },
++    })
++  `)
++  return { directory, [Symbol.asyncDispose]: root[Symbol.asyncDispose] }
++}
++
+ async function search(setup: Fixture, query: string) {
+   setup.mockInput.pressKey("p", { ctrl: true })
+   await setup.waitForFrame((frame) => frame.includes("Commands"))
+@@ -145,11 +212,11 @@ async function search(setup: Fixture, query: string) {
+   await setup.mockInput.typeText(query)
+ }
+ 
+-async function openPlugin(setup: Fixture) {
++async function openPlugin(setup: Fixture, query = "setup-keymap") {
+   await setup.mockInput.typeText("/plugins")
+   await setup.waitForFrame((frame) => frame.includes("/plugins"))
+   setup.mockInput.pressEnter()
+-  await setup.waitForFrame((frame) => frame.includes("fixture.setup-keymap"))
++  await setup.waitForFrame((frame) => frame.includes(query === "help-override" ? "fixture.help-override" : "fixture.setup-keymap"))
+   await setup.waitFor(() => setup.renderer.currentFocusedEditor instanceof InputRenderable)
+-  await setup.mockInput.typeText("setup-keymap")
++  await setup.mockInput.typeText(query)
+ }

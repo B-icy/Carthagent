@@ -28,6 +28,7 @@
   "files": [
     "bin",
     "docs",
+    "script/ctg/build-owned-runtime.sh",
     "extensions",
     "guidance",
     "lib",
@@ -62,10 +63,20 @@
     "quality": "npm run lint && npm run build && npm test",
     "test:browser": "node tools/test-webdriver.mjs",
     "test:native-host": "node tools/test-native-host.mjs",
+    "test:native-product": "node tools/test-native-product.mjs",
+    "test:native-tasks": "node tools/test-native-tasks.mjs",
+    "test:native-review": "node tools/test-native-review.mjs",
+    "test:native-report": "node tools/test-native-report.mjs",
+    "test:native-runtime": "node tools/test-native-runtime.mjs",
+    "test:native-performance": "node tools/test-native-performance.mjs",
+    "test:native-terminal-performance": "python3 tools/test-native-terminal-performance.py",
     "test:native-package": "node tools/test-native-package.mjs",
     "test:native-controls": "node tools/test-native-controls.mjs",
+    "test:owned-host-controls": "node tools/test-owned-host-controls.mjs",
+    "test:native-terminal-semantics": "python3 tools/native-terminal-semantics.py",
     "test:native-outcomes": "node tools/test-native-outcomes.mjs",
     "test:native-pty": "node tools/test-native-pty.mjs",
+    "test:owned-opencode": "node tools/test-owned-opencode-runtime.mjs",
     "build": "npm run check && npm run typecheck",
     "test": "node --test tests/*.test.mjs",
     "test:python": "node tools/test-python.mjs"
@@ -74,11 +85,16 @@
     "@opencode/cli": "2.0.32",
     "@opencode/client": "2.0.32",
     "@opencode/plugin": "2.0.32",
+    "@opencode/theme": "2.0.32",
+    "@opentui/core": "0.5.17",
+    "@opentui/solid": "0.5.17",
     "express": "^5.2.1",
     "jiti": "^2.7.0",
     "jsdom": "^30.0.1",
+    "solid-js": "1.9.12",
     "tree-sitter-wasms": "^0.1.13",
-    "web-tree-sitter": "^0.22.6"
+    "web-tree-sitter": "0.25.10",
+    "web-tree-sitter-legacy": "npm:web-tree-sitter@0.22.6"
   },
   "overrides": {
     "seroval": "1.6.9"

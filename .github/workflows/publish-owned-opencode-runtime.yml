@@ -1,0 +1,162 @@
+name: Publish CTG-owned OpenCode runtime
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing CTG release tag to attach runtime assets to
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate-release-target:
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.validate.outputs.release_tag }}
+      release_commit: ${{ steps.validate.outputs.release_commit }}
+    steps:
+      - name: Validate immutable canonical release tag and target before builds
+        id: validate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        shell: bash
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]
+          tag_commit="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq '.object.sha')"
+          tag_type="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq '.object.type')"
+          if [[ "$tag_type" == tag ]]; then
+            tag_commit="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_commit" --jq '.object.sha')"
+          fi
+          [[ "$tag_commit" =~ ^[0-9a-f]{40}$ ]]
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft == true' | grep -qx true
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "release_commit=$tag_commit" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: validate-release-target
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: opencode-linux-x64
+          - os: macos-latest
+            target: opencode-darwin-arm64
+          - os: macos-15-intel
+            target: opencode-darwin-x64
+          - os: ubuntu-24.04-arm
+            target: opencode-linux-arm64
+          - os: windows-latest
+            target: opencode-windows-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: ctg
+          ref: ${{ needs.validate-release-target.outputs.release_commit }}
+      - uses: actions/checkout@v4
+        with:
+          repository: anomalyco/opencode
+          ref: 843a6c514e606b436a7fe713422ace0a93ad3d61
+          path: opencode
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Build pinned runtime
+        shell: bash
+        run: |
+          mkdir -p opencode/docs/patches opencode/script/ctg
+          cp ctg/docs/patches/opencode-v2.0.32-session-ui.patch opencode/docs/patches/
+          cp ctg/script/ctg/build-owned-runtime.sh opencode/script/ctg/
+          git -C opencode status --short
+          cd opencode
+          script/ctg/build-owned-runtime.sh "${{ matrix.target }}"
+      - name: Verify artifact provenance
+        shell: bash
+        run: |
+          cd opencode/packages/cli/dist-ctg
+          cat ctg-runtime.json
+          cat SHA256SUMS
+          if command -v sha256sum >/dev/null 2>&1; then sha256sum -c SHA256SUMS; else shasum -a 256 -c SHA256SUMS; fi
+          mkdir -p "$GITHUB_WORKSPACE/release-assets"
+          COPYFILE_DISABLE=1 tar --format=ustar -czf "$GITHUB_WORKSPACE/release-assets/${{ matrix.target }}.tar.gz" .
+          cd "$GITHUB_WORKSPACE"
+      - name: Archive source recipe with platform output
+        shell: bash
+        run: |
+          mkdir -p release-assets
+          COPYFILE_DISABLE=1 tar --format=ustar -C ctg -czf "release-assets/${{ matrix.target }}-source.tar.gz" \
+            docs/patches/opencode-v2.0.32-session-ui.patch \
+            script/ctg/build-owned-runtime.sh \
+            docs/opencode-owned-runtime.md
+          tar -tzf "release-assets/${{ matrix.target }}.tar.gz" >/dev/null
+          tar -tzf "release-assets/${{ matrix.target }}-source.tar.gz" >/dev/null
+          mkdir -p archive-check/runtime archive-check/source
+          tar -xzf "release-assets/${{ matrix.target }}.tar.gz" -C archive-check/runtime
+          tar -xzf "release-assets/${{ matrix.target }}-source.tar.gz" -C archive-check/source
+          cmp opencode/packages/cli/dist-ctg/ctg-runtime.json archive-check/runtime/ctg-runtime.json
+          cmp ctg/docs/patches/opencode-v2.0.32-session-ui.patch archive-check/source/docs/patches/opencode-v2.0.32-session-ui.patch
+          checksum() {
+            if command -v sha256sum >/dev/null 2>&1; then sha256sum "$@"; else shasum -a 256 "$@"; fi
+          }
+          (cd release-assets && checksum "${{ matrix.target }}.tar.gz" "${{ matrix.target }}-source.tar.gz" > "${{ matrix.target }}-SHA256SUMS.txt")
+          cat "release-assets/${{ matrix.target }}-SHA256SUMS.txt" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: opencode-ctg-${{ matrix.target }}
+          path: release-assets/*
+          if-no-files-found: error
+
+  publish-existing-release:
+    needs: [validate-release-target, build]
+    runs-on: ubuntu-latest
+    environment: ctg-runtime-release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: opencode-ctg-*
+          path: runtime-assets
+          merge-multiple: false
+      - name: Publish provenance-paired runtime assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          ref="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG")"
+          tag_commit="$(jq -r '.object.sha' <<<"$ref")"
+          tag_type="$(jq -r '.object.type' <<<"$ref")"
+          if [[ "$tag_type" == tag ]]; then
+            tag_commit="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_commit" --jq '.object.sha')"
+          fi
+          test "$tag_commit" = "${{ needs.validate-release-target.outputs.release_commit }}"
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft == true' | grep -qx true
+          combined="$RUNNER_TEMP/runtime-release-SHA256SUMS.txt"
+          : > "$combined"
+          expected=(opencode-linux-x64 opencode-linux-arm64 opencode-darwin-x64 opencode-darwin-arm64 opencode-windows-x64)
+          for target in "${expected[@]}"; do
+            directory="runtime-assets/opencode-ctg-$target"
+            test -f "$directory/$target.tar.gz"
+            test -f "$directory/$target-source.tar.gz"
+            test -f "$directory/$target-SHA256SUMS.txt"
+            (cd "$directory" && if command -v sha256sum >/dev/null 2>&1; then sha256sum -c "$target-SHA256SUMS.txt"; else shasum -a 256 -c "$target-SHA256SUMS.txt"; fi)
+            sed "s|  |  $directory/|" "$directory/$target-SHA256SUMS.txt" >> "$combined"
+          done
+          test "$(awk '{print $2}' "$combined" | sort -u | wc -l | tr -d ' ')" = 10
+          test "$(awk '{print $1}' "$combined" | wc -l | tr -d ' ')" = 10
+          if command -v sha256sum >/dev/null 2>&1; then
+            awk '{print $1 "  " $2}' "$combined" | sha256sum -c -
+          else
+            awk '{print $1 "  " $2}' "$combined" | shasum -a 256 -c -
+          fi
+          test "$(find runtime-assets -type f -name '*.tar.gz' | wc -l | tr -d ' ')" = 10
+          test "$(wc -l < "$combined" | tr -d ' ')" = 10
+          while IFS= read -r asset; do
+            gh release upload "$RELEASE_TAG" "$asset#$(basename "$asset")" --repo "$GITHUB_REPOSITORY"
+          done < <(find runtime-assets -type f \( -name '*.tar.gz' -o -name '*-SHA256SUMS.txt' \) -print | sort)
+          gh release upload "$RELEASE_TAG" "$combined#runtime-release-SHA256SUMS.txt" --repo "$GITHUB_REPOSITORY"
