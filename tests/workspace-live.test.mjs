@@ -69,19 +69,59 @@ test('a real workspace RPC event invalidates the active view and stale deferred 
   stop();
 });
 
-test('bounded delivery DTO reports incomplete capped evidence and keeps the finish gate locked', () => {
+test('bounded delivery DTO preserves stale incomplete status and authoritative locked gate with capped evidence', () => {
   const checks = { returned: 100, total: 101 };
   const delivery = {
-    status: 'stale', freshness: 'stale', completion: 'incomplete', gate: 'open',
+    status: 'stale', freshness: 'stale', completion: 'incomplete', gate: 'locked',
     evidence: Array.from({ length: 100 }, (_, index) => ({ id: `check_${index}`, status: index === 99 ? 'stale' : 'fresh' })),
     truncation: { checks, acceptance: { returned: 1, total: 1 }, steps: { returned: 1, total: 1 } },
   };
   const readiness = deliveryReadiness(delivery);
   const rendered = renderDeliveryReadiness(delivery);
   assert.equal(readiness.complete, false);
-  assert.match(readiness.status, /checks 100\/101/);
+  assert.match(readiness.status, /completion incomplete · gate locked · freshness stale/);
+  assert.match(readiness.status, /partial coverage: checks 100\/101/);
   assert.equal(rendered.gate, 'locked');
   assert.match(rendered.label, /Readiness: incomplete/);
+  assert.equal(rendered.coverage, 'partial');
   assert.ok(rendered.sections.includes('checks: 100 of 101 returned'));
   assert.match(rendered.receipts.at(-1), /check_99: stale/);
+});
+
+test('capped presentation coverage does not downgrade authoritative ready status or gate', () => {
+  const delivery = {
+    status: 'verified', freshness: 'current', completion: 'ready', gate: 'open',
+    truncation: { architecture: { returned: 100, total: 101 }, checks: { returned: 4, total: 4 } },
+  };
+  const readiness = deliveryReadiness(delivery);
+  const rendered = renderDeliveryReadiness(delivery);
+  assert.equal(readiness.complete, true);
+  assert.equal(readiness.coverage, 'partial');
+  assert.equal(rendered.gate, 'open');
+  assert.match(rendered.label, /Readiness: ready/);
+  assert.ok(rendered.sections.includes('architecture: 100 of 101 returned'));
+});
+
+test('stale check outside the returned cap remains blocked by the authoritative DTO gate', () => {
+  const delivery = {
+    status: 'stale', freshness: 'stale', completion: 'incomplete', gate: 'locked',
+    evidence: Array.from({ length: 100 }, (_, index) => ({ id: `check_${index}`, status: 'fresh' })),
+    truncation: { checks: { returned: 100, total: 101 } },
+  };
+  const rendered = renderDeliveryReadiness(delivery);
+  assert.equal(rendered.gate, 'locked');
+  assert.equal(rendered.coverage, 'partial');
+  assert.match(rendered.label, /Readiness: incomplete/);
+  assert.match(rendered.label, /freshness stale/);
+});
+
+test('missing coverage metadata and gate are unknown rather than fabricated incomplete or locked', () => {
+  const delivery = { completion: 'ready', freshness: 'current' };
+  const readiness = deliveryReadiness(delivery);
+  const rendered = renderDeliveryReadiness(delivery);
+  assert.equal(readiness.complete, true);
+  assert.equal(readiness.coverage, 'unknown');
+  assert.equal(rendered.gate, 'unknown');
+  assert.match(rendered.label, /gate unknown/);
+  assert.ok(rendered.sections.includes('Coverage metadata unavailable: completeness cannot be confirmed'));
 });
