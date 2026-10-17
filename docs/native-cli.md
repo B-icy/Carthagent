@@ -41,7 +41,9 @@ complete Ship credential/account/billing flows remain integration gaps.
 messages into the documented `tool_execution_start`, `tool_execution_end`, and
 `message_end` JSONL records. It filters to the selected session and reconciles
 message history after execution so stream/history projections do not duplicate a
-turn.
+turn. Failed assistant responses retain their error and stop reason, and terminal
+failure/interruption outcomes are emitted as idle records rather than returning
+an empty JSONL stream.
 
 The disposable real-host adapter smoke is `node tests/native-cli-host-smoke.mjs`.
 Set `CTG_OPENCODE_BIN` to the pinned OpenCode 2.0.32 executable and

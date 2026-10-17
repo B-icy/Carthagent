@@ -147,11 +147,28 @@ test('native JSON event projection translates real tool lifecycle and filters un
     { type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'done' }] },
     { type: 'idle', outcome: 'succeeded' },
   ]);
-  assert.deepEqual(events.map(event => event.type), ['tool_execution_start', 'tool_execution_end', 'message_end']);
+  assert.deepEqual(events.map(event => event.type), ['tool_execution_start', 'tool_execution_end', 'message_end', 'message']);
   assert.equal(events[0].toolName, 'bash');
   assert.deepEqual(events[0].args, { command: 'printf ok' });
   assert.equal(events[1].isError, false);
   assert.deepEqual(events[2].message.content, [{ type: 'text', text: 'done' }]);
+  assert.deepEqual(events[3].message, { type: 'idle', outcome: 'succeeded' });
+});
+
+test('native JSON failure projection preserves provider error and terminal outcome for the selected session', () => {
+  const events = nativeJsonEvents([
+    { id: 'stale-other-session', created: 1, type: 'session.execution.succeeded', data: { sessionID: 'another-session' } },
+    { id: 'failed-execution', created: 2, type: 'session.execution.failed', data: { sessionID: 'failed-session', error: { message: 'provider unavailable' } } },
+  ], 'failed-session', [
+    { type: 'user', text: 'fail' },
+    { type: 'assistant', finish: 'error', errorMessage: 'provider unavailable', content: [{ type: 'text', text: 'provider unavailable' }] },
+    { type: 'idle', outcome: 'failed' },
+  ]);
+  assert.deepEqual(events.map(event => event.type), ['message_end', 'message', 'message']);
+  assert.ok(events.every(event => event.sessionID === 'failed-session'));
+  assert.equal(events[0].message.stopReason, 'error');
+  assert.equal(events[0].message.error, 'provider unavailable');
+  assert.deepEqual(events.at(-1).message, { type: 'idle', outcome: 'failed' });
 });
 
 test('headless continuation selects the newest session within the exact workspace', async () => {

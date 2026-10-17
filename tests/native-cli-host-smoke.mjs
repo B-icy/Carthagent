@@ -34,10 +34,16 @@ const provider = createServer((req, res) => {
     const lastUser = [...(body.messages || [])].reverse().find(message => message.role === 'user');
     const responseText = `CLI fixture response for ${lastUser?.content ?? 'unknown prompt'}`;
     const needsTool = lastUser?.content?.includes('Smoke JSON') && !body.messages.some(message => message.role === 'tool');
+    const fails = lastUser?.content?.includes('Smoke provider failure');
     const chunk = (delta, finish_reason = null) => `data: ${JSON.stringify({
       id: 'ctg-cli-smoke', object: 'chat.completion.chunk', created: 1, model: 'fixture',
       choices: [{ index: 0, delta, finish_reason }],
     })}\n\n`;
+    if (fails) {
+      res.writeHead(503, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: 'fixture provider unavailable', type: 'server_error' } }));
+      return;
+    }
     res.writeHead(200, { 'content-type': 'text/event-stream' });
     if (needsTool) {
       res.end(`${chunk({ role: 'assistant', tool_calls: [{ index: 0, id: 'fixture-tool-call', type: 'function', function: { name: 'read', arguments: JSON.stringify({ path: join(cwd, 'tool-fixture.txt') }) } }] })}${chunk({}, 'tool_calls')}data: [DONE]\n\n`);
@@ -166,7 +172,20 @@ try {
   assert.equal(requests.length, 5, 'all admitted CLI invocations and the post-tool model turn reached the local provider');
   assert.ok(events.some(event => event.type === 'tool_execution_start' && event.toolName === 'read'));
   assert.ok(events.some(event => event.type === 'tool_execution_end' && event.toolName === 'read' && event.isError === false), JSON.stringify({ projected: events, native: nativeEventsCaptured }));
-  console.log(JSON.stringify({ binary, host: '2.0.32', providerRequests: requests.length, print: 'passed', repeatedTurn: 'passed', continueWorkspaceIsolation: 'passed', jsonToolEvents: 'passed', profile: 'disposable fixture; existing service injected' }));
+
+  const failedSession = await fixtureClient.session.create({ location: { directory: cwd }, title: 'Provider failure JSON smoke', model: { providerID: 'ctg-fixture', id: 'fixture' } });
+  const failedJson = capture();
+  const failedRuntime = await createOpenCodeCliRuntime({ cwd, native, stdout: failedJson.stdout, io: failedJson.io });
+  const failedCode = await runOpenCodeCli({ argv: ['-p', '--json', '--no-guide', '--session', failedSession.id, '--model', 'ctg-fixture/fixture', 'Smoke provider failure'], runtime: failedRuntime, io: failedJson.io, stdoutIsTTY: false });
+  assert.equal(failedCode, 1, `provider failure should return a failing exit code: ${failedJson.lines.join('\n')}`);
+  const failedEvents = failedJson.lines.filter(line => line.startsWith('{')).map(line => JSON.parse(line));
+  assert.ok(failedEvents.length, 'provider failure must emit JSONL terminal diagnostics');
+  assert.ok(failedEvents.every(event => event.sessionID === failedSession.id), JSON.stringify(failedEvents));
+  assert.ok(failedEvents.some(event => event.type === 'message_end' && event.message.stopReason === 'error'), JSON.stringify(failedEvents));
+  assert.ok(failedEvents.some(event => event.type === 'message' && event.message.type === 'idle' && ['failed', 'interrupted'].includes(event.message.outcome)), JSON.stringify(failedEvents));
+  assert.ok(failedEvents.some(event => JSON.stringify(event).includes('fixture provider unavailable')), JSON.stringify(failedEvents));
+  assert.ok(!failedEvents.some(event => event.sessionID === foreign.id), 'failure JSONL must not include a foreign or stale session');
+  console.log(JSON.stringify({ binary, host: '2.0.32', providerRequests: requests.length, print: 'passed', repeatedTurn: 'passed', continueWorkspaceIsolation: 'passed', jsonToolEvents: 'passed', jsonProviderFailure: 'passed', profile: 'disposable fixture; existing service injected' }));
 } catch (error) {
   console.error(hostOutput);
   throw error;
