@@ -46,3 +46,9 @@ generator against a fixture final-package trust root. With canned, read-only
 and reached `candidate=verified`. Appending bytes to the Linux archive made that
 same extracted block fail at `sha256sum -c` before writing the verified output.
 The fixture and mocks contain no credentials and are outside the repository.
+
+The release workflow permits a non-publishing prebuild from a reviewed branch
+to avoid requiring product merge before native candidate generation. It binds
+the requested source SHA to that dispatch's exact workflow commit. The publish
+phase remains default-branch-only and compares the candidate with the final
+tagged package trust root; prebuild is not merge or release approval.

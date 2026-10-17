@@ -82,7 +82,11 @@ USTAR archives and records through the PR #177 manifest generator into a
 reviewable candidate artifact. It does not require a final tag. Publish accepts
 only a successful run of this workflow, downloads that run's candidate bytes,
 regenerates and compares the manifest against the final tagged package, and
-refuses to overwrite an existing runtime asset on the draft release.
+refuses to overwrite an existing runtime asset on the draft release. Prebuild
+may be dispatched from a reviewed branch before product merge, but its explicit
+source SHA must equal the dispatch workflow commit; this is non-publishing and
+does not constitute product or release approval. Publish remains restricted to
+the default branch and verifies again against the final tagged package.
 
 There is a release-ordering blocker: the production resolver downloads from the
 public GitHub `releases/download/v<version>` URL without authentication, while
