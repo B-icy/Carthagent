@@ -12,7 +12,9 @@ import { randomUUID } from 'node:crypto';
 import { atomicJson, runCommand } from './lib/delivery.mjs';
 import { loadScenario, expandPlaceholders } from './lib/scenarios.mjs';
 import { runNativeEvaluation, NATIVE_EVALUATION_RUNTIME } from './lib/opencode/evaluation.mjs';
-import { spawn } from 'node:child_process';
+import { ensureService, createSession, stopService } from './lib/opencode/service.mjs';
+import { provisionRuntime } from './lib/opencode/runtime.mjs';
+import { OpenCode } from '@opencode/client';
 
 const { values: args } = parseArgs({ options: {
   mode: { type: 'string', default: 'both' }, task: { type: 'string', default: 'cli' }, scenario: { type: 'string' },
@@ -155,39 +157,37 @@ for (const mode of args.mode === 'both' ? ['baseline', 'custom'] : [args.mode]) 
     continue;
   }
   const isolation = join(base, 'native-service');
-  mkdirSync(isolation, { recursive: true });
-  const serviceEnv = {
-    HOME: join(isolation, 'home'),
-    XDG_CONFIG_HOME: join(isolation, 'home', '.config'),
-    XDG_DATA_HOME: join(isolation, 'home', '.local/share'),
-    XDG_CACHE_HOME: join(isolation, 'home', '.cache'),
-    PATH: process.env.PATH || '', LANG: process.env.LANG || 'C.UTF-8', CI: '1',
-    OPENROUTER_API_KEY: providerKey,
-    CTG_EVALUATION_MAX_TURNS: String(args['max-turns']),
-    CTG_EVALUATION_MAX_COST: String(args['max-cost']),
-  };
-  const configDir = join(serviceEnv.XDG_CONFIG_HOME, 'opencode');
-  mkdirSync(configDir, { recursive: true });
-  writeFileSync(join(configDir, 'opencode.json'), JSON.stringify({ '$schema':'https://opencode.ai/config.json', model:`${args.provider}/${args.model}`, default_agent:'build', plugins:[join(root,'lib/opencode/evaluation-budget-plugin'), ...(mode === 'custom' ? [`${root}/plugins/carthagent`] : [])], skills:mode === 'custom' ? [`${root}/skills`] : [], instructions:[environmentPath] }, null, 2));
-  const port = Number(process.env.CTG_OPENCODE_PORT || 0);
-  if (!Number.isInteger(port) || port < 0 || port > 65535) throw Error('Invalid CTG_OPENCODE_PORT');
-  const server = spawn(process.env.OPENCODE_BIN || 'opencode', ['serve', '--hostname','127.0.0.1', ...(port ? ['--port',String(port)] : [])], { cwd, env:serviceEnv, stdio:['ignore','pipe','pipe'] });
-  let serverOutput = '';
-  server.stdout.on('data', chunk => { serverOutput = (serverOutput + chunk.toString()).slice(-20000); });
-  server.stderr.on('data', chunk => { serverOutput = (serverOutput + chunk.toString()).slice(-20000); });
-  let endpoint;
+  let service;
   try {
-    const deadline = Date.now() + 30000;
-    let ready = false;
-    while (Date.now() < deadline && server.exitCode === null) {
-      const match = serverOutput.match(/http:\/\/127\.0\.0\.1:\d+/);
-      if (match) endpoint = match[0];
-      if (endpoint) try { const response = await fetch(`${endpoint}/api/info`, { signal:AbortSignal.timeout(1000) }); if (response.ok) { ready = true; break; } } catch {}
-      await new Promise(resolve => setTimeout(resolve, 250));
+    const providerID = args.provider === 'openrouter' ? 'openrouter' : args.provider;
+    const modelID = args.model;
+    await provisionRuntime({ root:isolation, profile:{
+      model:`${providerID}/${modelID}`,
+      default_agent:'build',
+      plugins:[join(root,'lib/opencode/evaluation-budget-plugin'), ...(mode === 'custom' ? [`${root}/plugins/carthagent`] : [])],
+      skills:mode === 'custom' ? [`${root}/skills`] : [],
+      instructions:[environmentPath],
+    } });
+    service = await ensureService({ root:isolation, env:{
+      OPENROUTER_API_KEY:providerKey,
+      [`${args.provider.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_API_KEY`]:providerKey,
+      CTG_EVALUATION_MAX_TURNS:String(args['max-turns']),
+      CTG_EVALUATION_MAX_COST:String(args['max-cost']),
+    } });
+    process.env.CTG_OPENCODE_URL = service.url;
+    process.env.CTG_OPENCODE_AUTHORIZATION = service.headers.authorization;
+    const serviceClient = OpenCode.make({ baseUrl:service.url, headers:service.headers });
+    const probe = await createSession(service, cwd, { signal:AbortSignal.timeout(15000), body:{ model:{providerID,id:modelID}, title:'CTG evaluation plugin activation probe' } });
+    const pluginDeadline = Date.now() + 15000;
+    while (Date.now() < pluginDeadline) {
+      const inventory = await serviceClient.plugin.list({ location:{ directory:cwd } }, { signal:AbortSignal.timeout(5000) });
+      const guard = inventory.data.find(item => item.id === 'ctg.evaluation-budget');
+      if (guard?.state.status === 'active') break;
+      if (guard?.state.status === 'failed') throw Error(`Evaluation admission guard failed to activate: ${guard.state.error}`);
+      if (Date.now() + 100 >= pluginDeadline) throw Error(`Evaluation admission guard did not activate for probe session ${probe.id}`);
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
-    if (!ready) throw Error(`Isolated OpenCode service failed readiness: ${serverOutput.slice(-4000)}`);
-    process.env.CTG_OPENCODE_URL = endpoint;
-  const result = await runNativeEvaluation({ directory: cwd, systemPrompt, prompt: scenario.prompt, model: args.model, provider: args.provider, timeoutSeconds: Number(args.timeout), maxTurns: Number(args['max-turns']), maxCost: Number(args['max-cost']), signal: controller.signal, onEvent: event => appendFileSync(join(base, `${mode}-events.jsonl`), `${JSON.stringify(event)}\n`) });
+    const result = await runNativeEvaluation({ directory: cwd, systemPrompt, prompt: scenario.prompt, model: args.model, provider: args.provider, timeoutSeconds: Number(args.timeout), maxTurns: Number(args['max-turns']), maxCost: Number(args['max-cost']), signal: controller.signal, onEvent: event => appendFileSync(join(base, `${mode}-events.jsonl`), `${JSON.stringify(event)}\n`) });
   const summary = {
     mode,
     task: scenarioName,
@@ -230,12 +230,12 @@ for (const mode of args.mode === 'both' ? ['baseline', 'custom'] : [args.mode]) 
   atomicJson(join(base, 'summary.json'), summaries);
   console.log(JSON.stringify(summary, null, 2));
   } finally {
-    if (server.exitCode === null) {
-      const exited = new Promise(resolve => server.once('exit', resolve));
-      server.kill('SIGTERM');
-      await exited;
+    try {
+      if (service) await stopService({ root:isolation });
+    } finally {
+      delete process.env.CTG_OPENCODE_URL;
+      delete process.env.CTG_OPENCODE_AUTHORIZATION;
     }
-    delete process.env.CTG_OPENCODE_URL;
   }
 }
 console.log(`Evidence: ${join(base, 'summary.json')}`);

@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { randomBytes } from 'node:crypto';
 import { OpenCode } from '@opencode/client';
+import { resolveOpenCode } from '../lib/opencode/runtime.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 
@@ -21,7 +22,11 @@ export function streamText(res, text = 'Fixture response complete.') {
   res.end(`${chunk({}, 'stop')}data: [DONE]\n\n`);
 }
 
-export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'), pluginOptions, respond = (_body, res) => streamText(res), env: extraEnv = {} } = {}) {
+export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'), pluginOptions, plugins: additionalPlugins = [], respond = (_body, res) => streamText(res), env: extraEnv = {} } = {}) {
+  const pluginEntries = [
+    ...(plugin ? [pluginOptions ? { package: resolve(plugin), options: pluginOptions } : resolve(plugin)] : []),
+    ...additionalPlugins.map(path => resolve(path)),
+  ];
   const temp = await mkdtemp(join(tmpdir(), 'ctg-native-fixture-'));
   const cwd = join(temp, 'project');
   const config = join(temp, 'config/opencode');
@@ -72,7 +77,7 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
       OPENCODE_DB: join(temp, 'database.sqlite'), OPENCODE_SERVER_PASSWORD: password,
       OPENCODE_CONFIG_PROJECT_DISABLE: 'true',
     });
-    child = spawn(process.env.CTG_OPENCODE_BIN ?? join(root, 'node_modules/@opencode/cli/bin/opencode.exe'),
+    child = spawn(await resolveOpenCode(),
       ['serve', '--hostname', '127.0.0.1', '--port', '0'], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
     const baseUrl = await new Promise((done, reject) => {
       const timer = setTimeout(() => reject(Error(`Host startup timeout: ${output}`)), 30_000);
@@ -97,7 +102,7 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
     provider.listen(0, '127.0.0.1');
     await once(provider, 'listening');
     await writeFile(join(config, 'opencode.json'), JSON.stringify({
-      ...(plugin ? { plugins: [pluginOptions ? { package: resolve(plugin), options: pluginOptions } : resolve(plugin)] } : {}), update: 'disable', model: 'ctg-fixture/fixture',
+      ...(pluginEntries.length ? { plugins: pluginEntries } : {}), update: 'disable', model: 'ctg-fixture/fixture',
       default_agent: 'build',
       providers: { 'ctg-fixture': {
         package: '@opencode/ai/providers/openai-compatible',
@@ -130,6 +135,7 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
     async active(pluginOrLocation = { directory: cwd }, at = { directory: cwd }) {
       const pluginID = typeof pluginOrLocation === 'string' ? pluginOrLocation : 'carthagent';
       const location = typeof pluginOrLocation === 'string' ? at : pluginOrLocation;
+      if (pluginID !== 'carthagent') await client.session.create({ location, model:{providerID:'ctg-fixture',id:'fixture'}, title:`${pluginID} activation probe` }, request());
       const deadline = Date.now() + 15_000;
       while (true) {
         const inventory = await client.plugin.list({ location }, request());
