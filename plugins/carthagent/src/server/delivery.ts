@@ -282,7 +282,8 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
       if (nativeShell) {
         const command = String(input.command ?? "")
         if (/\b(?:pkill|killall)\b|\bkill\s+(?:-\S+\s+)*(?:-1|0)(?:\s|$)/i.test(command)) throw Error("Broad process termination is prohibited; terminate only a captured child PID.")
-        if (cap > 0 && (typeof input.timeout !== "number" || input.timeout > cap)) input.timeout = cap
+        const capMilliseconds = cap * 1000
+        if (cap > 0 && (typeof input.timeout !== "number" || input.timeout === 0 || input.timeout > capMilliseconds)) input.timeout = capMilliseconds
       }
       if (["write", "edit", "patch"].includes(event.tool) && opts.rewriteCap && Number(opts.rewriteCap) > 0) {
         data.writeCounts ||= {}
@@ -352,8 +353,8 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
     // Session-scoped policy, limits, and budget were handled at execute.before.
     // This hook intentionally does not attribute commands: 2.0.32 has no
     // authoritative source.sessionID/callID on ShellCreateBefore.
-    const cap = Number(options.bashCap) || 0
-    if (cap > 0 && event.timeout > cap) event.timeout = cap
+    const capMilliseconds = (Number(options.bashCap) || 0) * 1000
+    if (capMilliseconds > 0 && (event.timeout === 0 || event.timeout > capMilliseconds)) event.timeout = capMilliseconds
     if (/\b(?:pkill|killall)\b|\bkill\s+(?:-\S+\s+)*(?:-1|0)(?:\s|$)/i.test(event.command)) throw Error("Broad process termination is prohibited; terminate only a captured child PID.")
   }))
 

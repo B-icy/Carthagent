@@ -433,7 +433,8 @@ test('native --isolate starts a clean CTG profile without inheriting the regular
       runtimePaths: options => ({ root: options.root ?? '/private/profile' }),
     },
     service: {
-      ensureService: async options => { calls.push(options); return { url: 'http://127.0.0.1:1', headers: {} }; },
+      ensureService: async options => { calls.push(options); return { url: 'http://127.0.0.1:1', headers: {}, paths: { root: options.root } }; },
+      stopService: async options => { calls.push({ stopRoot: options.root }); return true; },
       launchTui: (_service, workspace, options) => {
         calls.push({ workspace, options });
         return { once(event, callback) { if (event === 'exit') queueMicrotask(() => callback(0)); return this; }, kill() {} };
@@ -444,9 +445,34 @@ test('native --isolate starts a clean CTG profile without inheriting the regular
   } });
   assert.equal(await runtime.run({ mode: 'interactive', options: { isolate: true }, prompt: '' }), 0);
   assert.match(calls[0].root, /^\/private\/profile\/isolated\/[0-9a-f-]+$/);
-  assert.deepEqual(calls[0].profile, { skills: [], instructions: [], commands: {} });
+  assert.equal(calls[0].isolate, true);
   assert.match(calls[0].pluginPath, /plugins[\\/]carthagent$/);
   assert.equal(calls[1].workspace, '/work/project');
+  assert.deepEqual(calls[2], { stopRoot: calls[0].root });
+});
+
+test('headless review modes are transported without inventing an unsupported interactive-only error', async t => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-review-headless-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  for (const review of ['ask', 'yes', 'no']) {
+    let captured;
+    const runtime = await createOpenCodeCliRuntime({ cwd, stdout: { write() {} }, io: { error() {}, log() {} }, native: {
+      runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) },
+      headless: { runHeadless: async (_service, _cwd, _prompt, options) => {
+        captured = options.session.metadata['carthagent.options'];
+        return { session: { id: `ses_${review}`, outcome: 'succeeded' }, messages: [{ role: 'assistant', content: [{ type: 'text', text: 'done' }], finish: 'stop' }], outcome: 'succeeded', terminal: true };
+      } },
+      rpcDefinitions: { Carthagent: {} },
+      clientFactory: async () => ({
+        rpc: () => ({ health: async () => ({ capabilities: ['delivery.session-options.v1'] }) }),
+      }),
+    } });
+    assert.equal(await runtime.run({ mode: 'headless', options: { review, prompt: 'task' }, prompt: 'task' }), 0);
+    assert.equal(captured.review, review);
+  }
 });
 
 test('resumed native sessions merge explicit launcher options into their own workspace metadata', async t => {
