@@ -10,6 +10,7 @@ import { selectReport } from '../lib/workspace.mjs';
 import { nativeFixture } from './native-fixture.mjs';
 
 const host = await nativeFixture({ plugin: process.argv[2] });
+const identity = host.runtimeIdentity;
 try {
   execFileSync('git', ['init', '-q'], { cwd: host.cwd });
   await writeFile(join(host.cwd, 'source.txt'), 'original\n');
@@ -65,7 +66,9 @@ try {
   selectReport(host.cwd, report.path);
   await writeFile(report.path, '{corrupt');
   assert.deepEqual(await read(), { status: 'invalid' });
-  console.log(JSON.stringify({ host: '2.0.32', deliveryOutputSchema: 'passed', freshness: 'passed', verifiedFailClosed: 'passed', ownership: 'passed' }));
+  console.log(JSON.stringify({ host: identity.runtimeVersion, compatibilityVersion: identity.compatibilityVersion,
+    ...(identity.binarySha256 ? { binarySha256: identity.binarySha256 } : {}),
+    deliveryOutputSchema: 'passed', freshness: 'passed', verifiedFailClosed: 'passed', ownership: 'passed' }));
 } finally {
   await host.close();
 }
@@ -73,6 +76,7 @@ try {
 // Deliberately malformed outputs require a test-only handler. Exercise that
 // handler separately so production ownership/report checks use the shipped plugin.
 const schemaHost = await nativeFixture({ plugin: join(import.meta.dirname, 'native-report-plugin') });
+const schemaIdentity = schemaHost.runtimeIdentity;
 try {
   await schemaHost.active('carthagent-report-fixture');
   const probe = method => schemaHost.client.rpc.call({
@@ -83,7 +87,9 @@ try {
   assert.deepEqual((await probe('validUnavailable')).output, { status: 'unavailable' });
   assert.deepEqual((await probe('validInvalid')).output, { status: 'invalid' });
   assert.equal((await probe('validActive')).output.status, 'active');
-  console.log(JSON.stringify({ host: '2.0.32', reportSchemaVariants: 'passed', incompleteVerified: 'rejected' }));
+  console.log(JSON.stringify({ host: schemaIdentity.runtimeVersion, compatibilityVersion: schemaIdentity.compatibilityVersion,
+    ...(schemaIdentity.binarySha256 ? { binarySha256: schemaIdentity.binarySha256 } : {}),
+    reportSchemaVariants: 'passed', incompleteVerified: 'rejected' }));
 } finally {
   await schemaHost.close();
 }
