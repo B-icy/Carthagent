@@ -70,7 +70,7 @@ integration check before its PR merges. In-progress does not mean shipped.
 | Runtime/isolation | Merged #139 | CTG and normal OpenCode coexist; authenticated persistent service |
 | Native plugin host | Bootstrap merged #137; integration in progress | Installed package loads server and TUI entrypoints |
 | Session framing/controls | Merged #144, #145, #147, #148 | Per-session defaults, raw bypass, compaction notes, declared ownership errors, restart recovery |
-| Providers/auth/telemetry | In progress | Concurrent requests/refreshes maintain credential and session identity |
+| Providers/auth/telemetry | Merged #141 at `e969e44` after independent review and 16 green CI checks | Concurrent requests/refreshes maintain credential and session identity |
 | Delivery/policy/budgets | In progress | Native execution preserves evidence, validators and recovery |
 | Native theme/commands/panels | In progress | CTG commands work; host owns input/rendering; semantic themes |
 | Workspace/worktrees | Backend merged #138, #146; terminal integration in progress | Independent worktrees and durable task/session mappings |
