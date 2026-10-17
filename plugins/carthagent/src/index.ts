@@ -12,9 +12,12 @@ export default Plugin.define({
   async setup(context) {
     const cleanups: Array<() => Promise<void>> = [];
     const dispose = async () => {
-      const results = await Promise.allSettled(cleanups.splice(0).reverse().map(cleanup => cleanup()));
-      const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
-      if (failures.length) throw new AggregateError(failures.map(result => result.reason), 'Carthagent plugin cleanup failed');
+      const failures: unknown[] = [];
+      for (const cleanup of cleanups.splice(0).reverse()) {
+        try { await cleanup(); }
+        catch (error) { failures.push(error); }
+      }
+      if (failures.length) throw new AggregateError(failures, 'Carthagent plugin cleanup failed');
     };
     const deviceAuth = createDeviceAuthController({ env: process.env, agentDir: shipAgentDir() });
     cleanups.push(() => deviceAuth.cleanup());
