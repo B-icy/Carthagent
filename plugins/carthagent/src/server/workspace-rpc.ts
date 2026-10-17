@@ -23,9 +23,11 @@ function taskStatus(session?: NativeSession, running = false) {
   return 'unknown';
 }
 
-function reportFor(directory: string) {
+function reportFor(directory: string, sessionID: string) {
   const path = activeReportPath(directory);
   if (!path || !existsSync(path)) return { status: 'unavailable' };
+  const reportRelative = relative(directory, path).split(sep);
+  if (reportRelative.length < 3 || reportRelative[0] !== '.harness' || reportRelative[1] !== sessionID) return { status: 'unavailable' };
   const state = JSON.parse(readFileSync(path, 'utf8')) as DeliveryState;
   if (!state || typeof state !== 'object' || !state.plan || !state.runId || !Number.isInteger(state.revision)) return { status: 'invalid' };
   assertActiveReport(directory, path);
@@ -75,7 +77,7 @@ export async function registerWorkspaceRpc(ctx: Context, options: {
       return {
         id: record.id, projectID, title: record.task, status: taskStatus(session, running.has(record.sessionID)),
         ...(!session || session.outcome === 'failed' || session.outcome === 'interrupted' ? { attention: true } : {}),
-        directory: record.worktree, branch: record.branch,
+        directory: record.worktree, ...(record.branch ? { branch: record.branch } : {}),
       };
     });
     for (const op of taskState.operations) if (op.status !== 'complete' && op.status !== 'reconciled') {
@@ -142,7 +144,7 @@ export async function registerWorkspaceRpc(ctx: Context, options: {
     review: async (value, call) => {
       const input = value as { sessionID: string };
       const session = await owns(input.sessionID, call.signal);
-      const report = reportFor(session.location.directory);
+      const report = reportFor(session.location.directory, session.id);
       const receiptPath = resolve(session.location.directory, '.harness', 'reviews', `${createHash('sha256').update(`session:${session.id}`).digest('hex')}.json`);
       if (!existsSync(receiptPath)) return { status: report.status === 'stale' || report.status === 'invalid' ? report.status : 'unreviewed' };
       const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));

@@ -59,6 +59,7 @@ test('native workspace RPC snapshots journaled sessions, enforces location owner
   assert.equal(data.sessions.length, 1, 'only task sessions can be inventoried by the plugin Context');
   assert.deepEqual(data.tasks.map(task => task.id), ['task-1']);
   assert.equal(data.tasks[0].attention, true, 'native failed outcome is surfaced');
+  assert.equal(Object.hasOwn(data.tasks[0], 'branch'), false, 'undefined optional branch is omitted from RPC output');
   assert.equal(data.sessions[0].id, 'task-session');
 
   await assert.rejects(registered.open({ sessionID: 'foreign-session' }, { signal: new AbortController().signal }), /another workspace location/);
