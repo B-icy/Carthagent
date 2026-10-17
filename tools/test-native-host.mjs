@@ -2,7 +2,7 @@
 /** Offline real-host test. Uses a disposable HOME and never discovers the user's service. */
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm, readFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFile, spawn } from 'node:child_process';
 import { createServer } from 'node:http';
@@ -10,15 +10,27 @@ import { once } from 'node:events';
 import { randomBytes } from 'node:crypto';
 import { promisify } from 'node:util';
 import { OpenCode } from '@opencode/client';
-import { resolveOpenCode } from '../lib/opencode/runtime.mjs';
-import { loadNativeTestRuntime } from './native-runtime-identity.mjs';
+import { resolveOpenCode, runtimeIdentity as getRuntimeIdentity } from '../lib/opencode/runtime.mjs';
+import { loadNativeTestRuntime, preflightNativeTestRuntimeArtifact } from './native-runtime-identity.mjs';
 import { cancelSession } from '../lib/opencode/service.mjs';
 import { runHeadless } from '../lib/opencode/headless.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const plugin = resolve(process.argv[2] ?? join(root, 'plugins/carthagent'));
-const ownedRoot = process.env.CTG_OWNED_OPENCODE_RUNTIME;
-const binary = ownedRoot ? ownedRuntimeBinary(ownedRoot) : await resolveOpenCode();
+const runtimeOptions = {};
+if (process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST) {
+  runtimeOptions.runtimeReleaseManifestPath = process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST;
+}
+if (process.env.CTG_TEST_RUNTIME_ARTIFACT_ROOT) {
+  await preflightNativeTestRuntimeArtifact({
+    ownedRoot: process.env.CTG_TEST_RUNTIME_ARTIFACT_ROOT,
+    expectedManifestPath: process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST,
+  });
+  runtimeOptions.acquireOwnedRuntime = async () => process.env.CTG_TEST_RUNTIME_ARTIFACT_ROOT;
+}
+const binary = await resolveOpenCode(runtimeOptions);
+const productionIdentity = await getRuntimeIdentity(binary, runtimeOptions);
+const ownedRoot = productionIdentity.kind === 'ctg-owned' ? dirname(dirname(dirname(binary))) : undefined;
 const expectedManifest = ownedRoot ? JSON.parse(await readFile(process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST ?? join(root, 'lib/opencode/runtime-release.json'), 'utf8')) : undefined;
 const runtimeIdentity = await loadNativeTestRuntime({ binary, ownedRoot, expectedManifest });
 const execFileAsync = promisify(execFile);
@@ -392,9 +404,4 @@ try {
   await new Promise((resolveClose) => authServer.close(resolveClose));
   await new Promise((resolveClose) => gatewayServer.close(resolveClose));
   await rm(temp, { recursive: true, force: true, maxRetries: 12, retryDelay: 250 });
-}
-
-function ownedRuntimeBinary(directory) {
-  const key = process.platform === 'win32' ? `windows-${process.arch}` : `${process.platform}-${process.arch}`;
-  return join(resolve(directory), `cli-${key}`, 'bin', process.platform === 'win32' ? 'opencode.exe' : 'opencode');
 }
