@@ -3,10 +3,12 @@ import { Carthagent } from './rpc';
 import { registerProviders } from './server/providers';
 import { createDeviceAuthController } from './server/device-auth.ts';
 import { shipAgentDir } from '../../../lib/ship-auth.mjs';
+import { registerSessionControls } from './server/session-controls';
 
 export default Plugin.define({
   id: 'carthagent',
   async setup(context) {
+    const disposeControls = await registerSessionControls(context);
     const deviceAuth = createDeviceAuthController({ env: process.env, agentDir: shipAgentDir() });
     const rpcRegistration = await context.rpc.register(Carthagent, {
       health: async () => ({
@@ -38,12 +40,18 @@ export default Plugin.define({
     } catch (error) {
       await deviceAuth.cleanup();
       await rpcRegistration.dispose();
+      await disposeControls();
       throw error;
     }
     return async () => {
-      await providerCleanup?.();
-      await deviceAuth.cleanup();
-      await rpcRegistration.dispose();
+      try { await providerCleanup?.(); }
+      finally {
+        try { await deviceAuth.cleanup(); }
+        finally {
+          try { await rpcRegistration.dispose(); }
+          finally { await disposeControls(); }
+        }
+      }
     };
   },
 });

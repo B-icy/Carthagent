@@ -26,7 +26,8 @@ def main():
     args = parser.parse_args()
     if not args.binary:
         parser.error('OpenCode binary is required')
-    with tempfile.TemporaryDirectory(prefix='ctg-pty-', dir='/tmp/opencode') as temp:
+    args.binary = str(pathlib.Path(args.binary).resolve())
+    with tempfile.TemporaryDirectory(prefix='ctg-pty-') as temp:
         root = pathlib.Path(temp)
         for name in ['home', 'project', 'config/opencode', 'data', 'state', 'cache']:
             (root / name).mkdir(parents=True, exist_ok=True)
