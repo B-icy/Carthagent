@@ -69,6 +69,7 @@
     "test:native-performance": "node tools/test-native-performance.mjs",
     "test:native-package": "node tools/test-native-package.mjs",
     "test:native-controls": "node tools/test-native-controls.mjs",
+    "test:native-terminal-semantics": "python3 tools/native-terminal-semantics.py",
     "test:native-outcomes": "node tools/test-native-outcomes.mjs",
     "test:native-pty": "node tools/test-native-pty.mjs",
     "build": "npm run check && npm run typecheck",
