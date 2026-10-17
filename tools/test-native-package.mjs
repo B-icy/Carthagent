@@ -37,6 +37,8 @@ try {
   const env = {
     ...process.env,
     CTG_OPENCODE_BIN: binary,
+    CTG_EVALUATION_MAX_TURNS: '8',
+    CTG_EVALUATION_MAX_COST: '1',
     HOME: join(temp, 'home'),
     XDG_CONFIG_HOME: join(temp, 'config'),
     XDG_DATA_HOME: join(temp, 'data'),
@@ -51,13 +53,15 @@ try {
   await writeFile(join(installedPlugin, 'index.ts'), `import { Plugin } from '@opencode/plugin';\nimport { setupCarthagent } from '../plugins/carthagent/src/index';\nexport default Plugin.define({ id: 'carthagent', setup: context => setupCarthagent(context, { delivery: true }) });\n`);
   // Run the acceptance harness from the installed artifact itself so its
   // imports (including @opencode/client) resolve only through that install.
-  for (const test of ['test-native-host.mjs', 'test-native-delivery-host.mjs', 'test-native-controls.mjs', 'test-native-outcomes.mjs']) {
-    const composedPlugin = installedPlugin;
-    if (test === 'test-native-delivery-host.mjs') {
-      for (const scenario of ['standard', 'strict', 'raw', 'budget', 'mixed', 'concurrent']) {
-        run(process.execPath, [join(installed, 'tools', test), composedPlugin], { cwd: install, env: { ...env, CTG_NATIVE_SCENARIO: scenario } });
-      }
-    } else run(process.execPath, [join(installed, 'tools', test), composedPlugin], { cwd: install, env });
+  const composedPlugin = installedPlugin;
+  for (const test of ['test-native-host.mjs', 'test-native-controls.mjs', 'test-native-outcomes.mjs', 'test-native-evaluation.mjs', 'test-native-swe.mjs']) {
+    run(process.execPath, [join(installed, 'tools', test), composedPlugin], { cwd: install, env });
+  }
+  run(process.execPath, [join(installed, 'tools', 'test-native-swe-host.mjs'), join(installed, 'plugins/carthagent')], { cwd: install, env });
+  for (const scenario of ['standard', 'strict', 'raw', 'budget', 'mixed', 'concurrent']) {
+    run(process.execPath, [join(installed, 'tools', 'test-native-delivery-host.mjs'), composedPlugin], {
+      cwd: install, env: { ...env, CTG_NATIVE_SCENARIO: scenario },
+    });
   }
   run(process.execPath, [join(installed, 'tools', 'test-native-report.mjs'), join(installed, 'tools', 'native-report-plugin')], { cwd: install, env });
   console.log(JSON.stringify({ tarball: packed[0].filename, unpackedSize: packed[0].unpackedSize, binary, version }, null, 2));

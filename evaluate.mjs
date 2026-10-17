@@ -7,30 +7,35 @@
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { basename, delimiter, dirname, join } from 'node:path';
-import { existsSync, mkdirSync, copyFileSync, cpSync, realpathSync, readdirSync, statSync, writeFileSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, copyFileSync, cpSync, realpathSync, readdirSync, statSync, writeFileSync, readFileSync, appendFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { atomicJson, runCommand, turnBudgetExceeded } from './lib/delivery.mjs';
+import { atomicJson, runCommand } from './lib/delivery.mjs';
 import { loadScenario, expandPlaceholders } from './lib/scenarios.mjs';
-import { locateEngine } from './lib/engine.mjs';
+import { runNativeEvaluation, NATIVE_EVALUATION_RUNTIME } from './lib/opencode/evaluation.mjs';
+import { ensureService, createSession, stopService } from './lib/opencode/service.mjs';
+import { provisionRuntime } from './lib/opencode/runtime.mjs';
+import { OpenCode } from '@opencode/client';
 
 const { values: args } = parseArgs({ options: {
   mode: { type: 'string', default: 'both' }, task: { type: 'string', default: 'cli' }, scenario: { type: 'string' },
-  model: { type: 'string', default: 'mercury-2.5' }, provider: { type: 'string', default: 'inception' },
+  model: { type: 'string', default: 'inception/mercury-2.5-preview' }, provider: { type: 'string', default: 'openrouter' },
   thinking: { type: 'string', default: 'medium' },
   timeout: { type: 'string', default: '600' }, 'max-turns': { type: 'string', default: '100' }, 'max-cost': { type: 'string', default: '3' },
-  'carthagent-cli': { type: 'string' }, 'engine-cli': { type: 'string' }, python: { type: 'string' }, 'seed-from': { type: 'string' }, 'allow-live': { type: 'boolean', default: false },
+  python: { type: 'string' }, 'seed-from': { type: 'string' }, 'allow-live': { type: 'boolean', default: false },
   'dry-run': { type: 'boolean', default: false },
 } });
 if (!args['allow-live'] && !args['dry-run']) throw Error('Live calls spend API credit and generated code runs with your permissions. Use --allow-live explicitly (or --dry-run to preview the assembled run without calling a provider).');
 if (!['baseline', 'custom', 'both'].includes(args.mode)) throw Error('Use --mode baseline|custom|both');
 for (const key of ['timeout', 'max-turns', 'max-cost']) if (!(Number(args[key]) > 0 && Number.isFinite(Number(args[key])))) throw Error(`Invalid ${key}`);
+if (Number(args['max-turns']) > 1000 || Number(args.timeout) > 3600) throw Error('Evaluation bounds may not exceed 1000 turns or 3600 seconds.');
 
 const root = dirname(fileURLToPath(import.meta.url)), project = dirname(root);
 // Layout: standalone checkouts keep evaluation fixtures beside this script;
 // when this package is nested inside a workspace, the venv and evidence
 // directories live in the parent project instead.
 const home = existsSync(join(root, 'scenarios')) ? root : project;
-const engine = (() => { try { return locateEngine(args['carthagent-cli'] || args['engine-cli']); } catch (e) { throw Error(`${e.message}`); } })();
+const providerKey = process.env[`${args.provider.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_API_KEY`];
+if (!args['dry-run'] && !providerKey) throw Error(`Set ${args.provider.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_API_KEY explicitly; evaluation never discovers credentials from a home-directory agent config.`);
 const scenarioName = args.scenario || args.task;
 const scenario = loadScenario(root, scenarioName);
 const findExecutable = name => {
@@ -125,21 +130,12 @@ for (const mode of args.mode === 'both' ? ['baseline', 'custom'] : [args.mode]) 
     mkdirSync(cwd, { recursive: true });
     copySeeds(cwd);
   }
-  const flags = [...engine.args, '--offline', '--mode', 'json', '--no-session', '--no-approve', '--no-context-files', '--no-extensions', '--no-skills', '--no-prompt-templates', '--no-themes', '--provider', args.provider, '--model', args.model, '--thinking', args.thinking, '--append-system-prompt', environmentPath];
+  const systemPrompt = `${environment}\n\n${mode === 'custom' ? scenario.context : ''}`;
   if (mode === 'custom') {
     const manifest = join(base, 'required-validators.json');
     if (!args['dry-run']) atomicJson(manifest, { version: 1, checks: scenarioChecks(scenario.developmentChecks, cwd) });
-    flags.push(
-      '-e', join(root, 'extensions', 'delivery.ts'),
-      '--skill', join(root, 'skills'),
-      '--delivery-strict',
-      '--delivery-validators', manifest,
-      '--delivery-bash-cap', '120',
-      '--delivery-protect-existing',
-      '--delivery-rewrite-cap', '3',
-      '--delivery-turn-delay-ms', '3000',
-      '--delivery-tool-output-cap', '12000',
-    );
+    // The native plugin owns delivery configuration; the manifest remains an
+    // explicit piece of immutable evidence for that treatment.
     // Domain context from the manifest, plus generic continuation guidance.
     const context = [
       scenario.context,
@@ -148,51 +144,50 @@ for (const mode of args.mode === 'both' ? ['baseline', 'custom'] : [args.mode]) 
     ].filter(Boolean).join('\n\n');
     if (context) {
       const contextPath = join(base, `${basename(scenarioName)}-context.md`);
-      if (!args['dry-run']) writeFileSync(contextPath, context);
-      flags.push('--delivery-context', contextPath);
+       if (!args['dry-run']) writeFileSync(contextPath, context);
     }
   }
-  flags.push('--', scenario.prompt);
   const controller = new AbortController();
-  let buffer = '', turns = 0, providerErrors = 0, cost = 0, tokens = 0, budgetReason = null, lastStop = null, deliveryStatus = null;
-  const tools = {}, errors = [];
-  function budget(reason) { if (!budgetReason) { budgetReason = reason; controller.abort(); } }
   console.log(`Starting ${mode} ${scenarioName} with ${args.provider}/${args.model}; ${cwd}`);
   if (args['dry-run']) {
     console.log(JSON.stringify({
-      mode, cwd, spawn: [engine.cmd, ...flags], seeds: scenario.seeds.map(s => s.to),
+      mode, cwd, runtime: NATIVE_EVALUATION_RUNTIME, nativeRequest: { directory: cwd, provider: args.provider, model: args.model, prompt: scenario.prompt, systemPrompt, timeoutSeconds: Number(args.timeout), maxTurns: Number(args['max-turns']), maxCost: Number(args['max-cost']) }, seeds: scenario.seeds.map(s => s.to),
       ...(mode === 'custom' ? { requiredValidators: scenarioChecks(scenario.developmentChecks, cwd) } : {}),
     }, null, 2));
     continue;
   }
-  const result = await runCommand([engine.cmd, ...flags], {
-    cwd, timeoutSeconds: Number(args.timeout), signal: controller.signal, logPath: join(base, `${mode}-events.jsonl`),
-    onOutput(chunk) {
-      buffer += chunk;
-      let end;
-      while ((end = buffer.indexOf('\n')) !== -1) {
-        const line = buffer.slice(0, end); buffer = buffer.slice(end + 1);
-        let event; try { event = JSON.parse(line); } catch { continue; }
-        if (event.type === 'turn_start') { turns++; if (turnBudgetExceeded({ turns, providerErrors, maxTurns: Number(args['max-turns']) })) budget('productive model turn limit'); }
-        if (event.type === 'tool_execution_start') tools[event.toolName] = (tools[event.toolName] || 0) + 1;
-        if (event.type === 'tool_execution_end' && event.toolName === 'delivery_finish' && !event.isError) {
-          try { deliveryStatus = JSON.parse(event.result.content.find(c => c.type === 'text').text).status; } catch { /* no verified result */ }
-        }
-        if (event.type === 'message_end' && event.message?.role === 'assistant') {
-          cost += event.message.usage?.cost?.total || 0;
-          tokens += event.message.usage?.totalTokens || 0;
-          lastStop = event.message.stopReason;
-          if (lastStop === 'error') { providerErrors++; errors.push(event.message.errorMessage); }
-          if (cost >= Number(args['max-cost'])) budget('reported cost limit');
-        }
-      }
-      if (buffer.length > 2 * 1024 * 1024) budget('oversized event');
-    },
-  });
-  const productiveTurnStarts = turns - providerErrors;
-  const productiveTurns = budgetReason === 'productive model turn limit'
-    ? Math.min(productiveTurnStarts, Number(args['max-turns']))
-    : productiveTurnStarts;
+  const isolation = join(base, 'native-service');
+  let service;
+  try {
+    const providerID = args.provider === 'openrouter' ? 'openrouter' : args.provider;
+    const modelID = args.model;
+    await provisionRuntime({ root:isolation, profile:{
+      model:`${providerID}/${modelID}`,
+      default_agent:'build',
+      plugins:[join(root,'lib/opencode/evaluation-budget-plugin'), ...(mode === 'custom' ? [`${root}/plugins/carthagent`] : [])],
+      skills:mode === 'custom' ? [`${root}/skills`] : [],
+      instructions:[environmentPath],
+    } });
+    service = await ensureService({ root:isolation, env:{
+      OPENROUTER_API_KEY:providerKey,
+      [`${args.provider.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_API_KEY`]:providerKey,
+      CTG_EVALUATION_MAX_TURNS:String(args['max-turns']),
+      CTG_EVALUATION_MAX_COST:String(args['max-cost']),
+    } });
+    process.env.CTG_OPENCODE_URL = service.url;
+    process.env.CTG_OPENCODE_AUTHORIZATION = service.headers.authorization;
+    const serviceClient = OpenCode.make({ baseUrl:service.url, headers:service.headers });
+    const probe = await createSession(service, cwd, { signal:AbortSignal.timeout(15000), body:{ model:{providerID,id:modelID}, title:'CTG evaluation plugin activation probe' } });
+    const pluginDeadline = Date.now() + 15000;
+    while (Date.now() < pluginDeadline) {
+      const inventory = await serviceClient.plugin.list({ location:{ directory:cwd } }, { signal:AbortSignal.timeout(5000) });
+      const guard = inventory.data.find(item => item.id === 'ctg.evaluation-budget');
+      if (guard?.state.status === 'active') break;
+      if (guard?.state.status === 'failed') throw Error(`Evaluation admission guard failed to activate: ${guard.state.error}`);
+      if (Date.now() + 100 >= pluginDeadline) throw Error(`Evaluation admission guard did not activate for probe session ${probe.id}`);
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    const result = await runNativeEvaluation({ directory: cwd, systemPrompt, prompt: scenario.prompt, model: args.model, provider: args.provider, timeoutSeconds: Number(args.timeout), maxTurns: Number(args['max-turns']), maxCost: Number(args['max-cost']), signal: controller.signal, onEvent: event => appendFileSync(join(base, `${mode}-events.jsonl`), `${JSON.stringify(event)}\n`) });
   const summary = {
     mode,
     task: scenarioName,
@@ -200,19 +195,28 @@ for (const mode of args.mode === 'both' ? ['baseline', 'custom'] : [args.mode]) 
     provider: args.provider,
     model: args.model,
     cwd,
-    exitCode: result.code,
+    evidenceSchema: 2,
+    runtime: NATIVE_EVALUATION_RUNTIME,
+    runtimeVersion: result.opencodeVersion,
+    exitCode: result.exitCode,
     timedOut: result.timedOut,
-    budgetReason,
-    turns,
-    productiveTurns,
-    providerErrors,
-    endedOnProviderError: lastStop === 'error',
-    reportedCost: cost,
-    reportedTokens: tokens,
-    lastStop,
-    deliveryStatus,
-    errors,
-    tools,
+    budgetReason: result.budgetReason,
+    outcome: result.outcome,
+    interruptionStatus: result.interruptionStatus,
+    sessionInfo: { costScope:'session', usageSource:'session.get', terminalAuthority:'session.outcome', outcome:result.outcome },
+    turns: result.turns,
+    productiveTurns: result.productiveTurns,
+    providerErrors: result.providerErrors,
+    endedOnProviderError: result.lastStop === 'error',
+    reportedCost: result.cost,
+    costEvidence: 'native-session-usage; fail-closed when absent',
+    reportedTokens: result.tokens,
+    lastStop: result.lastStop,
+    deliveryStatus: result.deliveryStatus,
+    errors: result.errors,
+    tools: result.tools,
+    sessionID: result.sessionID,
+    campaignComparability: 'not-comparable-to-pi-runtime',
     durationMs: result.durationMs,
   };
   summary.developmentChecks = await runScenarioChecks(mode, cwd, 'development', scenario.developmentChecks);
@@ -225,6 +229,14 @@ for (const mode of args.mode === 'both' ? ['baseline', 'custom'] : [args.mode]) 
   summaries.push(summary);
   atomicJson(join(base, 'summary.json'), summaries);
   console.log(JSON.stringify(summary, null, 2));
+  } finally {
+    try {
+      if (service) await stopService({ root:isolation });
+    } finally {
+      delete process.env.CTG_OPENCODE_URL;
+      delete process.env.CTG_OPENCODE_AUTHORIZATION;
+    }
+  }
 }
 console.log(`Evidence: ${join(base, 'summary.json')}`);
 if (summaries.some(s =>
