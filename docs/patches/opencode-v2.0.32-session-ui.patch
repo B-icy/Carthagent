@@ -1,0 +1,1185 @@
+diff --git a/packages/client/src/effect/api/api.ts b/packages/client/src/effect/api/api.ts
+index 4580c6b..a16ff03 100644
+--- a/packages/client/src/effect/api/api.ts
++++ b/packages/client/src/effect/api/api.ts
+@@ -48,7 +48,10 @@ export type ServerInfoOutput = {
+   readonly pid: number
+   readonly urls: ReadonlyArray<string>
+   readonly paths: { readonly tmp: string }
+-  readonly capabilities?: { readonly persistentPty?: boolean | undefined } | undefined
++  readonly capabilities?: {
++    readonly persistentPty?: boolean | undefined
++    readonly shellOrigin?: boolean | undefined
++  } | undefined
+ }
+ export type ServerInfoOperation<E = never> = () => Effect.Effect<ServerInfoOutput, E>
+ 
+@@ -319,6 +322,9 @@ export type SessionShellInput = {
+   readonly sessionID: Session.ID
+   readonly id?: SessionMessage.ID | undefined
+   readonly command: string
++  /** Modern clients identify user `!shell`; servers without the capability keep legacy behavior. */
++  readonly origin?: "manual" | "tool" | undefined
++  readonly callID?: string | undefined
+ }
+ export type SessionShellOutput = void
+ export type SessionShellOperation<E = never> = (input: SessionShellInput) => Effect.Effect<SessionShellOutput, E>
+diff --git a/packages/client/src/effect/generated/client.ts b/packages/client/src/effect/generated/client.ts
+index 057240d..7d8c331 100644
+--- a/packages/client/src/effect/generated/client.ts
++++ b/packages/client/src/effect/generated/client.ts
+@@ -566,7 +566,7 @@ const EndpointSessionShell = (raw: RawClient["server.session"]) => (input: Sessi
+   preserveEffect<SessionShellOutput>()(
+     raw["session.shell"]({
+       params: { sessionID: input["sessionID"] },
+-      payload: { id: input["id"], command: input["command"] },
++      payload: { id: input["id"], command: input["command"], origin: input["origin"], callID: input["callID"] },
+     }).pipe(Effect.mapError(mapClientError)),
+   )
+ 
+diff --git a/packages/client/src/promise/generated/client.ts b/packages/client/src/promise/generated/client.ts
+index 4441181..d137818 100644
+--- a/packages/client/src/promise/generated/client.ts
++++ b/packages/client/src/promise/generated/client.ts
+@@ -791,7 +791,7 @@ export function make(options: ClientOptions) {
+           {
+             method: "POST",
+             path: `/api/session/${encodeURIComponent(input.sessionID)}/shell`,
+-            body: { id: input["id"], command: input["command"] },
++            body: { id: input["id"], command: input["command"], origin: input["origin"], callID: input["callID"] },
+             successStatus: 204,
+             declaredStatuses: [400, 401, 404],
+             empty: true,
+diff --git a/packages/client/src/promise/generated/types.ts b/packages/client/src/promise/generated/types.ts
+index 96ba475..499f7bf 100644
+--- a/packages/client/src/promise/generated/types.ts
++++ b/packages/client/src/promise/generated/types.ts
+@@ -5,7 +5,7 @@ export type ServerInfo = {
+   pid: number
+   urls: Array<string>
+   paths: { tmp: string }
+-  capabilities?: { persistentPty?: boolean | undefined } | undefined
++  capabilities?: { persistentPty?: boolean | undefined; shellOrigin?: boolean | undefined } | undefined
+ }
+ 
+ export type PairingCode = { code: string; expires_in: number }
+@@ -4665,6 +4665,8 @@ export type SessionShellInput = {
+   readonly sessionID: { readonly sessionID: string }["sessionID"]
+   readonly id?: { readonly id?: string | undefined; readonly command: string }["id"]
+   readonly command: { readonly id?: string | undefined; readonly command: string }["command"]
++  readonly origin?: "manual" | "tool" | undefined
++  readonly callID?: string | undefined
+ }
+ 
+ export type SessionShellOutput = void
+diff --git a/packages/core/src/codemode/tool.ts b/packages/core/src/codemode/tool.ts
+index ef0d5d6..346cc68 100644
+--- a/packages/core/src/codemode/tool.ts
++++ b/packages/core/src/codemode/tool.ts
+@@ -92,7 +92,7 @@ export const create = (
+           (name, tool, input) =>
+             Effect.gen(function* () {
+               const index = yield* Ref.getAndUpdate(callIndex, (index) => index + 1)
+-              const executed = yield* executeTool(name, tool, input, context)
++              const executed = yield* executeTool(name, tool, input, { ...context, callIndex: index })
+               const content =
+                 typeof executed.content === "string"
+                   ? [{ type: "text" as const, text: executed.content }]
+diff --git a/packages/core/src/session/compaction.ts b/packages/core/src/session/compaction.ts
+index 3cb5279..602114b 100644
+--- a/packages/core/src/session/compaction.ts
++++ b/packages/core/src/session/compaction.ts
+@@ -205,9 +205,10 @@ export const layer = Layer.effect(
+     const compact = Effect.fn("SessionCompaction.compact")(function* (trigger: Trigger): Effect.fn.Return<Outcome> {
+       const settings = state.get()
+       const context = trigger.context
++      const sessionAuto = context.session.metadata?.["ctg.autoCompaction"]
+ 
+       // Only the user compacts when automatic compaction is off, overflow included.
+-      if (trigger.reason !== "manual" && !settings.auto) return { status: "skipped" }
++      if (trigger.reason !== "manual" && (!settings.auto || sessionAuto === false)) return { status: "skipped" }
+       if (trigger.reason === "auto" && !due(context, calculateCeiling(context.model.limit, settings.buffer)))
+         return { status: "skipped" }
+       const native = context.model.compaction?.type === "native"
+diff --git a/packages/core/src/session/session.ts b/packages/core/src/session/session.ts
+index 3cd1300..226139a 100644
+--- a/packages/core/src/session/session.ts
++++ b/packages/core/src/session/session.ts
+@@ -178,12 +178,17 @@ export const make = Effect.fn("Session.make")(function* () {
+   )
+   const shell = Effect.fn("Session.shell")(function* (
+     sessionID: SessionSchema.ID,
+-    input: { id?: SessionMessage.ID; command: string },
++    input: { id?: SessionMessage.ID; command: string; origin?: "manual" | "tool"; callID?: string },
+   ) {
+     const session = yield* get(sessionID)
+     // The server owns completion recording even if the submitting client disconnects.
+     const running = yield* Effect.gen(function* () {
+-      const started = yield* SessionShell.start({ session, command: input.command }).pipe(
++      const started = yield* SessionShell.start({
++        session,
++        command: input.command,
++        origin: input.origin ?? "manual",
++        callID: input.callID,
++      }).pipe(
+         Effect.provideService(Instance.Service, instances),
+         Effect.tapError((error) =>
+           synthetic(sessionID, {
+diff --git a/packages/core/src/session/shell.ts b/packages/core/src/session/shell.ts
+index b4e2a1a..5d08b36 100644
+--- a/packages/core/src/session/shell.ts
++++ b/packages/core/src/session/shell.ts
+@@ -7,14 +7,24 @@ import { Plugin } from "../plugin/service.js"
+ import { Shell } from "../shell.js"
+ import { ShellResult } from "../shell/result.js"
+ 
+-export const start = Effect.fn("SessionShell.start")(function* (input: { session: Session.Info; command: string }) {
++export const start = Effect.fn("SessionShell.start")(function* (input: {
++  session: Session.Info
++  command: string
++  origin?: "manual" | "tool"
++  callID?: string
++}) {
+   const instances = yield* Instance.Service
+   const shell = yield* Plugin.awaitActivation.pipe(Effect.andThen(Shell.Service), instances.provide(input.session))
+   const info = yield* shell.create({
+     command: input.command,
+     cwd: input.session.location.directory,
+     timeout: 0,
+-    metadata: { sessionID: input.session.id, background: true },
++    metadata: {
++      ...(input.origin === "tool" ? { sessionID: input.session.id } : {}),
++      background: true,
++      shellOrigin: input.origin ?? "manual",
++      ...(input.callID === undefined ? {} : { callID: input.callID }),
++    },
+   })
+   // Keep completion tied to the original shell even if the Session moves.
+   return {
+diff --git a/packages/core/src/shell.ts b/packages/core/src/shell.ts
+index e1d1017..0c28d5d 100644
+--- a/packages/core/src/shell.ts
++++ b/packages/core/src/shell.ts
+@@ -15,7 +15,7 @@ import { FileRetention } from "./file-retention.js"
+ import { Location } from "./location.js"
+ import { Global } from "@opencode/util/global"
+ import { ShellSelect } from "./shell/select.js"
+-import type { ShellCreateBefore } from "@opencode/plugin/effect/shell"
++import type { ShellCreateAfter, ShellCreateBefore } from "@opencode/plugin/effect/shell"
+ import { PluginHooks } from "./plugin/hooks.js"
+ import { SessionEnvironment } from "./session/environment.js"
+ import { SessionSchema } from "./session/schema.js"
+@@ -265,12 +265,21 @@ const layer = () =>
+           cwd: input.cwd ?? location.directory,
+           timeout: input.timeout ?? 0,
+           shell: input.shell ?? (yield* shell.resolve({ priority: "config" })),
++          ...(Schema.is(SessionSchema.ID)(sessionID) && input.metadata?.shellOrigin === "tool"
++            ? { sessionID }
++            : {}),
++          ...(input.metadata?.shellOrigin === "tool" || input.metadata?.shellOrigin === "manual"
++            ? { origin: input.metadata.shellOrigin }
++            : {}),
++          ...(typeof input.metadata?.callID === "string" ? { callID: input.metadata.callID } : {}),
+           env: {
+             ...baseEnv,
+             TERM: "xterm-256color",
+             OPENCODE_TERMINAL: "1",
+           },
+         }
++        // Caller provenance is explicit metadata from an OpenCode-owned entry point.
++        // Invalid or missing provenance stays unowned; never reconstruct it from cwd.
+         yield* hooks.trigger("shell", "create.before", invocation)
+         if (before) yield* before(invocation)
+ 
+@@ -431,6 +440,17 @@ const layer = () =>
+         )
+ 
+         const command = yield* Deferred.await(ready)
++        const after: ShellCreateAfter = {
++          command: invocation.command,
++          cwd: invocation.cwd,
++          timeout: invocation.timeout,
++          shell: invocation.shell,
++          ...(invocation.sessionID === undefined ? {} : { sessionID: invocation.sessionID }),
++          ...(invocation.origin === undefined ? {} : { origin: invocation.origin }),
++          ...(invocation.callID === undefined ? {} : { callID: invocation.callID }),
++          shellID: command.info.id,
++        }
++        yield* hooks.trigger("shell", "create.after", after)
+         return command.info
+       })
+ 
+diff --git a/packages/core/src/tool/plugin/shell.ts b/packages/core/src/tool/plugin/shell.ts
+index af454a7..df3f45c 100644
+--- a/packages/core/src/tool/plugin/shell.ts
++++ b/packages/core/src/tool/plugin/shell.ts
+@@ -206,7 +206,11 @@ export const Plugin = {
+                   cwd: input.workdir,
+                   timeout,
+                   shell: yield* compatibleShell,
+-                  metadata: { sessionID: context.sessionID },
++                  metadata: {
++                    sessionID: context.sessionID,
++                    shellOrigin: "tool",
++                    callID: context.callIndex === undefined ? context.id : `${context.id}:${context.callIndex}`,
++                  },
+                 },
+                 (invocation) =>
+                   Effect.gen(function* () {
+diff --git a/packages/core/test/plugin-failure.test.ts b/packages/core/test/plugin-failure.test.ts
+index a800b5d..5d05c4e 100644
+--- a/packages/core/test/plugin-failure.test.ts
++++ b/packages/core/test/plugin-failure.test.ts
+@@ -48,6 +48,9 @@ it.live("removes a failed plugin's hooks and RPC handlers without affecting heal
+       timeout: 1_000,
+       shell: "sh",
+       env: {},
++      sessionID: "ses_hook_fixture",
++      origin: "tool",
++      callID: "call_hook_fixture",
+     })
+     yield* trigger
+     expect(invoked).toEqual(["broken", "healthy"])
+diff --git a/packages/core/test/session-compaction.test.ts b/packages/core/test/session-compaction.test.ts
+index 1361a0b..1cca9b3 100644
+--- a/packages/core/test/session-compaction.test.ts
++++ b/packages/core/test/session-compaction.test.ts
+@@ -205,6 +205,39 @@ it.effect("auto compaction estimates current content against the buffered prompt
+     const due = (context: SessionContext.Loaded) =>
+       compaction.compact({ reason: "auto", context }).pipe(Effect.map((outcome) => outcome.status !== "skipped"))
+ 
++    const optedOut = { ...session, metadata: { "ctg.autoCompaction": false } }
++    const enabledSession = yield* insertSession(Session.ID.make("ses_compaction_enabled"))
++    expect(yield* due({ ...input(300_000, { context: 200_000, output: 32_000 }), session: optedOut })).toBe(false)
++    expect(
++      yield* due({
++        ...input(300_000, { context: 200_000, output: 32_000 }),
++        session: enabledSession,
++      }),
++    ).toBe(true)
++    const persistedOptOut = yield* insertSession(Session.ID.make("ses_compaction_opted_out"), {
++      metadata: { "ctg.autoCompaction": false },
++    })
++    expect(persistedOptOut.metadata?.["ctg.autoCompaction"]).toBe(false)
++    expect(
++      yield* due({ ...input(300_000, { context: 200_000, output: 32_000 }), session: persistedOptOut }),
++    ).toBe(false)
++    const overflow = (context: SessionContext.Loaded) =>
++      compaction.compact({ reason: "overflow", context }).pipe(Effect.map((outcome) => outcome.status !== "skipped"))
++    expect(yield* overflow({ ...input(300_000, { context: 200_000, output: 32_000 }), session: persistedOptOut })).toBe(
++      false,
++    )
++    expect(
++      yield* overflow({ ...input(300_000, { context: 200_000, output: 32_000 }), session: enabledSession }),
++    ).toBe(true)
++    expect(
++      (yield*
++        compaction.compact({
++          reason: "manual",
++          context: { ...input(300_000, { context: 200_000, output: 32_000 }), session: optedOut },
++          inputID: SessionMessage.ID.create(),
++        })).status,
++    ).toBe("completed")
++
+     // 90% of the input limit, which takes precedence over the context window.
+     const inputLimited = { context: 400_000, input: 272_000, output: 128_000 }
+     expect(yield* due(input(244_799, inputLimited))).toBe(false)
+diff --git a/packages/core/test/shell-retention.test.ts b/packages/core/test/shell-retention.test.ts
+index 3f776e4..65eb583 100644
+--- a/packages/core/test/shell-retention.test.ts
++++ b/packages/core/test/shell-retention.test.ts
+@@ -8,14 +8,88 @@ import { Environment } from "@opencode/core/environment/index"
+ import { Location } from "@opencode/core/location"
+ import { AbsolutePath } from "@opencode/core/schema"
+ import { Shell } from "@opencode/core/shell"
++import { PluginHooks } from "@opencode/core/plugin/hooks"
++import { SessionSchema } from "@opencode/core/session/schema"
+ import { Workspace } from "@opencode/core/workspace"
+ import { Global } from "@opencode/util/global"
++import { LayerNode } from "@opencode/util/effect/layer-node"
+ import { hostEnvironmentLayer } from "./fixture/environment"
+ import { tempGlobalLayer } from "./fixture/global"
+ import { location, tempLocationLayer } from "./fixture/location"
+ import { tmpdirScoped } from "./fixture/tmpdir"
+ import { it } from "./lib/effect"
+ 
++it.live("shell hooks preserve explicit session and call origin across concurrent creators", () =>
++  Effect.gen(function* () {
++    const observed: Array<{ phase: string; command: string; cwd: string; sessionID?: string; origin?: string; callID?: string; shellID?: string }> = []
++    const hooks = yield* PluginHooks.Service
++    yield* hooks.register("shell", "create.before", (event) =>
++      Effect.sync(() => observed.push({
++        phase: "before",
++        command: event.command,
++        cwd: event.cwd,
++        sessionID: event.sessionID,
++        origin: event.origin,
++        callID: event.callID,
++      })),
++    )
++    yield* hooks.register("shell", "create.after", (event) =>
++      Effect.sync(() => observed.push({
++        phase: "after",
++        command: event.command,
++        cwd: event.cwd,
++        sessionID: event.sessionID,
++        origin: event.origin,
++        callID: event.callID,
++        shellID: event.shellID,
++      })),
++    )
++    const shell = yield* Shell.Service
++    const first = SessionSchema.ID.make("ses_shell_origin_first")
++    const second = SessionSchema.ID.make("ses_shell_origin_second")
++    const cwd = process.cwd()
++    const otherCwd = yield* tmpdirScoped()
++    const created = yield* Effect.all([
++      shell.create({ shell: "/bin/sh", command: "sleep 0.03", cwd, metadata: { sessionID: first, shellOrigin: "tool", callID: "call-a" } }),
++      shell.create({ shell: "/bin/sh", command: "sleep 0.03", cwd, metadata: { sessionID: second, shellOrigin: "tool", callID: "call-a" } }),
++      shell.create({ shell: "/bin/sh", command: "sleep 0.03", cwd: otherCwd.path, metadata: { sessionID: first, shellOrigin: "tool", callID: "call-b" } }),
++      shell.create({ shell: "/bin/sh", command: "sleep 0.03", cwd, metadata: { sessionID: first, shellOrigin: "manual", callID: "manual:test" } }),
++      shell.create({ shell: "/bin/sh", command: "sleep 0.03", cwd }),
++    ], { concurrency: "unbounded" })
++    const before = observed.filter((event) => event.phase === "before")
++    const after = observed.filter((event) => event.phase === "after")
++    expect(before).toHaveLength(5)
++    expect(after).toHaveLength(5)
++    expect(before).toContainEqual({ phase: "before", command: "sleep 0.03", cwd, sessionID: first, origin: "tool", callID: "call-a" })
++    expect(before).toContainEqual({ phase: "before", command: "sleep 0.03", cwd, sessionID: second, origin: "tool", callID: "call-a" })
++    expect(before).toContainEqual({ phase: "before", command: "sleep 0.03", cwd: otherCwd.path, sessionID: first, origin: "tool", callID: "call-b" })
++    expect(before).toContainEqual({ phase: "before", command: "sleep 0.03", cwd, sessionID: undefined, origin: "manual", callID: "manual:test" })
++    expect(before).toContainEqual({ phase: "before", command: "sleep 0.03", cwd, sessionID: undefined, origin: undefined, callID: undefined })
++    expect(after).toContainEqual(expect.objectContaining({ sessionID: first, origin: "tool", callID: "call-a" }))
++    expect(after).toContainEqual(expect.objectContaining({ sessionID: second, origin: "tool", callID: "call-a" }))
++    expect(after).toContainEqual(expect.objectContaining({ sessionID: first, origin: "tool", callID: "call-b" }))
++    expect(after).toContainEqual(expect.objectContaining({ sessionID: undefined, origin: "manual", callID: "manual:test" }))
++    expect(after).toContainEqual(expect.objectContaining({ sessionID: undefined, origin: undefined, callID: undefined }))
++    for (const info of created) {
++      expect(after).toContainEqual(expect.objectContaining({
++        phase: "after",
++        command: info.command,
++        cwd: info.cwd,
++        shellID: info.id,
++      }))
++    }
++  }).pipe(
++    Effect.provide(
++      AppNodeBuilder.build(LayerNode.group([Shell.node, PluginHooks.node]), [
++        Location.node.replace(tempLocationLayer),
++        Global.node.replace(tempGlobalLayer),
++        Config.node.replace(Config.testLayer()),
++        Environment.node.replace(hostEnvironmentLayer),
++      ]),
++    ),
++  ),
++)
++
+ it.live("eviction makes progress past an already-removed shell", () =>
+   Effect.gen(function* () {
+     const completions = yield* Queue.unbounded<Effect.Effect<void>>()
+diff --git a/packages/plugin/src/effect/shell.ts b/packages/plugin/src/effect/shell.ts
+index d0e6ae7..74a3b04 100644
+--- a/packages/plugin/src/effect/shell.ts
++++ b/packages/plugin/src/effect/shell.ts
+@@ -6,10 +6,28 @@ export interface ShellCreateBefore {
+   timeout: number
+   shell: string
+   env: Record<string, string | undefined>
++  /** Authoritative caller origin when supplied by an OpenCode-owned shell creator. Never infer this from cwd. */
++  readonly sessionID?: string
++  /** Distinguishes tool execution from the user's `!shell`; missing means an external/unknown creator. */
++  readonly origin?: "tool" | "manual"
++  /** Authoritative shell invocation correlation ID (native tool call ID, namespaced for CodeMode children). */
++  readonly callID?: string
++}
++
++export interface ShellCreateAfter {
++  readonly command: string
++  readonly cwd: string
++  readonly timeout: number
++  readonly shell: string
++  readonly sessionID?: string
++  readonly origin?: "tool" | "manual"
++  readonly callID?: string
++  readonly shellID: string
+ }
+ 
+ export interface ShellHooks {
+   readonly "create.before": ShellCreateBefore
++  readonly "create.after": ShellCreateAfter
+ }
+ 
+ export interface ShellDomain {
+diff --git a/packages/plugin/src/promise/shell.ts b/packages/plugin/src/promise/shell.ts
+index d0e6ae7..74a3b04 100644
+--- a/packages/plugin/src/promise/shell.ts
++++ b/packages/plugin/src/promise/shell.ts
+@@ -6,10 +6,28 @@ export interface ShellCreateBefore {
+   timeout: number
+   shell: string
+   env: Record<string, string | undefined>
++  /** Authoritative caller origin when supplied by an OpenCode-owned shell creator. Never infer this from cwd. */
++  readonly sessionID?: string
++  /** Distinguishes tool execution from the user's `!shell`; missing means an external/unknown creator. */
++  readonly origin?: "tool" | "manual"
++  /** Authoritative shell invocation correlation ID (native tool call ID, namespaced for CodeMode children). */
++  readonly callID?: string
++}
++
++export interface ShellCreateAfter {
++  readonly command: string
++  readonly cwd: string
++  readonly timeout: number
++  readonly shell: string
++  readonly sessionID?: string
++  readonly origin?: "tool" | "manual"
++  readonly callID?: string
++  readonly shellID: string
+ }
+ 
+ export interface ShellHooks {
+   readonly "create.before": ShellCreateBefore
++  readonly "create.after": ShellCreateAfter
+ }
+ 
+ export interface ShellDomain {
+diff --git a/packages/plugin/src/tui/context.ts b/packages/plugin/src/tui/context.ts
+index fe641b3..0b6f671 100644
+--- a/packages/plugin/src/tui/context.ts
++++ b/packages/plugin/src/tui/context.ts
+@@ -196,6 +196,8 @@ export interface SlotMap {
+   readonly "prompt.footer.status": PromptFooterInput
+   readonly "prompt.footer.file": PromptFooterInput
+   readonly "session.composer.top": { readonly sessionID: string }
++  /** Persistent, host-owned client presentation state for a session transcript. */
++  readonly "session.transcript": { readonly sessionID: string; readonly clear: () => Promise<void> }
+   readonly "session.panel": PanelInput
+   readonly "sidebar.content": { readonly sessionID: string }
+   readonly "sidebar.footer": { readonly sessionID: string }
+@@ -557,4 +559,12 @@ export interface Context {
+   readonly keymap: Keymap
+   readonly storage: Storage
+   readonly ui: UI
++  /** Host-owned transcript presentation controls. Clearing never mutates server messages. */
++  readonly transcript: {
++    readonly before: (sessionID: string) => string | undefined
++    readonly clear: (sessionID: string) => {
++      readonly before: string | undefined
++      readonly persist: () => Promise<void>
++    }
++  }
+ }
+diff --git a/packages/protocol/src/groups/server.ts b/packages/protocol/src/groups/server.ts
+index 4b4cab1..e010fc1 100644
+--- a/packages/protocol/src/groups/server.ts
++++ b/packages/protocol/src/groups/server.ts
+@@ -14,6 +14,7 @@ export const ServerInfo = Schema.Struct({
+   capabilities: Schema.optional(
+     Schema.Struct({
+       persistentPty: Schema.optional(Schema.Boolean),
++      shellOrigin: Schema.optional(Schema.Boolean),
+     }),
+   ),
+ }).annotate({ identifier: "ServerInfo" })
+diff --git a/packages/protocol/src/groups/session.ts b/packages/protocol/src/groups/session.ts
+index a9ee506..0dfc77d 100644
+--- a/packages/protocol/src/groups/session.ts
++++ b/packages/protocol/src/groups/session.ts
+@@ -482,6 +482,8 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
+         payload: Schema.Struct({
+           id: SessionMessage.ID.pipe(Schema.optional),
+           command: Schema.String,
++          origin: Schema.Literals(["manual", "tool"]).pipe(Schema.optional),
++          callID: Schema.String.pipe(Schema.optional),
+         }),
+         success: HttpApiSchema.NoContent,
+         error: SessionNotFoundError,
+diff --git a/packages/schema/src/tool.ts b/packages/schema/src/tool.ts
+index 06dec1c..a515a73 100644
+--- a/packages/schema/src/tool.ts
++++ b/packages/schema/src/tool.ts
+@@ -16,6 +16,8 @@ export interface Context {
+   readonly agent: Agent.ID
+   readonly messageID: SessionMessage.ID
+   readonly id: CallID
++  /** Deterministic child invocation ordinal for tools executed inside one CodeMode call. */
++  readonly callIndex?: number
+   readonly progress: (update: Metadata) => Effect.Effect<void>
+ }
+ 
+diff --git a/packages/server/src/handlers/server.ts b/packages/server/src/handlers/server.ts
+index d85594b..e618d00 100644
+--- a/packages/server/src/handlers/server.ts
++++ b/packages/server/src/handlers/server.ts
+@@ -17,12 +17,18 @@ export const ServerHandler = HttpApiBuilder.group(Api, "server.server", (handler
+       .handle("server.info", () =>
+         Effect.gen(function* () {
+           const info = yield* ServerInfo.Service
++          // The shell-origin contract is advertised only by the detached CTG
++          // build channel, never by upstream/default builds.
++          const shellOriginAvailable = info.app.channel?.startsWith("ctg.") === true
+           return {
+             version: info.app.version ?? "unknown",
+             pid: process.pid ?? 0,
+             urls: info.urls(),
+             paths: info.paths,
+-            capabilities: { persistentPty: PersistentPty.available },
++            capabilities: {
++              persistentPty: PersistentPty.available,
++              ...(shellOriginAvailable ? { shellOrigin: true } : {}),
++            },
+           }
+         }),
+       )
+diff --git a/packages/server/src/handlers/session.ts b/packages/server/src/handlers/session.ts
+index dd85c2f..2a39289 100644
+--- a/packages/server/src/handlers/session.ts
++++ b/packages/server/src/handlers/session.ts
+@@ -427,7 +427,13 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
+         "session.shell",
+         Effect.fn(function* (ctx) {
+           yield* session
+-            .shell({ sessionID: ctx.params.sessionID, id: ctx.payload.id, command: ctx.payload.command })
++            .shell({
++              sessionID: ctx.params.sessionID,
++              id: ctx.payload.id,
++              command: ctx.payload.command,
++              origin: ctx.payload.origin,
++              callID: ctx.payload.callID,
++            })
+             .pipe(Effect.catchTag("Session.NotFoundError", missingSession))
+           return HttpApiSchema.NoContent.make()
+         }),
+diff --git a/packages/tui/src/app.tsx b/packages/tui/src/app.tsx
+index 88939eb..4c343c0 100644
+--- a/packages/tui/src/app.tsx
++++ b/packages/tui/src/app.tsx
+@@ -95,13 +95,19 @@ import { Config, ConfigProvider, useConfig } from "./config"
+ import { newSessionLocation } from "./config/new-session-location"
+ import { UpdateNotificationProvider, useUpdateNotification, type UpdateSource } from "./context/update-notification"
+ import { PluginProvider, usePlugin, type PackageSource } from "./plugin/context"
++import { TranscriptProvider } from "./plugin/api"
+ import { localPluginDirectories } from "./plugin/discovery"
+ import { PluginRoute, Slot } from "./plugin/render"
+ import { CommandPaletteDialog } from "./component/command-palette"
+ import { COMMAND_PALETTE_COMMAND, Keymap, type KeymapCommand } from "./context/keymap"
+ 
+ import { DialogVariant } from "./component/dialog-variant"
+-import { destroyRenderer } from "./util/renderer"
++import {
++  destroyRenderer,
++  destroyUnacquiredRenderer,
++  saveTerminalTitle,
++  trackSavedTerminalTitle,
++} from "./util/renderer"
+ import { cliErrorMessage, errorFormat } from "./util/error"
+ import { AttentionProvider } from "./context/attention"
+ import { StorageProvider, useStorage } from "./context/storage"
+@@ -252,6 +258,8 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
+       const renderer = yield* Effect.gen(function* () {
+         if (handoff) {
+           handoff.renderer.useMouse = options.useMouse
++          saveTerminalTitle()
++          trackSavedTerminalTitle(handoff.renderer)
+           return yield* Effect.acquireRelease(Effect.succeed(handoff.renderer), (renderer) =>
+             Effect.sync(() => destroyRenderer(renderer)),
+           )
+@@ -260,13 +268,24 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
+           const { Drive } = yield* Effect.promise(() => import("@opencode/simulation/frontend"))
+           return yield* Drive.create(options, input.app.version)
+         }
+-        return yield* Effect.acquireRelease(
++        const acquired = yield* Effect.acquireRelease(
+           Effect.tryPromise({
+-            try: () => createCliRenderer(options),
++            try: async () => {
++              saveTerminalTitle()
++              try {
++                const renderer = await createCliRenderer(options)
++                trackSavedTerminalTitle(renderer)
++                return renderer
++              } catch (error) {
++                destroyUnacquiredRenderer()
++                throw error
++              }
++            },
+             catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+           }),
+           (renderer) => Effect.sync(() => destroyRenderer(renderer)),
+         )
++        return acquired
+       })
+       renderer.setMaxListeners(15)
+       const clipboard = yield* Effect.acquireRelease(
+@@ -380,8 +399,9 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
+                                               <PermissionProvider>
+                                                 <DataProvider directory={directory}>
+                                                   <LocationProvider>
+-                                                    <SessionTabsProvider>
+-                                                      <SessionTerminalsProvider>
++                                                    <TranscriptProvider>
++                                                      <SessionTabsProvider>
++                                                        <SessionTerminalsProvider>
+                                                         <ThemeProvider
+                                                           mode={mode}
+                                                           source={createThemeSource(global.config)}
+@@ -416,8 +436,9 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
+                                                             </PromptStashProvider>
+                                                           </LocalProvider>
+                                                         </ThemeProvider>
+-                                                      </SessionTerminalsProvider>
+-                                                    </SessionTabsProvider>
++                                                        </SessionTerminalsProvider>
++                                                      </SessionTabsProvider>
++                                                    </TranscriptProvider>
+                                                   </LocationProvider>
+                                                 </DataProvider>
+                                               </PermissionProvider>
+@@ -767,7 +788,6 @@ function App() {
+         name: "session.clear",
+         title: "Clear session",
+         category: "Session",
+-        slash: { name: "clear" },
+         run: () => {
+           const model = local.model.current()
+           const agent = local.agent.current()
+diff --git a/packages/tui/src/component/prompt/index.tsx b/packages/tui/src/component/prompt/index.tsx
+index a9f699c..7ba9736 100644
+--- a/packages/tui/src/component/prompt/index.tsx
++++ b/packages/tui/src/component/prompt/index.tsx
+@@ -1306,7 +1306,12 @@ export function Prompt(props: PromptProps) {
+     history.append(entry)
+     if (currentMode === "shell") {
+       move.startSubmit()
+-      const send = () => client.api.session.shell({ sessionID: target, command: inputText })
++      const send = () => client.api.session.shell({
++        sessionID: target,
++        command: inputText,
++        origin: "manual",
++        callID: `manual:${crypto.randomUUID()}`,
++      })
+       void (newSession ? newSession.gate.then(send).catch(newSession.recover) : send())
+       setStore("mode", "normal")
+     } else if (slashHead && isCommand) {
+diff --git a/packages/tui/src/plugin/api.tsx b/packages/tui/src/plugin/api.tsx
+index 35a4eac..a151d84 100644
+--- a/packages/tui/src/plugin/api.tsx
++++ b/packages/tui/src/plugin/api.tsx
+@@ -32,9 +32,43 @@ import { useSessionTabs } from "../context/session-tabs"
+ import { useOptionalPanel } from "../context/panel"
+ import { useLocal } from "../context/local"
+ import { abbreviateHome } from "../util/path-format"
++import { createContext, useContext, type ParentProps } from "solid-js"
+ 
+ export type Dispose = () => Promise<void>
+ 
++const Transcript = createContext<ReturnType<typeof createTranscriptHost>>()
++
++export function TranscriptProvider(props: ParentProps) {
++  const value = createTranscriptHost(useData())
++  return <Transcript.Provider value={value}>{props.children}</Transcript.Provider>
++}
++
++export function createTranscriptHost(data: ReturnType<typeof useData>) {
++  const [persisted, persist] = useStorage().store<Record<string, { before?: string }>>("transcript-presentation", {
++    initial: {},
++  })
++  return {
++    before: (sessionID: string) => persisted[sessionID]?.before,
++    clear(sessionID: string) {
++      const before = data.session.message.list(sessionID).at(-1)?.id
++      return {
++        before,
++        persist: () =>
++          persist((draft) => {
++            if (before) draft[sessionID] = { before }
++            else delete draft[sessionID]
++          }),
++      }
++    },
++  }
++}
++
++export function useTranscript() {
++  const value = useContext(Transcript)
++  if (!value) throw new Error("TranscriptProvider is missing")
++  return value
++}
++
+ // Slot inputs erased to their union: the registry stores one render shape
+ // regardless of which path a claim targets.
+ export type SlotRender = (input: SlotMap[SlotPath]) => JSX.Element
+@@ -62,11 +96,14 @@ export type Registry = {
+ // The host services a plugin context adapts. Collected once by the provider
+ // (hooks must run during component setup) and shared by every activation.
+ export function usePluginHost() {
++  const data = useData()
++  const transcript = useTranscript()
+   return {
+     owner: getOwner(),
+     renderer: useRenderer(),
+     client: useClient(),
+-    data: useData(),
++    data,
++    transcript,
+     route: useRoute(),
+     keymap: Keymap.use(),
+     shortcuts: Keymap.useShortcuts(),
+@@ -158,6 +195,7 @@ export function createPluginContext(input: {
+     renderer: host.renderer,
+     client: host.client.api,
+     data: host.data,
++    transcript: host.transcript,
+     attention: host.attention,
+     get theme() {
+       return host.themes.currentTokens()
+diff --git a/packages/tui/src/plugin/context.tsx b/packages/tui/src/plugin/context.tsx
+index 31c4f4c..b04abf5 100644
+--- a/packages/tui/src/plugin/context.tsx
++++ b/packages/tui/src/plugin/context.tsx
+@@ -62,6 +62,13 @@ type Value = {
+     readonly resolved: () => ReturnType<typeof resolveSlots<SlotRender>>
+   }
+   readonly markdown: () => MarkdownOptions["renderNode"]
++  readonly transcript: {
++    readonly before: (sessionID: string) => string | undefined
++    readonly clear: (sessionID: string) => {
++      readonly before: string | undefined
++      readonly persist: () => Promise<void>
++    }
++  }
+   readonly activate: (id: string) => Promise<boolean>
+   readonly deactivate: (id: string) => Promise<boolean>
+ }
+@@ -608,6 +615,7 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
+         route: (id, name) => store.registrations[id]?.routes[name]?.render,
+         slots: { register: registerSlot, resolved },
+         markdown,
++        transcript: host.transcript,
+         // Manual dialog toggles join the same chain as reconciles so a
+         // toggle mid-reload cannot mix registrations across generations.
+         activate: (id) => enqueue(() => activate(id)),
+@@ -752,6 +760,6 @@ function isPlugin(value: unknown): value is Plugin.Definition {
+ 
+ export function usePlugin() {
+   const value = useContext(PluginContext)
+-  if (!value) throw new Error("PluginProvider is missing")
+-  return value
++  if (value) return value
++  throw new Error("PluginProvider is missing")
+ }
+diff --git a/packages/tui/src/routes/session/index.tsx b/packages/tui/src/routes/session/index.tsx
+index 0b8228e..dff91bf 100644
+--- a/packages/tui/src/routes/session/index.tsx
++++ b/packages/tui/src/routes/session/index.tsx
+@@ -170,7 +170,9 @@ export function Session(props: {
+   const theme = useTheme()
+   const promptRef = usePromptRef()
+   const session = createMemo(() => data.session.get(route.sessionID))
++  const plugin = usePlugin()
+   const messages = () => data.session.message.list(route.sessionID)
++  const clearTranscript = (sessionID = route.sessionID) => plugin.transcript.clear(sessionID)
+   const messageIndexes = createMemo(() => new Map(messages().map((message, index) => [message.id, index])))
+   const legacy = createMemo(() => legacyTurns(messages()))
+   const messagesBeforeRevert = () => {
+@@ -278,11 +280,14 @@ export function Session(props: {
+   })
+   const editor = useEditorContext()
+   const [rowsSynced, setRowsSynced] = createSignal(false)
++  const [transcriptBefore, setTranscriptBefore] = createSignal<string>()
++  createEffect(() => setTranscriptBefore(plugin.transcript.before(route.sessionID)))
+   const rows = createSessionRows(
+     () => route.sessionID,
+     (id) => {
+       if (id === sessionID) setRowsSynced(true)
+     },
++    transcriptBefore,
+   )
+   const boundaries = createMemo(() => messageBoundaryIDs(rows, messages()))
+   const anchors = createTimelineAnchors()
+@@ -291,6 +296,21 @@ export function Session(props: {
+   const [firstJump, setFirstJump] = createSignal<() => void>()
+   const [synced, setSynced] = createSignal(false)
+   const sessionTabs = useSessionTabs()
++  const clearTranscriptView = () => {
++    const cutoff = clearTranscript(route.sessionID)
++    setTranscriptBefore(cutoff.before)
++    batch(() => {
++      setHiddenRows(undefined)
++      setVisibleRowsEnd(undefined)
++      setAwayFromBottom(false)
++      setNavigationSlack(0)
++      setNavigationMessage(undefined)
++    })
++    sessionTabs.setScrollAnchor(route.sessionID, undefined)
++    scroll.stickyScroll = true
++    afterLayout(() => scroll.scrollTo(scroll.scrollHeight))
++    void cutoff.persist().catch((error) => toast.show({ message: errorMessage(error), variant: "error" }))
++  }
+   const [awayFromBottom, setAwayFromBottom] = createSignal(false)
+   const [latestHovered, setLatestHovered] = createSignal(false)
+   let ensureAllRowsPending: (() => void)[] | undefined
+@@ -822,6 +842,31 @@ export function Session(props: {
+   ]
+ 
+   const baseAndUnfocusedCommands = [
++    {
++      id: "session.transcript.clear",
++      title: "Clear transcript view",
++      group: "Session",
++      slash: { name: "clear" },
++      run: () => {
++        clearTranscriptView()
++      },
++    },
++    {
++      id: "session.auto-compaction.toggle",
++      title: "Toggle automatic compaction for this session",
++      group: "Session",
++      slash: { name: "autocompact" },
++      run: () => {
++        const enabled = session()?.metadata?.["ctg.autoCompaction"] !== false
++        const metadata = { ...session()?.metadata }
++        if (enabled) metadata["ctg.autoCompaction"] = false
++        else delete metadata["ctg.autoCompaction"]
++        void client.api.session
++          .update({ sessionID: route.sessionID, metadata })
++          .then(() => data.session.sync(route.sessionID))
++          .catch((error) => toast.show({ message: errorMessage(error), variant: "error" }))
++      },
++    },
+     {
+       id: "session.first",
+       title: "First message",
+@@ -1418,6 +1463,19 @@ export function Session(props: {
+                   updateAwayFromBottom()
+                 }}
+               >
++                <Slot
++                  path="session.transcript"
++                  input={{
++                    sessionID: route.sessionID,
++                    clear: async () => {
++                      const cutoff = clearTranscript(route.sessionID)
++                      setTranscriptBefore(cutoff.before)
++                      void cutoff.persist().catch((error) =>
++                        toast.show({ message: errorMessage(error), variant: "error" }),
++                      )
++                    },
++                  }}
++                />
+                 <For each={visibleRows()}>
+                   {(row, index) => (
+                     <SessionRowView
+diff --git a/packages/tui/src/routes/session/rows.ts b/packages/tui/src/routes/session/rows.ts
+index 52e45c9..f350034 100644
+--- a/packages/tui/src/routes/session/rows.ts
++++ b/packages/tui/src/routes/session/rows.ts
+@@ -44,7 +44,11 @@ export async function completeGroupBoundary(input: {
+   }
+ }
+ 
+-export function createSessionRows(sessionID: Accessor<string>, onSynced?: (sessionID: string) => void) {
++export function createSessionRows(
++  sessionID: Accessor<string>,
++  onSynced?: (sessionID: string) => void,
++  transcriptBefore?: Accessor<string | undefined>,
++) {
+   const data = useData()
+   const client = useClient()
+   const config = useConfig()
+@@ -60,7 +64,9 @@ export function createSessionRows(sessionID: Accessor<string>, onSynced?: (sessi
+     const queued = new Set(
+       pending.flatMap((item) => (item.type === "user" && item.delivery === "queue" ? [item.id] : [])),
+     )
+-    const visible = queued.size === 0 ? messages : messages.filter((message) => !queued.has(message.id))
++    const cutoff = transcriptBefore?.()
++    const cutoffIndex = cutoff ? messages.findIndex((message) => message.id === cutoff) : -1
++    const visible = messages.slice(cutoffIndex + 1).filter((message) => !queued.has(message.id))
+     const boundary = revertBoundary()
+     const rows = reduceSessionRows(
+       boundary ? visible.filter((message) => message.id < boundary) : visible,
+@@ -143,6 +149,7 @@ export function createSessionRows(sessionID: Accessor<string>, onSynced?: (sessi
+   // Re-reduce when the revert boundary changes (stage/clear/commit). These reactions defer
+   // their first run: the mount effect above has already reduced the same state.
+   createEffect(on(revertBoundary, rebuild, { defer: true }))
++  createEffect(on(() => transcriptBefore?.(), rebuild, { defer: true }))
+ 
+   createEffect(
+     on(
+diff --git a/packages/tui/src/util/renderer.ts b/packages/tui/src/util/renderer.ts
+index a0c16fa..92df561 100644
+--- a/packages/tui/src/util/renderer.ts
++++ b/packages/tui/src/util/renderer.ts
+@@ -1,7 +1,36 @@
+ import type { CliRenderer } from "@opentui/core"
+ 
+-export function destroyRenderer(renderer: Pick<CliRenderer, "isDestroyed" | "setTerminalTitle" | "destroy">) {
+-  renderer.setTerminalTitle("")
+-  if (renderer.isDestroyed) return
+-  renderer.destroy()
++type Write = (data: string) => unknown
++type TitleRenderer = Pick<CliRenderer, "isDestroyed" | "setTerminalTitle" | "destroy">
++
++const SAVE_TITLE = "\x1b[22;0t"
++const RESTORE_TITLE = "\x1b[23;0t"
++const saved = new WeakSet<object>()
++const restored = new WeakSet<object>()
++
++export function saveTerminalTitle(write: Write = (data) => process.stdout.write(data)) {
++  write(SAVE_TITLE)
++}
++
++export function trackSavedTerminalTitle(renderer: TitleRenderer) {
++  saved.add(renderer)
++}
++
++export function restoreUnacquiredTerminalTitle(write: Write = (data) => process.stdout.write(data)) {
++  write(RESTORE_TITLE)
++}
++
++export function destroyRenderer(renderer: TitleRenderer, write: Write = (data) => process.stdout.write(data)) {
++  if (restored.has(renderer)) return
++  restored.add(renderer)
++  try {
++    renderer.setTerminalTitle("")
++    if (!renderer.isDestroyed) renderer.destroy()
++  } finally {
++    if (saved.has(renderer)) restoreUnacquiredTerminalTitle(write)
++  }
++}
++
++export function destroyUnacquiredRenderer(write: Write = (data) => process.stdout.write(data)) {
++  restoreUnacquiredTerminalTitle(write)
+ }
+diff --git a/packages/tui/test/clear-session.test.tsx b/packages/tui/test/clear-session.test.tsx
+index b53525d..5fd351a 100644
+--- a/packages/tui/test/clear-session.test.tsx
++++ b/packages/tui/test/clear-session.test.tsx
+@@ -2,6 +2,8 @@ import { expect, test } from "bun:test"
+ import { createAppFixture } from "./fixture/app"
+ import { directory, json } from "./fixture/tui-client"
+ import { tmpdir } from "./fixture/fixture"
++import type { SessionMessageInfo } from "@opencode/client"
++import { mkdir } from "node:fs/promises"
+ 
+ const location = { directory, project: { id: "project", directory, canonical: directory } }
+ const session = {
+@@ -15,18 +17,34 @@ const session = {
+   tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+   time: { created: 0, updated: 0 },
+ }
++const messages: SessionMessageInfo[] = [
++  { type: "user", id: "msg_0001", text: "Durable older prompt", time: { created: 1 } },
++  { type: "user", id: "msg_0002", text: "Durable latest prompt", time: { created: 2 } },
++]
++let metadataUpdates: Record<string, unknown>[] = []
++let manualCompactions = 0
++let sessionMetadata: Record<string, unknown> | undefined
+ 
+-function render(state: string) {
++function render(
++  state: string,
++  extra?: (url: URL, request: Request) => Response | undefined | Promise<Response | undefined>,
++) {
+   return createAppFixture({
+     state,
+     args: { sessionID: session.id },
+     config: { animations: false, tabs: { mode: "on" } },
+-    fetch: (url) => {
++    fetch: async (url, request) => {
++      const handled = await extra?.(url, request)
++      if (handled) return handled
+       if (url.pathname === "/api/fs/list") return json({ location, data: [] })
+       if (url.pathname === "/api/location") return json(location)
+       if (url.pathname === "/api/session") return json({ data: [session], cursor: {} })
+-      if (url.pathname === `/api/session/${session.id}`) return json({ data: session })
+-      if (/^\/api\/session\/[^/]+\/(message|inbox|permission)$/.test(url.pathname))
++      if (url.pathname === `/api/session/${session.id}`) return json({ data: { ...session, metadata: sessionMetadata } })
++      if (/^\/api\/session\/[^/]+\/compact$/.test(url.pathname) && request.method === "POST")
++        return new Response(null, { status: 204 })
++      if (url.pathname === `/api/session/${session.id}/message`)
++        return json({ data: messages.toReversed(), cursor: {} })
++      if (/^\/api\/session\/[^/]+\/(inbox|permission)$/.test(url.pathname))
+         return json({ data: [], cursor: {} })
+       if (url.pathname === "/api/agent")
+         return json({ location, data: [{ id: "build", mode: "primary", hidden: false, permissions: [] }] })
+@@ -40,17 +58,66 @@ function render(state: string) {
+   })
+ }
+ 
+-test("/clear replaces the active session tab", async () => {
++test("/clear hides only the active transcript view and preserves durable rows", async () => {
++  metadataUpdates = []
++  sessionMetadata = undefined
+   await using state = await tmpdir()
+-  await using setup = await render(state.path)
++  await mkdir(`${state.path}/test/tui`, { recursive: true })
++  await Bun.write(
++    `${state.path}/test/tui/transcript-presentation.json`,
++    JSON.stringify({ ses_other: { before: "msg_other_0002" } }),
++  )
++  {
++    await using setup = await render(state.path)
++    await setup.waitForFrame((frame) => frame.includes("Durable latest prompt"))
++    await setup.mockInput.typeText("/clear")
++    setup.mockInput.pressEnter()
++    const frame = await setup.waitForFrame(
++      (frame) => !frame.includes("Durable latest prompt") && frame.includes("Session to clear"),
++    )
++    expect(frame).not.toContain("Durable latest prompt")
++    expect(frame).toContain("Session to clear")
++    expect(messages.map((message) => message.id)).toEqual(["msg_0001", "msg_0002"])
++  }
+ 
++  await using reopened = await render(state.path)
++  await reopened.waitForFrame((current) => current.includes("Session to clear") && !current.includes("Durable latest prompt"))
++  const persisted = JSON.parse(await Bun.file(`${state.path}/test/tui/transcript-presentation.json`).text())
++  expect(persisted).toEqual({
++    ses_other: { before: "msg_other_0002" },
++    [session.id]: { before: "msg_0002" },
++  })
++  expect(messages.map((message) => message.id)).toEqual(["msg_0001", "msg_0002"])
++}, { timeout: 60_000 })
++
++test("/autocompact persists a session-local opt-out and manual compact remains available", async () => {
++  metadataUpdates = []
++  manualCompactions = 0
++  sessionMetadata = undefined
++  await using state = await tmpdir()
++  await using setup = await render(state.path, async (url, request) => {
++    if (request.method === "PATCH" && url.pathname === `/api/session/${session.id}`) {
++      const body = (await request.json()) as { metadata: Record<string, unknown> }
++      metadataUpdates.push(body.metadata)
++      sessionMetadata = body.metadata
++      return new Response(null, { status: 204 })
++    }
++    if (request.method === "POST" && url.pathname === `/api/session/${session.id}/compact`) {
++      manualCompactions++
++      return new Response(null, { status: 204 })
++    }
++    return undefined
++  })
+   await setup.waitForFrame((frame) => frame.includes("Session to clear"))
+-  await setup.mockInput.typeText("/clear")
++  await setup.mockInput.typeText("/autocompact")
+   setup.mockInput.pressEnter()
+-  const frame = await setup.waitForFrame((frame) => !frame.includes("Session to clear"))
+-
+-  expect(frame).not.toContain("Session to clear")
+-})
++  await setup.waitFor(() => metadataUpdates.length === 1)
++  expect(metadataUpdates).toEqual([{ "ctg.autoCompaction": false }])
++  await setup.mockInput.typeText("/compact")
++  setup.mockInput.pressEnter()
++  await setup.waitFor(() => manualCompactions === 1)
++  expect(metadataUpdates).toEqual([{ "ctg.autoCompaction": false }])
++}, { timeout: 60_000 })
+ 
+ test("/new keeps the active session tab", async () => {
+   await using state = await tmpdir()
+diff --git a/packages/tui/test/fixture/tui-client.ts b/packages/tui/test/fixture/tui-client.ts
+index 9accc15..b9729bf 100644
+--- a/packages/tui/test/fixture/tui-client.ts
++++ b/packages/tui/test/fixture/tui-client.ts
+@@ -94,7 +94,13 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof
+     if (url.pathname === "/experimental/capabilities") return json({ backgroundSubagents: true })
+     if (url.pathname === "/path") return json({ home: "", state: "", config: "", worktree, directory })
+     if (url.pathname === "/api/info")
+-      return json({ version: "test", pid: 0, urls: [], paths: { tmp: "/tmp" }, capabilities: { persistentPty: true } })
++      return json({
++        version: "test",
++        pid: 0,
++        urls: [],
++        paths: { tmp: "/tmp" },
++        capabilities: { persistentPty: true },
++      })
+     if (url.pathname === "/api/location")
+       return json({ directory, project: { id: "proj_test", directory: worktree, canonical: worktree } })
+     if (url.pathname === "/api/plugin")
+diff --git a/packages/tui/test/util/renderer.test.ts b/packages/tui/test/util/renderer.test.ts
+index a5c4e7b..6c015fd 100644
+--- a/packages/tui/test/util/renderer.test.ts
++++ b/packages/tui/test/util/renderer.test.ts
+@@ -1,30 +1,63 @@
+ import { expect, test } from "bun:test"
+-import { destroyRenderer } from "../../src/util/renderer"
++import {
++  destroyRenderer,
++  destroyUnacquiredRenderer,
++  saveTerminalTitle,
++  trackSavedTerminalTitle,
++} from "../../src/util/renderer"
++import type { CliRenderer } from "@opentui/core"
+ 
+-test("clears the terminal title before destroying the renderer", () => {
+-  const calls: string[] = []
+-  destroyRenderer({
+-    isDestroyed: false,
+-    setTerminalTitle(title) {
++const renderer = (isDestroyed: boolean, calls: string[]) =>
++  ({
++    isDestroyed,
++    setTerminalTitle(title: string) {
+       calls.push(`title:${title}`)
+     },
+     destroy() {
+       calls.push("destroy")
+     },
+-  })
+-  expect(calls).toEqual(["title:", "destroy"])
++  }) satisfies Pick<CliRenderer, "isDestroyed" | "setTerminalTitle" | "destroy">
++
++test("saves the host title with the VT title-stack control", () => {
++  const output: string[] = []
++  saveTerminalTitle((data) => output.push(data))
++  expect(output).toEqual(["\x1b[22;0t"])
++})
++
++test("saves a handed-off renderer title once and restores it on cleanup", () => {
++  const calls: string[] = []
++  const instance = renderer(false, calls)
++  const write = (data: string) => calls.push(`write:${data}`)
++  saveTerminalTitle(write)
++  trackSavedTerminalTitle(instance)
++  trackSavedTerminalTitle(instance)
++  destroyRenderer(instance, write)
++  expect(calls).toEqual(["write:\x1b[22;0t", "title:", "destroy", "write:\x1b[23;0t"])
++})
++
++test("clears the terminal title before destroying the renderer", () => {
++  const calls: string[] = []
++  const instance = renderer(false, calls)
++  saveTerminalTitle((data) => calls.push(`write:${data}`))
++  trackSavedTerminalTitle(instance)
++  calls.length = 0
++  destroyRenderer(instance, (data) => calls.push(`write:${data}`))
++  destroyRenderer(instance, (data) => calls.push(`write:${data}`))
++  expect(calls).toEqual(["title:", "destroy", "write:\x1b[23;0t"])
+ })
+ 
+ test("still clears the title after renderer destruction", () => {
+   const calls: string[] = []
+-  destroyRenderer({
+-    isDestroyed: true,
+-    setTerminalTitle(title) {
+-      calls.push(`title:${title}`)
+-    },
+-    destroy() {
+-      calls.push("destroy")
+-    },
+-  })
+-  expect(calls).toEqual(["title:"])
++  const instance = renderer(true, calls)
++  saveTerminalTitle((data) => calls.push(`write:${data}`))
++  trackSavedTerminalTitle(instance)
++  calls.length = 0
++  destroyRenderer(instance, (data) => calls.push(`write:${data}`))
++  expect(calls).toEqual(["title:", "write:\x1b[23;0t"])
++})
++
++test("restores the title stack when renderer acquisition fails", () => {
++  const calls: string[] = []
++  destroyUnacquiredRenderer((data) => calls.push(data))
++  expect(calls).toEqual(["\x1b[23;0t"])
+ })

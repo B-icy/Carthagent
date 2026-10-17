@@ -7,6 +7,11 @@ when its version is exactly 2.0.32.
 
 ## Isolation and persistence
 
+An additional separately distributed pinned source variant is documented in
+[`opencode-owned-runtime.md`](./opencode-owned-runtime.md). It is opt-in via
+`CTG_OWNED_OPENCODE_RUNTIME`; unset behavior remains the package-owned
+`@opencode/cli@2.0.32` runtime described here.
+
 The default CTG profile is `~/.carthagent/opencode`. `CTG_OPENCODE_HOME` (or a
 `root` argument in the runtime API) can select another profile. CTG applies
 private `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME`, and
