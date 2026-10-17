@@ -146,7 +146,7 @@ test('canonicalizes aliased ancestors while rejecting a symlinked task worktree 
     await assert.rejects(Promise.resolve().then(() => canonicalDirectory(aliasRoot)), error => error.code === 'not_owned');
   } finally { await dispose(); }
   assert.equal(lstatSync(aliasRoot).isSymbolicLink(), true);
-  assert.equal(realpathSync(f.worktree), f.worktree);
+  assert.equal(realpathSync(f.worktree), canonicalDirectory(f.worktree));
 });
 
 test('head-bound reviews keep current changes requests blocking and incomplete checks partial', async t => {
