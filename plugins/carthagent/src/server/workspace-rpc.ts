@@ -11,7 +11,8 @@ import { Workspace, type WorkspaceSnapshot } from '../workspace-rpc';
 function taskStatus(record: Record<string, any>, session?: any, running?: boolean) {
   if (!session) return 'unavailable';
   if (running) return 'running';
-  if (session.outcome) return session.outcome;
+  if (session.outcome === 'failed' || session.outcome === 'interrupted') return session.outcome;
+  // A successful model turn does not complete the durable logical delivery task.
   return 'unknown';
 }
 
