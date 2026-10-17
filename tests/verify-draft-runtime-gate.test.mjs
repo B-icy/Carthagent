@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { spawnSync } from 'node:child_process';
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -103,6 +103,64 @@ else process.exit(2);
   assert.match(published.stderr, /must remain a draft/);
 });
 
+test('trusted inline bootstrap accepts a main tag and rejects non-main dispatch and a foreign tag', async (t) => {
+  const workflow = await readFile(new URL('../.github/workflows/accept-draft-release.yml', import.meta.url), 'utf8');
+  const bootstrap = workflow.match(/- name: Require main dispatch and a release tag descended from origin\/main[\s\S]*?\n        run: \|\n((?:          .*\n)+)/)?.[1];
+  const postcheck = workflow.match(/- name: Reverify release tag ancestry against approved main after acceptance[\s\S]*?\n        run: \|\n((?:          .*\n?)+?)(?=\n      - |\n\s*$)/)?.[1];
+  assert.ok(bootstrap, 'trusted ancestry bootstrap block must be extractable');
+  assert.ok(postcheck, 'post-acceptance trusted ancestry block must be extractable');
+
+  const temp = await mkdtemp(path.join(tmpdir(), 'ctg-main-ancestry-'));
+  t.after(() => rm(temp, { recursive: true, force: true }));
+  const source = path.join(temp, 'source');
+  const bare = path.join(temp, 'origin.git');
+  const output = path.join(temp, 'github-output');
+  await mkdir(source);
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, stdio: 'pipe' }).toString().trim();
+  git(source, 'init', '-b', 'main');
+  git(source, 'config', 'user.email', 'gate-fixture@example.invalid');
+  git(source, 'config', 'user.name', 'Gate Fixture');
+  await writeFile(path.join(source, 'package.json'), JSON.stringify({ version: '1.0.3' }));
+  git(source, 'add', 'package.json');
+  git(source, 'commit', '-m', 'approved main release commit');
+  const approvedSha = git(source, 'rev-parse', 'HEAD');
+  git(source, 'tag', '-a', 'v1.0.3', '-m', 'approved annotated draft release', approvedSha);
+  execFileSync('git', ['init', '--bare', bare], { stdio: 'pipe' });
+  git(source, 'remote', 'add', 'origin', bare);
+  git(source, 'push', 'origin', 'main', '--tags');
+
+  const invoke = (script, ref, expectedSha = '') => spawnSync('bash', ['-euo', 'pipefail', '-c', script], {
+    cwd: source, encoding: 'utf8',
+    env: {
+      ...process.env,
+      GITHUB_REF: ref,
+      GITHUB_OUTPUT: output,
+      RELEASE_TAG: tag,
+      TRUSTED_REPOSITORY_URL: bare,
+      EXPECTED_SHA: expectedSha,
+    },
+  });
+
+  const accepted = invoke(bootstrap, 'refs/heads/main');
+  assert.equal(accepted.status, 0, accepted.stderr);
+  assert.match(await readFile(output, 'utf8'), new RegExp(`sha=${approvedSha}`));
+  assert.equal(invoke(bootstrap, 'refs/heads/release-candidate').status, 1);
+  assert.equal(invoke(postcheck, 'refs/heads/main', approvedSha).status, 0);
+
+  git(source, 'checkout', '-b', 'foreign/release');
+  await writeFile(path.join(source, 'foreign.txt'), 'not in main');
+  git(source, 'add', 'foreign.txt');
+  git(source, 'commit', '-m', 'unapproved foreign release commit');
+  git(source, 'tag', '-f', 'v1.0.3', 'HEAD');
+  git(source, 'push', 'origin', '+refs/tags/v1.0.3:refs/tags/v1.0.3');
+  const rejectedForeign = invoke(bootstrap, 'refs/heads/main');
+  assert.equal(rejectedForeign.status, 1, rejectedForeign.stderr);
+  assert.match(rejectedForeign.stderr, /must point to a commit descended from approved origin\/main/);
+  const rejectedMovedTag = invoke(postcheck, 'refs/heads/main', approvedSha);
+  assert.equal(rejectedMovedTag.status, 1, rejectedMovedTag.stderr);
+  assert.match(rejectedMovedTag.stderr, /moved during acceptance/);
+});
+
 test('post-check requires the same release ID and the pre-acceptance tested SHA', async () => {
   const { run: goodRun } = mockRun();
   assert.deepEqual(await verifyDraftRuntimeGate({ phase: 'after', releaseTag: tag, expectedSha: sha, expectedReleaseId: 77, repo: 'B-icy/Carthagent', cwd: '/fixture', run: goodRun }), {
@@ -139,6 +197,14 @@ test('draft workflow has read-only token limited to installed acceptance and no 
   assert.match(workflow, /verify-draft-runtime-gate\.mjs before/);
   assert.match(workflow, /verify-draft-runtime-gate\.mjs recheck/);
   assert.match(workflow, /verify-draft-runtime-gate\.mjs after/);
+  assert.match(workflow, /verify release tag ancestry against approved main after acceptance/);
+  const bootstrapIndex = workflow.indexOf('Require main dispatch and a release tag descended from origin/main');
+  const checkoutIndex = workflow.indexOf('uses: actions/checkout@v4');
+  const verifierIndex = workflow.indexOf('verify-draft-runtime-gate.mjs before');
+  assert.ok(bootstrapIndex >= 0 && bootstrapIndex < checkoutIndex && checkoutIndex < verifierIndex,
+    'trusted inline ancestry bootstrap must run before release checkout and tag-sourced verifier');
+  assert.match(workflow, /ref:\s*\$\{\{ steps\.trusted-ancestry\.outputs\.sha \}\}/,
+    'checkout must use the trusted ancestry-checked SHA, not resolve the mutable tag again');
   const docs = await readFile(new URL('../docs/opencode-owned-runtime.md', import.meta.url), 'utf8');
   assert.match(docs, /not, by itself, the final\s+installed release acceptance/);
   assert.match(docs, /test-owned-host-controls\.mjs/);
