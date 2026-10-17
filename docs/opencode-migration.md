@@ -133,11 +133,16 @@ The prepared ABBA runner at `08d8bf8` remains under changes requested: its CTG
 staging omits required runtime files, it does not verify observed plugin activation
 or baseline absence, artifact identities are missing, and failed conditions do not
 propagate a failing runner exit status. Correct these before the controlled run.
-The author reports ten passing offline guard tests for local follow-up changes;
-those changes still need a published exact commit and independent review. Select
+The author reports ten passing offline guard tests for the follow-up changes. Select
 the intended current product commit explicitly for the run: the earlier `f5bf070`
 snapshot predates production delivery and later CLI composition and cannot stand
 in for current-product acceptance.
+The follow-up is published at `18e8642`. Parent and independent review found a
+preflight blocker: double-quoting the JSON-encoded checkout status makes the
+generated manifest invalid for both clean and dirty checkouts. Cleanup is also
+registered too late to cover setup failures. Source staging, plugin observations,
+and failure aggregation appear improved, but actual runner-path regressions are
+required alongside these fixes before a timed run can proceed.
 Short idle observations showed no PTY output; they do not establish long-running
 memory bounds.
 
