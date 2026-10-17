@@ -72,7 +72,8 @@ see `docs/native-terminal-semantics-evidence/` for exact harness hashes and
 per-run caveats. An additional 40x12 interactive run typed unique input,
 backspaced one character, opened and navigated the recent-sessions menu, then
 cancelled with Escape and verified the edited composer returned. This does not
-Model-picker behavior has since been tested separately using two offline models:
+replace the separate model-picker check. Model-picker behavior has since been
+tested separately using two offline models:
 the native picker showed current A and alternate B, ArrowDown changed rendered
 selection styling to B, Escape cleared the search filter and a second Escape
 dismissed the picker, no provider request occurred during cancellation, active
