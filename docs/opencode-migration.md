@@ -161,6 +161,13 @@ isolated execution passes all 15 guard tests, including actual stale-source
 rejection, cleanup, and conflicting callback-status/nonzero process-exit cases.
 A quiet measurement window is being coordinated; no timed result or performance
 acceptance is established by these harness checks.
+The authorized attempt ran on 2026-10-17 from 18:15:41 to 18:16:54 UTC using
+source `38ad06f` and harness `198e66b`, then exited 1 with no valid samples.
+Both baseline seeders failed on a null plugin path; CTG inventory was active,
+but both CTG measurements failed to locate the editor placeholder. Artifacts
+remain at `/tmp/opencode/ctg-native-terminal-paired-approved-20261017T181325Z`.
+These are setup failures, not latency measurements. The quiet window ended;
+baseline startup and actual PTY readiness fixes need review before another run.
 Short idle observations showed no PTY output; they do not establish long-running
 memory bounds.
 
