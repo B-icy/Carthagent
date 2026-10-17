@@ -14,10 +14,12 @@ test('native codegraph scan consumes the resolved per-session max-files setting'
   await mkdir(join(root, 'src'));
   await writeFile(join(root, 'src/a.js'), 'export function alpha() {}\n');
   await writeFile(join(root, 'src/b.js'), 'export function beta() {}\n');
+  await writeFile(join(root, 'src/c.js'), 'export function gamma() {}\n');
   let registered;
   const sessions = {
     capped: { location: { directory: root }, metadata: { 'carthagent.options': { codegraphMaxFiles: 1 } } },
-    expanded: { location: { directory: root }, metadata: { 'carthagent.options': { codegraphMaxFiles: 2 } } },
+    expanded: { location: { directory: root }, metadata: { 'carthagent.options': { codegraphMaxFiles: 3 } } },
+    default: { location: { directory: root } },
   };
   const ctx = {
     options: {},
@@ -27,15 +29,19 @@ test('native codegraph scan consumes the resolved per-session max-files setting'
     } },
     session: { get: async ({ sessionID }) => sessions[sessionID] },
   };
-  const dispose = await registerCodegraph(ctx);
+  const dispose = await registerCodegraph(ctx, { maxFiles: 2 });
   t.after(dispose);
   const status = async sessionID => JSON.parse((await registered.execute({ op: 'status' }, { sessionID })).content).coverage;
   assert.deepEqual(
     (({ files, discovered, skipped, complete }) => ({ files, discovered, skipped, complete }))(await status('capped')),
-    { files: 1, discovered: 2, skipped: 1, complete: false },
+    { files: 1, discovered: 3, skipped: 2, complete: false },
   );
   assert.deepEqual(
     (({ files, discovered, skipped, complete }) => ({ files, discovered, skipped, complete }))(await status('expanded')),
-    { files: 2, discovered: 2, skipped: 0, complete: true },
+    { files: 3, discovered: 3, skipped: 0, complete: true },
+  );
+  assert.deepEqual(
+    (({ files, discovered, skipped, complete }) => ({ files, discovered, skipped, complete }))(await status('default')),
+    { files: 2, discovered: 3, skipped: 1, complete: false },
   );
 });
