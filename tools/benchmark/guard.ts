@@ -92,17 +92,30 @@ export default async function guard(ctx: any): Promise<() => Promise<void>> {
     }));
     await register(ctx.tool.hook('execute.before', async (event: any) => {
       let blocked = false;
+      let rejectionReason: string | undefined;
       let attempts = 0;
       await serializeSession(event.sessionID, async () => {
         if (disposed || !cancellationEventsAvailable || cancelledSessions.has(event.sessionID)) throw Error('Benchmark tool admission cancelled before reservation.');
-        const currentCallKey = callKey(event.sessionID, event.id);
+        const currentCallKey = callKey(event.sessionID, `${event.id}:${event.tool}`);
         const previous = await ctx.storage.get(guardLedger(event.sessionID));
         const rows = Array.isArray(previous) ? previous : [];
-        const existing = rows.find(row => row && typeof row === 'object' && row.id === event.id);
+        // OpenCode Code Mode dispatches nested namespace tools using the parent
+        // execute call ID. Include the actual tool name so the outer execute
+        // reservation cannot collide with its nested Carthagent invocation.
+        const reservationKey = event.tool === 'execute' ? event.id : `${event.id}:${event.tool}`;
+        const existing = rows.find(row => row && typeof row === 'object' && (row.reservationKey === reservationKey || (!row.reservationKey && row.id === event.id && row.tool === event.tool)));
         if (existing) {
           if (existing.tool !== event.tool || typeof existing.admitted !== 'boolean') throw Error('Conflicting benchmark tool reservation ID.');
           attempts = rows.filter(row => row && typeof row === 'object' && row.admitted === true).length;
-          blocked = true; // Duplicate invocation never executes twice.
+          blocked = true;
+          // The pinned Code Mode hook contract reuses the parent execute ID
+          // for nested calls and provides no distinct invocation ID. A second
+          // call to the same nested tool is therefore ambiguous, not proof of
+          // a replay and not evidence that the budget is exhausted.
+          const parentExecute = rows.some(row => row && typeof row === 'object' && row.id === event.id && row.tool === 'execute');
+          rejectionReason = parentExecute && event.tool !== 'execute'
+            ? 'Benchmark tool invocation attribution unavailable: nested Code Mode calls share the parent execute ID; refusing ambiguous execution.'
+            : 'Benchmark tool invocation ID was already reserved; refusing duplicate execution.';
         } else {
           attempts = rows.filter(row => row && typeof row === 'object' && row.admitted === true).length;
           blocked = attempts >= limit;
@@ -110,16 +123,16 @@ export default async function guard(ctx: any): Promise<() => Promise<void>> {
           // Persist a reservation (or rejection) while holding both the
           // per-session queue and inter-process file lock. No tool is admitted
           // until this durable write has succeeded.
-          await ctx.storage.set(guardLedger(event.sessionID), [...rows, { id:event.id, tool:event.tool, admitted:!blocked, at:Date.now() }]);
+          await ctx.storage.set(guardLedger(event.sessionID), [...rows, { id:event.id, tool:event.tool, reservationKey, admitted:!blocked, at:Date.now() }]);
           attempts += Number(!blocked);
           appendFileSync(process.env.BENCH_GUARD_LOG!, JSON.stringify({ type:'tool-attempt', sessionID:event.sessionID, callID:event.id, tool:event.tool, attempts, blocked })+'\n');
         }
-        if (!existing) admitted.set(currentCallKey, !blocked);
+        admitted.set(currentCallKey, !blocked);
       });
-      if (blocked) throw Error('Benchmark tool budget exhausted before execution.');
+      if (blocked) throw Error(rejectionReason ?? 'Benchmark tool budget exhausted before execution.');
     }));
     await register(ctx.tool.hook('execute.after', async (event: any) => {
-      const currentCallKey=callKey(event.sessionID,event.id);
+      const currentCallKey=callKey(event.sessionID,`${event.id}:${event.tool}`);
       if (admitted.get(currentCallKey) === false) return;
       if (event.status !== 'completed' || event.tool !== 'delivery_finish') return;
       const raw = event.result.content.filter((item: any) => item.type === 'text').map((item: any) => item.text).join('\n');
