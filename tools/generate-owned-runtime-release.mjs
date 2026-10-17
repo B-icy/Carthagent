@@ -210,9 +210,10 @@ async function validateRuntimeTree(root, { key, executablePath, runtimeVersion }
   }
   const packageMetadata = JSON.parse(await readFile(path.join(root, `cli-${key}/package.json`), 'utf8'));
   const [, platform, arch] = key.match(/^(linux|darwin|windows)-(x64|arm64)$/) ?? [];
+  const packageOs = platform === 'windows' ? 'win32' : platform;
   if (packageMetadata.name !== `@opencode/cli-${key}`
     || packageMetadata.version !== runtimeVersion
-    || packageMetadata.os?.length !== 1 || packageMetadata.os[0] !== platform
+    || packageMetadata.os?.length !== 1 || packageMetadata.os[0] !== packageOs
     || packageMetadata.cpu?.length !== 1 || packageMetadata.cpu[0] !== arch) {
     throw new Error(`Runtime archive package metadata does not match ${key} and ${runtimeVersion}`);
   }

@@ -63,7 +63,7 @@ async function createAllFixtures() {
       channel: `ctg.${compatibilityVersion}`, platform: `${platform}-${arch}`, webUI: false,
     }));
     const packageJson = Buffer.from(JSON.stringify({
-      name: `@opencode/cli-${key}`, version: runtimeVersion, os: [platform], cpu: [arch],
+      name: `@opencode/cli-${key}`, version: runtimeVersion, os: [platform === 'windows' ? 'win32' : platform], cpu: [arch],
     }));
     const license = Buffer.from('MIT License\n');
     const sums = Buffer.from(`${sha256(binary)}  ${executablePath}\n`);
@@ -201,6 +201,71 @@ test('rejects a safe but unexpected archive member while retaining the actual bu
     outputPath: path.join(temp, 'allowed-members.candidate'),
   });
   assert.equal(manifest.assets['linux-x64'].name, archiveName);
+});
+
+test('matches pinned OpenCode build.ts Windows package metadata (win32 OS, windows target name)', async () => {
+  const archivePath = path.join(assetsDirectory, 'opencode-windows-x64.tar.gz');
+  const original = await readFile(archivePath);
+  const expectedExecutablePath = 'cli-windows-x64/bin/opencode.exe';
+  const binary = Buffer.from('fixture executable for windows-x64\n');
+  const entries = [
+    tarEntry('./', Buffer.alloc(0), '5'),
+    tarEntry('./cli-windows-x64/', Buffer.alloc(0), '5'),
+    tarEntry('./cli-windows-x64/bin/', Buffer.alloc(0), '5'),
+    tarEntry(expectedExecutablePath, binary, '0', 0o755),
+    tarEntry('cli-windows-x64/package.json', Buffer.from(JSON.stringify({
+      name: '@opencode/cli-windows-x64', version: runtimeVersion, os: ['win32'], cpu: ['x64'],
+    }))),
+    tarEntry('LICENSE', Buffer.from('MIT License\n')),
+    tarEntry('SHA256SUMS', Buffer.from(`${sha256(binary)}  ${expectedExecutablePath}\n`)),
+    tarEntry('ctg-runtime.json', Buffer.from(JSON.stringify({
+      owner: 'Carthagent', sourceRepository: 'https://github.com/anomalyco/opencode',
+      sourceRevision, lockSha256, patchSha256, compatibilityVersion, runtimeVersion,
+      channel: `ctg.${compatibilityVersion}`, platform: 'windows-x64', webUI: false,
+    }))),
+    Buffer.alloc(1024),
+  ];
+  await writeFile(archivePath, gzipSync(Buffer.concat(entries)));
+  try {
+    const manifest = await generateOwnedRuntimeRelease({
+      releaseVersion, assetsDirectory, repoRoot: root,
+      outputPath: path.join(temp, 'windows-metadata.candidate'),
+    });
+    assert.equal(manifest.assets['windows-x64'].executableSha256, sha256(binary));
+  } finally { await writeFile(archivePath, original); }
+});
+
+test('rejects npm Windows OS metadata that does not match pinned build.ts', async () => {
+  const archivePath = path.join(assetsDirectory, 'opencode-windows-x64.tar.gz');
+  const original = await readFile(archivePath);
+  const expectedExecutablePath = 'cli-windows-x64/bin/opencode.exe';
+  const binary = Buffer.from('fixture executable for windows-x64\n');
+  await writeFile(archivePath, gzipSync(Buffer.concat([
+    tarEntry('./', Buffer.alloc(0), '5'),
+    tarEntry('./cli-windows-x64/', Buffer.alloc(0), '5'),
+    tarEntry('./cli-windows-x64/bin/', Buffer.alloc(0), '5'),
+    tarEntry(expectedExecutablePath, binary, '0', 0o755),
+    tarEntry('cli-windows-x64/package.json', Buffer.from(JSON.stringify({
+      name: '@opencode/cli-windows-x64', version: runtimeVersion, os: ['windows'], cpu: ['x64'],
+    }))),
+    tarEntry('LICENSE', Buffer.from('MIT License\n')),
+    tarEntry('SHA256SUMS', Buffer.from(`${sha256(binary)}  ${expectedExecutablePath}\n`)),
+    tarEntry('ctg-runtime.json', Buffer.from(JSON.stringify({
+      owner: 'Carthagent', sourceRepository: 'https://github.com/anomalyco/opencode',
+      sourceRevision, lockSha256, patchSha256, compatibilityVersion, runtimeVersion,
+      channel: `ctg.${compatibilityVersion}`, platform: 'windows-x64', webUI: false,
+    }))),
+    Buffer.alloc(1024),
+  ])));
+  try {
+    await assert.rejects(
+      generateOwnedRuntimeRelease({
+        releaseVersion, assetsDirectory, repoRoot: root,
+        outputPath: path.join(temp, 'windows-wrong-os.candidate'),
+      }),
+      /package metadata does not match windows-x64/,
+    );
+  } finally { await writeFile(archivePath, original); }
 });
 
 test('rejects a noncanonical release version and a recipe/patch mismatch', async (t) => {
