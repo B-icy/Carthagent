@@ -43,6 +43,7 @@
     "skills",
     "tests/*.mjs",
     "tests/*.py",
+    "tests/fixtures/archive-plugin",
     "tools",
     "vendor",
     "evaluate.mjs",
