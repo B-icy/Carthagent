@@ -59,6 +59,18 @@ export const Carthagent = Rpc.define({
         additionalProperties: false,
       },
     },
+    shipAccount: {
+      input: { type: 'object', additionalProperties: false },
+      output: { type: 'object', properties: { account: { type: 'object', additionalProperties: true }, error: { type: 'string' } }, required: ['account'], additionalProperties: true },
+    },
+    shipBilling: {
+      input: { type: 'object', properties: { action: { type: 'string', enum: ['checkout', 'portal'] } }, required: ['action'], additionalProperties: false },
+      output: { type: 'object', properties: { url: { type: 'string', minLength: 1 } }, required: ['url'], additionalProperties: false },
+    },
+    shipLogout: {
+      input: { type: 'object', properties: { session: { type: 'string', minLength: 1, maxLength: 128 } }, additionalProperties: false },
+      output: { type: 'object', properties: { revoked: { type: 'boolean' }, credentialID: { type: 'string' } }, required: ['revoked'], additionalProperties: false },
+    },
   },
   events: {
     changed: {
