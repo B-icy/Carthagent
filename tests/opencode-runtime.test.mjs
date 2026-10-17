@@ -221,7 +221,7 @@ test('packaged release manifest automatically acquires the pinned owned runtime 
   const binaryHash = createHash('sha256').update(binaryBytes).digest('hex');
   const platformKeys = ['linux-x64', 'linux-arm64', 'darwin-x64', 'darwin-arm64', 'windows-x64'];
   const assets = Object.fromEntries(platformKeys.map((key) => [key, {
-    name: `opencode-${key}.tar.gz`, archiveSha256: 'a'.repeat(64), executableSha256: 'b'.repeat(64),
+    name: `opencode-${key}.tar.gz`, archiveSha256: 'a'.repeat(64), executableSha256: key === target ? binaryHash : 'b'.repeat(64),
   }]));
   const release = {
     version: 1, releaseVersion: packageMetadata.version, compatibilityVersion: OPENCODE_VERSION,
@@ -246,7 +246,12 @@ test('packaged release manifest automatically acquires the pinned owned runtime 
       runtimeReleaseManifestPath: manifestPath,
       runtimeCacheRoot: path.join(root, 'owned-cache'),
       runtimeReleaseBaseUrl: `https://example.test/releases/v${packageMetadata.version}`,
-      acquireOwnedRuntime: async (input) => { calls.push(input); return artifact; },
+      acquireOwnedRuntime: async (input) => {
+        calls.push(input);
+        const currentHash = createHash('sha256').update(await readFile(binary)).digest('hex');
+        if (currentHash !== input.expectedExecutableSha256) throw new Error('pinned executable SHA-256 mismatch');
+        return artifact;
+      },
       spawnImpl,
     };
     const resolved = await resolveOpenCode(options);
@@ -257,10 +262,22 @@ test('packaged release manifest automatically acquires the pinned owned runtime 
     assert.equal(calls[0].expectedExecutableSha256, assets[target].executableSha256);
     assert.equal(calls[0].expectedChannel, `ctg.${OPENCODE_VERSION}`);
     // Production ensureService resolves and identifies with one shared options
-    // object; resolveOpenCode records the acquired artifact root on that object.
+    // object; automatic selection identity is kept separate from the explicit
+    // developer-preview ownedRuntime selector.
     const identity = await runtimeIdentity(resolved, options);
     assert.equal(identity.kind, 'ctg-owned');
     assert.equal(identity.patchSha256, CTG_RUNTIME_PATCH_SHA256);
+    assert.equal(options.ownedRuntime, undefined);
+
+    // A second resolution with the same options cannot trust the mutable
+    // adjacent SHA256SUMS as the release digest; the pinned manifest digest is
+    // checked again before returning the cached executable.
+    const tamperedBytes = Buffer.from('tampered executable');
+    const tamperedHash = createHash('sha256').update(tamperedBytes).digest('hex');
+    await writeFile(binary, tamperedBytes, { mode: 0o755 });
+    await writeFile(path.join(artifact, 'SHA256SUMS'), `${tamperedHash}  cli-${target}/bin/${process.platform === 'win32' ? 'opencode.exe' : 'opencode'}\n`);
+    await assert.rejects(resolveOpenCode(options), /pinned executable SHA-256 mismatch/);
+    assert.equal(calls.length, 2);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
