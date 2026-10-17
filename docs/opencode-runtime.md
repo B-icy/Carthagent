@@ -46,6 +46,12 @@ default), concurrent ensure/stop calls serialize on one profile lifecycle lock,
 and no normal OpenCode service is stopped or restarted. Use `launchTui` to open the
 native OpenCode TUI pointed at CTG's environment, preserving workspace cwd and
 native session flags.
+The TUI attaches with the native CLI `--server` option and CTG service password;
+it does not discover or start another background service. `runHeadless` accepts
+an optional `timeout` in milliseconds (120 seconds by default), aborts the wait
+request and interrupts the session on timeout/cancellation, and returns message
+history in chronological order with the latest assistant result reconciled to
+the newly accepted prompt.
 `stopService({ root })` stops only the healthy process identified by that
 profile's private registration. If a registered process is alive but unhealthy,
 the registration is retained and an error is reported rather than orphaning or

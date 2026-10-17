@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { nativeCommandConfig } from '../lib/opencode/compatibility.mjs';
 import { provisionRuntime, resolveOpenCode, runtimeEnvironment, runtimePaths, workspaceEnvironment } from '../lib/opencode/runtime.mjs';
-import { createSession, ensureService, promptSession, serviceRequest, setSessionEnvironment, stopService } from '../lib/opencode/service.mjs';
+import { createSession, ensureService, launchTui, promptSession, serviceRequest, setSessionEnvironment, stopService } from '../lib/opencode/service.mjs';
 import { runHeadless } from '../lib/opencode/headless.mjs';
 
 test('CTG runtime paths and env are isolated from host OpenCode roots', () => {
@@ -40,6 +40,48 @@ test('runtime removes inherited OpenCode profile overrides', () => {
   assert.equal(env.OPENCODE_CONFIG_PROJECT_DISABLE, 'true');
   assert.equal(env.OPENCODE_SERVER_PASSWORD, undefined);
   assert.equal(env.OPENAI_API_KEY, 'preserved');
+});
+
+test('stale-lock recovery is serialized across independent processes', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-stale-recovery-'));
+  const lock = path.join(root, 'lifecycle.lock');
+  const gate = path.join(root, 'go');
+  const worker = path.join(root, 'worker.mjs');
+  const markerDir = path.join(root, 'active');
+  await mkdir(markerDir);
+  await writeFile(lock, JSON.stringify({ pid: 2_000_000_000, token: 'dead-owner', startedAt: 0 }));
+  await writeFile(worker, `
+    import { readFile, rm, writeFile } from 'node:fs/promises';
+    import { withFileLock } from ${JSON.stringify(new URL('../lib/opencode/runtime.mjs', import.meta.url).href)};
+    const [lock, gate, markerDir, name] = process.argv.slice(2);
+    while (true) { try { await readFile(gate); break; } catch { await new Promise(r => setTimeout(r, 5)); } }
+    await withFileLock(lock, async () => {
+      const marker = markerDir + '/' + name;
+      await writeFile(marker, 'active');
+      const current = await (await import('node:fs/promises')).readdir(markerDir);
+      if (current.includes('a') && current.includes('b')) await writeFile(markerDir + '/overlap', current.join(','));
+      await new Promise(r => setTimeout(r, 120));
+      await rm(marker);
+    }, { staleLockAge: 0, timeout: 5000, pollInterval: 2, afterStaleLockCheck: async () => {
+      await writeFile(markerDir + '/checked-' + name, 'yes');
+      while (true) {
+        try { await readFile(markerDir + '/checked-a'); await readFile(markerDir + '/checked-b'); break; }
+        catch { await new Promise(r => setTimeout(r, 2)); }
+      }
+    } });
+  `);
+  try {
+    const a = spawn(process.execPath, [worker, lock, gate, markerDir, 'a'], { stdio: 'ignore' });
+    const b = spawn(process.execPath, [worker, lock, gate, markerDir, 'b'], { stdio: 'ignore' });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await writeFile(gate, 'go');
+    const exited = Promise.all([a, b].map((child) => new Promise((resolve, reject) => {
+      child.once('error', reject);
+      child.once('exit', (code) => code === 0 ? resolve() : reject(new Error(`lock worker exited ${code}`)));
+    })));
+    await exited;
+    await assert.rejects(readFile(path.join(markerDir, 'overlap')), { code: 'ENOENT' });
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 test('profile provisioning creates private isolated profile and absolute plugin reference', async () => {
@@ -103,8 +145,23 @@ test('session API helpers use the v2 envelope, prompt payload, and endpoint cont
     assert.equal(new URL(calls[2].url).pathname, '/api/session/ses_example/environment');
     assert.equal(JSON.parse(calls[2].init.body).variables.API_KEY, 'fixture');
     assert.equal(JSON.parse(calls[2].init.body).variables.CTG_WORKSPACE, '/workspace');
-    assert.deepEqual(JSON.parse(new URL(calls[0].url).searchParams.get('location[directory]')), { directory: '/work' });
+    assert.equal(new URL(calls[0].url).searchParams.get('location[directory]'), '/work');
   } finally { globalThis.fetch = original; }
+});
+
+test('native TUI attaches to the ensured authenticated service', () => {
+  let captured;
+  const service = {
+    url: 'http://127.0.0.1:4567',
+    info: { password: 'ctg-test-password' },
+    binary: '/ctg/opencode',
+    paths: { root: '/ctg/profile' },
+  };
+  launchTui(service, '/work', { sessionID: 'ses_123', spawnImpl: (...args) => (captured = args) });
+  assert.deepEqual(captured[0], '/ctg/opencode');
+  assert.deepEqual(captured[1], ['--server', 'http://127.0.0.1:4567', '/work', '--session', 'ses_123']);
+  assert.equal(captured[2].env.OPENCODE_PASSWORD, 'ctg-test-password');
+  assert.equal(captured[2].cwd, '/work');
 });
 
 test('a live registered process is retained when health inspection fails', async () => {
@@ -173,6 +230,28 @@ test('headless runner passes workspace environment and returns assistant content
   } finally { globalThis.fetch = original; }
 });
 
+test('headless result uses newest terminal assistant from chronological conversation history', async () => {
+  const original = globalThis.fetch;
+  try {
+    globalThis.fetch = async (url) => {
+      const pathname = new URL(url).pathname;
+      if (pathname === '/api/session') return new Response('{"data":{"id":"ses_resume"}}');
+      if (pathname.endsWith('/environment') || pathname.endsWith('/wait')) return new Response(null, { status: 204 });
+      if (pathname.endsWith('/prompt')) return new Response('{"data":{"id":"inbox_new"}}');
+      if (pathname.endsWith('/message')) return new Response(JSON.stringify({ data: [
+        { id: 'assistant-new', type: 'assistant', time: { created: 300 }, finish: 'stop', content: [{ type: 'text', text: 'new result' }] },
+        { id: 'user-new', type: 'user', time: { created: 200 }, content: [{ type: 'text', text: 'new prompt' }] },
+        { id: 'assistant-old', type: 'assistant', time: { created: 100 }, finish: 'stop', content: [{ type: 'text', text: 'old result' }] },
+      ] }));
+      throw new Error(`Unexpected endpoint ${pathname}`);
+    };
+    const result = await runHeadless({ url: 'http://127.0.0.1:3333', headers: {} }, '/workspace', 'continue', { sessionID: 'ses_resume' });
+    assert.deepEqual(result.messages.map((item) => item.id), ['assistant-old', 'user-new', 'assistant-new']);
+    assert.equal(result.result.text, 'new result');
+    assert.equal(result.result.message.id, 'assistant-new');
+  } finally { globalThis.fetch = original; }
+});
+
 test('aborting headless execution sends a native interrupt for that session', async () => {
   const original = globalThis.fetch;
   const paths = [];
@@ -193,5 +272,27 @@ test('aborting headless execution sends a native interrupt for that session', as
     controller.abort(new Error('test cancellation'));
     await assert.rejects(result, /aborted|canceled|cancelled/i);
     assert.ok(paths.includes('/api/session/ses_cancel/interrupt'));
+  } finally { globalThis.fetch = original; }
+});
+
+test('headless timeout aborts the wait request and interrupts the native session', async () => {
+  const original = globalThis.fetch;
+  const paths = [];
+  try {
+    globalThis.fetch = async (url, init = {}) => {
+      const pathname = new URL(url).pathname;
+      paths.push(pathname);
+      if (pathname === '/api/session') return new Response('{"data":{"id":"ses_timeout"}}');
+      if (pathname.endsWith('/environment')) return new Response(null, { status: 204 });
+      if (pathname.endsWith('/prompt')) return new Response('{"data":{"id":"inbox_timeout"}}');
+      if (pathname.endsWith('/wait')) return new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true }));
+      if (pathname.endsWith('/interrupt')) return new Response(null, { status: 204 });
+      throw new Error(`Unexpected endpoint ${pathname}`);
+    };
+    await assert.rejects(
+      runHeadless({ url: 'http://127.0.0.1:3333', headers: {} }, '/workspace', 'hang', { timeout: 30 }),
+      /timed out after 30ms/,
+    );
+    assert.ok(paths.includes('/api/session/ses_timeout/interrupt'));
   } finally { globalThis.fetch = original; }
 });

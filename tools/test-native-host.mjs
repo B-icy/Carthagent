@@ -7,13 +7,14 @@ import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { randomBytes } from 'node:crypto';
+import { tmpdir } from 'node:os';
 import { OpenCode } from '@opencode/client';
 import { resolveOpenCode } from '../lib/opencode/runtime.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const plugin = resolve(process.argv[2] ?? join(root, 'plugins/carthagent'));
 const binary = await resolveOpenCode();
-const temp = await mkdtemp('/tmp/opencode/ctg-host-smoke-');
+const temp = await mkdtemp(join(tmpdir(), 'ctg-host-smoke-'));
 const password = randomBytes(24).toString('hex');
 let child;
 let output = '';
@@ -142,6 +143,45 @@ try {
   assert.equal(assistant.finish, 'stop');
   assert.equal(assistant.content.filter((part) => part.type === 'text').map((part) => part.text).join(''), 'CTG_FIXTURE_OK');
   assert.ok(fixtureRequests > 0, 'assistant prompt must reach the local fixture endpoint');
+  const requestsBeforeAttach = fixtureRequests;
+  const attachedRun = await new Promise((resolveRun, reject) => {
+    const attached = spawn(binary, [
+      'run', '--server', endpoint, '--session', session.id, '--format', 'json',
+      'Reply with the fixture response.',
+    ], { cwd, env: { ...env, OPENCODE_PASSWORD: password }, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    const timer = setTimeout(() => attached.kill('SIGKILL'), 90_000);
+    attached.stdout.setEncoding('utf8').on('data', (chunk) => { stdout += chunk; });
+    attached.stderr.setEncoding('utf8').on('data', (chunk) => { stderr += chunk; });
+    attached.once('error', (error) => { clearTimeout(timer); reject(error); });
+    attached.once('exit', (code, signal) => {
+      clearTimeout(timer);
+      if (code === 0) resolveRun(stdout);
+      else reject(new Error(`Attached native CLI exited ${code ?? signal}: ${stderr}`));
+    });
+  });
+  assert.match(attachedRun, /CTG_FIXTURE_OK/, 'the packaged CLI should attach to and prompt the ensured service');
+  assert.ok(fixtureRequests > requestsBeforeAttach, 'the attached CLI request must be handled by the already-running fixture-backed service');
+  const pty = await client.pty.create({
+    location: { directory: cwd },
+    command: binary,
+    args: ['--server', endpoint, cwd],
+    cwd,
+    title: 'CTG native TUI attach smoke',
+    env: { ...env, OPENCODE_PASSWORD: password },
+  }, request);
+  const ptyID = pty.data.id;
+  assert.ok(ptyID, 'the attached service should create a native PTY');
+  let ptyState;
+  const ptyDeadline = Date.now() + 10_000;
+  do {
+    ptyState = await client.pty.get({ ptyID, location: { directory: cwd } }, request);
+    if (ptyState.data.status === 'running') break;
+    await new Promise((done) => setTimeout(done, 100));
+  } while (Date.now() < ptyDeadline);
+  assert.equal(ptyState.data.status, 'running', 'native TUI should attach and remain active in the service-owned PTY');
+  await client.pty.remove({ ptyID, location: { directory: cwd } }, request);
   await assert.rejects(client.rpc.call({
     rpcID: 'carthagent', method: 'health', input: { unexpected: true }, location: { directory: cwd },
   }, request));
