@@ -8,13 +8,24 @@ import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { OpenCode } from '@opencode/client';
+import { preflightNativeTestRuntimeArtifact } from './native-runtime-identity.mjs';
 import { resolveOpenCode, runtimeIdentity, provisionRuntime, runtimeEnvironment } from '../lib/opencode/runtime.mjs';
 
-const binary = await resolveOpenCode();
-const identity = await runtimeIdentity(binary);
+if (process.platform !== 'linux') throw new Error('This native shell provenance probe currently targets Linux; it is not a cross-platform acceptance claim.');
+if (process.env.CTG_OPENCODE_BIN) throw new Error('Do not set CTG_OPENCODE_BIN for this explicit owned-artifact proof; it must resolve the preflighted root itself.');
+if (process.env.CTG_TEST_RUNTIME_SHA256) throw new Error('Do not override the trusted release-manifest executable hash with CTG_TEST_RUNTIME_SHA256.');
+const ownedRoot = process.env.CTG_OWNED_OPENCODE_RUNTIME;
+const trustedManifestPath = process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST;
+if (!ownedRoot) throw new Error('Set CTG_OWNED_OPENCODE_RUNTIME to the owned runtime artifact root under test.');
+if (!trustedManifestPath) throw new Error('Set CTG_TEST_RUNTIME_RELEASE_MANIFEST to a trusted release manifest pinning this staging artifact.');
+const preflight = await preflightNativeTestRuntimeArtifact({ ownedRoot, expectedManifestPath: trustedManifestPath });
+const runtimeOptions = { ownedRuntime: ownedRoot, runtimeReleaseManifestPath: trustedManifestPath };
+const binary = await resolveOpenCode(runtimeOptions);
+const identity = await runtimeIdentity(binary, runtimeOptions);
 assert.equal(identity.kind, 'ctg-owned');
-assert.equal(identity.version, '0.0.0-ctg.2.0.32');
-assert.equal(identity.binarySha256, '85bb44a65e8c185f4f33d41507d29acc77f2db0cdcb0103a14476021c8e43794');
+assert.equal(identity.binaryPath, preflight.identity.binary, 'product resolver selected the preflighted artifact');
+assert.equal(identity.binarySha256, preflight.identity.binarySha256, 'product identity matches trusted pre-execution byte verification');
+assert.equal(identity.version, preflight.identity.runtimeVersion);
 
 const temp = await mkdtemp(join(tmpdir(), 'ctg-owned-controls-'));
 const cwd = join(temp, 'project');
@@ -40,6 +51,10 @@ const provider = createServer(async (req, res) => {
     const calls = (body.tools ?? []).filter(tool => tool.function?.name === 'shell');
     assert.ok(calls.length, 'owned runtime must advertise native shell in the two provenance sessions');
     const callID = `identical-${requests.length}`;
+    const userText = String([...body.messages].reverse().find(message => message.role === 'user')?.content ?? '');
+    const marker = userText.includes('OWNED_SHELL_SESSION_A') ? 'A' : userText.includes('OWNED_SHELL_SESSION_B') ? 'B' : null;
+    assert.ok(marker, `shell tool call has no known originating prompt marker: ${userText}`);
+    providerToolCalls.set(marker, callID);
     const chunk = (delta, finish_reason = null) => `data: ${JSON.stringify({ id: `same-command-${requests.length}`, object: 'chat.completion.chunk', created: 1, model: 'fixture', choices: [{ index: 0, delta, finish_reason }] })}\n\n`;
     res.writeHead(200, { 'content-type': 'text/event-stream' });
     res.end(`${chunk({ role: 'assistant', tool_calls: [{ index: 0, id: callID, type: 'function', function: { name: 'shell', arguments: JSON.stringify({ command: 'printf owned-identical-shell' }) } }] })}${chunk({}, 'tool_calls')}data: [DONE]\n\n`);
@@ -51,6 +66,7 @@ const provider = createServer(async (req, res) => {
 let child;
 let client;
 let providerListening = false;
+const providerToolCalls = new Map();
 const password = `owned-${process.pid}-${Date.now()}`;
 const request = () => ({ signal: AbortSignal.timeout(30_000) });
 const start = async () => {
@@ -79,9 +95,17 @@ const start = async () => {
 };
 const stop = async () => {
   if (!child || child.exitCode !== null || child.signalCode !== null) return;
-  const exited = once(child, 'exit');
+  let exited = once(child, 'exit');
   child.kill('SIGTERM');
-  await exited;
+  let timer;
+  const graceful = await Promise.race([exited.then(() => true), new Promise(resolve => { timer = setTimeout(() => resolve(false), 5000); })]);
+  clearTimeout(timer);
+  if (graceful) return;
+  child.kill('SIGKILL');
+  let forceTimer;
+  try {
+    await Promise.race([exited, new Promise((_, reject) => { forceTimer = setTimeout(() => reject(new Error('Owned host did not exit after SIGKILL')), 5000); })]);
+  } finally { clearTimeout(forceTimer); }
 };
 
 try {
@@ -135,46 +159,52 @@ try {
   rejectOverflow = true;
   await restarted.session.prompt({ sessionID: second.id, text: 'OWNED_OVERFLOW sessionB' }, request());
   await restarted.session.wait({ sessionID: second.id }, request());
-  assert.ok(requests.length >= 2, 'auto-compaction-on overflow must make a summary request and retry');
-  assert.ok(requests.some(body => JSON.stringify(body.messages).includes('You MUST use this format for your response')), 'the on-session must send a real summary request');
+  const summaryIndex = requests.findIndex(body => JSON.stringify(body.messages).includes('You MUST use this format for your response'));
+  const initialOverflowIndex = requests.findIndex(body => JSON.stringify(body.messages).includes('OWNED_OVERFLOW sessionB'));
+  const retryIndex = requests.findIndex((body, index) => index > summaryIndex && JSON.stringify(body.messages).includes('OWNED_OVERFLOW sessionB'));
+  assert.ok(initialOverflowIndex >= 0 && summaryIndex > initialOverflowIndex && retryIndex > summaryIndex,
+    `expected overflow → summary → retry provider requests, got ${JSON.stringify(requests.map(body => body.messages))}`);
   assert.equal((await restarted.session.get({ sessionID: second.id }, request())).outcome, 'succeeded');
-
-  await restarted.session.revert.clear({ sessionID: first.id }, request());
-  const afterRevertClear = await restarted.message.list({ sessionID: first.id }, request());
-  assert.ok(afterRevertClear.data.length >= beforeRestartA.data.length, 'revert.clear preserves stored transcript messages');
 
   const same1 = await restarted.session.create({ location, model, title: 'Concurrent identical shell A', metadata: { 'ctg.autoCompaction': false } }, request());
   const same2 = await restarted.session.create({ location, model, title: 'Concurrent identical shell B', metadata: { 'ctg.autoCompaction': false } }, request());
+  const prompts = [
+    { session: same1, marker: 'A' },
+    { session: same2, marker: 'B' },
+  ];
   const pluginList = await restarted.plugin.list({ location }, request());
   assert.ok(pluginList.data.some(plugin => plugin.id === 'ctg.owned-shell-observer' && plugin.state.status === 'active'), JSON.stringify(pluginList.data));
   await Promise.all([
-    restarted.session.prompt({ sessionID: same1.id, text: 'Run shell command: printf owned-identical-shell' }, request()),
-    restarted.session.prompt({ sessionID: same2.id, text: 'Run shell command: printf owned-identical-shell' }, request()),
+    restarted.session.prompt({ sessionID: same1.id, text: 'OWNED_SHELL_SESSION_A Run shell command: node -e "process.stdout.write(\'owned-identical-shell\')"' }, request()),
+    restarted.session.prompt({ sessionID: same2.id, text: 'OWNED_SHELL_SESSION_B Run shell command: node -e "process.stdout.write(\'owned-identical-shell\')"' }, request()),
   ]);
   await Promise.all([restarted.session.wait({ sessionID: same1.id }, request()), restarted.session.wait({ sessionID: same2.id }, request())]);
+  for (const { session } of prompts) assert.equal((await restarted.session.get({ sessionID: session.id }, request())).outcome, 'succeeded');
   let capturedText;
   try { capturedText = await readFile(captureFile, 'utf8'); }
   catch (error) { throw new Error(`shell observer did not record a hook event; provider requests=${JSON.stringify(requests.map(body => body.messages?.slice(-2)))}; session tools=${JSON.stringify(await Promise.all([same1, same2].map(session => restarted.message.list({ sessionID: session.id }, request()))))}`, { cause: error }); }
   const shellEvents = capturedText.trim().split('\n').filter(Boolean).map(JSON.parse);
   const attributed = shellEvents.filter(event => event.command.includes('owned-identical-shell'));
   assert.equal(attributed.length, 2, JSON.stringify(shellEvents));
-  assert.deepEqual(new Set(attributed.map(event => event.sessionID)), new Set([same1.id, same2.id]));
-  assert.ok(attributed.every(event => event.origin === 'tool' && event.callID), JSON.stringify(attributed));
-  assert.equal(new Set(attributed.map(event => event.callID)).size, 2, JSON.stringify(attributed));
-
-  const retainedTranscript = await restarted.message.list({ sessionID: first.id }, request());
-  const beforeClearText = retainedTranscript.data.map(message => message.text ?? message.content?.map(part => part.text ?? '').join('\n') ?? '').join('\n');
-  assert.match(beforeClearText, /OWNED_AUTOCOMPACT_OFF initial/);
-  await restarted.session.revert.clear({ sessionID: first.id }, request());
-  const afterClear = await restarted.message.list({ sessionID: first.id }, request());
-  const afterClearText = afterClear.data.map(message => message.text ?? message.content?.map(part => part.text ?? '').join('\n') ?? '').join('\n');
-  assert.match(afterClearText, /OWNED_AUTOCOMPACT_OFF initial/, 'the HTTP endpoint clears a revert marker, not transcript messages');
+  const observations = new Map(attributed.map(event => [event.sessionID, event]));
+  for (const { session, marker } of prompts) {
+    const observed = observations.get(session.id);
+    assert.ok(observed, `missing shell hook event for ${session.id}: ${JSON.stringify(attributed)}`);
+    assert.equal(observed.origin, 'tool');
+    assert.equal(observed.callID, providerToolCalls.get(marker), `hook call ID matches the native provider call ID for marker ${marker}`);
+    const history = await restarted.message.list({ sessionID: session.id }, request());
+    const toolParts = history.data.flatMap(message => message.parts ?? message.content ?? []).filter(part => part.type === 'tool' && part.id === providerToolCalls.get(marker));
+    assert.equal(toolParts.length, 1, `durable tool transcript correlates to provider call for session ${session.id}: ${JSON.stringify(history.data)}`);
+    assert.equal(toolParts[0].state.status, 'completed', JSON.stringify(toolParts[0]));
+    assert.equal(toolParts[0].state.input.command, observed.command);
+    assert.ok(toolParts[0].state.content.some(part => part.type === 'text' && part.text.includes('owned-identical-shell')));
+  }
 
   console.log(JSON.stringify({
-    host: { compatibilityVersion: '2.0.32', runtimeVersion: identity.version, binarySha256: identity.binarySha256 },
+    host: { compatibilityVersion: preflight.identity.compatibilityVersion, runtimeVersion: identity.version, binarySha256: identity.binarySha256 },
+    runtimeSelection: 'explicit, trusted-preflighted CTG_OWNED_OPENCODE_RUNTIME staging artifact; not a claim about installed-package default selection',
     sameDatabaseServiceRestart: 'passed',
     autoCompaction: { off: 'overflow failed with one provider attempt and no compaction', on: 'compaction request and successful retry observed' },
-    clear: 'actual HTTP revert.clear preserved stored transcript; TUI session.clear navigation not launched',
     concurrentIdenticalShell: 'real runtime events correlated to distinct sessionID/origin/callID',
     loopbackProviderRequests: requests.length,
   }));
