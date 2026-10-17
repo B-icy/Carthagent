@@ -38,20 +38,15 @@ asset retrieval through the production resolver, preserving the packaged
 manifest/digests and default no-override selection. No credential values or
 transport code were used here.
 
-Workflow fixture evidence is now complete for the extracted validate, verify,
-and upload run blocks. A positive fixture used the candidate generator and
-packaged trust root, canned read-only GitHub API metadata for a reviewed-branch
-prebuild and annotated draft tag, and a fake `gh release upload` that only copied
-files to a temporary capture directory. The workflow reached
-`candidate=verified`; all five captured archives and the generated manifest
-were byte-identical to their candidate inputs, and exactly seven expected asset
-names were captured. A modified archive failed verification before any upload
-call. A stale annotated-tag target passed initial validation but failed the
-upload step's immutable-target recheck before any upload call. Earlier fixture
-attempts did not complete the positive path and are superseded by this full
-three-step run. These are mocked workflow checks, not a real dispatch or release;
-no credentials or real uploads were used. The fixture and logs are outside the
-repository.
+Reproducible workflow fixture coverage lives in
+`tests/owned-runtime-publish-workflow.test.mjs`. It extracts the literal
+validate, verify, and upload Bash blocks from this workflow YAML and executes
+them with bounded temporary fixtures. It verifies review-branch prebuild SHA
+binding and rejects publish validation from a non-default branch; the positive
+publish path verifies five tiny USTAR archives and the packaged trust root,
+then a fake `gh` captures exactly seven assets for byte comparison. Tampered
+archive and stale annotated-tag cases both assert zero captured uploads. This is
+automated mocked workflow coverage, not a real dispatch or release.
 
 The release workflow permits a non-publishing prebuild from a reviewed branch
 to avoid requiring product merge before native candidate generation. It binds
