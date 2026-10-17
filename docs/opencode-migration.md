@@ -106,8 +106,11 @@ passing domain fixture alone does not satisfy these gates:
 PR #157 adds a real-terminal measurement harness. Its corrected editor-cell input
 detector still needs a controlled paired assessment against the 50 ms target.
 At `22109cb`, a 30-switch diagnostic reports p95 573.526 ms and maximum 696.095 ms,
-above the 150 ms target. This is not a controlled acceptance result; independent
-review of the warm-switch measurement and a quiet-window paired run remain pending.
+above the 150 ms target. Independent review found both destinations warmed and no
+intentional delay inside the timed interval. The measurement is an Enter-to-parsed-
+PTY-screen proxy, including terminal read/parse overhead, not a compositor
+presentation timestamp. A controlled, alternating baseline/CTG comparison remains
+pending; this diagnostic neither establishes acceptance nor attributes latency to CTG.
 Short idle observations showed no PTY output; they do not establish long-running
 memory bounds.
 
