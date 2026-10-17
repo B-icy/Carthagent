@@ -62,6 +62,7 @@
     "test:browser": "node tools/test-webdriver.mjs",
     "test:native-host": "node tools/test-native-host.mjs",
     "test:native-product": "node tools/test-native-product.mjs",
+    "test:native-tasks": "node tools/test-native-tasks.mjs",
     "test:native-package": "node tools/test-native-package.mjs",
     "test:native-controls": "node tools/test-native-controls.mjs",
     "test:native-outcomes": "node tools/test-native-outcomes.mjs",
