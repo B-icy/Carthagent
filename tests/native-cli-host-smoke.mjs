@@ -39,6 +39,8 @@ const requests = [];
 const sessionIDs = [];
 const nativeEventsCaptured = [];
 let budgetProviderTurns = 0;
+let admittedRequests = 0;
+let foreignSessionID;
 const provider = createServer((req, res) => {
   void (async () => {
     let raw = '';
@@ -58,15 +60,19 @@ const provider = createServer((req, res) => {
       choices: [{ index: 0, delta, finish_reason }],
     })}\n\n`;
     if (fails || userText.includes('Smoke provider failure after success')) {
-      res.writeHead(503, { 'content-type': 'application/json' });
+      // Use a non-retryable client error so the pinned host terminates this
+      // fixture turn promptly instead of exercising provider backoff policy.
+      res.writeHead(400, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: { message: userText.includes('after success') ? 'fixture provider unavailable after success' : 'fixture provider unavailable', type: 'server_error' } }));
       return;
     }
     res.writeHead(200, { 'content-type': 'text/event-stream' });
     if (needsTool) {
       const toolCall = needsBudgetWrite
-        ? { index: 0, id: 'fixture-budget-second-shell', type: 'function', function: { name: 'bash', arguments: JSON.stringify({ command: `touch "${join(cwd, 'budget-side-effect.txt')}"` }) } }
-        : { index: 0, id: needsBudgetRead ? 'fixture-budget-read' : 'fixture-tool-call', type: 'function', function: { name: 'read', arguments: JSON.stringify({ path: join(cwd, 'tool-fixture.txt') }) } };
+        ? { index: 0, id: 'fixture-budget-second-write', type: 'function', function: { name: 'write', arguments: JSON.stringify({ path: join(cwd, 'budget-side-effect.txt'), content: 'over-budget write must not happen\n' }) } }
+        : budgetPrompt
+          ? { index: 0, id: 'fixture-budget-first-write', type: 'function', function: { name: 'write', arguments: JSON.stringify({ path: join(cwd, 'budget-positive-control.txt'), content: 'admitted write executed\n' }) } }
+          : { index: 0, id: 'fixture-tool-call', type: 'function', function: { name: 'read', arguments: JSON.stringify({ path: join(cwd, 'tool-fixture.txt') }) } };
       res.end(`${chunk({ role: 'assistant', tool_calls: [toolCall] })}${chunk({}, 'tool_calls')}data: [DONE]\n\n`);
     } else {
       res.write(chunk({ role: 'assistant', content: responseText }));
@@ -176,7 +182,7 @@ try {
   const failureAfterSuccessCode = await runOpenCodeCli({ argv: ['-p', '--no-guide', '--session', sessionIDs[0], '--model', 'ctg-fixture/fixture', 'Smoke provider failure after success'], runtime: failureAfterSuccessRuntime, io: failureAfterSuccess.io, stdoutIsTTY: false });
   assert.equal(failureAfterSuccessCode, 1, `failed turn must not inherit previous success: ${failureAfterSuccess.lines.join('\n')}`);
   assert.doesNotMatch(failureAfterSuccess.lines.join('\n'), /CLI fixture response for Smoke (print|second turn)/);
-  const admittedRequests = requests.length;
+  admittedRequests = requests.length;
   }
 
   const { OpenCode } = await import('@opencode/client');
@@ -187,6 +193,7 @@ try {
   const capabilities = await fixtureClient.rpc(Carthagent).health({}, { location: { directory: cwd } });
   assert.ok(capabilities.capabilities.includes('delivery.budgets.v1'), JSON.stringify(capabilities));
   const foreign = await fixtureClient.session.create({ location: { directory: foreignDir }, title: 'Foreign workspace session', model: { providerID: 'ctg-fixture', id: 'fixture' } });
+  foreignSessionID = foreign.id;
   const continued = capture();
   const continueRuntime = await createOpenCodeCliRuntime({ cwd, native, stdout: continued.stdout, io: continued.io });
   const continueCode = await runOpenCodeCli({ argv: ['-p', '-c', '--no-guide', '--model', 'ctg-fixture/fixture', 'Smoke continue in workspace'], runtime: continueRuntime, io: continued.io, stdoutIsTTY: false });
@@ -224,17 +231,17 @@ try {
   });
   assert.equal(budgetRequests.length, 2, `provider received the initial tool request and one continuation; actual=${budgetRequests.length}`);
   assert.equal(budgetProviderTurns, 2, 'fixture provider received no further request after the over-budget tool call');
-  assert.equal(existsSync(join(cwd, 'budget-side-effect.txt')), false, 'over-budget shell side effect never occurred');
+  assert.equal(existsSync(join(cwd, 'budget-positive-control.txt')), true, 'the first admitted native write executed as a positive control');
+  assert.equal(existsSync(join(cwd, 'budget-side-effect.txt')), false, 'the over-budget native write did not execute');
   const budgetEvents = budget.lines.filter(line => line.startsWith('{')).map(line => JSON.parse(line));
-  assert.ok(budgetEvents.some(event => event.type === 'tool_execution_start' && event.sessionID === budgetSessionID && event.toolName === 'read'), JSON.stringify(budgetEvents));
+  assert.ok(budgetEvents.some(event => event.type === 'tool_execution_start' && event.sessionID === budgetSessionID && event.toolName === 'write'), JSON.stringify(budgetEvents));
   assert.ok(budgetEvents.some(event => event.type === 'message' && event.sessionID === budgetSessionID && event.message.type === 'idle' && event.message.outcome === 'interrupted'), JSON.stringify(budgetEvents));
-  assert.ok(nativeEventsCaptured.some(event => event.type === 'session.execution.interrupted' && event.data?.sessionID === budgetSessionID), 'budget rejection interrupted the active native session');
   assert.ok(nativeEventsCaptured.some(event => event.type === 'session.execution.interrupted' && event.data?.sessionID === budgetSessionID), 'the over-budget tool interrupted the native session');
   const budgetStatus = await fixtureClient.rpc(Carthagent).budgetStatus({ sessionID: budgetSessionID }, { location: { directory: cwd } });
   assert.deepEqual({ tools: budgetStatus.tools, maxTools: budgetStatus.maxTools, stopped: budgetStatus.stopped }, { tools: 1, maxTools: 1, stopped: 'tool-calls' });
 
   if (process.env.CTG_NATIVE_SMOKE_BUDGET_ONLY === '1') {
-    console.log(JSON.stringify({ binary, host: '2.0.32', budgetEnforcement: 'passed', providerTurns: budgetProviderTurns, budgetStatus: { tools: budgetStatus.tools, maxTools: budgetStatus.maxTools, stopped: budgetStatus.stopped }, overBudgetSideEffect: existsSync(join(cwd, 'budget-side-effect.txt')) }));
+    console.log(JSON.stringify({ binary, host: '2.0.32', budgetEnforcement: 'passed', providerTurns: budgetProviderTurns, budgetStatus: { tools: budgetStatus.tools, maxTools: budgetStatus.maxTools, stopped: budgetStatus.stopped }, positiveControl: existsSync(join(cwd, 'budget-positive-control.txt')), overBudgetSideEffect: existsSync(join(cwd, 'budget-side-effect.txt')) }));
   } else {
   const json = capture();
   const jsonRuntime = await createOpenCodeCliRuntime({ cwd, native, stdout: json.stdout, io: json.io });
@@ -257,7 +264,7 @@ try {
   assert.ok(failedEvents.some(event => event.type === 'message_end' && event.message.stopReason === 'error'), JSON.stringify(failedEvents));
   assert.ok(failedEvents.some(event => event.type === 'message' && event.message.type === 'idle' && ['failed', 'interrupted'].includes(event.message.outcome)), JSON.stringify(failedEvents));
   assert.ok(failedEvents.some(event => JSON.stringify(event).includes('fixture provider unavailable')), JSON.stringify(failedEvents));
-  assert.ok(!failedEvents.some(event => event.sessionID === foreign.id), 'failure JSONL must not include a foreign or stale session');
+  assert.ok(!failedEvents.some(event => event.sessionID === foreignSessionID), 'failure JSONL must not include a foreign or stale session');
   const failedAfterSuccess = capture();
   const failedAfterSuccessRuntime = await createOpenCodeCliRuntime({ cwd, native, stdout: failedAfterSuccess.stdout, io: failedAfterSuccess.io });
   const failedAfterSuccessCode = await runOpenCodeCli({ argv: ['--json', '--no-guide', '--session', sessionIDs[0], '--model', 'ctg-fixture/fixture', 'Smoke provider failure after success'], runtime: failedAfterSuccessRuntime, io: failedAfterSuccess.io, stdoutIsTTY: false });

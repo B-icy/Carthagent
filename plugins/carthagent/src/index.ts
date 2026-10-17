@@ -48,10 +48,10 @@ export async function setupCarthagent(context: Parameters<typeof registerSession
           call.signal.throwIfAborted();
           const { sessionID } = input as { sessionID: string };
           const session = await context.session.get({ sessionID }, { signal: call.signal });
-          if (session.location.directory !== context.location.directory) throw Error('Session belongs to another workspace location');
+          if (session.location.directory !== context.location.directory) return call.error('budgetUnavailable', 'Session is outside this workspace location.', { reason: 'wrong-location' });
           const saved = await context.storage.get(`session/${sessionID}`) as { budget?: { tools: number; repairs: number; startedAt: number; limits: { tools: number; seconds: number; repairs: number }; stopped: string | null } } | undefined;
           const budget = saved?.budget;
-          if (!budget) throw Error('Session budget has not been initialized');
+          if (!budget) return call.error('budgetUnavailable', 'Session budget has not been initialized.', { reason: 'not-initialized' });
           return {
             tools: budget.tools, maxTools: budget.limits.tools, seconds: Math.max(0, Math.floor((Date.now() - budget.startedAt) / 1000)),
             maxSeconds: budget.limits.seconds, repairs: budget.repairs, maxRepairs: budget.limits.repairs, stopped: budget.stopped,
