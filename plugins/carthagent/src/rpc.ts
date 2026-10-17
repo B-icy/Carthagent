@@ -17,6 +17,48 @@ export const Carthagent = Rpc.define({
         additionalProperties: false,
       },
     },
+    echo: {
+      input: {
+        type: 'object',
+        properties: { text: { type: 'string' } },
+        required: ['text'],
+        additionalProperties: false,
+      },
+      output: {
+        type: 'object',
+        properties: { text: { type: 'string' } },
+        required: ['text'],
+        additionalProperties: false,
+      },
+    },
+    authStart: {
+      input: { type: 'object', additionalProperties: false },
+      output: {
+        type: 'object',
+        properties: {
+          flowId: { type: 'string' },
+          userCode: { type: 'string' },
+          verificationUri: { type: 'string' },
+          expiresAt: { type: 'integer' },
+        },
+        required: ['flowId', 'userCode', 'verificationUri', 'expiresAt'],
+        additionalProperties: false,
+      },
+    },
+    authCancel: {
+      input: {
+        type: 'object',
+        properties: { flowId: { type: 'string' } },
+        required: ['flowId'],
+        additionalProperties: false,
+      },
+      output: {
+        type: 'object',
+        properties: { cancelled: { type: 'boolean' } },
+        required: ['cancelled'],
+        additionalProperties: false,
+      },
+    },
   },
   events: {
     changed: {
