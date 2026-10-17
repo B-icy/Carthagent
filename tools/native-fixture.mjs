@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { randomBytes } from 'node:crypto';
 import { OpenCode } from '@opencode/client';
+import { resolveOpenCode } from '../lib/opencode/runtime.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 
@@ -71,7 +72,7 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
       OPENCODE_DB: join(temp, 'database.sqlite'), OPENCODE_SERVER_PASSWORD: password,
       ...extraEnv,
     });
-    child = spawn(process.env.CTG_OPENCODE_BIN ?? 'opencode',
+    child = spawn(await resolveOpenCode(),
       ['serve', '--hostname', '127.0.0.1', '--port', '0'], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
     const baseUrl = await new Promise((done, reject) => {
       const timer = setTimeout(() => reject(Error(`Host startup timeout: ${output}`)), 30_000);
@@ -130,7 +131,9 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
         location = pluginID;
         pluginID = 'carthagent';
       }
-      const configured = pluginPaths.some(path => path.includes(pluginID) || (pluginID === 'ctg.evaluation-budget' && path.includes('evaluation-budget-plugin')));
+      const configured = pluginPaths.some(path => path.includes(pluginID)
+        || (pluginID === 'ctg.evaluation-budget' && path.includes('evaluation-budget-plugin'))
+        || (pluginID === 'ctg.benchmark' && path.includes('benchmark/native-plugin')));
       if (!configured) throw Error(`Plugin ${pluginID} is not configured in the fixture`);
       await client.session.create({ location, model:{providerID:'ctg-fixture',id:'fixture'}, title:`${pluginID} activation probe` }, request());
       const deadline = Date.now() + 15_000;

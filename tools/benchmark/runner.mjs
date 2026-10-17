@@ -1,4 +1,4 @@
-import { spawnSync, spawn } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync, existsSync, appendFileSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
 import { startGateway, MODEL } from './gateway.mjs';
@@ -8,10 +8,10 @@ import { campaignAccount } from './campaign.mjs';
 import { verifyFreeze } from './freeze.mjs';
 import { runNativeEvaluation } from '../../lib/opencode/evaluation.mjs';
 import { createServer } from 'node:http';
-import { OpenCode } from '@opencode/client';
-import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { ensureService, createSession, listPlugins, stopService } from '../../lib/opencode/service.mjs';
+import { provisionRuntime } from '../../lib/opencode/runtime.mjs';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 export const ROOT = process.env.CTG_BENCHMARK_ROOT || join(REPO, '.harness/deepseek-jev-v4');
@@ -42,7 +42,7 @@ async function startFixtureService(directory) {
   const url = `http://127.0.0.1:${server.address().port}`;
   return { url, close: () => new Promise(resolve => server.close(resolve)), directory };
 }
-async function startNativeService({ workspace, config, mode, arm, smoke, toolLimit, gateway, apiKey }) {
+async function startNativeService({ workspace, config, mode, arm, smoke, toolLimit, gateway, apiKey, serviceManager }) {
   const home = isolatedHome(config), configDir = join(home,'.config','opencode');
   mkdirSync(configDir,{recursive:true});
   const provider = arm === 'plain' ? 'benchmark-fixture' : 'benchmark';
@@ -57,46 +57,38 @@ async function startNativeService({ workspace, config, mode, arm, smoke, toolLim
       models:{[model]:{limit:{context:100000,output:16384},cost:{input:.3,output:1.2,cacheRead:.006,cacheWrite:0}}},
     }},
   };
-  writeFileSync(join(configDir,'opencode.json'),JSON.stringify(configJson,null,2));
-  const password=randomBytes(24).toString('hex');
-  const env=safeEnv({HOME:home,XDG_CONFIG_HOME:join(home,'.config'),XDG_DATA_HOME:join(home,'.local/share'),XDG_CACHE_HOME:join(home,'.cache'),XDG_STATE_HOME:join(home,'.local/state'),OPENCODE_DB:join(config,'opencode.sqlite'),OPENCODE_SERVER_PASSWORD:password,BENCH_TOOL_LIMIT:String(toolLimit),BENCH_TURN_LIMIT:String(toolLimit),BENCH_TURN_LOG:join(dirname(config),'turns.jsonl'),BENCH_GUARD_LOG:join(dirname(config),'guard.jsonl'),BENCH_GATEWAY:gateway,BENCH_ADVISOR_LOG:join(dirname(config),'advisor.jsonl'),CTG_EVALUATION_MAX_TURNS:String(toolLimit),CTG_EVALUATION_MAX_COST:String(smoke ? .08 : 2.79),OPENROUTER_API_KEY:apiKey || ''},home);
-  const proc=spawn(process.env.OPENCODE_BIN || 'opencode',['serve','--hostname','127.0.0.1','--port','0'],{cwd:workspace,env,stdio:['ignore','pipe','pipe']});
-  let output='';
-  let endpoint;
-  try { endpoint=await new Promise((resolve,reject)=>{
-    const timer=setTimeout(()=>reject(Error(`Isolated OpenCode service startup timeout: ${output}`)),30000);
-    const collect=chunk=>{output=(output+chunk.toString()).slice(-16000);const url=output.match(/http:\/\/127\.0\.0\.1:\d+/)?.[0];if(url){clearTimeout(timer);resolve(url);}};
-    proc.stdout.on('data',collect);proc.stderr.on('data',collect);proc.once('error',error=>{clearTimeout(timer);reject(error)});proc.once('exit',code=>{clearTimeout(timer);reject(Error(`OpenCode service exited ${code}: ${output}`))});
-  }); } catch(error) {
-    if(proc.exitCode===null){const exited=new Promise(resolve=>proc.once('exit',resolve));proc.kill('SIGTERM');const kill=setTimeout(()=>proc.kill('SIGKILL'),5000);await exited;clearTimeout(kill);}
-    throw error;
-  }
-  const auth={authorization:`Basic ${Buffer.from(`opencode:${password}`).toString('base64')}`};
-  const client=OpenCode.make({baseUrl:endpoint,headers:auth});
+  await provisionRuntime({ root:home, profile:configJson });
+  const service=await serviceManager.ensureService({root:home,env:safeEnv({
+    BENCH_TOOL_LIMIT:String(toolLimit),BENCH_TURN_LIMIT:String(toolLimit),
+    BENCH_TURN_LOG:join(dirname(config),'turns.jsonl'),BENCH_GUARD_LOG:join(dirname(config),'guard.jsonl'),
+    BENCH_GATEWAY:gateway,BENCH_ADVISOR_LOG:join(dirname(config),'advisor.jsonl'),
+    CTG_EVALUATION_MAX_TURNS:String(toolLimit),CTG_EVALUATION_MAX_COST:String(smoke ? .08 : 2.79),
+    OPENROUTER_API_KEY:apiKey || '',
+  },home)});
+  const endpoint=service.url,auth=service.headers;
   const request={location:{directory:workspace},signal:AbortSignal.timeout(15000)};
-  if (plugins.length) await client.session.create({location:{directory:workspace},model:{providerID:provider,id:model},title:'native plugin activation probe'},request);
-  const deadline=Date.now()+15000;
   try {
-  if (plugins.length) {
+  if (configJson.plugins.length) {
+    await createSession(service,workspace,{model:{providerID:provider,id:model},title:'native plugin activation probe',signal:request.signal});
+    const deadline=Date.now()+15000;
     while(Date.now()<deadline){
-      const loaded=await client.plugin.list(request).catch(()=>null);
+      const loaded=await listPlugins(service,request).catch(()=>null);
       const expected = arm === 'plain' ? 'ctg.evaluation-budget' : 'ctg.benchmark';
-      const active = loaded?.data?.find(plugin=>plugin.id===expected&&plugin.state?.status==='active');
-      const failure=loaded?.data?.find(plugin=>plugin.id===expected&&plugin.state?.status==='error');
+      const active = loaded?.find(plugin=>plugin.id===expected&&plugin.state?.status==='active');
+      const failure=loaded?.find(plugin=>plugin.id===expected&&plugin.state?.status==='failed');
       if(active) break;
       if(failure) throw Error(`Native OpenCode plugin failed to activate: ${JSON.stringify(failure)}`);
       if(Date.now()+100>=deadline) throw Error(`Native benchmark plugin did not become active: ${JSON.stringify(loaded)}`);
       await new Promise(resolve=>setTimeout(resolve,100));
     }
   }
-  const version=(await client.server.info(request)).version;
-  return {endpoint,client,auth,child:proc,version,close:async()=>{if(proc.exitCode!==null)return;const done=new Promise(resolve=>proc.once('exit',resolve));proc.kill('SIGTERM');const kill=setTimeout(()=>proc.kill('SIGKILL'),5000);await done;clearTimeout(kill)}};
+  return {endpoint,auth,version:'2.0.32',close:()=>serviceManager.stopService({root:home})};
   } catch(error) {
-    if(proc.exitCode===null){const exited=new Promise(resolve=>proc.once('exit',resolve));proc.kill('SIGTERM');const kill=setTimeout(()=>proc.kill('SIGKILL'),5000);await exited;clearTimeout(kill);}
+    await serviceManager.stopService({root:home}).catch(()=>{});
     throw error;
   }
 }
-export async function runCandidate(task, arm, { smoke = false, key, root = ROOT, campaignPath = CAMPAIGN, fetchImpl, promptOverride, toolLimit = 120, nativeRunner = runNativeEvaluation } = {}) {
+export async function runCandidate(task, arm, { smoke = false, key, root = ROOT, campaignPath = CAMPAIGN, fetchImpl, promptOverride, toolLimit = 120, nativeRunner = runNativeEvaluation, serviceManager = { ensureService, stopService } } = {}) {
   if ((!TASKS[task] && !smoke) || !['plain','harness','jev'].includes(arm)) throw Error('Invalid run');
   if (!smoke) { if (promptOverride || toolLimit !== 120 || fetchImpl) throw Error('Candidate overrides forbidden'); verifyFreeze(root); }
   const apiKey = key || process.env.OPENROUTER_API_KEY;
@@ -117,7 +109,7 @@ export async function runCandidate(task, arm, { smoke = false, key, root = ROOT,
       const result = spawnSync('git', args, { cwd: workspace, env }); if (result.status) throw Error('Git initialization failed');
     }
     if (nativeRunner.fixture) fixtureService = await startFixtureService(workspace);
-    else if (!process.env.CTG_OPENCODE_URL) nativeService = await startNativeService({workspace,config,mode:arm,arm,smoke,toolLimit,gateway:gateway.url,apiKey});
+    else if (!process.env.CTG_OPENCODE_URL) nativeService = await startNativeService({workspace,config,mode:arm,arm,smoke,toolLimit,gateway:gateway.url,apiKey,serviceManager});
     env.CTG_OPENCODE_URL = process.env.CTG_OPENCODE_URL || nativeService?.endpoint || fixtureService?.url;
     env.CTG_OPENCODE_AUTHORIZATION = nativeService ? nativeService.auth.authorization : '';
     const args = { task, arm, smoke, runtime: ENGINE_RUNTIME, openCodeService: nativeService ? 'dedicated-isolated-service' : process.env.CTG_OPENCODE_URL ? 'explicit-isolated-endpoint' : 'injected-fixture', toolsReceipt, harnessCommit: spawnSync('git',['rev-parse','HEAD'],{cwd:REPO,encoding:'utf8'}).stdout.trim(), ceilings: { seconds: smoke ? 180 : 900, tools:toolLimit, usd:smoke ? .08 : 2.79 }, startedAt:new Date().toISOString() };
