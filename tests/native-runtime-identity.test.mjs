@@ -75,6 +75,22 @@ function versionSpawner(version) {
   };
 }
 
+function versionSpawnerWithEnv(version, observeEnv) {
+  return (_binary, args, options) => {
+    assert.deepEqual(args, ['--version']);
+    assert.equal(options.windowsHide, true);
+    observeEnv(options.env);
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    queueMicrotask(() => {
+      child.stdout.emit('data', `${version}\n`);
+      child.emit('close', 0);
+    });
+    return child;
+  };
+}
+
 test('accepts exactly the upstream compatibility CLI identity', async t => {
   const { binary } = await fixture(t);
   assert.deepEqual(await loadNativeTestRuntime({ binary, spawnImpl: versionSpawner('opencode v2.0.32') }), {
@@ -82,6 +98,21 @@ test('accepts exactly the upstream compatibility CLI identity', async t => {
     compatibilityVersion: '2.0.32',
     runtimeVersion: '2.0.32',
   });
+});
+
+test('independent native version verification removes only the draft transport credential from child env', async t => {
+  const { binary, ownedRoot, release } = await fixture(t);
+  let childEnv;
+  await loadNativeTestRuntime({
+    binary,
+    ownedRoot,
+    expectedManifest: release,
+    env: { PATH: '/fixture/path', LANG: 'C.UTF-8', CTG_RUNTIME_GITHUB_TOKEN: 'fake-runtime-token' },
+    spawnImpl: versionSpawnerWithEnv(`opencode v${runtimeVersion}`, env => { childEnv = env; }),
+  });
+  assert.equal(childEnv.CTG_RUNTIME_GITHUB_TOKEN, undefined);
+  assert.equal(childEnv.PATH, '/fixture/path');
+  assert.equal(childEnv.LANG, 'C.UTF-8');
 });
 
 test('accepts the CTG runtime only with pinned provenance and independently expected hash', async t => {

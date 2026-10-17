@@ -93,7 +93,8 @@ release and asset APIs. The transport requires one exact `v<packaged-version>`
 release and one exact expected asset name; it does not fall back to public
 downloads if the requested draft release or asset is absent or ambiguous.
 GitHub asset redirects are followed without forwarding the credential. The
-token is removed from runtime and workspace child environments, and the
+token is removed from OpenCode, workspace, and runtime identity-check child
+environments, and the
 existing packaged runtime-release manifest remains the sole source of archive,
 executable, and provenance trust pins. The normal no-token installed-package
 acceptance remains required after publication.

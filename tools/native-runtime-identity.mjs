@@ -38,7 +38,7 @@ export async function loadNativeTestRuntime({
   }
   const executable = resolve(binary);
   if (!ownedRoot) {
-    const versionOutput = await captureVersion(executable, spawnImpl);
+    const versionOutput = await captureVersion(executable, spawnImpl, env);
     if (versionOutput !== `opencode v${NATIVE_TEST_COMPATIBILITY_VERSION}`) {
       throw new Error(`Unsupported native test runtime version: ${JSON.stringify(versionOutput)}`);
     }
@@ -87,7 +87,7 @@ export async function loadNativeTestRuntime({
     if (manifest?.[key] !== expected) throw new Error(`Owned runtime ${key} mismatch: expected ${String(expected)}, got ${String(manifest?.[key])}`);
   }
 
-  const versionOutput = await captureVersion(executable, spawnImpl);
+  const versionOutput = await captureVersion(executable, spawnImpl, env);
   if (versionOutput !== `opencode v${trusted.runtimeVersion}`) {
     throw new Error(`Unsupported owned native test runtime version: expected opencode v${trusted.runtimeVersion}, got ${JSON.stringify(versionOutput)}`);
   }
@@ -147,11 +147,15 @@ function nativePlatform() {
   return `${os}-${process.arch}`;
 }
 
-function captureVersion(binary, spawnImpl) {
+function captureVersion(binary, spawnImpl, env) {
   return new Promise((resolveOutput, reject) => {
     let child;
     try {
-      child = spawnImpl(binary, ['--version'], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+      const childEnv = { ...env };
+      for (const key of Object.keys(childEnv)) {
+        if (key.toUpperCase() === 'CTG_RUNTIME_GITHUB_TOKEN') delete childEnv[key];
+      }
+      child = spawnImpl(binary, ['--version'], { env: childEnv, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     } catch (error) {
       reject(error);
       return;
