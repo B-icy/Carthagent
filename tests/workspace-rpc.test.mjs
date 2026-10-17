@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
 
@@ -13,7 +14,7 @@ const { registerWorkspaceRpc } = await jiti.import('../plugins/carthagent/src/se
 function git(cwd, ...args) { return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim(); }
 
 test('native workspace RPC snapshots journaled sessions, enforces location ownership, and aborts requests', async t => {
-  const base = mkdtempSync('/tmp/opencode/workspace-rpc-'); t.after(() => rmSync(base, { recursive: true, force: true }));
+  const base = mkdtempSync(join(tmpdir(), 'workspace-rpc-')); t.after(() => rmSync(base, { recursive: true, force: true }));
   const root = join(base, 'project'); mkdirSync(root); git(root, 'init', '-q');
   const other = join(base, 'other'); mkdirSync(other);
   const sessionMap = new Map([
@@ -79,7 +80,7 @@ test('native workspace RPC snapshots journaled sessions, enforces location owner
 });
 
 test('registration failures reject setup and cannot leave an active unregistered bridge', async t => {
-  const root = mkdtempSync('/tmp/opencode/workspace-rpc-register-'); t.after(() => rmSync(root, { recursive: true, force: true }));
+  const root = mkdtempSync(join(tmpdir(), 'workspace-rpc-register-')); t.after(() => rmSync(root, { recursive: true, force: true }));
   git(root, 'init', '-q');
   let subscribed = false;
   const ctx = {
@@ -92,7 +93,7 @@ test('registration failures reject setup and cannot leave an active unregistered
 });
 
 test('durable task creation propagates cancellation into native worktree creation', async t => {
-  const base = mkdtempSync('/tmp/opencode/workspace-rpc-cancel-'); t.after(() => rmSync(base, { recursive: true, force: true }));
+  const base = mkdtempSync(join(tmpdir(), 'workspace-rpc-cancel-')); t.after(() => rmSync(base, { recursive: true, force: true }));
   const root = join(base, 'project'); mkdirSync(root); git(root, 'init', '-q');
   const registered = {};
   const controller = new AbortController();
