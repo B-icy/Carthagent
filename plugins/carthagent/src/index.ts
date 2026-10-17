@@ -4,6 +4,7 @@ import { registerProviders } from './server/providers';
 import { createDeviceAuthController } from './server/device-auth.ts';
 import { shipAgentDir } from '../../../lib/ship-auth.mjs';
 import { registerSessionControls } from './server/session-controls';
+import { registerNativeDelivery } from './server/native-delivery';
 
 async function cleanup(resources: Array<() => Promise<void>>, originalError?: unknown) {
   const failures: unknown[] = [];
@@ -18,9 +19,7 @@ async function cleanup(resources: Array<() => Promise<void>>, originalError?: un
   if (failures.length) throw new AggregateError(failures, 'One or more plugin registrations could not be disposed.');
 }
 
-export default Plugin.define({
-  id: 'carthagent',
-  async setup(context) {
+export async function setupCarthagent(context: Parameters<typeof registerSessionControls>[0], options: { delivery?: boolean; deliveryOptions?: Parameters<typeof registerNativeDelivery>[1] } = {}) {
     const cleanups: Array<() => Promise<void>> = [];
     try {
       cleanups.push(await registerSessionControls(context));
@@ -53,9 +52,11 @@ export default Plugin.define({
       });
       cleanups.push(() => rpcRegistration.dispose());
       cleanups.push(await registerProviders(context, { deviceAuth }));
+      if (options.delivery) cleanups.push(await registerNativeDelivery(context, options.deliveryOptions));
     } catch (error) {
       await cleanup(cleanups, error);
     }
     return async () => cleanup(cleanups);
-  },
-});
+}
+
+export default Plugin.define({ id: 'carthagent', setup: setupCarthagent });

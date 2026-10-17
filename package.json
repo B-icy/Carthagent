@@ -90,5 +90,8 @@
     "globals": "^17.12.0",
     "typescript": "^5.9.2",
     "typescript-eslint": "8.57.0"
+  },
+  "allowScripts": {
+    "@opencode/cli@2.0.32": true
   }
 }

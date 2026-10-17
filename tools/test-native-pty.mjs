@@ -10,7 +10,9 @@ if (process.platform === 'win32') {
 }
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const binary = process.env.CTG_OPENCODE_BIN ?? resolve(root, 'node_modules/@opencode/cli/bin/opencode.exe');
-const result = spawnSync('python3', [resolve(root, 'tools/native-pty-smoke.py'), '--binary', binary], {
+const plugin = resolve(root, 'plugins/carthagent');
+const testPlugin = resolve(plugin, 'test-plugin');
+const result = spawnSync('python3', [resolve(root, 'tools/native-pty-smoke.py'), '--binary', binary, '--plugin', plugin, '--delivery-plugin', testPlugin], {
   cwd: root,
   stdio: 'inherit',
 });

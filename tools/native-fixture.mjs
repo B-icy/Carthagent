@@ -1,4 +1,4 @@
-/** Disposable real native host and loopback provider for acceptance probes. */
+/** Offline OpenAI-compatible SSE fixture used by the real OpenCode host test. */
 import { createServer } from 'node:http';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -11,19 +11,57 @@ import { resolveOpenCode } from '../lib/opencode/runtime.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 
-export function streamText(res, text = 'Fixture response complete.') {
-  res.writeHead(200, { 'content-type': 'text/event-stream' });
-  const chunk = (delta, finish_reason = null) => `data: ${JSON.stringify({
-    id: 'fixture', object: 'chat.completion.chunk', created: 1, model: 'fixture',
-    choices: [{ index: 0, delta, finish_reason }],
-    ...(finish_reason ? { usage: { prompt_tokens: 20, completion_tokens: 5, total_tokens: 25 } } : {}),
-  })}\n\n`;
-  res.write(chunk({ role: 'assistant', content: text }));
-  res.end(`${chunk({}, 'stop')}data: [DONE]\n\n`);
+export function createNativeFixture({ respond, inspect } = {}) {
+  let calls = 0;
+  const server = createServer(async (request, response) => {
+    let body = '';
+    for await (const chunk of request) body += chunk;
+    calls++;
+    const parsed = body ? JSON.parse(body) : {};
+    inspect?.({ request, body: parsed, call: calls });
+    if (!parsed.stream) {
+      response.writeHead(400, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ error: { message: 'stream=true required' } }));
+      return;
+    }
+    response.writeHead(200, { 'content-type': 'text/event-stream', connection: 'keep-alive' });
+    response.flushHeaders();
+    await respond?.({ request, body: parsed, call: calls, response });
+    response.end('data: [DONE]\n\n');
+  });
+  return {
+    server,
+    get calls() { return calls; },
+    listen: () => new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', () => {
+        server.off('error', reject);
+        resolve(`http://127.0.0.1:${server.address().port}/v1`);
+      });
+    }),
+    close: () => new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())),
+  };
 }
 
-export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'), plugins: additionalPlugins = [], respond = (_body, res) => streamText(res), env: extraEnv = {} } = {}) {
-  const pluginPaths = [plugin, ...additionalPlugins].filter(Boolean).map(path => resolve(path));
+export function toolCall(response, { id = 'fixture-call', name, arguments: input }) {
+  response.write(`data: ${JSON.stringify({
+    id: 'fixture-response', object: 'chat.completion.chunk', created: 1, model: 'fixture',
+    choices: [{ index: 0, delta: { role: 'assistant', tool_calls: [{
+      index: 0, id, type: 'function', function: { name, arguments: JSON.stringify(input) },
+    }] }, finish_reason: 'tool_calls' }],
+  })}\n\n`);
+}
+
+export function assistantText(response, text) {
+  response.write(`data: ${JSON.stringify({
+    id: 'fixture-response', object: 'chat.completion.chunk', created: 1, model: 'fixture',
+    choices: [{ index: 0, delta: { role: 'assistant', content: text }, finish_reason: 'stop' }],
+  })}\n\n`);
+}
+
+/** Disposable native OpenCode host and loopback provider for acceptance probes. */
+export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'), plugins: additionalPlugins = [], extraPlugins = [], respond = (_body, res) => streamText(res), env: extraEnv = {} } = {}) {
+  const pluginPaths = [plugin, ...additionalPlugins, ...extraPlugins].filter(Boolean).map(path => resolve(path));
   const temp = await mkdtemp(join(tmpdir(), 'ctg-native-fixture-'));
   const cwd = join(temp, 'project');
   const config = join(temp, 'config/opencode');
@@ -66,14 +104,14 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
     const env = Object.fromEntries(['PATH', 'SystemRoot', 'WINDIR', 'COMSPEC', 'PATHEXT', 'LANG', 'LC_ALL']
       .filter(key => process.env[key]).map(key => [key, process.env[key]]));
     Object.assign(env, {
-      HOME: join(temp, 'home'), USERPROFILE: join(temp, 'home'),
+      HOME: join(temp, 'home'), USERPROFILE: join(temp, 'home'), APPDATA: join(temp, 'appdata'), LOCALAPPDATA: join(temp, 'localappdata'),
       XDG_CONFIG_HOME: join(temp, 'config'), XDG_DATA_HOME: join(temp, 'data'),
       XDG_CACHE_HOME: join(temp, 'cache'), XDG_STATE_HOME: join(temp, 'state'),
       OPENCODE_DB: join(temp, 'database.sqlite'), OPENCODE_SERVER_PASSWORD: password,
       ...extraEnv,
     });
     child = spawn(await resolveOpenCode(),
-      ['serve', '--hostname', '127.0.0.1', '--port', '0'], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+      ['serve', '--hostname', '127.0.0.1', '--port', '0', '--print-logs', '--log-level', 'debug'], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
     const baseUrl = await new Promise((done, reject) => {
       const timer = setTimeout(() => reject(Error(`Host startup timeout: ${output}`)), 30_000);
       const collect = chunk => {
@@ -92,7 +130,7 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
     return client;
   };
   try {
-    await Promise.all(['project', 'home', 'config/opencode', 'data', 'state', 'cache']
+    await Promise.all(['project', 'home', 'config/opencode', 'data', 'state', 'cache', 'appdata', 'localappdata']
       .map(directory => mkdir(join(temp, directory), { recursive: true })));
     provider.listen(0, '127.0.0.1');
     await once(provider, 'listening');
@@ -118,7 +156,6 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
     async outcome(sessionID) {
       await client.session.wait({ sessionID }, request());
       const deadline = Date.now() + 5000;
-      // wait resolves before the durable session projection always catches up.
       while (true) {
         const session = await client.session.get({ sessionID }, request());
         if (session.outcome) return session.outcome;
@@ -131,10 +168,6 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
         location = pluginID;
         pluginID = 'carthagent';
       }
-      const configured = pluginPaths.some(path => path.includes(pluginID)
-        || (pluginID === 'ctg.evaluation-budget' && path.includes('evaluation-budget-plugin'))
-        || (pluginID === 'ctg.benchmark' && path.includes('benchmark/native-plugin')));
-      if (!configured) throw Error(`Plugin ${pluginID} is not configured in the fixture`);
       await client.session.create({ location, model:{providerID:'ctg-fixture',id:'fixture'}, title:`${pluginID} activation probe` }, request());
       const deadline = Date.now() + 15_000;
       while (true) {
@@ -147,4 +180,15 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
       }
     },
   };
+}
+
+export function streamText(response, text = 'Fixture response complete.') {
+  response.writeHead(200, { 'content-type': 'text/event-stream' });
+  const chunk = (delta, finish_reason = null) => `data: ${JSON.stringify({
+    id: 'fixture', object: 'chat.completion.chunk', created: 1, model: 'fixture',
+    choices: [{ index: 0, delta, finish_reason }],
+    ...(finish_reason ? { usage: { prompt_tokens: 20, completion_tokens: 5, total_tokens: 25 } } : {}),
+  })}\n\n`;
+  response.write(chunk({ role: 'assistant', content: text }));
+  response.end(`${chunk({}, 'stop')}data: [DONE]\n\n`);
 }
