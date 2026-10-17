@@ -24,6 +24,7 @@ if (source.includes(marker)) {
   source = source.replace(declaration, replacement);
 
   const finalizers = [
+    'await disposeRuntime(),await flushRawStdout()',
     'await disposeRuntime(),await globalThis[Symbol.for("carthagent.httpDispatcher.close")]?.(),await flushRawStdout()',
     'await disposeRuntime(),undici.getGlobalDispatcher()===dispatcher&&await dispatcher.destroy(),await flushRawStdout()',
   ];
