@@ -29,6 +29,9 @@ try {
   } };
   const first = await runHeadless(service, host.cwd, 'WRAPPER_FIRST', common);
   assert.equal(first.result?.text, 'FIRST_TURN');
+  assert.equal(first.outcome, 'succeeded');
+  assert.equal(first.terminal, true);
+  assert.equal(first.budgetReason, undefined, 'A successful terminal outcome has no budget failure reason');
   const second = await runHeadless(service, host.cwd, 'WRAPPER_SECOND', { ...common, sessionID: first.session.id });
   assert.equal(second.result?.text, 'SECOND_TURN', 'Resume must return the current turn');
   let failure;
