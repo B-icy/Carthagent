@@ -13,6 +13,7 @@ test('native evaluation adapter consumes native event shapes and reconciles sess
   const events = [];
   const api = {
     server: { info: async () => ({ version: '2.0.32' }) },
+    plugin: { list: async () => ({ data:[{id:'ctg.evaluation-budget',state:{status:'active'}}] }) },
     session: {
       create: async () => ({ id: 's1' }),
       synthetic: async () => ({}),
@@ -66,6 +67,7 @@ test('native evaluation bounds a nonresponsive interrupt cleanup and reports int
   const controller = new AbortController();
   const api = {
     server: { info: async () => ({ version: '2.0.32' }) },
+    plugin: { list: async () => ({ data:[{id:'ctg.evaluation-budget',state:{status:'active'}}] }) },
     session: {
       create: async () => ({ id: 'hung-session' }),
       prompt: (_input, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once:true })),
