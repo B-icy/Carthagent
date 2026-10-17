@@ -109,7 +109,7 @@ try {
   assert.equal(resumed.session.id, first.session.id);
   assert.equal(resumed.result?.text, 'SECOND_TURN', 'Session state remains usable after the owned service restarts');
   assert.equal(await stopService(options), true);
-  console.log(JSON.stringify({ host: '2.0.32', serviceReuse: 'passed', repeatedTurns: 'passed', finalAnswerAfterTool: 'passed', successMetadata: 'passed', failure: 'passed', recovery: 'passed', cancellation: 'passed', neighboringSession: 'passed', serviceRestart: 'passed' }));
+  console.log(JSON.stringify({ host: '2.0.32', serviceReuse: 'passed', repeatedTurns: 'passed', finalAnswerAfterTool: 'passed', successMetadata: 'passed', failure: 'passed', recovery: 'passed', cancellation: 'passed', neighboringSession: 'passed', preAbortedInvocation: 'passed', serviceRestart: 'passed' }));
 } finally {
   try { await stopService(options); }
   finally { await host.close(); }
