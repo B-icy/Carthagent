@@ -87,6 +87,7 @@ try {
     'test-native-review.mjs', 'test-native-swe-host.mjs', 'test-native-pty.mjs',
     'test-native-evaluation.mjs', 'test-native-swe.mjs',
     'test-native-report.mjs',
+    '../tests/native-cli-host-smoke.mjs',
   ]) {
     if (test === 'test-native-pty.mjs' && process.platform === 'win32') {
       probes.push({ test, status: 'skipped', reason: 'Unix-only Python PTY harness' });
