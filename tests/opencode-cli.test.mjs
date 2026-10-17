@@ -133,6 +133,38 @@ test('headless terminal reconciliation preserves the bounded turn and observes m
   assert.deepEqual(textParts(latest.messages), ['answer']);
 });
 
+test('accepted nonterminal headless result keeps current-turn JSON events and session identity without history lookup', async t => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-opencode-accepted-nonterminal-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const lines = [];
+  let contextReads = 0;
+  const runtime = await createOpenCodeCliRuntime({ cwd, stdout: { write: value => lines.push(value) }, io: ioCapture().io, native: {
+    runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) },
+    headless: { runHeadless: async () => ({
+      session: { id: 'ses_current' }, accepted: { id: 'user-current' }, outcome: 'timed-out', terminal: false,
+      messages: [
+        { type: 'user', id: 'user-current' }, { type: 'assistant', finish: 'tool-calls', parts: [] },
+      ],
+    }) },
+    clientFactory: async () => ({
+      event: { subscribe: () => ({ async *[Symbol.asyncIterator]() {
+        yield { id: 'call', created: 1, type: 'session.tool.called', data: { sessionID: 'ses_current', id: 'tool-1', input: { name: 'read', arguments: { filePath: 'a.txt' } } } };
+        yield { id: 'done', created: 2, type: 'session.tool.success', data: { sessionID: 'ses_current', id: 'tool-1', content: [{ type: 'text', text: 'contents' }] } };
+      } }) },
+      session: { context: async () => { contextReads++; throw new Error('must not reconcile nonterminal result'); } },
+    }),
+  } });
+  assert.equal(await runtime.run({ mode: 'headless', options: { prompt: 'inspect', json: true }, prompt: 'inspect' }), 1);
+  assert.equal(contextReads, 0);
+  const events = lines.map(line => JSON.parse(line));
+  assert.ok(events.some(event => event.type === 'tool_execution_start' && event.sessionID === 'ses_current'));
+  assert.ok(events.some(event => event.type === 'tool_execution_end' && event.sessionID === 'ses_current'));
+  assert.ok(!events.some(event => event.message?.type === 'idle' && event.message.outcome === 'succeeded'));
+});
+
 test('headless reconciliation stops on abort or timeout and never swaps in stale history', async () => {
   const result = { session: { id: 'ses_blocked' }, messages: [
     { type: 'user', id: 'accepted' }, { type: 'assistant', finish: 'error', errorMessage: 'provider failed', content: [] },
@@ -342,6 +374,188 @@ test('native login cancellation maps to 130 and attempts to cancel the pending h
     assert.equal(await runOpenCodeCli({ argv: ['login'], runtime, io: ioCapture().io, stdoutIsTTY: true }), 130);
   } finally { clearTimeout(timer); }
   assert.deepEqual(calls, ['attempt-cancel']);
+});
+
+test('native key login rejects before prompting; secret OAuth form input is masked and hidden fields retain defaults', async () => {
+  const calls = [];
+  const keyRuntime = await createOpenCodeCliRuntime({ cwd: '/project', io: ioCapture().io, stdin: { isTTY: true }, stdout: { isTTY: true }, native: {
+    runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) }, headless: {},
+    clientFactory: async () => ({ integration: { list: async () => ({ data: [{ id: 'key-provider', name: 'Key Provider', methods: [{ id: 'api-key', type: 'key', label: 'API key' }] }] }) } }),
+  } });
+  await assert.rejects(keyRuntime.login({ args: ['key-provider', 'key'] }), /not supported/);
+
+  const displayed = [];
+  const fakeInput = Object.assign(new (await import('node:events')).EventEmitter(), { isTTY: true, isRaw: false, setRawMode(value) { this.isRaw = value; }, resume() {} });
+  const fakeOutput = { isTTY: true, write: value => displayed.push(String(value)) };
+  const oauthRuntime = await createOpenCodeCliRuntime({ cwd: '/project', io: ioCapture().io, stdin: fakeInput, stdout: fakeOutput, native: {
+    runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) }, headless: {},
+    clientFactory: async () => ({ integration: {
+      list: async () => ({ data: [{ id: 'oauth-provider', name: 'OAuth Provider', methods: [{
+        id: 'oauth', type: 'oauth', label: 'OAuth', form: [
+          { key: 'client_secret', type: 'string', title: 'Client secret', required: true },
+          { key: 'scope', type: 'string', title: 'Scope', default: 'default-scope', hidden: true },
+        ],
+      }] }] }),
+      oauth: {
+        connect: async input => {
+          calls.push(input.answer);
+          return { data: { attemptID: 'a', mode: 'auto', url: 'https://example.test', instructions: 'auth', time: { expires: Date.now() + 1000 } } };
+        },
+        status: async () => ({ data: { status: 'complete' } }),
+      },
+    } }),
+  } });
+  const login = oauthRuntime.login({ args: ['oauth-provider'] });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  fakeInput.emit('data', 'sensitive-value\r');
+  await login;
+  assert.deepEqual(calls[0], { client_secret: 'sensitive-value', scope: 'default-scope' });
+  assert.ok(displayed.join('').includes('**************'));
+  assert.ok(!displayed.join('').includes('sensitive-value'));
+});
+
+test('OAuth forms honor conditional fields, defaults, validation, and typed selections', async () => {
+  const calls = [];
+  const input = Object.assign(new (await import('node:events')).EventEmitter(), {
+    isTTY: true, isRaw: false,
+    setRawMode(value) { this.isRaw = value; },
+    resume() {},
+  });
+  const replies = ['standard\r', '4\r', 'true\r', 'alpha,beta\r'];
+  let promptIndex = 0;
+  const fakeStdout = { isTTY: true, write() {}, on() {}, removeListener() {}, end() {} };
+  const readlineFactory = options => {
+    return { close() {}, question: async label => {
+      assert.ok(label.includes(['Mode', 'Count', 'Enabled', 'Features'][promptIndex]));
+      return replies[promptIndex++].trimEnd();
+    } };
+  };
+  const injectedRuntime = await createOpenCodeCliRuntime({ cwd: '/project', io: ioCapture().io, stdin: input, stdout: fakeStdout, readlineFactory, native: {
+    runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) }, headless: {},
+    clientFactory: async () => ({ integration: {
+      list: async () => ({ data: [{ id: 'forms', name: 'Forms', methods: [{ id: 'oauth', type: 'oauth', label: 'OAuth', form: [
+        { key: 'mode', type: 'string', title: 'Mode', required: true, options: [{ value: 'standard', label: 'Standard' }, { value: 'advanced', label: 'Advanced' }] },
+        { key: 'count', type: 'integer', title: 'Count', required: true, minimum: 1, maximum: 5, default: 4, when: [{ key: 'mode', op: 'eq', value: 'standard' }] },
+        { key: 'enabled', type: 'boolean', title: 'Enabled', default: true },
+        { key: 'features', type: 'multiselect', title: 'Features', options: [{ value: 'alpha', label: 'Alpha' }, { value: 'beta', label: 'Beta' }], minItems: 1, maxItems: 2 },
+      ] }] }] }),
+      oauth: {
+        connect: async value => { calls.push(value.answer); return { data: { attemptID: 'form', mode: 'auto', url: 'https://auth.example', instructions: 'approve', time: { expires: Date.now() + 1000 } } }; },
+        status: async () => ({ data: { status: 'complete' } }),
+      },
+    } }),
+  } });
+  await injectedRuntime.login({ args: ['forms'] });
+  assert.deepEqual(calls[0], { mode: 'standard', count: 4, enabled: true, features: ['alpha', 'beta'] });
+  assert.equal(promptIndex, 4);
+});
+
+test('OAuth optional boolean fields keep their native default when left blank', async () => {
+  const calls = [];
+  const output = ioCapture();
+  const runtime = await createOpenCodeCliRuntime({ cwd: '/project', io: output.io, stdin: { isTTY: true }, stdout: { isTTY: true, write() {} }, readlineFactory: () => ({ close() {}, question: async () => '' }), native: {
+    runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) }, headless: {},
+    clientFactory: async () => ({ integration: {
+      list: async () => ({ data: [{ id: 'bool', name: 'Boolean', methods: [{ id: 'oauth', type: 'oauth', label: 'OAuth', form: [{ key: 'enabled', type: 'boolean', default: true }] }] }] }),
+      oauth: {
+        connect: async input => { calls.push(input.answer); return { data: { attemptID: 'bool', mode: 'auto', url: 'https://auth.example', instructions: 'approve', time: { expires: Date.now() + 1000 } } }; },
+        status: async () => ({ data: { status: 'complete' } }),
+      },
+    } }),
+  } });
+  await runtime.login({ args: ['bool'] });
+  assert.deepEqual(calls, [{ enabled: true }]);
+});
+
+test('native account and logout use the active profile RPC and remove only its credential after revoke', async () => {
+  const calls = [];
+  const service = { url: 'http://127.0.0.1:1', headers: {} };
+  const rpcDefinition = {};
+  const account = { accountId: 'acct-profile', balance: { availableNanoUsd: 100 }, subscription: { status: 'none' }, grants: [], sessions: [] };
+  const runtime = await createOpenCodeCliRuntime({ cwd: '/project', io: ioCapture().io, native: {
+    runtime: {}, service: { ensureService: async () => service }, headless: {},
+    rpcDefinitions: { Carthagent: rpcDefinition },
+    clientFactory: async () => ({
+      rpc: definition => {
+        assert.equal(definition, rpcDefinition);
+        return {
+          shipAccount: async input => { calls.push(['account', input]); return { account }; },
+          shipBilling: async input => { calls.push(['billing', input]); return { url: 'https://billing.test/portal' }; },
+          shipLogout: async input => { calls.push(['logout', input]); return { revoked: true, credentialID: 'profile-credential-id' }; },
+        };
+      },
+      credential: { remove: async input => { calls.push(['remove', input]); } },
+    }),
+  } });
+  assert.equal(await runtime.account({ args: ['--json'] }), 0);
+  assert.equal(await runtime.logout({}), 0);
+  assert.deepEqual(calls, [
+    ['account', {}], ['logout', {}], ['remove', { credentialID: 'profile-credential-id' }],
+  ]);
+});
+
+test('native named-session logout revokes only that session and leaves the current profile credential intact', async () => {
+  const calls = [];
+  const runtime = await createOpenCodeCliRuntime({ cwd: '/project', native: {
+    runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) }, headless: {},
+    rpcDefinitions: { Carthagent: {} },
+    clientFactory: async () => ({ rpc: () => ({ shipLogout: async input => { calls.push(['revoke', input]); return { revoked: true }; } }), credential: { remove: async input => calls.push(['remove', input]) } }),
+  } });
+  assert.equal(await runtime.logout({ session: 'ship-session-2' }), 0);
+  assert.deepEqual(calls, [['revoke', { session: 'ship-session-2' }]]);
+});
+
+test('native scripted demo launches the legacy-only flow fail-closed without starting OpenCode', async () => {
+  const runtime = await createOpenCodeCliRuntime({ native: {
+    runtime: {}, service: {}, headless: {},
+  } });
+  await assert.rejects(runtime.command({ command: 'demo', args: [] }), /legacy TUI RPC protocol/);
+});
+
+test('native update installs the validated package spec, and fails closed for source clones', async () => {
+  const calls = [];
+  const runtime = await createOpenCodeCliRuntime({ cwd: '/demo/workspace', native: {
+    runtime: {}, service: { ensureService: async () => { throw new Error('demo must not launch the native service'); } }, headless: {},
+    updateApi: {
+      fetchLatestRelease: async () => ({ release: { version: '1.0.4', minNode: '18.0.0', installSpec: 'github:B-icy/Carthagent#v1.0.4' } }),
+      packageVersion: () => '1.0.3', compareVersions: (left, right) => left.localeCompare(right, undefined, { numeric: true }),
+      detectInstallMethod: () => 'npm',
+    },
+    packageRoot: '/package/root',
+    runCommand: async (argv, options) => { calls.push({ argv, options }); return { code: 0, timedOut: false, cancelled: false, output: '' }; },
+  } });
+  assert.equal(await runtime.command({ command: 'update', args: [] }), 0);
+  assert.deepEqual(calls, [{
+    argv: ['npm', 'install', '-g', '--install-links=true', 'github:B-icy/Carthagent#v1.0.4'],
+    options: { cwd: '/package/root', timeoutSeconds: 600 },
+  }]);
+  const cloneCalls = [];
+  const cloneRuntime = await createOpenCodeCliRuntime({ cwd: '/package/root', native: {
+    runtime: {}, service: {}, headless: {}, packageRoot: '/package/root',
+    updateApi: {
+      fetchLatestRelease: async () => ({ release: { version: '1.0.4', minNode: '18.0.0', installSpec: 'github:B-icy/Carthagent#v1.0.4' } }),
+      packageVersion: () => '1.0.3', compareVersions: (left, right) => left.localeCompare(right, undefined, { numeric: true }), detectInstallMethod: () => 'clone',
+    },
+    runCommand: async (...args) => { cloneCalls.push(args); return { code: 0, output: '', timedOut: false, cancelled: false }; },
+  } });
+  await assert.rejects(cloneRuntime.command({ command: 'update', args: [] }), /refuses to checkout a release/);
+  assert.deepEqual(cloneCalls, [[['git', 'status', '--porcelain'], { cwd: '/package/root', timeoutSeconds: 30 }]]);
+});
+
+test('native update check reports an available release without invoking the installer', async () => {
+  const calls = [];
+  const output = ioCapture();
+  const runtime = await createOpenCodeCliRuntime({ cwd: '/package/root', io: output.io, native: {
+    runtime: {}, service: {}, headless: {},
+    updateApi: {
+      fetchLatestRelease: async () => ({ release: { version: '1.0.4', minNode: '18.0.0', installSpec: 'github:B-icy/Carthagent#v1.0.4' } }),
+      packageVersion: () => '1.0.3', compareVersions: (left, right) => left.localeCompare(right, undefined, { numeric: true }), detectInstallMethod: () => 'npm',
+    },
+    runCommand: async (...args) => { calls.push(args); return { code: 0 }; },
+  } });
+  assert.equal(await runtime.command({ command: 'update', args: ['--check'] }), 0);
+  assert.match(output.output.stdout[0], /1\.0\.4 is available/);
+  assert.deepEqual(calls, []);
 });
 
 test('concrete headless runtime returns failure for failed native session outcome', async t => {

@@ -8,6 +8,7 @@ import { registerProviders } from './server/providers';
 import { createDeviceAuthController } from './server/device-auth.ts';
 import { shipAgentDir } from '../../../lib/ship-auth.mjs';
 import { registerNativeDelivery } from './server/native-delivery';
+import { createShipRpcHandlers } from './server/ship-rpc';
 
 export async function setupCarthagent(
   context: Parameters<typeof registerSessionControls>[0],
@@ -30,8 +31,14 @@ export async function setupCarthagent(
       cleanups.push(await registerWorkspaceRpc(context, context.options));
       cleanups.push(await registerPullRequests(context));
       if (options.delivery !== false) cleanups.push(await registerNativeDelivery(context, options.deliveryOptions));
-      const archive = await registerArchive(context, context.options);
+      let configuredRoots;
+      try { configuredRoots = process.env.CTG_NATIVE_ARCHIVE_ROOTS ? JSON.parse(process.env.CTG_NATIVE_ARCHIVE_ROOTS) : undefined; }
+      catch { throw new Error('Invalid native archive roots from the CTG host'); }
+      const roots = context.options.archiveRoots ?? configuredRoots ?? [`${shipAgentDir(process.env).replace(/[\\/]+$/, '')}/sessions`];
+      if (!Array.isArray(roots) || roots.some(root => typeof root !== 'string')) throw new Error('Invalid native archive roots from the CTG host');
+      const archive = await registerArchive(context, { ...context.options, archiveRoots: roots });
       cleanups.push(() => archive.dispose());
+      const shipHandlers = createShipRpcHandlers(context);
       const registration = await context.rpc.register(Carthagent, {
         health: async () => ({
           protocol: 1,
@@ -56,6 +63,7 @@ export async function setupCarthagent(
           call.signal.throwIfAborted();
           return { cancelled: deviceAuth.cancel((input as { flowId: string }).flowId) };
         },
+        ...shipHandlers,
       });
       cleanups.push(() => registration.dispose());
       return dispose;
