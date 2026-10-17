@@ -86,6 +86,14 @@ try {
   assert.notEqual(cancelled.result?.text, 'SECOND_TURN', 'An interrupted resumed turn must not reuse a prior answer');
   const afterCancel = await runHeadless(service, host.cwd, 'WRAPPER_SECOND', { ...common, sessionID: first.session.id });
   assert.equal(afterCancel.result?.text, 'SECOND_TURN');
+  let preAborted;
+  try {
+    preAborted = await runHeadless(service, host.cwd, 'MUST_NOT_BE_ADMITTED', {
+      ...common, sessionID: first.session.id, signal: AbortSignal.abort(Error('Already cancelled')),
+    });
+  } catch (error) { preAborted = { error }; }
+  assert.ok(preAborted.error || preAborted.outcome === 'interrupted', 'A pre-aborted invocation cannot inherit an earlier successful outcome');
+  assert.equal(preAborted.result, undefined, 'A pre-aborted invocation has no current-turn assistant response');
   let unroutable;
   try {
     unroutable = await runHeadless(service, host.cwd, 'UNAVAILABLE_MODEL', {
