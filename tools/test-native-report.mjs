@@ -18,6 +18,9 @@ try {
   const read = async () => (await host.client.rpc.call({
     rpcID: 'carthagent.workspace', method: 'delivery', input: { sessionID: session.id }, location: host.location,
   }, host.request())).output;
+  const probe = method => host.client.rpc.call({
+    rpcID: 'carthagent.report-schema-probe', method, input: {}, location: host.location,
+  }, host.request());
   const check = { id: 'unit', kind: 'test', argv: ['node', '--test'], timeoutSeconds: 20 };
   const plan = {
     goal: 'Show authoritative report data', verification: 'required', artifacts: ['.'], outputs: [],
@@ -50,6 +53,12 @@ try {
   assert.equal(current.architecture.nodes[0].title, 'Project report state');
   assert.ok(!JSON.stringify(current).includes('PRIVATE_REPORT_LOG_SENTINEL'));
   assert.ok(!JSON.stringify(current).includes(host.cwd));
+  await assert.rejects(probe('incompleteVerified'), error => error.type === 'rpc.invalid_output');
+  const invalidWithFields = await probe('invalidWithFullFields');
+  assert.deepEqual(invalidWithFields.output, { status: 'invalid' });
+  assert.deepEqual((await probe('validUnavailable')).output, { status: 'unavailable' });
+  assert.deepEqual((await probe('validInvalid')).output, { status: 'invalid' });
+  assert.equal((await probe('validActive')).output.status, 'active');
 
   await writeFile(join(host.cwd, 'source.txt'), 'modified\n');
   const stale = await read();
