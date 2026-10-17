@@ -1,6 +1,6 @@
 --- a/packages/tui/test/plugin-theme-provider.test.tsx
 +++ b/packages/tui/test/plugin-theme-provider.test.tsx
-@@ -0,0 +1,96 @@
+@@ -0,0 +1,104 @@
 +/** @jsxImportSource @opentui/solid */
 +import { testRender } from "@opentui/solid"
 +import { expect, test } from "bun:test"
@@ -14,12 +14,20 @@
 +
 +const custom = {
 +  ...opencode,
-+  dark: { ...opencode.dark, background: { ...opencode.dark.background, base: "#112233" }, text: { ...opencode.dark.text, base: "#eeeeee" } },
-+  light: { ...opencode.light, background: { ...opencode.light.background, base: "#aabbcc" }, text: { ...opencode.light.text, base: "#123456" } },
++  base: {
++    ...opencode.base,
++    background: { ...opencode.base.background, base: "#aabbcc" },
++    text: { ...opencode.base.text, base: "#123456" },
++  },
++  dark: { hue: opencode.dark.hue },
++  light: { hue: opencode.dark.hue },
 +}
 +const darkOnly = {
 +  ...custom,
-+  dark: { ...custom.dark, background: { ...custom.dark.background, base: "#334455" } },
++  base: {
++    ...custom.base,
++    background: { ...custom.base.background, base: "#334455" },
++  },
 +  light: undefined,
 +}
 +
