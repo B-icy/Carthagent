@@ -67,6 +67,17 @@ try {
   const version = run(binary, ['--version'], { cwd: install }).trim();
   assert.equal(version, 'opencode v2.0.32');
 
+  // The release must work without the test-only binary override. npm may hoist
+  // @opencode/cli beside carthagent instead of nesting it beneath the package.
+  const resolverEnv = { ...process.env };
+  delete resolverEnv.CTG_OPENCODE_BIN;
+  const defaultBinary = run(process.execPath, ['--input-type=module', '-e', `
+    import { pathToFileURL } from 'node:url';
+    const { resolveOpenCode } = await import(pathToFileURL(process.argv[1]).href);
+    console.log(await resolveOpenCode());
+  `, join(installed, 'lib/opencode/runtime.mjs')], { cwd: install, env: resolverEnv }).trim();
+  assert.equal(resolve(defaultBinary), resolve(binary), 'default installed resolver must find the package-owned runtime without CTG_OPENCODE_BIN');
+
   const env = {
     ...process.env,
     CTG_OPENCODE_BIN: binary,
