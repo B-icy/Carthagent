@@ -2,6 +2,8 @@ import type { Context } from "@opencode/plugin/promise/plugin"
 import { registerCodegraph } from "./codegraph.ts"
 import { registerDelivery } from "./delivery.ts"
 
+export { registerCodegraph, registerDelivery }
+
 /** Optional production composition surface for a parent-owned plugin entrypoint. */
 export async function registerNativeDelivery(ctx: Context, options: Parameters<typeof registerDelivery>[1] = {}) {
   const cleanups: Array<() => Promise<void>> = []
