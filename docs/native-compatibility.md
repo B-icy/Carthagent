@@ -84,3 +84,25 @@ Targets remain input p95 at most 50 ms, warm session switch p95 at most 150 ms,
 cached workspace load at most 300 ms, bounded plugin memory and no plugin-owned
 idle redraw loop. Startup time in the bootstrap PTY smoke includes intentional
 input delays and must not be reported as a performance measurement.
+
+## Executable native-host evidence
+
+The following probes use a disposable profile and deterministic loopback provider.
+`CTG_OPENCODE_BIN` can select an explicit test binary; the default is the pinned
+package-owned `node_modules/@opencode/cli/bin/opencode.exe`. An optional first
+argument selects an installed plugin directory.
+
+- `node tools/test-native-controls.mjs`: concurrent framing/raw admission,
+  persisted launcher settings and framing overrides, compaction notes reaching
+  the summary request, cross-location RPC rejection, and whole-service restart
+  with authoritative session snapshots.
+- `node tools/test-native-outcomes.mjs`: provider rejection produces a failed
+  outcome; interrupt closes an in-flight provider request; a neighboring session
+  succeeds; the interrupted session recovers with its history preserved.
+
+Native `session.wait()` can resolve before the durable session projection exposes
+its terminal outcome. Consumers must reconcile within a bounded deadline and
+treat a missing outcome as unresolved. Assistant errors appear as `finish: error`
+with error details; terminal outcomes are recorded by the final `idle` message.
+These probes establish host behavior; delivery adapters, CLI output and installed
+UI integration still require their own acceptance checks above.

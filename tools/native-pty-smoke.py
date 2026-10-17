@@ -20,18 +20,20 @@ import time
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--binary', default=shutil.which('opencode'))
-    parser.add_argument('--plugin', default=str(pathlib.Path(__file__).resolve().parents[1] / 'plugins/carthagent'))
+    parser.add_argument('--plugin', default=str(pathlib.Path(__file__).resolve().parents[1] / 'plugins/carthagent/test-plugin'))
+    parser.add_argument('--delivery-plugin', default=str(pathlib.Path(__file__).resolve().parents[1] / 'plugins/carthagent/test-plugin'))
     parser.add_argument('--command', default='/ctg-status')
-    parser.add_argument('--expect', default='OpenCode 2.0.32')
+    parser.add_argument('--expect', default='2.0.32')
     args = parser.parse_args()
     if not args.binary:
         parser.error('OpenCode binary is required')
-    with tempfile.TemporaryDirectory(prefix='ctg-pty-', dir='/tmp/opencode') as temp:
+    args.binary = str(pathlib.Path(args.binary).resolve())
+    with tempfile.TemporaryDirectory(prefix='ctg-pty-') as temp:
         root = pathlib.Path(temp)
         for name in ['home', 'project', 'config/opencode', 'data', 'state', 'cache']:
             (root / name).mkdir(parents=True, exist_ok=True)
         (root / 'config/opencode/opencode.json').write_text(json.dumps({
-            'plugins': [str(pathlib.Path(args.plugin).resolve())], 'update': 'disable',
+            'plugins': list(dict.fromkeys([str(pathlib.Path(args.plugin).resolve()), str(pathlib.Path(args.delivery_plugin).resolve())])), 'update': 'disable',
         }))
         env = {key: os.environ[key] for key in ['PATH', 'LANG', 'LC_ALL'] if key in os.environ}
         env.update({
@@ -65,7 +67,7 @@ def main():
                     output.clear()
                     os.write(master, args.command.encode())
                     sent = True
-                if sent and not submitted and time.monotonic() - started > 12:
+                if sent and not submitted and b'No matching commands' in output:
                     output.clear()
                     os.write(master, b'\r')
                     submitted = True

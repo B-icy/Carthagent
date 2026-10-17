@@ -14,10 +14,12 @@ function host(t) {
   writeFileSync(join(directory, 'app.ts'), 'export function app() { return 42 }\n')
   const tools = new Map(), hooks = new Map(), commands = new Map(), stores = new Map(), events = []
   const session = { id: 'ses-a', location: { directory } }
+  const sessions = new Map()
+  sessions.set(session.id, session)
   const ctx = {
     location: { directory }, options: {},
     session: {
-      get: async ({ sessionID }) => { assert.ok(sessionID); return { ...session, id: sessionID } },
+      get: async ({ sessionID }) => { assert.ok(sessionID); return { ...session, ...sessions.get(sessionID), id: sessionID } },
       hook: async (name, callback) => { hooks.set(name, callback); return { dispose: async () => hooks.delete(name) } },
       interrupt: async () => {},
       prompt: async () => {},
@@ -34,7 +36,7 @@ function host(t) {
     },
     event: { subscribe: ({ signal }) => { events.push(signal); return (async function* () { await new Promise(resolve => signal.addEventListener('abort', resolve, { once: true })) })() } },
   }
-  return { ctx, tools, hooks, commands, stores, directory, session }
+  return { ctx, tools, hooks, commands, stores, directory, session, sessions }
 }
 
 test('OpenCode V2 registration exposes domain tools and returns complete cleanup', async t => {
@@ -94,4 +96,54 @@ test('policy and budget adapters preserve strict semantics and explicit reset', 
   assert.equal(checkBudget(budget, 'tool'), 'tool-calls')
   const resumed = budgetForSession(budget, { tools: 100, seconds: 100, repairs: 100 })
   assert.equal(resumed.tools, 1)
+})
+
+test('same-worktree sessions with identical concurrent shell commands fail closed instead of borrowing each other’s budget', async t => {
+  const h = host(t)
+  h.sessions.set('ses-b', { id: 'ses-b', location: { directory: h.directory } })
+  const cleanup = await registerDelivery(h.ctx, { workflow: 'standard' })
+  const plan = h.tools.get('delivery_plan')
+  const input = {
+    goal: 'Create a fixture', assumptions: [], artifacts: ['fixture.txt'], steps: ['Create fixture'],
+    acceptance: [{ requirement: 'fixture exists', checks: ['fixture-check'] }],
+    checks: [{ id: 'fixture-check', kind: 'test', argv: [process.execPath, '-e', 'process.exit(0)'], timeoutSeconds: 5 }],
+  }
+  await plan.execute(input, { sessionID: 'ses-a', signal: new AbortController().signal })
+  const before = h.hooks.get('tool:execute.before')
+  const after = h.hooks.get('tool:execute.after')
+  const shell = h.hooks.get('shell:create.before')
+  const command = 'node -e "process.exit(0)"'
+  await before({ id: 'call-a', tool: 'bash', sessionID: 'ses-a', input: { command } })
+  await plan.execute(input, { sessionID: 'ses-b', signal: new AbortController().signal })
+  await before({ id: 'call-b', tool: 'bash', sessionID: 'ses-b', input: { command } })
+  await assert.rejects(shell({ cwd: h.directory, command, timeout: 5000 }), /missing or ambiguous/)
+  await after({ id: 'call-a', tool: 'bash', sessionID: 'ses-a', status: 'completed', input: { command } })
+  await after({ id: 'call-b', tool: 'bash', sessionID: 'ses-b', status: 'completed', input: { command } })
+  assert.equal(h.stores.get('session/ses-a').budget.tools, 0)
+  assert.equal(h.stores.get('session/ses-b').budget.tools, 0)
+  await cleanup()
+})
+
+test('delivery:false disables workflow hooks and tools per session but retains native budget charging', async t => {
+  const h = host(t)
+  h.sessions.set('ses-off', {
+    id: 'ses-off', location: { directory: h.directory }, metadata: { 'carthagent.options': { delivery: false } },
+  })
+  const cleanup = await registerDelivery(h.ctx, { workflow: 'standard' })
+  const before = h.hooks.get('tool:execute.before')
+  const sessionState = async () => h.stores.get('session/ses-off')
+  const limits = readBudgetLimits({ maxTools: 3, maxSeconds: 0, maxRepairs: 0 })
+  h.stores.set('session/ses-off', { state: null, discovery: {}, nudges: 0, touched: false, budget: budgetForSession(undefined, limits), required: [], initialFiles: [], cwd: h.directory })
+  await before({ id: 'edit-off', tool: 'edit', sessionID: 'ses-off', input: { path: 'app.ts' } })
+  const state = await sessionState()
+  state.budget.limits.tools = 3
+  h.stores.set('session/ses-off', state)
+  await before({ id: 'shell-off', tool: 'bash', sessionID: 'ses-off', input: { command: 'printf off' } })
+  await h.hooks.get('shell:create.before')({ cwd: h.directory, command: 'printf off', timeout: 5000 })
+  await assert.rejects(h.tools.get('delivery_plan').execute({ goal: 'Disabled workflow' }, {
+    sessionID: 'ses-off', signal: new AbortController().signal,
+  }), /disabled for this session/)
+  assert.equal(h.stores.get('session/ses-off').budget.tools, 1)
+  assert.equal(h.stores.has('session/ses-off') && h.stores.get('session/ses-off').state, null)
+  await cleanup()
 })

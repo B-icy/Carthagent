@@ -8,7 +8,20 @@ permissions:
   contents: read
 
 jobs:
+  verify-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run quality
+      - run: npm run test:native-package
+
   publish-release-manifest:
+    needs: verify-release
     runs-on: ubuntu-latest
     steps:
       - name: Publish the CLI release manifest to the control plane

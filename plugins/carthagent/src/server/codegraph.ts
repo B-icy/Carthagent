@@ -1,6 +1,10 @@
 import { createCodeIndex } from "../../../../lib/codegraph.mjs"
 import { boundedCodeNavResult } from "../../../../lib/codegraph-query.mjs"
 import { resolve } from "node:path"
+import type { Context } from "@opencode/plugin/promise/plugin"
+import type { Tool } from "@opencode/schema/tool"
+
+type CodeNavInput = { op: string; name?: string; path?: string; container?: string; limit?: number; offset?: number }
 
 const schema = {
   type: "object", additionalProperties: false, required: ["op"],
@@ -13,14 +17,15 @@ const schema = {
 const result = (value: string) => ({ content: value })
 
 /** Register the structural navigator in the OpenCode server tool registry. */
-export async function registerCodegraph(ctx: any, options: { maxFiles?: number } = {}) {
+export async function registerCodegraph(ctx: Context, options: { maxFiles?: number } = {}) {
   const indexes = new Map<string, Promise<Awaited<ReturnType<typeof createCodeIndex>>>>()
-  const registration = await ctx.tool.transform((editor: any) => {
+  const registration = await ctx.tool.transform(editor => {
     editor.namespace?.({ name: "carthagent", description: "Carthagent code navigation" })
     editor.add({
       name: "code_nav", description: "Read-only structural graph for JS/TS/Python/Rust. Use definition/symbols/outline to locate code and callers/importers before changing APIs. Calls are name-based candidates, not resolved bindings. Results include coverage, total and nextOffset; page or filter incomplete answers.",
-      input: schema, options: { namespace: "carthagent", codemode: true, permission: "carthagent_code_nav" },
-      execute: async (input: any, toolContext: any) => {
+      input: schema as Tool.ValueSchema<CodeNavInput>, options: { namespace: "carthagent", codemode: true, permission: "carthagent_code_nav" },
+      execute: async (rawInput, toolContext) => {
+        const input = rawInput as CodeNavInput
         const session = await ctx.session.get({ sessionID: toolContext.sessionID })
         const root = resolve(session.location.directory, session.subpath || ".")
         let index = indexes.get(root)

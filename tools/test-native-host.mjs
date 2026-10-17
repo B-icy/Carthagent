@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /** Offline real-host test. Uses a disposable HOME and never discovers the user's service. */
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { randomBytes } from 'node:crypto';
@@ -11,7 +12,10 @@ import { createNativeFixture, toolCall, assistantText } from './native-fixture.m
 
 const root = resolve(import.meta.dirname, '..');
 const plugin = resolve(process.argv[2] ?? join(root, 'plugins/carthagent/test-plugin'));
-const temp = await mkdtemp('/tmp/opencode/ctg-host-smoke-');
+const deliveryPlugin = resolve(root, 'plugins/carthagent/test-plugin');
+const archiveFixture = resolve(root, 'tests/fixtures/archive-plugin');
+const binary = process.env.CTG_OPENCODE_BIN ?? join(root, 'node_modules/@opencode/cli/bin/opencode.exe');
+const temp = await mkdtemp(join(tmpdir(), 'ctg-host-smoke-'));
 const password = randomBytes(24).toString('hex');
 let child;
 let output = '';
@@ -24,7 +28,11 @@ try {
   const maxTools = scenario === 'budget' ? 6 : 0;
   const workflow = scenario === 'strict' ? 'strict' : 'standard';
   await Promise.all([mkdir(cwd), mkdir(config, { recursive: true }), mkdir(join(temp, 'home'))]);
-  await writeFile(join(config, 'opencode.json'), JSON.stringify({ plugins: [plugin], update: 'disable' }));
+  const legacy = join(temp, 'home/.carthagent/agent/sessions');
+  await mkdir(legacy, { recursive: true });
+  await writeFile(join(legacy, 'legacy.jsonl'), '{"type":"session","id":"legacy-fixture"}\n{"type":"message","message":{"role":"user","content":"fixture needle"}}\nmalformed\n');
+  const configuredPlugins = [...new Set([plugin, ...(plugin.endsWith('/.ctg-test-plugin') ? [] : [deliveryPlugin]), archiveFixture])];
+  await writeFile(join(config, 'opencode.json'), JSON.stringify({ plugins: configuredPlugins, update: 'disable' }));
   fixture = createNativeFixture({ inspect: ({ body }) => observed.push({ tools: (body.tools ?? []).map(tool => tool.function?.name), messages: body.messages ?? [] }), respond: ({ body, response }) => {
     const messages = body.messages ?? [];
     const tools = (body.tools ?? []).map(tool => tool.function?.name);
@@ -63,17 +71,22 @@ try {
   const cfg = JSON.parse(await (await import('node:fs/promises')).readFile(fixtureConfig, 'utf8'));
   cfg.providers = { fixture: { name: 'Offline fixture', package: '@opencode/ai/providers/openai-compatible', settings: { baseURL: fixtureURL, apiKey: 'offline-test' }, models: { fixture: { name: 'Offline fixture', capabilities: { tools: true }, limit: { context: 64000, output: 1024 }, settings: { baseURL: fixtureURL, apiKey: 'offline-test' } } } } };
   await writeFile(fixtureConfig, JSON.stringify(cfg));
-  const env = {
-    PATH: process.env.PATH,
+  const env = Object.fromEntries(['PATH', 'SystemRoot', 'WINDIR', 'ComSpec', 'PATHEXT', 'USERPROFILE']
+    .filter(key => process.env[key]).map(key => [key, process.env[key]]));
+  Object.assign(env, {
     HOME: join(temp, 'home'),
+    USERPROFILE: join(temp, 'home'),
+    APPDATA: join(temp, 'appdata'),
+    LOCALAPPDATA: join(temp, 'localappdata'),
     XDG_CONFIG_HOME: join(temp, 'config'),
     XDG_DATA_HOME: join(temp, 'data'),
     XDG_STATE_HOME: join(temp, 'state'),
     XDG_CACHE_HOME: join(temp, 'cache'),
     OPENCODE_DB: join(temp, 'database.sqlite'),
     OPENCODE_SERVER_PASSWORD: password,
-  };
-  child = spawn(process.env.CTG_OPENCODE_BIN ?? 'opencode', [
+  });
+  await Promise.all([mkdir(join(temp, 'appdata'), { recursive: true }), mkdir(join(temp, 'localappdata'), { recursive: true })]);
+  child = spawn(binary, [
     'serve', '--hostname', '127.0.0.1', '--port', '0', '--print-logs', '--log-level', 'debug',
   ], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
   const endpoint = await new Promise((resolveEndpoint, reject) => {
@@ -108,8 +121,10 @@ try {
     await new Promise((done) => setTimeout(done, 200));
   } while (Date.now() < deadline);
   const nativePlugin = plugins.data.find((entry) => entry.id === 'carthagent');
+  const archivePlugin = plugins.data.find((entry) => entry.id === 'ctg-archive-fixture');
   assert.ok(nativePlugin, 'Carthagent plugin must become visible');
   assert.equal(nativePlugin.state.status, 'active');
+  assert.equal(archivePlugin?.state.status, 'active', 'archive registration fixture must become visible');
   const health = await client.rpc.call({
     rpcID: 'carthagent', method: 'health', input: {}, location: { directory: cwd },
   }, request);
@@ -119,6 +134,26 @@ try {
   await assert.rejects(client.rpc.call({
     rpcID: 'carthagent', method: 'health', input: { unexpected: true }, location: { directory: cwd },
   }, request));
+  const archiveCall = (method, input) => client.rpc.call({
+    rpcID: 'carthagent.archive', method, input, location: { directory: cwd },
+  }, request);
+  const listed = await archiveCall('list', {});
+  assert.equal(listed.output.total, 1);
+  const archiveID = listed.output.items[0].id;
+  assert.match(archiveID, /^[a-f0-9]{64}$/);
+  assert.equal('path' in listed.output.items[0], false);
+  const searched = await archiveCall('search', { query: 'needle' });
+  assert.equal(searched.output.items[0].id, archiveID);
+  const transcript = await archiveCall('read', { id: archiveID });
+  assert.equal(transcript.output.archiveOnly, true);
+  assert.equal(transcript.output.records.length, 2);
+  assert.deepEqual(transcript.output.malformedLines, [{ line: 3 }]);
+  const exported = await archiveCall('export', { id: archiveID, format: 'jsonl' });
+  assert.match(exported.output.content, /legacy-fixture/);
+  await assert.rejects(archiveCall('read', { id: join(temp, 'outside.jsonl') }), error => error.type === 'archive_error');
+  await assert.rejects(archiveCall('search', { query: '   ' }), error => error.type === 'archive_error');
+  await assert.rejects(archiveCall('list', { limit: 101 }), error => error.type === 'rpc.invalid_input');
+  assert.equal(await readFile(join(legacy, 'legacy.jsonl'), 'utf8'), '{"type":"session","id":"legacy-fixture"}\n{"type":"message","message":{"role":"user","content":"fixture needle"}}\nmalformed\n');
   const session = await client.session.create({
     location: { directory: cwd }, title: 'CTG delivery host',
     metadata: { 'carthagent.options': { workflow, maxTools } },
