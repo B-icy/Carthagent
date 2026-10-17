@@ -1,5 +1,12 @@
 import { Rpc } from '@opencode/plugin/rpc';
 
+const errors = {
+  wrong_workspace: {
+    type: 'object', properties: { sessionID: { type: 'string' } },
+    required: ['sessionID'], additionalProperties: false,
+  },
+} as const;
+
 export const SessionControls = Rpc.define({
   id: 'carthagent.session',
   methods: {
@@ -9,6 +16,7 @@ export const SessionControls = Rpc.define({
         required: ['sessionID'], additionalProperties: false,
       },
       output: { type: 'object', properties: { enabled: { type: 'boolean' } }, required: ['enabled'], additionalProperties: false },
+      errors,
     },
     compact: {
       input: {
@@ -16,6 +24,7 @@ export const SessionControls = Rpc.define({
         required: ['sessionID'], additionalProperties: false,
       },
       output: { type: 'object', properties: { admitted: { type: 'boolean' } }, required: ['admitted'], additionalProperties: false },
+      errors,
     },
   },
   events: {},
