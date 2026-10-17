@@ -62,6 +62,10 @@ async function createAllFixtures() {
       sourceRevision, lockSha256, patchSha256, compatibilityVersion, runtimeVersion,
       channel: `ctg.${compatibilityVersion}`, platform: `${platform}-${arch}`, webUI: false,
     }));
+    const packageJson = Buffer.from(JSON.stringify({
+      name: `@opencode/cli-${key}`, version: runtimeVersion, os: [platform], cpu: [arch],
+    }));
+    const license = Buffer.from('MIT License\n');
     const sums = Buffer.from(`${sha256(binary)}  ${executablePath}\n`);
     const parentDirectories = executablePath.split('/').slice(0, -1).reduce((all, _part, index, parts) => {
       const current = parts.slice(0, index + 1).join('/');
@@ -72,6 +76,8 @@ async function createAllFixtures() {
       tarEntry('./', Buffer.alloc(0), '5'),
       ...parentDirectories,
       tarEntry(executablePath, binary, '0', 0o755),
+      tarEntry(`cli-${key}/package.json`, packageJson),
+      tarEntry('LICENSE', license),
       tarEntry('SHA256SUMS', sums),
       tarEntry('ctg-runtime.json', inner),
       Buffer.alloc(1024),
@@ -153,6 +159,48 @@ test('rejects record executable digest that does not describe archived executabl
   try {
     await assert.rejects(generateOwnedRuntimeRelease({ releaseVersion, assetsDirectory, repoRoot: root }), /SHA256SUMS executable hash does not match pinned release metadata/);
   } finally { await writeFile(recordPath, original); }
+});
+
+test('rejects a safe but unexpected archive member while retaining the actual build output files', async () => {
+  const archiveName = 'opencode-linux-x64.tar.gz';
+  const archivePath = path.join(assetsDirectory, archiveName);
+  const original = await readFile(archivePath);
+  const key = 'linux-x64';
+  const executablePath = `cli-${key}/bin/opencode`;
+  const binary = Buffer.from(`fixture executable for ${key}\n`);
+  const packageJson = Buffer.from(JSON.stringify({
+    name: '@opencode/cli-linux-x64', version: runtimeVersion, os: ['linux'], cpu: ['x64'],
+  }));
+  const inner = Buffer.from(JSON.stringify({
+    owner: 'Carthagent', sourceRepository: 'https://github.com/anomalyco/opencode',
+    sourceRevision, lockSha256, patchSha256, compatibilityVersion, runtimeVersion,
+    channel: `ctg.${compatibilityVersion}`, platform: 'linux-x64', webUI: false,
+  }));
+  const makeEntry = (extra = []) => gzipSync(Buffer.concat([
+    tarEntry('./', Buffer.alloc(0), '5'),
+    tarEntry('./cli-linux-x64/', Buffer.alloc(0), '5'),
+    tarEntry('./cli-linux-x64/bin/', Buffer.alloc(0), '5'),
+    tarEntry(executablePath, binary, '0', 0o755),
+    tarEntry('cli-linux-x64/package.json', packageJson),
+    tarEntry('LICENSE', Buffer.from('MIT License\n')),
+    tarEntry('SHA256SUMS', Buffer.from(`${sha256(binary)}  ${executablePath}\n`)),
+    tarEntry('ctg-runtime.json', inner),
+    ...extra,
+    Buffer.alloc(1024),
+  ]));
+  await writeFile(archivePath, makeEntry([tarEntry('extra/payload', Buffer.from('unexpected'))]));
+  try {
+    await assert.rejects(
+      generateOwnedRuntimeRelease({ releaseVersion, assetsDirectory, repoRoot: root }),
+      /unexpected directory: extra/,
+    );
+  } finally { await writeFile(archivePath, original); }
+  // Restored valid input includes the genuine runtime LICENSE and target package metadata.
+  const manifest = await generateOwnedRuntimeRelease({
+    releaseVersion, assetsDirectory, repoRoot: root,
+    outputPath: path.join(temp, 'allowed-members.candidate'),
+  });
+  assert.equal(manifest.assets['linux-x64'].name, archiveName);
 });
 
 test('rejects a noncanonical release version and a recipe/patch mismatch', async (t) => {
