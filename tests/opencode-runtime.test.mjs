@@ -18,6 +18,8 @@ test('CTG runtime paths and env are isolated from host OpenCode roots', () => {
   assert.equal(env.XDG_STATE_HOME, paths.state);
   assert.equal(env.XDG_CACHE_HOME, paths.cache);
   assert.equal(env.HOME, paths.home);
+  assert.equal(env.APPDATA, path.join(paths.home, 'AppData', 'Roaming'));
+  assert.equal(env.LOCALAPPDATA, path.join(paths.home, 'AppData', 'Local'));
   assert.equal(env.OPENCODE_TEST_HOME, paths.home);
   assert.equal(env.OPENCODE_CONFIG_DIR, paths.configDir);
   assert.equal(env.OPENCODE_CONFIG_PROJECT_DISABLE, 'true');
@@ -40,6 +42,19 @@ test('runtime removes inherited OpenCode profile overrides', () => {
   assert.equal(env.OPENCODE_CONFIG_PROJECT_DISABLE, 'true');
   assert.equal(env.OPENCODE_SERVER_PASSWORD, undefined);
   assert.equal(env.OPENAI_API_KEY, 'preserved');
+  assert.equal(env.APPDATA, '/tmp/ctg-isolated/home/AppData/Roaming');
+  assert.equal(env.LOCALAPPDATA, '/tmp/ctg-isolated/home/AppData/Local');
+});
+
+test('runtime overrides inherited Windows profile roots with CTG-owned paths', () => {
+  const env = runtimeEnvironment({ root: '/tmp/ctg-windows-roots', env: {
+    APPDATA: 'C:\\Users\\foreign\\AppData\\Roaming',
+    LOCALAPPDATA: 'C:\\Users\\foreign\\AppData\\Local',
+    OPENCODE_CONFIG_PROJECT_DISABLE: 'false',
+  } });
+  assert.equal(env.APPDATA, '/tmp/ctg-windows-roots/home/AppData/Roaming');
+  assert.equal(env.LOCALAPPDATA, '/tmp/ctg-windows-roots/home/AppData/Local');
+  assert.equal(env.OPENCODE_CONFIG_PROJECT_DISABLE, 'true');
 });
 
 test('stale-lock recovery is serialized across independent processes', async () => {
@@ -114,6 +129,8 @@ test('profile provisioning creates private isolated profile and absolute plugin 
     assert.equal(config.model, 'fake/test');
     assert.deepEqual(config.plugins, [path.join(root, 'plugins/carthagent')]);
     assert.equal((await stat(paths.configFile)).mode & 0o777, 0o600);
+    assert.equal((await stat(paths.appData)).isDirectory(), true);
+    assert.equal((await stat(paths.localAppData)).isDirectory(), true);
     await writeFile(paths.configFile, JSON.stringify({ model: 'kept/model', plugins: ['kept-plugin'], commands: { keep: 'hello' } }));
     await provisionRuntime({ root, pluginPath: path.join(root, 'plugins/carthagent'), profile: { theme: 'kept-theme' } });
     const updated = JSON.parse(await readFile(paths.configFile, 'utf8'));
