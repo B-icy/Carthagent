@@ -83,16 +83,23 @@ jobs:
           cat SHA256SUMS
           if command -v sha256sum >/dev/null 2>&1; then sha256sum -c SHA256SUMS; else shasum -a 256 -c SHA256SUMS; fi
           mkdir -p "$GITHUB_WORKSPACE/release-assets"
-          tar -czf "$GITHUB_WORKSPACE/release-assets/${{ matrix.target }}.tar.gz" .
+          COPYFILE_DISABLE=1 tar --format=ustar -czf "$GITHUB_WORKSPACE/release-assets/${{ matrix.target }}.tar.gz" .
           cd "$GITHUB_WORKSPACE"
       - name: Archive source recipe with platform output
         shell: bash
         run: |
           mkdir -p release-assets
-          tar -C ctg -czf "release-assets/${{ matrix.target }}-source.tar.gz" \
+          COPYFILE_DISABLE=1 tar --format=ustar -C ctg -czf "release-assets/${{ matrix.target }}-source.tar.gz" \
             docs/patches/opencode-v2.0.32-session-ui.patch \
             script/ctg/build-owned-runtime.sh \
             docs/opencode-owned-runtime.md
+          tar -tzf "release-assets/${{ matrix.target }}.tar.gz" >/dev/null
+          tar -tzf "release-assets/${{ matrix.target }}-source.tar.gz" >/dev/null
+          mkdir -p archive-check/runtime archive-check/source
+          tar -xzf "release-assets/${{ matrix.target }}.tar.gz" -C archive-check/runtime
+          tar -xzf "release-assets/${{ matrix.target }}-source.tar.gz" -C archive-check/source
+          cmp opencode/packages/cli/dist-ctg/ctg-runtime.json archive-check/runtime/ctg-runtime.json
+          cmp ctg/docs/patches/opencode-v2.0.32-session-ui.patch archive-check/source/docs/patches/opencode-v2.0.32-session-ui.patch
           (cd release-assets && sha256sum "${{ matrix.target }}.tar.gz" "${{ matrix.target }}-source.tar.gz" > "${{ matrix.target }}-SHA256SUMS.txt")
           cat "release-assets/${{ matrix.target }}-SHA256SUMS.txt" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
