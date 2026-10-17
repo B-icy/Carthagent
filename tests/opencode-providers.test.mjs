@@ -207,6 +207,41 @@ test('native refresh waits are bounded and never retry an uncertain rotation', a
   assert.doesNotMatch(receipt, /issued-old-token|old-access/);
 });
 
+test('native refresh accepts a vault rotation persisted just before its owner exits', async t => {
+  const directory = await mkdtemp(join(os.tmpdir(), 'ctg-refresh-owner-exit-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const profile = join(directory, 'auth.json');
+  const credential = { type: 'oauth', methodID: 'carthagent-device', refresh: 'issued-old-token', access: 'old-access' };
+  const rotated = { type: 'oauth', methodID: 'carthagent-device', refresh: 'rotated-token', access: 'new-access' };
+  const digest = createHash('sha256').update(`${credential.methodID}\0${credential.refresh}`).digest('hex').slice(0, 32);
+  const rotatedDigest = createHash('sha256').update(`${rotated.methodID}\0${rotated.refresh}`).digest('hex').slice(0, 32);
+  const pending = `${profile}.ctg-refresh-${digest}.lock.pending`;
+  await writeFile(pending, JSON.stringify({
+    pid: Number.MAX_SAFE_INTEGER,
+    owner: 'exited-owner',
+    from: digest,
+    to: rotatedDigest,
+    stage: 'complete',
+    createdAt: Date.now(),
+  }), { mode: 0o600 });
+
+  let reads = 0;
+  let refreshCalls = 0;
+  const result = await refreshNativeCredential({
+    credential,
+    credentialFile: profile,
+    timeout: 500,
+    processAliveImpl: () => false,
+    reread: async () => ++reads >= 3 ? rotated : credential,
+    refresh: async () => { refreshCalls++; throw new Error('must not rotate again'); },
+  });
+
+  assert.deepEqual(result, rotated);
+  assert.equal(reads, 3, 'perform a final native-vault read after detecting owner exit');
+  assert.equal(refreshCalls, 0, 'never submit the previous single-use refresh token again');
+  await assert.rejects(readFile(pending), { code: 'ENOENT' }, 'remove only the matching persisted-rotation receipt');
+});
+
 test('provider registration rolls back every completed stage in reverse order after failures', async t => {
   for (const [failAt, expected] of [
     ['integration.transform', []],
