@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
-import { dirname, isAbsolute, join as joinPath, relative, sep } from 'node:path';
+import { dirname, join as joinPath } from 'node:path';
 import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -106,15 +106,20 @@ try {
     const binary = await runtime.resolveOpenCode(options);
     const identity = await runtime.runtimeIdentity(binary, options);
     const expectedManifest = JSON.parse(await (await import('node:fs/promises')).readFile(process.argv[3], 'utf8').catch(error => error.code === 'ENOENT' ? 'null' : Promise.reject(error)));
-    const { dirname, resolve } = await import('node:path');
+    const { dirname, isAbsolute, relative, resolve, sep } = await import('node:path');
     const ownedRoot = identity.kind === 'ctg-owned' ? resolve(dirname(dirname(dirname(binary)))) : undefined;
     if (identity.kind === 'ctg-owned') {
       const executableName = process.platform === 'win32' ? 'opencode.exe' : 'opencode';
       const expectedBinary = resolve(ownedRoot, 'cli-' + identity.platform, 'bin', executableName);
       if (binary !== expectedBinary) throw new Error('Selected owned runtime executable is outside its canonical artifact layout: expected ' + expectedBinary + ', got ' + binary);
     }
+    const isolatedHome = process.env.HOME ?? process.env.USERPROFILE;
+    const cacheRelative = ownedRoot && relative(isolatedHome, ownedRoot);
+    if (ownedRoot && (!cacheRelative || cacheRelative === '..' || cacheRelative.startsWith('..' + sep) || isAbsolute(cacheRelative))) {
+      throw new Error('Default owned runtime cache escaped the isolated HOME: ' + ownedRoot);
+    }
     const verified = await loadNativeTestRuntime({ binary, ownedRoot, expectedManifest });
-    console.log(JSON.stringify({ binary, ownedRoot: ownedRoot ?? null, identity, verified }));
+    console.log(JSON.stringify({ binary, ownedRoot: ownedRoot ?? null, identity, verified, cacheIsolated: Boolean(ownedRoot) }));
   `, join(installed, 'lib/opencode/runtime.mjs'), join(installed, 'tools/native-runtime-identity.mjs'), releaseManifestPath], { cwd: install, env }).trim());
   const binary = resolve(resolution.binary);
   assert.ok((await stat(binary)).isFile(), 'default resolver must select a materialized runtime executable');
@@ -130,9 +135,7 @@ try {
     assert.equal(resolution.verified.sourceRevision, releaseManifest.sourceRevision, 'independent verifier must check runtime source provenance');
     assert.equal(resolution.verified.patchSha256, releaseManifest.patchSha256, 'independent verifier must check runtime patch provenance');
     assert.equal(resolution.verified.lockSha256, releaseManifest.lockSha256, 'independent verifier must check runtime lock provenance');
-    const ownedRelative = relative(isolatedHome, resolution.ownedRoot);
-    assert.ok(ownedRelative && ownedRelative !== '..' && !ownedRelative.startsWith(`..${sep}`) && !isAbsolute(ownedRelative),
-      `default acquisition cache must remain inside this test's isolated HOME (got ${resolution.ownedRoot})`);
+    assert.equal(resolution.cacheIsolated, true, 'default acquisition cache must remain inside this test\'s isolated HOME');
   } else {
     assert.equal(resolution.identity.kind, 'upstream-compatible', 'unknown runtime identity cannot satisfy installed package acceptance');
     assert.equal(resolution.identity.version, '2.0.32', 'preview upstream runtime must match the explicitly supported compatibility version');
