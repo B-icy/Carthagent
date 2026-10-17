@@ -79,9 +79,14 @@ Release sequencing is deliberately split across two manual workflows. First,
 build and review the immutable five-asset set, package the final trusted runtime
 manifest, tag the exact package commit, create a GitHub draft release, and upload
 the identical reviewed assets. Then run `Accept draft runtime release` for
-that exact tag. It verifies the remote annotated or lightweight tag resolves to
-the checked-out commit, requires the release to remain a draft with all five
-assets, runs `npm ci` and full `npm run quality`, and runs the current full,
+that exact tag. The final acceptance workflow must be dispatched from the
+approved `main` branch. Before checking out the release tag or executing any
+tag-sourced verifier, a trusted inline bootstrap reads `package.json` from
+`origin/main`, checks the exact version tag, and verifies that the peeled
+annotated or lightweight tag commit is an ancestor of `origin/main`. The same
+main/tag ancestry and exact-SHA relationship is checked again after acceptance.
+It requires the release to remain a draft with all five assets, runs `npm ci`
+and full `npm run quality`, and runs the current full,
 non-focused installed-package gate with `CTG_REQUIRE_OWNED_RUNTIME=1` and the
 normal default resolver. This existing gate is not, by itself, the final
 installed release acceptance: the final acceptance also requires the owned
