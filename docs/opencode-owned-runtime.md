@@ -75,14 +75,35 @@ The runtime resolver validates every manifest contract field, the native
 platform, executable checksum, and exact detached `--version` before launch.
 It does not search PATH or silently fall back when the opt-in is selected.
 
-The CTG workflow in this branch is a proposal, not release evidence: it builds
-on native runners and can attach platform archives to an existing release, but
-it has not been run or approved. There is no signed/attested end-user download
-channel, and no default-selection or normal-install behavior is switched.
-Distribution is therefore not complete until the workflow is reviewed, run
-under the release environment, publishes the patch/recipe and matching
-per-platform runtime artifacts plus checksums/manifest, and the installed
-package opt-in is tested against those published artifacts.
+The CTG workflow has separate `prebuild` and `publish` dispatch modes. Prebuild
+uses a reviewed source commit and planned package version, performs five native
+builds, records executable digests from the built bytes, and carries the exact
+USTAR archives and records through the PR #177 manifest generator into a
+reviewable candidate artifact. It does not require a final tag. Publish accepts
+only a successful run of this workflow, downloads that run's candidate bytes,
+regenerates and compares the manifest against the final tagged package, and
+refuses to overwrite an existing runtime asset on the draft release.
+
+There is a release-ordering blocker: the production resolver downloads from the
+public GitHub `releases/download/v<version>` URL without authentication, while
+GitHub draft-release assets are not publicly downloadable. Thus a normal
+no-override installed-package acceptance against those assets cannot pass while
+they remain a draft. Do not treat CI's authenticated `gh` access to the draft,
+an injected binary, or an override as that acceptance. The workflow's upload
+mode deliberately stops at the draft and does not silently publish the release.
+Before a run can claim the requested sequence (draft assets, normal installed
+acceptance, then publication), the release owner must approve a transport/order
+that makes the exact candidate bytes available to the production resolver
+without changing its trust root—for example, a reviewed public immutable
+candidate distribution plus a separately verified promotion flow. If that
+cannot be adopted, the release gate must explicitly change to publish the
+pre-approved immutable assets before the anonymous installed acceptance; no
+such change is made here.
+
+No release asset has been published by this work. Normal-install runtime
+selection remains gated on reviewed workflow source, all five native builds,
+final package acceptance, the public-download ordering decision, and the
+remaining exact-binary integration proofs.
 
 ## Full-TUI glyph compatibility
 
