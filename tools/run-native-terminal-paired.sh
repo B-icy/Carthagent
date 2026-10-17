@@ -192,7 +192,7 @@ NODE
 dependency_install_sha256="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).treeSha256)' "$dependency_install_json")"
 dependency_install_realpath="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).realpath)' "$dependency_install_json")"
 
-export CTG_OPENCODE_BIN="$binary"
+unset CTG_OPENCODE_BIN
 export CTG_OWNED_OPENCODE_RUNTIME="$owned_root"
 export CTG_TEST_RUNTIME_RELEASE_MANIFEST="$release_manifest"
 export CTG_PERF_SOURCE_COMMIT="$source_commit"
