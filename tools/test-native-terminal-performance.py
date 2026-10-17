@@ -8,14 +8,15 @@ Startup and initial warm-up are excluded from latency samples.
 import argparse
 import datetime
 import fcntl
+import hashlib
 import json
 import os
 import pathlib
 import pty
 import re
+import signal
 import select
 import shutil
-import signal
 import struct
 import subprocess
 import tempfile
@@ -298,6 +299,35 @@ def main():
         parser.error("host sample interval must be between 0.1 and 30 seconds")
     binary = str(pathlib.Path(args.binary).resolve())
     fixture = json.loads(pathlib.Path(args.switch_fixture).read_text()) if args.switch_fixture else None
+    if fixture:
+        observed = fixture.get("pluginObservation", {}).get("observed")
+        native_inventory = fixture.get("pluginInventory")
+        inventory_ids = [item.get("id") for item in native_inventory if isinstance(item, dict)] if isinstance(native_inventory, list) else None
+        expected = os.environ.get("CTG_PERF_EXPECT_PLUGIN")
+        if observed not in ("active", "absent") or expected != observed:
+            parser.error("fixture must match the expected observed native plugin inventory state")
+        if inventory_ids is None:
+            parser.error("fixture must include the native plugin.list inventory observation")
+        if observed == "active" and not any(isinstance(item, dict) and item.get("id") == "carthagent" and
+                                            isinstance(item.get("state"), dict) and item["state"].get("status") == "active"
+                                            for item in native_inventory):
+            parser.error("native plugin.list inventory does not show Carthagent active")
+        if observed == "absent" and any(isinstance(item, dict) and isinstance(item.get("id"), str) and item["id"].startswith("carthagent") for item in native_inventory):
+            parser.error("baseline native plugin.list inventory contains a Carthagent plugin")
+        if observed == "active" and (fixture.get("pluginHealth", {}).get("hostVersion") != "2.0.32" or
+                                      fixture.get("pluginHealth", {}).get("protocol") != 1 or
+                                      fixture.get("pluginHealth", {}).get("directoryMatches") is not True):
+            parser.error("CTG fixture is missing a successful native health RPC verification")
+        if fixture.get("provenance", {}).get("binarySha256") != hashlib.sha256(pathlib.Path(binary).read_bytes()).hexdigest():
+            parser.error("fixture binary hash does not match the executable being measured")
+        if not os.environ.get("CTG_PERF_SOURCE_COMMIT") or fixture.get("provenance", {}).get("sourceCommit") != os.environ["CTG_PERF_SOURCE_COMMIT"]:
+            parser.error("fixture source commit does not match selected immutable execution snapshot")
+        if fixture.get("provenance", {}).get("sourceSnapshotSha256") != os.environ.get("CTG_PERF_SOURCE_SNAPSHOT_SHA256"):
+            parser.error("fixture execution snapshot hash does not match runner snapshot")
+        if observed == "active" and not fixture.get("provenance", {}).get("sourceSnapshotSha256"):
+            parser.error("active CTG fixture is missing immutable source snapshot provenance")
+        if not fixture.get("roots", {}).get("alpha") or not fixture.get("sessions", {}).get("alpha", {}).get("id") or not fixture.get("sessions", {}).get("bravo", {}).get("id"):
+            parser.error("paired fixture must include both disposable session destinations")
     owns_root = fixture is None
     root = pathlib.Path(tempfile.mkdtemp(prefix="ctg-native-terminal-perf-")) if owns_root else pathlib.Path(fixture["temp"])
     if owns_root:
@@ -320,6 +350,7 @@ def main():
         env["CARTHAGENT_CODING_AGENT_DIR"] = str(root / "home/.carthagent/agent")
         env["PI_CODING_AGENT_DIR"] = str(root / "home/.carthagent/agent")
         env["HOME"] = str(root / "home")
+        env["NODE_PATH"] = os.environ.get("NODE_PATH", "")
         cwd = pathlib.Path(fixture["roots"]["alpha"])
         startup_session = fixture["sessions"]["alpha"]["id"]
         cwd.mkdir(parents=True, exist_ok=True)
@@ -333,17 +364,51 @@ def main():
     command = [binary, "--standalone"]
     if fixture:
         command = [binary, "--server", fixture["baseUrl"], "--session", startup_session]
-    child = subprocess.Popen(command, cwd=cwd, env=env,
-                             stdin=slave, stdout=slave, stderr=slave, start_new_session=True)
+    try:
+        child = subprocess.Popen(command, cwd=cwd, env=env,
+                                 stdin=slave, stdout=slave, stderr=slave, start_new_session=True)
+    except BaseException:
+        os.close(master)
+        os.close(slave)
+        if owns_root:
+            shutil.rmtree(root, ignore_errors=True)
+        raise
     os.close(slave)
     terminal = Terminal(master, child)
-    result = {"binary": binary, "expectedHostVersion": "2.0.32",
-              "measurement": "real POSIX PTY; CTG plugin disabled baseline" if args.no_plugin or (fixture and not fixture.get("pluginEnabled", True)) else "real POSIX PTY; CTG plugin enabled",
-              "startupIncludedInSamples": False, "samples": args.samples,
-              "measurementScope": "terminal interaction through select/read/VT parse and parsed PTY screen evidence; not compositor/GPU presentation; observer overhead is reported and never subtracted",
-              "hostConditions": host_conditions()}
-    if fixture:
-        result["switchFixture"] = str(pathlib.Path(args.switch_fixture).resolve())
+    previous_sigterm = signal.getsignal(signal.SIGTERM)
+    def handle_sigterm(_signum, _frame):
+        raise KeyboardInterrupt("received SIGTERM")
+    signal.signal(signal.SIGTERM, handle_sigterm)
+    try:
+        result = {"binary": binary, "expectedHostVersion": "2.0.32",
+                  "measurement": "real POSIX PTY; native plugin inventory observed active" if fixture and fixture.get("pluginObservation", {}).get("observed") == "active" else "real POSIX PTY; native plugin inventory observed absent",
+                  "startupIncludedInSamples": False, "samples": args.samples,
+                  "measurementScope": "terminal interaction through select/read/VT parse and parsed PTY screen evidence; not compositor/GPU presentation; observer overhead is reported and never subtracted",
+                  "hostConditions": host_conditions()}
+        if fixture:
+            result["switchFixture"] = str(pathlib.Path(args.switch_fixture).resolve())
+            result["pluginObservation"] = fixture.get("pluginObservation")
+            result["pluginInventory"] = fixture.get("pluginInventory")
+            result["pluginHealth"] = fixture.get("pluginHealth")
+            result["provenance"] = fixture.get("provenance")
+            result["sourceProvenance"] = {"commit": os.environ.get("CTG_PERF_SOURCE_COMMIT"),
+                                           "snapshotSha256": os.environ.get("CTG_PERF_SOURCE_SNAPSHOT_SHA256"),
+                                           "sourceDirectory": os.environ.get("CTG_PERF_SOURCE_DIR")}
+            if os.environ.get("CTG_PERF_SOURCE_COMMIT") and not fixture.get("pluginObservation", {}).get("observed"):
+                raise RuntimeError("Fixture lacks verified native plugin condition; refusing performance artifact")
+    except BaseException:
+        signal.signal(signal.SIGTERM, previous_sigterm)
+        if child.poll() is None:
+            os.killpg(child.pid, signal.SIGTERM)
+            try:
+                child.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                os.killpg(child.pid, signal.SIGKILL)
+                child.wait()
+        os.close(master)
+        if owns_root:
+            shutil.rmtree(root, ignore_errors=True)
+        raise
     try:
         # Wait on actual TUI readiness; never charge fixed sleeps to an input latency.
         terminal.collect_until(
@@ -635,7 +700,14 @@ def main():
             pathlib.Path(args.report).write_text(text + "\n")
         if not result["overallTargetsMet"]:
             raise SystemExit(1)
+    except BaseException as error:
+        if args.report:
+            result["runStatus"] = "failed"
+            result["runFailure"] = f"{type(error).__name__}: {error}"
+            pathlib.Path(args.report).write_text(json.dumps(result, indent=2) + "\n")
+        raise
     finally:
+        signal.signal(signal.SIGTERM, previous_sigterm)
         if child.poll() is None:
             os.killpg(child.pid, signal.SIGTERM)
             try:

@@ -1,16 +1,22 @@
 #!/usr/bin/env node
 /** Prepare two rendered native sessions in an isolated pinned-host database. */
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { nativeFixture, streamText } from './native-fixture.mjs';
 
 const plugin = process.argv[2];
-if (!plugin) throw new Error('Usage: seed-native-switch-fixture.mjs /absolute/path/to/plugins/carthagent');
+if (!plugin) throw new Error('Usage: seed-native-switch-fixture.mjs /absolute/path/to/snapshot/plugins/carthagent');
 const keepServer = process.argv.includes('--serve');
 const noPlugin = process.argv.includes('--no-plugin');
 const readyFile = process.argv.find(value => value.startsWith('--ready-file='))?.slice('--ready-file='.length);
+const manifestPath = process.env.CTG_PERF_MANIFEST;
+if (!manifestPath) throw new Error('CTG_PERF_MANIFEST must identify the paired-run provenance manifest');
+const provenance = JSON.parse(await readFile(manifestPath, 'utf8'));
 const host = await nativeFixture({
   plugin: noPlugin ? null : plugin,
+  verifyInventory: true,
+  pluginExpected: noPlugin ? 'absent' : 'active',
+  provenance,
   preserveTemp: true,
   respond(body, response) {
     const serialized = JSON.stringify(body);
@@ -20,6 +26,7 @@ const host = await nativeFixture({
     streamText(response, marker);
   },
 });
+let fixtureReady = false;
 try {
   // Keep both sessions in one selected project; Open Sessions exposes native
   // session rows within the active project workspace.
@@ -41,7 +48,9 @@ try {
     }
     fixtures[name] = { id: session.id, title, marker, directory: roots[name] };
   }
-  const fixture = { temp: host.temp, roots, sessions: fixtures, pluginEnabled: !noPlugin };
+  const fixture = { temp: host.temp, roots, sessions: fixtures,
+    pluginObservation: host.pluginObservation, pluginInventory: host.pluginInventory,
+    pluginHealth: host.pluginHealth, provenance };
   fixture.baseUrl = host.baseUrl;
   fixture.password = host.password;
   const agentDir = join(host.temp, 'home/.carthagent/agent');
@@ -49,8 +58,10 @@ try {
   await writeFile(join(agentDir, 'keybindings.json'), JSON.stringify({ 'open.menu': 'ctrl+o' }));
   const path = join(host.temp, 'native-switch-fixture.json');
   await writeFile(path, JSON.stringify(fixture, null, 2));
-  console.log(JSON.stringify({ path, fixture }));
+  // The fixture file contains the local server password; keep it out of retained logs.
+  console.log(JSON.stringify({ path }));
   if (readyFile) await writeFile(readyFile, path);
+  fixtureReady = true;
   if (keepServer) {
     await new Promise(resolve => {
       process.once('SIGINT', resolve);
@@ -58,5 +69,5 @@ try {
     });
   }
 } finally {
-  await host.close({ preserveTemp: true });
+  await host.close({ preserveTemp: fixtureReady });
 }

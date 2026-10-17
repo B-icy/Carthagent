@@ -89,26 +89,52 @@ The exact pinned executable used by the runbook is
 `/tmp/opencode/ctg-product-integration/node_modules/@opencode/cli/bin/opencode.exe`;
 the script refuses to fall back to `~/.opencode` or a system `opencode`.
 
-From this worktree, the scheduled run is (replace the window ID with a short
-operator-chosen label):
+From this worktree, after the operator confirms a quiet window and fresh review
+accepts the current harness head, resolve the current integration checkout HEAD
+to a full commit SHA, verify that exact source tree and physical dependency
+identity have been reviewed for acceptance, then run (replace the window ID
+with a unique label):
 
 ```bash
 WINDOW_ID=2026-10-17-evening # choose a unique scheduled-window label
 export CTG_OPENCODE_BIN=/tmp/opencode/ctg-product-integration/node_modules/@opencode/cli/bin/opencode.exe
+export CTG_SOURCE_ROOT=/tmp/opencode/ctg-product-integration
+export CTG_SOURCE_COMMIT="$(git -C "$CTG_SOURCE_ROOT" rev-parse HEAD)"
+test "${#CTG_SOURCE_COMMIT}" -eq 40
+git -C "$CTG_SOURCE_ROOT" show -s --format='%H %T %ci %s' "$CTG_SOURCE_COMMIT"
+sha256sum "$CTG_SOURCE_ROOT/package-lock.json"
 export SAMPLES=30
 export OUTPUT_DIR="/tmp/opencode/ctg-native-terminal-paired-${WINDOW_ID}"
 bash tools/run-native-terminal-paired.sh
 ```
 
-Requirements are Bash, Node.js, Python 3 with POSIX `pty`, and `@opencode/client`
-in the pinned integration install. The runner stages the fixture helper and
-plugin under `/tmp`, linking only that disposable staging tree to the pinned
-dependencies; it does not write `node_modules` into the worktree or either
-parent checkout. Its private output directory is mode 0700 because fixture
-metadata contains temporary loopback credentials. The script creates
+Do not reuse a previously selected source SHA when the product branch advances.
+The command resolves the exact checkout HEAD at scheduling time; record that
+full SHA, tree ID, dirty status, package-lock hash, owned binary hash/version,
+physical dependency-install realpath/tree hash, and generated source/execution
+archive hashes from `manifest.json`. The runner verifies the committed source
+lockfile against the physical install and executes the archived commit plus the
+reviewed harness overlay, never mutable checkout source. A source/lock/install
+identity mismatch fails before fixture creation. Do not treat an older archived
+tree or an old benchmark run as current product acceptance evidence.
+
+Requirements are Bash, `setsid`, Node.js, Python 3 with POSIX `pty`, and
+`@opencode/client` in the pinned integration install. The runner archives the
+selected immutable source commit, verifies its lockfile against the physical
+dependency install containing the selected executable, and overlays only the
+reviewed harness files in a disposable `/tmp` execution snapshot. It does not
+write source or dependencies into the integration checkout. Its private output
+directory is mode 0700 because seeder logs contain temporary loopback
+credentials. The manifest retains binary version/hash, source commit/tree and
+snapshot hashes, source checkout state, lockfile hash, dependency realpath and
+full install tree hash, and source/harness component hashes. The script creates
 independent disposable baseline and composed-production-CTG
 profiles/databases with equivalent same-project fixture sessions, a loopback-
-only provider, unique persisted assistant markers, and a 36x120 PTY. It runs
+only provider, unique persisted assistant markers, and a 36x120 PTY. Before
+each TUI measurement, the raw native plugin inventory must report `carthagent` active
+for CTG and absent for baseline; the report records that observed state. An
+activation/setup error, incomplete source archive, or identity mismatch fails
+the condition and cannot produce performance metrics. It runs
 ABBA (`baseline-1`, `ctg-1`, `ctg-2`, `baseline-2`); each run visits both
 destinations before its measured alternating selections. Each condition gets
 at least 30 switch and 30 input samples, plus one excluded input warmup. It
@@ -137,7 +163,8 @@ observation. No fixed sleep is inside a switch or key-to-screen interval; PTY
 read/poll/parser overhead is inside and reported. Do not subtract that observer
 work.
 
-Estimated wall time once scheduled: roughly **4–8 minutes** for fixture seeding
-and four ABBA passes (typically 35–60 seconds of timed switching/input per
-pass, plus startup, session seeding, and idle observation). Allow **up to 10
+Estimated wall time once scheduled: roughly **5–9 minutes**, including the full
+dependency-tree identity scans during setup and fixture validation, fixture
+seeding and four ABBA passes (typically 35–60 seconds of timed switching/input
+per pass, plus startup, session seeding, and idle observation). Allow **up to 12
 minutes**; abort rather than overlap a newly started material workload.
