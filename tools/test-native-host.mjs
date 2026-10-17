@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { randomBytes } from 'node:crypto';
@@ -10,28 +11,40 @@ import { OpenCode } from '@opencode/client';
 
 const root = resolve(import.meta.dirname, '..');
 const plugin = resolve(process.argv[2] ?? join(root, 'plugins/carthagent'));
-const temp = await mkdtemp('/tmp/opencode/ctg-host-smoke-');
+const binary = process.env.CTG_OPENCODE_BIN ?? join(root, 'node_modules/@opencode/cli/bin/opencode.exe');
+const temp = await mkdtemp(join(tmpdir(), 'ctg-host-smoke-'));
 const password = randomBytes(24).toString('hex');
 let child;
 let output = '';
 try {
   const cwd = join(temp, 'project');
   const config = join(temp, 'config/opencode');
-  await Promise.all([mkdir(cwd), mkdir(config, { recursive: true }), mkdir(join(temp, 'home'))]);
+  await Promise.all([
+    mkdir(cwd),
+    mkdir(config, { recursive: true }),
+    mkdir(join(temp, 'home'), { recursive: true }),
+    mkdir(join(temp, 'appdata'), { recursive: true }),
+    mkdir(join(temp, 'localappdata'), { recursive: true }),
+  ]);
   await writeFile(join(config, 'opencode.json'), JSON.stringify({
     plugins: [plugin], update: 'disable',
   }));
-  const env = {
-    PATH: process.env.PATH,
+  const env = Object.fromEntries(['PATH', 'SystemRoot', 'WINDIR', 'ComSpec', 'PATHEXT', 'USERPROFILE']
+    .filter((key) => process.env[key])
+    .map((key) => [key, process.env[key]]));
+  Object.assign(env, {
     HOME: join(temp, 'home'),
+    USERPROFILE: join(temp, 'home'),
+    APPDATA: join(temp, 'appdata'),
+    LOCALAPPDATA: join(temp, 'localappdata'),
     XDG_CONFIG_HOME: join(temp, 'config'),
     XDG_DATA_HOME: join(temp, 'data'),
     XDG_STATE_HOME: join(temp, 'state'),
     XDG_CACHE_HOME: join(temp, 'cache'),
     OPENCODE_DB: join(temp, 'database.sqlite'),
     OPENCODE_SERVER_PASSWORD: password,
-  };
-  child = spawn(process.env.CTG_OPENCODE_BIN ?? 'opencode', [
+  });
+  child = spawn(binary, [
     'serve', '--hostname', '127.0.0.1', '--port', '0', '--print-logs', '--log-level', 'debug',
   ], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
   const endpoint = await new Promise((resolveEndpoint, reject) => {
