@@ -31,7 +31,8 @@ function fixture(t, sessionID = 'session-1') {
     calls.push([command, args]);
     if (command === 'git') return args[0] === 'remote' ? 'https://github.com/acme/repo.git' : actualHead;
     const endpoint = args.at(-1);
-    if (endpoint.endsWith('/pulls/7')) return JSON.stringify({ number: 7, html_url: 'https://github.com/acme/repo/pull/7', state: 'open', draft: true, head: { sha: head, ref: 'feature', repo: { full_name: 'acme/repo' } }, base: { sha: 'b'.repeat(40), ref: 'main', repo: { full_name: 'acme/repo' } } });
+    const pull = endpoint.match(/\/pulls\/(\d+)$/);
+    if (pull) return JSON.stringify({ number: Number(pull[1]), html_url: `https://github.com/acme/repo/pull/${pull[1]}`, state: 'open', draft: true, head: { sha: head, ref: 'feature', repo: { full_name: 'acme/repo' } }, base: { sha: 'b'.repeat(40), ref: 'main', repo: { full_name: 'acme/repo' } } });
     if (endpoint.includes('/check-runs')) return JSON.stringify([{ total_count: 1, check_runs: [{ status: 'completed', conclusion: 'success' }] }]);
     if (endpoint.includes('/status')) return JSON.stringify([{ total_count: 1, statuses: [{ state: 'success' }] }]);
     if (endpoint.includes('/reviews')) return JSON.stringify([[{ state: 'APPROVED', submitted_at: '2026-01-01T00:00:00Z', commit_id: head, user: { login: 'reviewer' } }]]);
@@ -63,6 +64,33 @@ test('explicit associate persists authoritative GitHub metadata and list stays o
   assert.equal(cache.pullRequests[0].taskID, 'task-1');
   writeFileSync(join(f.worktree, '.harness', 'pull-requests.json'), JSON.stringify({ version: 1, pullRequests: [{ ...cache.pullRequests[0], taskID: 'other-task' }] }));
   await assert.rejects(f.handlers.list({ sessionID: 'session-1', taskID: 'task-1' }, call()), /foreign-task/);
+});
+
+test('same-HEAD tracked and untracked local edits keep PR source stale', async t => {
+  for (const kind of ['tracked', 'untracked']) await t.test(kind, async t => {
+    const f = fixture(t); const handlers = {};
+    const localHead = git(f.worktree, 'rev-parse', 'HEAD');
+    const run = async (command, args, cwd, signal) => {
+      if (command === 'git') return f.run(command, args, cwd, signal);
+      const endpoint = args.at(-1);
+      const pull = endpoint.match(/\/pulls\/(\d+)$/);
+      if (pull) return JSON.stringify({ number: Number(pull[1]), html_url: `https://github.com/acme/repo/pull/${pull[1]}`, state: 'open', draft: false, head: { sha: localHead, ref: 'main', repo: { full_name: 'acme/repo' } }, base: { sha: 'b'.repeat(40), ref: 'main', repo: { full_name: 'acme/repo' } } });
+      if (endpoint.includes('/check-runs')) return JSON.stringify([{ total_count: 0, check_runs: [] }]);
+      if (endpoint.includes('/status')) return JSON.stringify([{ total_count: 0, statuses: [] }]);
+      if (endpoint.includes('/reviews')) return JSON.stringify([[]]);
+      throw Error(`unexpected endpoint ${endpoint}`);
+    };
+    const dispose = await registerPullRequests({ ...f.ctx, rpc: { async register(_definition, methods) { Object.assign(handlers, methods); return { dispose() {} }; } } }, { run });
+    try {
+      if (kind === 'tracked') writeFileSync(join(f.worktree, 'tracked'), 'modified without committing');
+      else writeFileSync(join(f.worktree, 'untracked-local-change'), 'not committed');
+      const result = await handlers.associate({ sessionID: 'session-1', taskID: 'task-1', number: 7 }, call());
+      assert.equal(result.pullRequest.head, localHead, 'fixture PR head exactly equals local HEAD');
+      assert.equal(result.pullRequest.source, 'stale-source');
+      const listed = await handlers.list({ sessionID: 'session-1', taskID: 'task-1' }, call());
+      assert.equal(listed.pullRequests[0].source, 'stale-source');
+    } finally { await dispose(); }
+  });
 });
 
 test('rejects malformed GitHub metadata, inaccessible GitHub, and unassociated refreshes', async t => {
@@ -129,6 +157,53 @@ test('propagates request cancellation into GitHub reads and stops between endpoi
     await assert.rejects(handlers.associate({ sessionID: 'session-1', taskID: 'task-1', number: 7 }, { signal: controller.signal }), /cancelled by caller/);
     assert.equal(ghSignal, controller.signal);
   } finally { await dispose(); }
+});
+
+test('concurrent associations merge under the cross-process cache lock', async t => {
+  const f = fixture(t); let pending = 0; let release;
+  const bothPRs = new Promise(resolve => { release = resolve; });
+  const run = async (command, args, cwd, signal) => {
+    if (command === 'git') return f.run(command, args, cwd, signal);
+    const endpoint = args.at(-1);
+    const pull = endpoint.match(/\/pulls\/(\d+)$/);
+    if (pull) {
+      pending++;
+      if (pending === 2) release();
+      await bothPRs;
+      return JSON.stringify({ number: Number(pull[1]), html_url: `https://github.com/acme/repo/pull/${pull[1]}`, state: 'open', draft: false, head: { sha: head, ref: 'feature', repo: { full_name: 'acme/repo' } }, base: { sha: 'b'.repeat(40), ref: 'main', repo: { full_name: 'acme/repo' } } });
+    }
+    return f.run(command, args, cwd, signal);
+  };
+  const dispose = await registerPullRequests({ ...f.ctx, rpc: { async register(_definition, methods) { Object.assign(f.handlers, methods); return { dispose() {} }; } } }, { run });
+  try {
+    await Promise.all([7, 8].map(number => f.handlers.associate({ sessionID: 'session-1', taskID: 'task-1', number }, call())));
+    const listed = await f.handlers.list({ sessionID: 'session-1', taskID: 'task-1' }, call());
+    assert.deepEqual(listed.pullRequests.map(pr => pr.number).sort(), [7, 8]);
+  } finally { await dispose(); }
+});
+
+test('canceled lock wait does not mutate the cache', async t => {
+  const f = fixture(t); const dispose = await registerPullRequests(f.ctx, { run: f.run }); t.after(dispose);
+  const harness = join(f.worktree, '.harness'); mkdirSync(harness);
+  writeFileSync(join(harness, 'pull-requests.lock'), 'held by another process');
+  const controller = new AbortController();
+  const pending = f.handlers.associate({ sessionID: 'session-1', taskID: 'task-1', number: 7 }, { signal: controller.signal });
+  setTimeout(() => controller.abort(new Error('lock wait canceled')), 50);
+  await assert.rejects(pending, /lock wait canceled/);
+  assert.equal(readFileSync(join(harness, 'pull-requests.lock'), 'utf8'), 'held by another process');
+  assert.equal(readFileSync(join(f.project, '.harness', 'opencode-tasks.json'), 'utf8').includes('task-1'), true);
+  assert.equal((await f.handlers.list({ sessionID: 'session-1', taskID: 'task-1' }, call())).pullRequests.length, 0);
+});
+
+test('rejects oversized cache bytes and association counts', async t => {
+  const f = fixture(t); const dispose = await registerPullRequests(f.ctx, { run: f.run }); t.after(dispose);
+  const harness = join(f.worktree, '.harness'); mkdirSync(harness);
+  const cache = join(harness, 'pull-requests.json');
+  writeFileSync(cache, ' '.repeat(256 * 1024 + 1));
+  await assert.rejects(f.handlers.list({ sessionID: 'session-1', taskID: 'task-1' }, call()), /256 KiB/);
+  const invalidRecords = Array.from({ length: 101 }, (_, i) => ({ taskID: 'task-1', number: i + 1 }));
+  writeFileSync(cache, JSON.stringify({ version: 1, pullRequests: invalidRecords }));
+  await assert.rejects(f.handlers.list({ sessionID: 'session-1', taskID: 'task-1' }, call()), /100 association/);
 });
 
 test('allows GitHub fork heads but binds the PR base repository to task origin', async t => {

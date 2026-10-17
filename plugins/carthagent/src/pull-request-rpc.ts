@@ -1,14 +1,20 @@
 import { Rpc } from '@opencode/plugin/rpc';
 
-const text = { type: 'string', minLength: 1 } as const;
+const id = { type: 'string', minLength: 1, maxLength: 128 } as const;
+const ref = { type: 'string', minLength: 1, maxLength: 255 } as const;
+const hash = { type: 'string', minLength: 40, maxLength: 64 } as const;
+const url = { type: 'string', minLength: 1, maxLength: 2048 } as const;
 const input = {
-  type: 'object', properties: { sessionID: text, taskID: text, number: { type: 'integer', minimum: 1 } },
+  type: 'object', properties: { sessionID: id, taskID: id, number: { type: 'integer', minimum: 1, maximum: 2147483647 } },
   required: ['sessionID', 'taskID'], additionalProperties: false,
 } as const;
 const pullRequest = {
   type: 'object', properties: {
-    taskID: text, number: { type: 'integer' }, url: text, state: text, draft: { type: 'boolean' },
-    head: text, headRef: text, headRepository: text, base: text, baseRef: text, checks: text, review: text, source: text, sourceSnapshot: text, updatedAt: text,
+    taskID: id, number: { type: 'integer', minimum: 1, maximum: 2147483647 }, url, state: { type: 'string', enum: ['open', 'closed'] }, draft: { type: 'boolean' },
+    head: hash, headRef: ref, headRepository: { type: 'string', minLength: 3, maxLength: 511 }, base: hash, baseRef: ref,
+    checks: { type: 'string', enum: ['passed', 'failed', 'pending', 'partial', 'none'] },
+    review: { type: 'string', enum: ['approved-unverified', 'changes-requested', 'unverified', 'unreviewed'] },
+    source: { type: 'string', enum: ['current', 'stale-source'] }, sourceSnapshot: hash, updatedAt: { type: 'string', minLength: 20, maxLength: 40 },
   }, required: ['taskID', 'number', 'url', 'state', 'draft', 'head', 'headRef', 'headRepository', 'base', 'baseRef', 'checks', 'review', 'source', 'sourceSnapshot', 'updatedAt'], additionalProperties: false,
 } as const;
 
@@ -17,8 +23,8 @@ export const PullRequests = Rpc.define({
   id: 'carthagent.pull-requests',
   methods: {
     list: {
-      input: { type: 'object', properties: { sessionID: text, taskID: text }, required: ['sessionID', 'taskID'], additionalProperties: false },
-      output: { type: 'object', properties: { pullRequests: { type: 'array', items: pullRequest } }, required: ['pullRequests'], additionalProperties: false },
+      input: { type: 'object', properties: { sessionID: id, taskID: id }, required: ['sessionID', 'taskID'], additionalProperties: false },
+      output: { type: 'object', properties: { pullRequests: { type: 'array', maxItems: 100, items: pullRequest } }, required: ['pullRequests'], additionalProperties: false },
     },
     associate: {
       input,
