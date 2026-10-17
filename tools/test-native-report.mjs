@@ -18,9 +18,6 @@ try {
   const read = async () => (await host.client.rpc.call({
     rpcID: 'carthagent.workspace', method: 'delivery', input: { sessionID: session.id }, location: host.location,
   }, host.request())).output;
-  const probe = method => host.client.rpc.call({
-    rpcID: 'carthagent.report-schema-probe', method, input: {}, location: host.location,
-  }, host.request());
   const check = { id: 'unit', kind: 'test', argv: ['node', '--test'], timeoutSeconds: 20 };
   const plan = {
     goal: 'Show authoritative report data', verification: 'required', artifacts: ['.'], outputs: [],
@@ -53,12 +50,6 @@ try {
   assert.equal(current.architecture.nodes[0].title, 'Project report state');
   assert.ok(!JSON.stringify(current).includes('PRIVATE_REPORT_LOG_SENTINEL'));
   assert.ok(!JSON.stringify(current).includes(host.cwd));
-  await assert.rejects(probe('incompleteVerified'), error => error.type === 'rpc.invalid_output');
-  const invalidWithFields = await probe('invalidWithFullFields');
-  assert.deepEqual(invalidWithFields.output, { status: 'invalid' });
-  assert.deepEqual((await probe('validUnavailable')).output, { status: 'unavailable' });
-  assert.deepEqual((await probe('validInvalid')).output, { status: 'invalid' });
-  assert.equal((await probe('validActive')).output.status, 'active');
 
   await writeFile(join(host.cwd, 'source.txt'), 'modified\n');
   const stale = await read();
@@ -77,4 +68,22 @@ try {
   console.log(JSON.stringify({ host: '2.0.32', deliveryOutputSchema: 'passed', freshness: 'passed', verifiedFailClosed: 'passed', ownership: 'passed' }));
 } finally {
   await host.close();
+}
+
+// Deliberately malformed outputs require a test-only handler. Exercise that
+// handler separately so production ownership/report checks use the shipped plugin.
+const schemaHost = await nativeFixture({ plugin: join(import.meta.dirname, 'native-report-plugin') });
+try {
+  await schemaHost.active('carthagent-report-fixture');
+  const probe = method => schemaHost.client.rpc.call({
+    rpcID: 'carthagent.report-schema-probe', method, input: {}, location: schemaHost.location,
+  }, schemaHost.request());
+  await assert.rejects(probe('incompleteVerified'), error => error.type === 'rpc.invalid_output');
+  assert.deepEqual((await probe('invalidWithFullFields')).output, { status: 'invalid' });
+  assert.deepEqual((await probe('validUnavailable')).output, { status: 'unavailable' });
+  assert.deepEqual((await probe('validInvalid')).output, { status: 'invalid' });
+  assert.equal((await probe('validActive')).output.status, 'active');
+  console.log(JSON.stringify({ host: '2.0.32', reportSchemaVariants: 'passed', incompleteVerified: 'rejected' }));
+} finally {
+  await schemaHost.close();
 }
