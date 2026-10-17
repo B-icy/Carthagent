@@ -87,6 +87,16 @@ try {
   assert.ok(bMessages.some(m => m.type === 'assistant'), JSON.stringify(bMessages));
   assert.equal(aMessages.at(-1).outcome, 'succeeded');
   assert.equal(bMessages.at(-1).outcome, 'succeeded');
+  await client.session.update({ sessionID: b.id, metadata: { 'carthagent.options': { guide: false } } }, request());
+  await client.session.prompt({ sessionID: b.id, text: 'Implement a second parser' }, request());
+  await client.session.wait({ sessionID: b.id }, request());
+  const disabled = await client.session.context({ sessionID: b.id }, request());
+  assert.equal(disabled.filter(m => m.type === 'user').at(-1).text, 'Implement a second parser');
+  assert.deepEqual((await rpc('framing', { sessionID: b.id })).output, { enabled: true });
+  await client.session.prompt({ sessionID: b.id, text: 'Implement a third parser' }, request());
+  await client.session.wait({ sessionID: b.id }, request());
+  const enabled = await client.session.context({ sessionID: b.id }, request());
+  assert.notEqual(enabled.filter(m => m.type === 'user').at(-1).text, 'Implement a third parser');
   const marker = 'Preserve fixture decision 3e7b9';
   await rpc('compact', { sessionID: a.id, notes: marker });
   await client.session.wait({ sessionID: a.id }, request());

@@ -1,6 +1,7 @@
 import type { Context } from '@opencode/plugin/promise/plugin';
 import { framePrompt, shouldFrame, unframe } from '../../../../lib/tui/framing.mjs';
 import { SessionControls } from '../session-rpc';
+import { effectiveSessionOptions } from '../../../../lib/opencode/session-options.mjs';
 
 /** Admission framing is session-scoped; raw bypasses framing, never delivery policy. */
 export async function registerSessionControls(ctx: Context) {
@@ -16,7 +17,9 @@ export async function registerSessionControls(ctx: Context) {
   const key = (sessionID: string) => `controls/${sessionID}`;
   const settings = async (sessionID: string) => {
     const value = await ctx.storage.get(key(sessionID));
-    return { framing: value && typeof value === 'object' && 'framing' in value ? value.framing !== false : ctx.options.guide !== false };
+    if (value && typeof value === 'object' && 'framing' in value) return { framing: value.framing !== false };
+    const session = await ctx.session.get({ sessionID });
+    return { framing: effectiveSessionOptions(session, ctx.options).guide };
   };
   const owns = async (sessionID: string, signal?: AbortSignal) => {
     const session = await ctx.session.get({ sessionID }, { signal });
@@ -25,11 +28,13 @@ export async function registerSessionControls(ctx: Context) {
   };
   try {
     const prompt = await ctx.session.hook('prompt', async (event) => {
+      const session = await ctx.session.get({ sessionID: event.sessionID });
+      const options = effectiveSessionOptions(session, ctx.options);
       const saved = await settings(event.sessionID);
       if (event.metadata?.['ctg.raw'] === true || event.metadata?.['ctg.framed'] === true) return;
       if (!shouldFrame(event.prompt.text, {
         enabled: saved.framing,
-        delivery: ctx.options.delivery !== false,
+        delivery: options.delivery,
       }) || unframe(event.prompt.text) !== null) return;
       const original = event.prompt.text;
       const framed = framePrompt(original);
