@@ -276,8 +276,8 @@ test('legacy credential migration reads Ship OAuth and BYOK without writing Pi s
   assert.deepEqual(await readLegacyCarthagentCredential({ agentDir: '/unused', readFileImpl: async () => source }),
     { type: 'oauth', access: 'a', refresh: 'r', expires: 123 });
   assert.equal(credentialStorageKey('experiential-labs'), 'ctg.credentials/experiential-labs');
-  assert.equal(nativeCredentialFile({ XDG_DATA_HOME: '/profile/data' }), '/profile/data/opencode/auth.json');
-  assert.equal(nativeCredentialFile({}, 'darwin', '/home/test'), '/home/test/Library/Application Support/opencode/auth.json');
+  assert.equal(nativeCredentialFile({ XDG_DATA_HOME: '/profile/data' }), join('/profile/data', 'opencode', 'auth.json'));
+  assert.equal(nativeCredentialFile({}, 'darwin', '/home/test'), join('/home/test', 'Library', 'Application Support', 'opencode', 'auth.json'));
   assert.throws(() => credentialStorageKey('../auth'), /Invalid/);
 });
 
