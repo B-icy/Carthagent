@@ -57,6 +57,9 @@ export const Workspace = Rpc.define({
     startReview: {
       input: sessionInput,
       output: { type: 'object', properties: { status: string, summary: { type: 'string' }, sessionID: string }, required: ['status', 'summary'], additionalProperties: false },
+      errors: {
+        reviewFailed: { data: { type: 'object', properties: { message: string }, required: ['message'], additionalProperties: false } },
+      },
     },
   },
   events: {
