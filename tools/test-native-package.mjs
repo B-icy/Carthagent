@@ -89,6 +89,7 @@ try {
     'test-native-evaluation.mjs', 'test-native-swe.mjs',
     'test-native-report.mjs',
     'test-native-delivery-host.mjs',
+    '../tests/codegraph.test.mjs',
     '../tests/native-cli-host-smoke.mjs',
   ];
   assert.ok(!focused || acceptanceTests.includes(focused), `Unknown installed acceptance probe: ${focused}`);
@@ -107,7 +108,10 @@ try {
     const started = performance.now();
     console.log(JSON.stringify({ ...identity, status: 'started' }));
     try {
-      run(process.execPath, [join(installed, 'tools', test), installedPlugin], {
+      const probePath = join(installed, 'tools', test);
+      // Parser/WASM behavior must resolve from the packed installation too.
+      const args = test.endsWith('.test.mjs') ? ['--test', probePath] : [probePath, installedPlugin];
+      run(process.execPath, args, {
         cwd: install, env: { ...env, CTG_NATIVE_SCENARIO: scenario ?? '' },
       });
     } catch (error) {
