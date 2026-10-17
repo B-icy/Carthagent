@@ -44,6 +44,19 @@ export async function setupCarthagent(context: Parameters<typeof registerSession
           capabilities: options.delivery === false ? [] : ['delivery.session-options.v1', 'delivery.budgets.v1', 'delivery.policy-overrides.v1'],
         }),
         echo: async input => ({ text: (input as { text: string }).text }),
+        budgetStatus: async (input, call) => {
+          call.signal.throwIfAborted();
+          const { sessionID } = input as { sessionID: string };
+          const session = await context.session.get({ sessionID }, { signal: call.signal });
+          if (session.location.directory !== context.location.directory) throw Error('Session belongs to another workspace location');
+          const saved = await context.storage.get(`session/${sessionID}`) as { budget?: { tools: number; repairs: number; startedAt: number; limits: { tools: number; seconds: number; repairs: number }; stopped: string | null } } | undefined;
+          const budget = saved?.budget;
+          if (!budget) throw Error('Session budget has not been initialized');
+          return {
+            tools: budget.tools, maxTools: budget.limits.tools, seconds: Math.max(0, Math.floor((Date.now() - budget.startedAt) / 1000)),
+            maxSeconds: budget.limits.seconds, repairs: budget.repairs, maxRepairs: budget.limits.repairs, stopped: budget.stopped,
+          };
+        },
         authStart: async (_input, call) => {
           call.signal.throwIfAborted();
           const flow = await deviceAuth.start(call.signal);
