@@ -9,6 +9,11 @@ export function cliConfigPath(env = process.env, home = process.env.HOME ?? "") 
   return join(configRoot, "cli.json");
 }
 
+/** Native TUI themes are discovered from config/opencode/themes for this profile. */
+export function cliConfigDirectory(env = process.env, home = process.env.HOME ?? "") {
+  return env.OPENCODE_CONFIG_DIR || join(env.XDG_CONFIG_HOME || join(home, ".config"), "opencode");
+}
+
 export async function readCliConfig(path: string): Promise<NativeCliConfig> {
   try {
     const value: unknown = JSON.parse(await readFile(path, "utf8"));
