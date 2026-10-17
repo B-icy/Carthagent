@@ -14,10 +14,10 @@ The caller of `runOpenCodeCli()` supplies these concrete capabilities:
 | --- | --- |
 | `run({ mode, options, prompt, args })` | Launch native OpenCode interactive or headless (`print`/JSONL) session. Honor `--engine-cli`/`--agent-cli` as an explicit executable override and `--isolate` as extension/skill discovery isolation. |
 | `listModels({ query })` | Enumerate models from the native provider catalog, filter the optional query, and print the compatible provider/model/context/token/input/output columns. |
-| `login()` | Currently fails closed: native provider login and Ship token resolution are not integrated. It never invokes a legacy `opencode auth login` command. |
-| `account()` | Uses native OpenCode APIs, but currently fails closed because `credential.list()` does not provide a supported secret/token contract. |
-| `billing({ action })` | Uses the Ship cloud API only after supported native credential resolution is integrated. |
-| `logout({ session })` | Uses the Ship cloud API only after supported native credential resolution is integrated. |
+| `login({ args })` | Uses OpenCode 2 integration list/connect/status/complete/cancel APIs. Defaults to Carthagent Ship when available; optional integration and method arguments select another integration. Key-based methods are not prompted in clear text. |
+| `account()` | Fails closed: `credential.list()` does not provide a supported secret/token contract, and the active Carthagent RPC does not yet own Ship account requests. |
+| `billing({ action })` | Fails closed until a profile-owned Ship billing RPC is available; no credential files are read. |
+| `logout({ session })` | Fails closed until a profile-owned Ship revoke RPC is available; no credential files are read. |
 | `review({ args })` | Uses the shared review facade, whose verdict is bound to the authoritative GitHub PR refs/source or exact local source snapshot. |
 | `domain({ command, args })` | Existing status/hash/check/validate behavior backed by delivery domain modules. |
 | `command({ command, args })` | Existing serve/test/eval/update utility commands. |
@@ -35,7 +35,12 @@ success. Native thinking levels are passed as model variants. The adapter reject
 delivery plugin enforces session budgets. It also rejects `--no-delivery`,
 `--no-strict`, `--bash-cap`, and `--isolate` until their native policy/plugin
 paths enforce them; parsed support is not runtime compatibility. Demo mode and
-complete Ship credential/account/billing flows remain integration gaps.
+complete Ship account/billing/revoke flows remain integration gaps. `demo`
+fails explicitly because its scripted agent-RPC mock has not been ported; it
+does not launch the legacy engine. Update checks use the shared release resolver,
+but installing an update remains disabled until it can safely update the
+package-owned native runtime. `quit`/`q`/`exit` report that no interactive
+session is active when invoked as standalone commands.
 
 `--json` translates real native session tool lifecycle and completed assistant
 messages into the documented `tool_execution_start`, `tool_execution_end`, and
@@ -46,14 +51,20 @@ failure/interruption outcomes are emitted as idle records rather than returning
 an empty JSONL stream.
 
 The disposable real-host adapter smoke is `node tests/native-cli-host-smoke.mjs`.
-Set `CTG_OPENCODE_BIN` to the pinned OpenCode 2.0.32 executable and
-`CTG_NATIVE_RUNTIME_ROOT` to a native runtime/plugin checkout. It starts its own
-temporary profile and local OpenAI-compatible fixture provider, injects that
-already-running service through the adapter test seam, and verifies print, a
-second print turn in the same session, workspace-scoped continuation when a
-newer foreign-workspace session exists, a successful actual tool lifecycle in
-JSONL, and explicit rejection of unenforced budget flags. It does not verify normal runtime
-service provisioning, profile isolation, or provider login/account/billing.
+It resolves the pinned OpenCode executable through the package-owned native
+runtime resolver and defaults runtime/plugin imports to this package. In a
+source checkout without installed runtime dependencies, set `CTG_OPENCODE_BIN`
+to an installed pinned binary; `CTG_NATIVE_RUNTIME_ROOT` and
+`CTG_NATIVE_PLUGIN_PATH` explicitly override runtime/plugin imports when testing
+another package tree. The smoke creates a disposable
+cross-platform profile (including Windows profile/temp roots), disables project
+configuration loading, and runs a local OpenAI-compatible fixture provider. It
+injects the already-running service through the adapter test seam and verifies
+print, a second print turn in the same session, workspace-scoped continuation
+when a newer foreign-workspace session exists, successful and failing JSONL
+lifecycle events, and explicit rejection of unenforced budget flags. It does
+not verify normal runtime service provisioning/profile isolation or provider
+login/account/billing.
 
 ## Migration notes
 
