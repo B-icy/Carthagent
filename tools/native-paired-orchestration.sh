@@ -39,7 +39,8 @@ run_paired_abba() {
   done
   paired_exit_status="$(node --input-type=module - "$statuses_file" "$guard_module" "$interrupted_flag" <<'NODE'
 import { readFileSync } from 'node:fs';
-const { aggregateConditionExit } = await import(process.argv[3]);
+import { pathToFileURL } from 'node:url';
+const { aggregateConditionExit } = await import(pathToFileURL(process.argv[3]).href);
 const statuses = Object.fromEntries(readFileSync(process.argv[2], 'utf8').trim().split('\n').filter(Boolean).map(line => {
   const [name, status] = line.split('\t');
   return [name, Number(status)];

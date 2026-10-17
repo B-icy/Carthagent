@@ -2,11 +2,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { access, chmod, mkdtemp, mkdir, rm, writeFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { aggregateConditionExit, assertCompletePluginSource, assertDependencyPackageIdentity, assertPluginCondition, assertPluginImportDependencies, assertSelectedSourceHead, assertSnapshotProvenance, resolveFixtureSourceRoot, verifySnapshotIdentity } from '../tools/native-paired-guards.mjs';
+
+function shellPath(path) {
+  return process.platform === 'win32'
+    ? execFileSync('cygpath', ['-u', path], { encoding: 'utf8' }).trim()
+    : path;
+}
+
+function testBash() {
+  if (process.env.CTG_TEST_BASH) return process.env.CTG_TEST_BASH;
+  if (process.platform !== 'win32') return 'bash';
+  return execFileSync('where.exe', ['bash.exe'], { encoding: 'utf8' }).split(/\r?\n/).find(Boolean);
+}
 
 test('paired CTG fixture fails closed unless inventory says active', () => {
   assert.deepEqual(assertPluginCondition([{ id: 'carthagent', state: { status: 'active' } }], true),
@@ -19,7 +31,8 @@ test('paired CTG fixture fails closed unless inventory says active', () => {
 test('plugin source without the pinned native runtime import is rejected', async () => {
   const root = await mkdtemp(join(tmpdir(), 'native-paired-missing-runtime-'));
   try {
-    const entry = join(root, 'plugins/carthagent/src/index.ts');
+    const sourceRoot = join(root, 'snapshot');
+    const entry = join(sourceRoot, 'plugins/carthagent/src/index.ts');
     await mkdir(dirname(entry), { recursive: true });
     await writeFile(entry, "import { rpc } from './rpc';\nexport { rpc };\n");
     await writeFile(join(dirname(entry), 'rpc.ts'), 'export const rpc = {};\n');
@@ -32,23 +45,24 @@ test('plugin source without the pinned native runtime import is rejected', async
 test('paired runner rejects the old partial plugin staging and accepts a complete source snapshot', async () => {
   const root = await mkdtemp(join(tmpdir(), 'native-paired-source-test-'));
   try {
-    await mkdir(join(root, 'plugins/carthagent/src'), { recursive: true });
-    await mkdir(join(root, 'node_modules/@opencode/plugin'), { recursive: true });
-    await mkdir(join(root, 'plugins/carthagent/node_modules/@opencode'), { recursive: true });
-    await writeFile(join(root, 'plugins/carthagent/index.ts'), "export { default } from './src/index';\n");
-    await writeFile(join(root, 'plugins/carthagent/src/index.ts'), '');
-    assert.throws(() => assertCompletePluginSource(root), /Incomplete native plugin source snapshot.*package-lock.json.*lib\/ship-auth.mjs/);
+    const sourceRoot = join(root, 'snapshot');
+    await mkdir(join(sourceRoot, 'plugins/carthagent/src'), { recursive: true });
+    await mkdir(join(sourceRoot, 'node_modules/@opencode/plugin'), { recursive: true });
+    await mkdir(join(sourceRoot, 'plugins/carthagent/node_modules/@opencode'), { recursive: true });
+    await writeFile(join(sourceRoot, 'plugins/carthagent/index.ts'), "export { default } from './src/index';\n");
+    await writeFile(join(sourceRoot, 'plugins/carthagent/src/index.ts'), '');
+    assert.throws(() => assertCompletePluginSource(sourceRoot), /Incomplete native plugin source snapshot.*package-lock.json.*lib\/ship-auth.mjs/);
     for (const file of ['package-lock.json', 'lib/ship-auth.mjs', 'plugins/carthagent/src/rpc.ts', 'plugins/carthagent/package.json']) {
-      await mkdir(dirname(join(root, file)), { recursive: true });
-      await writeFile(join(root, file), '');
+      await mkdir(dirname(join(sourceRoot, file)), { recursive: true });
+      await writeFile(join(sourceRoot, file), '');
     }
     for (const file of ['plugins/carthagent/src/server/session-controls.ts', 'plugins/carthagent/src/server/providers.ts', 'plugins/carthagent/src/server/device-auth.ts', 'plugins/carthagent/src/server/workspace-rpc.ts', 'plugins/carthagent/src/server/pull-request-rpc.ts', 'plugins/carthagent/src/server/archive-rpc.ts']) {
-      await mkdir(dirname(join(root, file)), { recursive: true });
-      await writeFile(join(root, file), '');
+      await mkdir(dirname(join(sourceRoot, file)), { recursive: true });
+      await writeFile(join(sourceRoot, file), '');
     }
-    await writeFile(join(root, 'plugins/carthagent/src/index.ts'), "import { Plugin } from '@opencode/plugin';\nexport const id = 'carthagent';\n");
-    await symlink(join(root, 'node_modules/@opencode/plugin'), join(root, 'plugins/carthagent/node_modules/@opencode/plugin'), process.platform === 'win32' ? 'junction' : 'dir');
-    assert.equal(assertCompletePluginSource(root).sourceRoot, root);
+    await writeFile(join(sourceRoot, 'plugins/carthagent/src/index.ts'), "import { Plugin } from '@opencode/plugin';\nexport const id = 'carthagent';\n");
+    await symlink(join(sourceRoot, 'node_modules/@opencode/plugin'), join(sourceRoot, 'plugins/carthagent/node_modules/@opencode/plugin'), process.platform === 'win32' ? 'junction' : 'dir');
+    assert.equal(assertCompletePluginSource(sourceRoot).sourceRoot, sourceRoot);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -57,7 +71,8 @@ test('paired runner rejects the old partial plugin staging and accepts a complet
 test('complete plugin staging resolves extensionless native TypeScript imports within the source snapshot', async () => {
   const root = await mkdtemp(join(tmpdir(), 'native-paired-plugin-import-test-'));
   try {
-    const entry = join(root, 'plugins/carthagent/src/index.ts');
+    const sourceRoot = join(root, 'snapshot');
+    const entry = join(sourceRoot, 'plugins/carthagent/src/index.ts');
     await mkdir(dirname(entry), { recursive: true });
     await writeFile(entry, "import { Plugin } from '@opencode/plugin';\nimport { rpc } from './rpc';\n");
     await writeFile(join(dirname(entry), 'rpc.ts'), 'export const rpc = {};\n');
@@ -86,7 +101,7 @@ test('ABBA exit aggregation fails if any condition fails or is missing', () => {
 
 test('actual offline ABBA driver runs all four conditions and retains failures with nonzero aggregate exit', async () => {
   const root = await mkdtemp(join(tmpdir(), 'native-paired-abba-driver-'));
-  const helper = fileURLToPath(new URL('../tools/native-paired-orchestration.sh', import.meta.url));
+  const helper = shellPath(fileURLToPath(new URL('../tools/native-paired-orchestration.sh', import.meta.url)));
   const guardModule = fileURLToPath(new URL('../tools/native-paired-guards.mjs', import.meta.url));
   const statuses = join(root, 'statuses.tsv');
   const calls = join(root, 'calls.txt');
@@ -105,7 +120,8 @@ fake_condition() {
 run_paired_abba fake_condition "$STATUSES" "$GUARDS" 0
 printf 'aggregate=%s\\n' "$paired_exit_status"
 exit "$paired_exit_status"`;
-    const run = spawnSync('bash', ['-c', program, 'test-abba', helper, calls, statuses, guardModule], { encoding: 'utf8' });
+    const bash = testBash();
+    const run = spawnSync(bash, ['-c', program, 'test-abba', helper, shellPath(calls), shellPath(statuses), shellPath(guardModule)], { encoding: 'utf8' });
     assert.equal(run.status, 1, run.stderr);
     assert.match(run.stdout, /aggregate=1/);
     assert.deepEqual((await (await import('node:fs/promises')).readFile(calls, 'utf8')).trim().split('\n'), [
@@ -121,7 +137,7 @@ exit "$paired_exit_status"`;
 
 test('actual paired cleanup trap removes preflight work after an early failure', async () => {
   const root = await mkdtemp(join(tmpdir(), 'native-paired-preflight-cleanup-'));
-  const helper = fileURLToPath(new URL('../tools/native-paired-orchestration.sh', import.meta.url));
+  const helper = shellPath(fileURLToPath(new URL('../tools/native-paired-orchestration.sh', import.meta.url)));
   const workPathFile = join(root, 'work-path');
   try {
     const program = `source "$1"
@@ -131,7 +147,8 @@ register_paired_exit_cleanup cleanup
 work="$(mktemp -d /tmp/ctg-native-paired.XXXXXX)"
 printf '%s' "$work" > "$2"
 exit 23`;
-    const run = spawnSync('bash', ['-c', program, 'test-preflight-cleanup', helper, workPathFile], { encoding: 'utf8' });
+    const bash = testBash();
+    const run = spawnSync(bash, ['-c', program, 'test-preflight-cleanup', helper, shellPath(workPathFile)], { encoding: 'utf8' });
     assert.equal(run.status, 23, run.stderr);
     const work = (await (await import('node:fs/promises')).readFile(workPathFile, 'utf8'));
     await assert.rejects(access(work));
@@ -154,7 +171,7 @@ test('actual runner rejects a stale same-lockfile commit before creating output 
   const modules = join(source, 'node_modules');
   const binary = join(modules, '@opencode/cli/bin/opencode.exe');
   const output = join(root, 'should-not-exist');
-  const runner = fileURLToPath(new URL('../tools/run-native-terminal-paired.sh', import.meta.url));
+  const runner = shellPath(fileURLToPath(new URL('../tools/run-native-terminal-paired.sh', import.meta.url)));
   try {
     await mkdir(join(source, 'plugins/carthagent'), { recursive: true });
     await mkdir(join(modules, '@opencode/client'), { recursive: true });
@@ -179,9 +196,10 @@ test('actual runner rejects a stale same-lockfile commit before creating output 
     execFileSync('git', ['-C', source, 'commit', '-qm', 'current source']);
     const lockAtHead = execFileSync('git', ['-C', source, 'show', 'HEAD:package-lock.json'], { encoding: 'utf8' });
     assert.equal(lockAtHead, await (await import('node:fs/promises')).readFile(join(source, 'package-lock.json'), 'utf8'));
-    const result = spawnSync('bash', [runner], { encoding: 'utf8', env: {
-      ...process.env, CTG_SOURCE_ROOT: source, CTG_SOURCE_COMMIT: oldCommit,
-      CTG_OPENCODE_BIN: binary, OUTPUT_DIR: output, SAMPLES: '30',
+    const bash = testBash();
+    const result = spawnSync(bash, [runner], { encoding: 'utf8', env: {
+      ...process.env, CTG_SOURCE_ROOT: shellPath(source), CTG_SOURCE_COMMIT: oldCommit,
+      CTG_OPENCODE_BIN: shellPath(binary), OUTPUT_DIR: shellPath(output), SAMPLES: '30',
     } });
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /Selected source commit must equal the current integration checkout HEAD/);
@@ -204,8 +222,9 @@ test('baseline absence rejects plugin-provided namespaces, not only exact id', (
 });
 
 test('baseline fixture dependency provenance resolves from the immutable execution root when plugin is null', () => {
-  assert.equal(resolveFixtureSourceRoot(null, '/archived/execution'), '/archived/execution');
-  assert.equal(resolveFixtureSourceRoot('/archived/execution/plugins/carthagent', '/unused'), '/archived/execution');
+  const executionRoot = resolve('archived', 'execution');
+  assert.equal(resolveFixtureSourceRoot(null, executionRoot), executionRoot);
+  assert.equal(resolveFixtureSourceRoot(join(executionRoot, 'plugins/carthagent'), '/unused'), executionRoot);
 });
 
 test('paired provenance requires the immutable source snapshot and pinned binary identity', () => {
