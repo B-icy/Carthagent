@@ -275,7 +275,11 @@ test('PR review rejects GitHub metadata that does not match fetched real branch 
   process.env.PATH = `${bin}${process.platform === 'win32' ? ';' : ':'}${priorPath ?? ''}`;
   const ctx = { agent: { async list() { return { data: [{ id: 'build' }] }; } }, session: { async create() { reviewerCreated = true; return { id: 'no' }; } } };
   try {
-    await assert.rejects(startPullRequestReview({ ctx, cwd: root, repository: 'owner/fixture', prNumber: 9 }), /Fetched GitHub branch refs do not match/);
+    await assert.rejects(startPullRequestReview({ ctx, cwd: root, repository: 'owner/fixture', prNumber: 9 }), error => {
+      assert.match(error.message, /Fetched GitHub branch refs do not match/);
+      assert.equal(error.exitCode, 2);
+      return true;
+    });
     assert.equal(reviewerCreated, false);
   } finally { process.env.PATH = priorPath; }
 });
