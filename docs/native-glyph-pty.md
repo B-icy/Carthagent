@@ -25,11 +25,12 @@ tracks East Asian wide-cell width and combining marks locally to this probe; it
 requires the entire exact ordered payload on the rendered prompt row. No model
 provider is used.
 
-Assertions concern a small, named set of static prompt chrome tokens (the
-vertical prompt border and known chrome ellipsis, bullet, and minus mappings).
-They do not require the whole screen to be ASCII: arbitrary Unicode user text is
-checked as an exact ordered payload on the rendered composer row. The composer
-row itself is excluded from the separate startup-logo chrome checks.
+Assertions cover one known static chrome mapping: the startup logo must be the
+ASCII wordmark in ASCII mode and the block-art wordmark in Unicode mode. The
+complete arbitrary Unicode user payload must independently match, in order, on
+the rendered composer row. The composer row itself is excluded from startup-logo
+classification. This is not coverage of prompt borders, ellipses, bullets,
+separators, other dialogs, shell output, or tool-group disclosure.
 The JSON artifact records the exact runtime version, compatibility version,
 binary SHA-256, source/patch/lock provenance, production resolver identity,
 mode-specific parsed screens, and captured-PTY digests. A PTY pass establishes
@@ -44,8 +45,15 @@ token is never forwarded to the child TUI, model, or tools. No host account,
 provider credential, network provider, performance, memory, or real clipboard
 claim is part of this acceptance test.
 
-The currently available `85bb44a65e8c185f4f33d41507d29acc77f2db0cdcb0103a14476021c8e43794`
-runtime predates the glyph patch and may be used only as a negative control. Do
-not report it as a glyph pass. Positive acceptance requires rerunning this
-harness against the final combined runtime artifact and retaining its JSON
-report.
+The historical negative-control runtime with SHA-256
+`85bb44a65e8c185f4f33d41507d29acc77f2db0cdcb0103a14476021c8e43794` predates the
+glyph patch; it rendered the Unicode startup logo in ASCII mode and was rejected.
+That artifact is no longer available here and its result is not a glyph pass.
+Positive acceptance requires rerunning this harness against the final combined
+runtime artifact and retaining its JSON report.
+
+Pure Unicode cell-width, composer-payload, and child-environment helper code is
+in `tools/native-glyph-helpers.py`, which has no OS-specific PTY imports. Its
+unit tests run on supported platforms when Python is available (select an
+interpreter with `PYTHON`). The actual PTY execution runner remains Unix-only;
+this does not claim Windows PTY acceptance.
