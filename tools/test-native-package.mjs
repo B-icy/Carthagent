@@ -46,15 +46,18 @@ try {
   const installed = join(install, 'node_modules/carthagent');
   // The product entrypoint is intentionally parent-composed. Build a disposable
   // host entrypoint that composes the package's exported native integration.
-  const installedPlugin = join(installed, 'plugins/carthagent/.ctg-test-plugin');
+  const installedPlugin = join(installed, '.ctg-production-plugin');
   await mkdir(installedPlugin);
-  await writeFile(join(installedPlugin, 'index.ts'), `import { Plugin } from '@opencode/plugin';\nimport { setupNativeTestPlugin } from '../src/testing';\nexport default Plugin.define({ id: 'carthagent', setup: setupNativeTestPlugin });\n`);
+  await writeFile(join(installedPlugin, 'index.ts'), `import { Plugin } from '@opencode/plugin';\nimport { setupCarthagent } from '../plugins/carthagent/src/index';\nexport default Plugin.define({ id: 'carthagent', setup: context => setupCarthagent(context, { delivery: true }) });\n`);
   // Run the acceptance harness from the installed artifact itself so its
   // imports (including @opencode/client) resolve only through that install.
-  const productPlugin = join(installed, 'plugins/carthagent');
   for (const test of ['test-native-host.mjs', 'test-native-delivery-host.mjs', 'test-native-controls.mjs', 'test-native-outcomes.mjs']) {
-    const composedPlugin = test === 'test-native-host.mjs' ? productPlugin : installedPlugin;
-    run(process.execPath, [join(installed, 'tools', test), composedPlugin], { cwd: install, env });
+    const composedPlugin = installedPlugin;
+    if (test === 'test-native-delivery-host.mjs') {
+      for (const scenario of ['standard', 'strict', 'raw', 'budget', 'mixed', 'concurrent']) {
+        run(process.execPath, [join(installed, 'tools', test), composedPlugin], { cwd: install, env: { ...env, CTG_NATIVE_SCENARIO: scenario } });
+      }
+    } else run(process.execPath, [join(installed, 'tools', test), composedPlugin], { cwd: install, env });
   }
   console.log(JSON.stringify({ tarball: packed[0].filename, unpackedSize: packed[0].unpackedSize, binary, version }, null, 2));
 } finally {

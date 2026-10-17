@@ -98,7 +98,7 @@ test('policy and budget adapters preserve strict semantics and explicit reset', 
   assert.equal(resumed.tools, 1)
 })
 
-test('same-worktree sessions with identical concurrent shell commands fail closed instead of borrowing each other’s budget', async t => {
+test('same-worktree sessions with identical concurrent shell commands retain independent charges', async t => {
   const h = host(t)
   h.sessions.set('ses-b', { id: 'ses-b', location: { directory: h.directory } })
   const cleanup = await registerDelivery(h.ctx, { workflow: 'standard' })
@@ -116,18 +116,35 @@ test('same-worktree sessions with identical concurrent shell commands fail close
   await before({ id: 'call-a', tool: 'bash', sessionID: 'ses-a', input: { command } })
   await plan.execute(input, { sessionID: 'ses-b', signal: new AbortController().signal })
   await before({ id: 'call-b', tool: 'bash', sessionID: 'ses-b', input: { command } })
-  await assert.rejects(shell({ cwd: h.directory, command, timeout: 5000 }), /missing or ambiguous/)
+  assert.equal(h.stores.get('session/ses-a').budget.tools, 1, 'session A has its identified shell invocation charged')
+  assert.equal(h.stores.get('session/ses-b').budget.tools, 1, 'session B has its identified shell invocation charged')
+  await shell({ cwd: h.directory, command, timeout: 5000 })
   await after({ id: 'call-a', tool: 'bash', sessionID: 'ses-a', status: 'completed', input: { command } })
   await after({ id: 'call-b', tool: 'bash', sessionID: 'ses-b', status: 'completed', input: { command } })
-  assert.equal(h.stores.get('session/ses-a').budget.tools, 0)
-  assert.equal(h.stores.get('session/ses-b').budget.tools, 0)
+  assert.equal(h.stores.get('session/ses-a').budget.tools, 1, 'shell create hook cannot double charge session A')
+  assert.equal(h.stores.get('session/ses-b').budget.tools, 1, 'shell create hook cannot double charge session B')
   await cleanup()
 })
 
-test('delivery:false disables workflow hooks and tools per session but retains native budget charging', async t => {
+test('rejected shell policy leaves no identity claim and later user shell hook cannot charge any session', async t => {
+  const h = host(t)
+  h.sessions.set('ses-off', { id: 'ses-off', location: { directory: h.directory }, metadata: { 'carthagent.options': { delivery: false } } })
+  const cleanup = await registerDelivery(h.ctx, { workflow: 'standard', maxTools: 10 })
+  const before = h.hooks.get('tool:execute.before')
+  const shell = h.hooks.get('shell:create.before')
+  await assert.rejects(before({ id: 'blocked-1', tool: 'bash', sessionID: 'ses-a', input: { command: 'printf user' } }), /call delivery_plan first/)
+  await assert.rejects(before({ id: 'blocked-2', tool: 'bash', sessionID: 'ses-a', input: { command: 'printf user' } }), /call delivery_plan first/)
+  await before({ id: 'disabled-call', tool: 'bash', sessionID: 'ses-off', input: { command: 'printf user' } })
+  await shell({ cwd: h.directory, command: 'printf user', timeout: 5000 })
+  assert.equal(h.stores.get('session/ses-a').budget.tools, 0, 'rejected claims are not charged')
+  assert.equal(h.stores.get('session/ses-off').budget.tools, 1, 'the disabled session is charged only by its identified tool hook')
+  await cleanup()
+})
+
+test('delivery:false disables workflow hooks and tools per session while authoritative tool hooks charge configured budgets', async t => {
   const h = host(t)
   h.sessions.set('ses-off', {
-    id: 'ses-off', location: { directory: h.directory }, metadata: { 'carthagent.options': { delivery: false } },
+    id: 'ses-off', location: { directory: h.directory }, metadata: { 'carthagent.options': { delivery: false, maxTools: 3 } },
   })
   const cleanup = await registerDelivery(h.ctx, { workflow: 'standard' })
   const before = h.hooks.get('tool:execute.before')
@@ -143,7 +160,7 @@ test('delivery:false disables workflow hooks and tools per session but retains n
   await assert.rejects(h.tools.get('delivery_plan').execute({ goal: 'Disabled workflow' }, {
     sessionID: 'ses-off', signal: new AbortController().signal,
   }), /disabled for this session/)
-  assert.equal(h.stores.get('session/ses-off').budget.tools, 1)
+  assert.equal(h.stores.get('session/ses-off').budget.tools, 2, 'session defaults and explicit limits both charge admitted calls once')
   assert.equal(h.stores.has('session/ses-off') && h.stores.get('session/ses-off').state, null)
   await cleanup()
 })

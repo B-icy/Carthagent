@@ -50,23 +50,10 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
   const registrations: Array<{ dispose(): Promise<void> }> = []
   const serial = new Map<string, Promise<unknown>>()
   const budgetTimers = new Map<string, ReturnType<typeof setTimeout>>()
-  const pendingShellCalls = new Map<string, Set<{ id: string; sessionID: string; cwd: string; command: string }>>()
-  const shellCallsById = new Map<string, { id: string; sessionID: string; cwd: string; command: string }>()
   const profiles = loadGuidanceProfiles()
   let disposed = false
   const limitOptions: Record<string, string> = { "delivery-max-tools": "maxTools", "delivery-max-seconds": "maxSeconds", "delivery-max-repairs": "maxRepairs" }
   const sessionOptions = (session: Parameters<typeof effectiveSessionOptions>[0]): Record<string, unknown> => effectiveSessionOptions(session, { ...ctx.options, ...options })
-  const shellCommand = (input: unknown) => input && typeof input === "object" && "command" in input ? String((input as { command: unknown }).command ?? "") : ""
-  const shellCallKey = (cwd: string, command: string) => `${resolve(cwd)}\0${command}`
-  function removeShellCall(id: string) {
-    const call = shellCallsById.get(id)
-    if (!call) return
-    shellCallsById.delete(id)
-    const key = shellCallKey(call.cwd, call.command)
-    const calls = pendingShellCalls.get(key)
-    calls?.delete(call)
-    if (!calls?.size) pendingShellCalls.delete(key)
-  }
   async function scope(sessionID: string) {
     if (!sessionID) throw Error("OpenCode sessionID is required")
     const session = await ctx.session.get({ sessionID })
@@ -84,6 +71,7 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
     }
     const limits = budgetLimits((name: string) => opts[limitOptions[name]] ?? opts[name] ?? "0")
     if (!data.budget) data.budget = newBudget(limits)
+    else if (JSON.stringify(data.budget.limits) !== JSON.stringify(limits)) data.budget.limits = limits
     if (data.budget.limits.seconds && !budgetTimers.has(sessionID) && !data.budget.stopped) {
       const remaining = Math.max(1, data.budget.startedAt + data.budget.limits.seconds * 1000 - Date.now())
       const timer = setTimeout(() => {
@@ -262,58 +250,60 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
 
   registrations.push(await ctx.tool.hook("execute.before", async event => {
     const { cwd, data, options: opts } = await scope(event.sessionID)
-    const nativeShell = ["bash", "shell", "powershell"].includes(event.tool)
-    if (!opts.delivery && !nativeShell && Number(data.budget.limits.tools) === 0 && Number(data.budget.limits.seconds) === 0 && Number(data.budget.limits.repairs) === 0) return
-    const reason = budgetReason(data.budget, "tool")
-    if (reason) throw Error(`Delivery budget exhausted: ${reason}. Explicit delivery-budget-reset required.`)
-    // The native shell tool's execution hook is followed by shell.create.before;
-    // its budget charge belongs to the latter so one model tool call is charged once.
-    if (nativeShell) {
-      const command = shellCommand(event.input)
-      const call = { id: event.id, sessionID: event.sessionID, cwd, command }
-      if (typeof event.id !== "string" || !command) throw Error("Shell execution locked: could not bind native shell call to its originating session.")
-      const key = shellCallKey(cwd, command)
-      const calls = pendingShellCalls.get(key) ?? new Set()
-      calls.add(call)
-      pendingShellCalls.set(key, calls)
-      shellCallsById.set(event.id, call)
+    if (!opts.delivery && Number(data.budget.limits.tools) === 0 && Number(data.budget.limits.seconds) === 0 && Number(data.budget.limits.repairs) === 0) return
+    try {
+      const nativeShell = ["bash", "shell", "powershell"].includes(event.tool)
+      const input = event.input && typeof event.input === "object" ? event.input as Record<string, unknown> : {}
+      if (opts.delivery && event.tool !== "execute" && requiresImplementationTool(event.tool)) {
+        if (!data.state) throw Error(`Implementation locked: call delivery_plan first (tool ${event.tool}).`)
+        const release = lockWorkspace(cwd)
+        try {
+          const dir = runDirectory(cwd, event.sessionID, data.state.runId)
+          assertActiveReport(cwd, join(dir, "report.json"))
+          data.state = reconcileReport(join(dir, "report.json"), data.state)
+          enforceToolPolicy(event.tool, data.state, cwd)
+          await persist(cwd, event.sessionID, data)
+        } finally { release() }
+      }
+      if ((event.tool === "write" || event.tool === "edit") && typeof input.path === "string") {
+        const path = input.path.replaceAll("\\", "/"), cwdPath = cwd.replaceAll("\\", "/").replace(/^\/+/, ""), name = basename(cwd)
+        if ([cwdPath, name].some(prefix => path === prefix || path.startsWith(`${prefix}/`))) throw Error("Path recreates working directory inside itself; use a workspace-relative product path.")
+        if (event.tool === "write" && data.initialFiles.includes(resolve(cwd, input.path))) throw Error(`Preserve existing ${input.path}; use focused edits.`)
+      }
+      const cap = Number(opts.bashCap) || 0
+      if (nativeShell) {
+        const command = String(input.command ?? "")
+        if (/\b(?:pkill|killall)\b|\bkill\s+(?:-\S+\s+)*(?:-1|0)(?:\s|$)/i.test(command)) throw Error("Broad process termination is prohibited; terminate only a captured child PID.")
+        if (cap > 0 && (typeof input.timeout !== "number" || input.timeout > cap)) input.timeout = cap
+      }
+      if (["write", "edit", "patch"].includes(event.tool) && opts.rewriteCap && Number(opts.rewriteCap) > 0) {
+        data.writeCounts ||= {}
+        const path = String(input.path || "")
+        const count = data.writeCounts[path] || 0
+        if (count >= Number(opts.rewriteCap)) throw Error(`Full-file rewrite limit reached for ${path}; preserve behavior and use focused edits.`)
+        data.writeCounts[path] = count + 1
+      }
+      // execute.before is the authoritative per-invocation boundary, including
+      // native shell, plugin tools, subagent dispatch, and Code Mode calls. It
+      // carries sessionID/call ID; shell.create.before does not.
+      const reason = budgetReason(data.budget, "tool")
+      if (reason) {
+        data.budget.stopped ||= reason
+        await ctx.storage.set(sessionKey(event.sessionID), data)
+        await ctx.session.interrupt({ sessionID: event.sessionID, resume: false })
+        throw Error(`Delivery budget exhausted: ${reason}. Explicit delivery-budget-reset required.`)
+      }
+      data.budget.tools++
+      await ctx.storage.set(sessionKey(event.sessionID), data)
+    } catch (error) {
+      // A policy rejection means no tool executes. Persist the observed state but
+      // never leave a provisional shell claim behind for a later user command.
+      await ctx.storage.set(sessionKey(event.sessionID), data)
+      throw error
     }
-    if (!nativeShell) data.budget.tools++
-    const input = event.input && typeof event.input === "object" ? event.input as Record<string, unknown> : {}
-    if (opts.delivery && event.tool !== "execute" && requiresImplementationTool(event.tool)) {
-      if (!data.state) throw Error(`Implementation locked: call delivery_plan first (tool ${event.tool}).`)
-      const release = lockWorkspace(cwd)
-      try {
-        const dir = runDirectory(cwd, event.sessionID, data.state.runId)
-        assertActiveReport(cwd, join(dir, "report.json"))
-        data.state = reconcileReport(join(dir, "report.json"), data.state)
-        enforceToolPolicy(event.tool, data.state, cwd)
-        await persist(cwd, event.sessionID, data)
-      } finally { release() }
-    }
-    if ((event.tool === "write" || event.tool === "edit") && typeof input.path === "string") {
-      const path = input.path.replaceAll("\\", "/"), cwdPath = cwd.replaceAll("\\", "/").replace(/^\/+/, ""), name = basename(cwd)
-      if ([cwdPath, name].some(prefix => path === prefix || path.startsWith(`${prefix}/`))) throw Error("Path recreates working directory inside itself; use a workspace-relative product path.")
-      if (event.tool === "write" && data.initialFiles.includes(resolve(cwd, input.path))) throw Error(`Preserve existing ${input.path}; use focused edits.`)
-    }
-    const cap = Number(opts.bashCap) || 0
-    if (nativeShell) {
-      const command = String(input.command ?? "")
-      if (/\b(?:pkill|killall)\b|\bkill\s+(?:-\S+\s+)*(?:-1|0)(?:\s|$)/i.test(command)) throw Error("Broad process termination is prohibited; terminate only a captured child PID.")
-      if (cap > 0 && (typeof input.timeout !== "number" || input.timeout > cap)) input.timeout = cap
-    }
-    if (["write", "edit", "patch"].includes(event.tool) && opts.rewriteCap && Number(opts.rewriteCap) > 0) {
-      data.writeCounts ||= {}
-      const path = String(input.path || "")
-      const count = data.writeCounts[path] || 0
-      if (count >= Number(opts.rewriteCap)) throw Error(`Full-file rewrite limit reached for ${path}; preserve behavior and use focused edits.`)
-      data.writeCounts[path] = count + 1
-    }
-    await ctx.storage.set(sessionKey(event.sessionID), data)
   }))
 
   registrations.push(await ctx.tool.hook("execute.after", async event => {
-    removeShellCall(event.id)
     const { cwd, data } = await scope(event.sessionID)
     if (!sessionOptions(await ctx.session.get({ sessionID: event.sessionID })).delivery) {
       await ctx.storage.set(sessionKey(event.sessionID), data)
@@ -346,45 +336,12 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
   }))
 
   registrations.push(await ctx.shell.hook("create.before", async event => {
-    // V2 omits sessionID here; bind the hook to execute.before's caller via the
-    // unique (worktree, command) tool-call claim. Ambiguity fails closed.
-    const calls = pendingShellCalls.get(shellCallKey(event.cwd, event.command))
-    if (!calls || calls.size !== 1) {
-      if (!calls?.size) throw Error("Shell execution locked: the originating session is missing or ambiguous.")
-      const disabled = await Promise.all([...calls].map(async call => ({ call, enabled: sessionOptions(await ctx.session.get({ sessionID: call.sessionID })).delivery })))
-      if (disabled.some(entry => entry.enabled)) throw Error("Shell execution locked: the originating session is missing or ambiguous.")
-      for (const { call } of disabled) {
-        const { data } = await scope(call.sessionID)
-        if (data.budget.limits.tools || data.budget.limits.seconds || data.budget.limits.repairs) data.budget.tools++
-        await ctx.storage.set(sessionKey(call.sessionID), data)
-        removeShellCall(call.id)
-      }
-      return
-    }
-    const call = calls.values().next().value!
-    removeShellCall(call.id)
-    const sessionID = call.sessionID
-    const { cwd, data, options: opts } = await scope(sessionID)
-    const reason = budgetReason(data.budget, "tool")
-    if (reason) throw Error(`Delivery budget exhausted: ${reason}. Explicit delivery-budget-reset required.`)
-    if (!opts.delivery) {
-      if (data.budget.limits.tools || data.budget.limits.seconds || data.budget.limits.repairs) data.budget.tools++
-      await ctx.storage.set(sessionKey(sessionID), data)
-      return
-    }
-    if (!data.state) throw Error("Shell execution locked: call delivery_plan first.")
-    const release = lockWorkspace(cwd)
-    try {
-      const dir = runDirectory(cwd, sessionID, data.state.runId)
-      assertActiveReport(cwd, join(dir, "report.json"))
-      data.state = reconcileReport(join(dir, "report.json"), data.state)
-      enforceToolPolicy("shell", data.state, cwd)
-      const cap = Number(opts.bashCap) || 0
-      if (cap > 0 && event.timeout > cap) event.timeout = cap
-      if (/\b(?:pkill|killall)\b|\bkill\s+(?:-\S+\s+)*(?:-1|0)(?:\s|$)/i.test(event.command)) throw Error("Broad process termination is prohibited; terminate only a captured child PID.")
-      data.budget.tools++
-      await persist(cwd, sessionID, data)
-    } finally { release() }
+    // Session-scoped policy, limits, and budget were handled at execute.before.
+    // This hook intentionally does not attribute commands: 2.0.32 has no
+    // authoritative source.sessionID/callID on ShellCreateBefore.
+    const cap = Number(options.bashCap) || 0
+    if (cap > 0 && event.timeout > cap) event.timeout = cap
+    if (/\b(?:pkill|killall)\b|\bkill\s+(?:-\S+\s+)*(?:-1|0)(?:\s|$)/i.test(event.command)) throw Error("Broad process termination is prohibited; terminate only a captured child PID.")
   }))
 
   for (const kind of ["context", "compaction"] as const) registrations.push(await ctx.session.hook(kind, async event => {

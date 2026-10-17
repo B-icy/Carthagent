@@ -1,6 +1,5 @@
 import { registerSessionControls } from './server/session-controls';
-import { registerDelivery } from './server/delivery';
-import { registerCodegraph } from './server/codegraph';
+import { registerNativeDelivery } from './server/native-delivery';
 import { Carthagent } from './rpc';
 import type { Context } from '@opencode/plugin/promise/plugin';
 import type { ShellHooks } from '@opencode/plugin/promise/shell';
@@ -43,8 +42,7 @@ export async function setupNativeTestPlugin(context: Parameters<typeof registerS
   } as unknown as Context;
   try {
     cleanups.push(await registerSessionControls(monitored));
-    cleanups.push(await registerDelivery(monitored));
-    cleanups.push(await registerCodegraph(monitored));
+    cleanups.push(await registerNativeDelivery(monitored));
     const registration = await context.rpc.register(Carthagent, {
       health: async () => ({ protocol: 1, hostVersion: context.app.version, directory: context.location.directory }),
       echo: async input => ({ text: (input as { text: string }).text }),

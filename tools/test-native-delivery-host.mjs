@@ -11,8 +11,8 @@ import { OpenCode } from '@opencode/client';
 import { createNativeFixture, toolCall, assistantText } from './native-fixture.mjs';
 
 const root = resolve(import.meta.dirname, '..');
-const plugin = resolve(process.argv[2] ?? join(root, 'plugins/carthagent/test-plugin'));
-const deliveryPlugin = resolve(root, 'plugins/carthagent/test-plugin');
+const plugin = resolve(process.argv[2] ?? join(root, 'plugins/carthagent'));
+const productionPlugin = plugin.endsWith('/.ctg-production-plugin') ? resolve(plugin, '../plugins/carthagent/src/index.ts') : plugin.endsWith('/plugins/carthagent') ? resolve(plugin, 'src/index.ts') : plugin;
 const archiveFixture = resolve(root, 'tests/fixtures/archive-plugin');
 const binary = process.env.CTG_OPENCODE_BIN ?? join(root, 'node_modules/@opencode/cli/bin/opencode.exe');
 const temp = await mkdtemp(join(tmpdir(), 'ctg-host-smoke-'));
@@ -25,26 +25,64 @@ try {
   const cwd = join(temp, 'project');
   const config = join(temp, 'config/opencode');
   const scenario = process.env.CTG_NATIVE_SCENARIO ?? 'standard';
-  const maxTools = scenario === 'budget' ? 6 : 0;
+  const maxTools = ['budget', 'raw'].includes(scenario) ? 6 : scenario === 'concurrent' ? 10 : 0;
   const workflow = scenario === 'strict' ? 'strict' : 'standard';
   await Promise.all([mkdir(cwd), mkdir(config, { recursive: true }), mkdir(join(temp, 'home'))]);
   const legacy = join(temp, 'home/.carthagent/agent/sessions');
   await mkdir(legacy, { recursive: true });
   await writeFile(join(legacy, 'legacy.jsonl'), '{"type":"session","id":"legacy-fixture"}\n{"type":"message","message":{"role":"user","content":"fixture needle"}}\nmalformed\n');
-  const configuredPlugins = [...new Set([plugin, ...(plugin.endsWith('/.ctg-test-plugin') ? [] : [deliveryPlugin]), archiveFixture])];
-  await writeFile(join(config, 'opencode.json'), JSON.stringify({ plugins: configuredPlugins, update: 'disable' }));
+  const composedPlugin = join(temp, 'production-composition');
+  await mkdir(composedPlugin);
+  await writeFile(join(composedPlugin, 'index.ts'), `
+import { setupCarthagent } from ${JSON.stringify(productionPlugin)};
+const invocations = [];
+const interrupts = [];
+const Observer = { id: 'carthagent-delivery-observer', methods: { state: {
+  input: { type: 'object', properties: { sessionID: { type: 'string' } }, required: ['sessionID'], additionalProperties: false },
+  output: { type: 'object', properties: { budget: { type: ['object', 'null'], additionalProperties: true }, delivery: { type: ['object', 'null'], additionalProperties: true }, invocations: { type: 'array', items: { type: 'object', additionalProperties: true } }, interrupts: { type: 'array', items: { type: 'object', additionalProperties: true } }, tools: { type: 'array', items: { type: 'string' } } }, required: ['budget', 'delivery', 'invocations', 'interrupts', 'tools'], additionalProperties: false },
+} }, events: {} };
+export default { id: 'carthagent', async setup(context) {
+  const monitored = { ...context,
+    tool: { ...context.tool, hook: async (name, callback) => context.tool.hook(name, async event => { if (name === 'execute.before') invocations.push({ hook: name, sessionID: event.sessionID, tool: event.tool, id: event.id }); await callback(event); }) },
+    shell: { ...context.shell, hook: async (name, callback) => context.shell.hook(name, async event => { if (name === 'create.before') invocations.push({ hook: 'shell.' + name, command: event.command }); await callback(event); }) },
+    session: { ...context.session, interrupt: async input => { interrupts.push(input); return context.session.interrupt(input); } },
+  };
+  const cleanups = [];
+  try {
+    const scenarioOptions = JSON.parse(process.env.CTG_NATIVE_DELIVERY_OPTIONS || '{}');
+    if (process.env.CTG_NATIVE_SCENARIO === 'strict') scenarioOptions.workflow = 'strict';
+    cleanups.push(await setupCarthagent(monitored, { delivery: true, deliveryOptions: scenarioOptions }));
+    const observer = await context.rpc.register(Observer, { state: async input => {
+      const stored = await context.storage.get('session/' + input.sessionID);
+      return { budget: stored && stored.budget ? { tools: stored.budget.tools, limits: stored.budget.limits, stopped: stored.budget.stopped } : null, delivery: stored && stored.state ? stored.state : null, invocations: invocations.filter(call => call.sessionID === input.sessionID), interrupts: interrupts.filter(call => call.sessionID === input.sessionID), tools: (await context.tool.list()).map(tool => tool.id) };
+    } });
+    cleanups.push(() => observer.dispose());
+    return async () => { for (const cleanup of cleanups.reverse()) await cleanup?.(); };
+  } catch (error) { for (const cleanup of cleanups.reverse()) await cleanup?.(); throw error; }
+} };
+`);
+  await writeFile(join(config, 'opencode.json'), JSON.stringify({ plugins: [composedPlugin, archiveFixture], update: 'disable' }));
   fixture = createNativeFixture({ inspect: ({ body }) => observed.push({ tools: (body.tools ?? []).map(tool => tool.function?.name), messages: body.messages ?? [] }), respond: ({ body, response }) => {
     const messages = body.messages ?? [];
     const tools = (body.tools ?? []).map(tool => tool.function?.name);
     const toolResults = messages.filter(message => message.role === 'tool').length;
-    if (tools.includes('execute') && toolResults === 0) {
+    const latestUser = [...messages].reverse().find(message => message.role === 'user');
+    if (JSON.stringify(latestUser).includes('CONCURRENT_IDENTICAL')) {
+      if (tools.includes('shell') && toolResults === 0) toolCall(response, { name: 'shell', arguments: { command: 'printf concurrent > identical.txt' } });
+      else assistantText(response, 'CONCURRENT_IDENTICAL_SHELL_OK');
+    } else if (JSON.stringify(latestUser).includes('MIXED_DISABLED')) {
+      if (tools.includes('shell') && toolResults === 0) toolCall(response, { name: 'shell', arguments: { command: "printf disabled-session > mixed-disabled.txt" } });
+      else assistantText(response, 'DISABLED_SESSION_SHELL_OK');
+    } else if (scenario === 'budget' && toolResults >= 6) {
+      toolCall(response, { name: 'execute', arguments: { code: 'return await tools.carthagent["delivery_status"]({})' } });
+    } else if (tools.includes('execute') && toolResults === 0) {
       toolCall(response, { name: 'execute', arguments: { code: 'const result = await search({ query: "carthagent delivery tools", namespace: "carthagent", limit: 10 }); return result' } });
-    } else if (scenario === 'raw' && tools.includes('execute') && toolResults === 1) {
-      toolCall(response, { name: 'execute', arguments: { code: 'return await tools.carthagent["delivery_progress"]({ step: "create-fixture", status: "done" })' } });
+    } else if (scenario === 'raw' && tools.includes('shell') && toolResults === 1) {
+      toolCall(response, { name: 'shell', arguments: { command: "printf 'fixture output\\n' > fixture.txt" } });
+    } else if (scenario === 'raw' && toolResults >= 2) {
+      assistantText(response, 'DISABLED_SESSION_SHELL_OK');
     } else if (tools.includes('execute') && toolResults === 1) {
       toolCall(response, { name: 'execute', arguments: { code: 'return await tools.carthagent["delivery_plan"]({ goal: "Add fixture output", assumptions: [], artifacts: ["fixture.txt"], outputs: ["fixture.txt"], steps: [{ id: "create-fixture", title: "Create fixture file" }], acceptance: [{ requirement: "fixture exists", checks: ["fixture-check"] }], checks: [{ id: "fixture-check", kind: "test", argv: ["node", "-e", "require(\\\"node:fs\\\").accessSync(\\\"fixture.txt\\\")"], timeoutSeconds: 5 }] })' } });
-    } else if (scenario === 'raw' && tools.includes('execute') && toolResults === 2) {
-      toolCall(response, { name: 'execute', arguments: { code: 'return await tools.carthagent["delivery_status"]({})' } });
     } else if (scenario === 'strict' && tools.includes('execute') && toolResults === 2) {
       toolCall(response, { name: 'execute', arguments: { code: 'return await tools.carthagent["delivery_design"]({ action: "validate" })' } });
     } else if (scenario === 'strict' && tools.includes('execute') && toolResults === 3) {
@@ -60,7 +98,7 @@ try {
     } else if (tools.includes('execute') && toolResults === 4) {
       toolCall(response, { name: 'execute', arguments: { code: 'return await tools.carthagent["delivery_check"]({ id: "all" })' } });
     } else if (tools.includes('execute') && toolResults === 5) {
-      if (scenario === 'budget') assistantText(response, 'Budget scenario intentionally stops before validation.');
+      if (scenario === 'budget') toolCall(response, { name: 'execute', arguments: { code: 'return await tools.carthagent["delivery_status"]({})' } });
       else toolCall(response, { name: 'execute', arguments: { code: 'return await tools.carthagent["delivery_finish"]({ status: "verified", review: "dishonest fixture attempt", launch: "not run", limitations: [] })' } });
     } else {
       assistantText(response, 'Fixture completed its offline workflow; no verification claim is made.');
@@ -156,20 +194,37 @@ try {
   assert.equal(await readFile(join(legacy, 'legacy.jsonl'), 'utf8'), '{"type":"session","id":"legacy-fixture"}\n{"type":"message","message":{"role":"user","content":"fixture needle"}}\nmalformed\n');
   const session = await client.session.create({
     location: { directory: cwd }, title: 'CTG delivery host',
-    metadata: { 'carthagent.options': { workflow, maxTools } },
+    metadata: { 'carthagent.options': { workflow, maxTools, ...(['raw', 'concurrent'].includes(scenario) ? { delivery: false } : {}) } },
   }, request);
   await client.session.switchModel({ sessionID: session.id, model: { providerID: 'fixture', id: 'fixture' } }, request);
+  if (scenario === 'concurrent') {
+    const sibling = await client.session.create({ location: { directory: cwd }, title: 'CTG identical concurrent shell sibling', metadata: { 'carthagent.options': { delivery: false, maxTools: 10 } } }, request);
+    await client.session.switchModel({ sessionID: sibling.id, model: { providerID: 'fixture', id: 'fixture' } }, request);
+    const prompts = await Promise.all([
+      client.session.prompt({ sessionID: session.id, text: 'CONCURRENT_IDENTICAL session one, run identical shell now.' }, request),
+      client.session.prompt({ sessionID: sibling.id, text: 'CONCURRENT_IDENTICAL session two, run identical shell now.' }, request),
+    ]);
+    assert.ok(prompts.every(turn => turn.type === 'user'));
+    await Promise.all([session.id, sibling.id].map(sessionID => client.session.wait({ sessionID }, { signal: AbortSignal.timeout(45_000) })));
+    for (const sessionID of [session.id, sibling.id]) {
+      const diagnostics = await client.rpc.call({ rpcID: 'carthagent-delivery-observer', method: 'state', input: { sessionID }, location: { directory: cwd } }, request);
+      assert.equal(diagnostics.output.budget.tools, 1, 'identical same-worktree shell command is charged only to its invoking session');
+      assert.equal(diagnostics.output.invocations.filter(entry => ['bash', 'shell', 'powershell'].includes(entry.tool)).length, 1);
+    }
+    assert.match(await readFile(join(cwd, 'identical.txt'), 'utf8'), /concurrent/);
+    console.log(JSON.stringify({ scenario, identicalShellCalls: 2, independentSessionBudgets: true }, null, 2));
+  } else {
   const promptText = scenario === 'raw' ? 'Run this shell command exactly: printf raw bypass > raw.txt' : 'Create and verify a tiny fixture file.';
   const turn = await client.session.prompt({ sessionID: session.id, text: promptText, ...(scenario === 'raw' ? { metadata: { 'ctg.raw': true } } : {}) }, request);
   await client.session.wait({ sessionID: session.id }, { signal: AbortSignal.timeout(45_000) });
   assert.equal(turn.type, 'user', 'model request was admitted');
   const history = await client.message.list({ sessionID: session.id }, { signal: AbortSignal.timeout(10_000) });
   const serialized = JSON.stringify(history.data);
-  assert.match(serialized, /delivery_plan/, 'the offline provider must call the registered delivery tool');
-  if (scenario !== 'raw') assert.match(serialized, /fixture-check/, 'the host run must persist the declared check');
+  if (scenario !== 'raw') assert.match(serialized, /delivery_plan/, 'the offline provider must call the registered delivery tool');
   if (scenario === 'raw') {
-    assert.match(serialized, /Call delivery_plan first/, 'raw prompt cannot bypass delivery policy for implementation tools');
+    assert.match(serialized, /DISABLED_SESSION_SHELL_OK/, 'delivery:false leaves native shell available');
   }
+  if (scenario !== 'raw') assert.match(serialized, /fixture-check/, 'the host run must persist the declared check');
   if (scenario !== 'strict' && scenario !== 'raw') {
     assert.match(serialized, /fixture output/, 'the host must execute the implementation shell command');
     if (scenario !== 'budget') assert.match(serialized, /passed.{0,40}true/, 'the declared validator must produce real passing evidence');
@@ -185,7 +240,11 @@ try {
   }
   if (scenario !== 'budget' && scenario !== 'raw') assert.match(serialized, /carthagent\.delivery_finish.{0,180}status.{0,40}error/s, 'dishonest finish must remain an error, not successful evidence');
   assert.ok(fixture.calls >= 2, 'host made real SSE requests to the local fixture');
-  const diagnostics = await client.rpc.call({ rpcID: 'carthagent-test', method: 'state', input: { sessionID: session.id }, location: { directory: cwd } }, request);
+  const diagnostics = await client.rpc.call({ rpcID: 'carthagent-delivery-observer', method: 'state', input: { sessionID: session.id }, location: { directory: cwd } }, request);
+  if (scenario !== 'raw') {
+    assert.ok(diagnostics.output.tools.some(name => name.includes('delivery_plan')), 'production setup exposes optional delivery tools when composition enables delivery');
+    assert.ok(diagnostics.output.tools.some(name => name.includes('code_nav')), 'production setup composes codegraph registration with delivery');
+  }
   const budget = diagnostics.output.budget;
   if (scenario === 'strict') {
     assert.equal(diagnostics.output.delivery?.workflowMode, 'strict');
@@ -196,24 +255,40 @@ try {
   }
   assert.ok(budget, 'native tool hook persisted a session budget');
   const chargedToolInvocations = diagnostics.output.invocations.filter(entry => entry.hook === 'execute.before').length;
-  const shellInvocations = diagnostics.output.invocations.filter(entry => entry.hook === 'shell.create.before').length;
-  const shellExecuteHooks = diagnostics.output.invocations.filter(entry => entry.hook === 'execute.before' && ['bash', 'shell', 'powershell'].includes(entry.tool)).length;
   if (scenario === 'strict') {
-    assert.equal(shellInvocations, 0, 'strict design scenario never invokes shell');
+    assert.equal(diagnostics.output.invocations.some(entry => ['bash', 'shell', 'powershell'].includes(entry.tool)), false, 'strict design scenario never invokes shell');
     assert.equal(budget.tools, chargedToolInvocations, 'strict design Code Mode calls each charge once');
     assert.ok(diagnostics.output.delivery.planning.approval, 'strict workflow persisted explicit design approval');
   } else if (scenario === 'budget') {
     assert.equal(budget.tools, maxTools, 'native budget stops at its per-session configured tool limit');
     assert.ok(diagnostics.output.invocations.some(entry => entry.hook === 'execute.before' && entry.tool === 'execute'), 'execution hook persisted the admission that reached the cap');
-    assert.ok(serialized.includes('Delivery budget exhausted:'), 'exhaustion is surfaced in the host tool result');
+    assert.ok(diagnostics.output.budget.stopped, 'the host budget persists its stopped reason');
+    assert.ok(diagnostics.output.interrupts.some(call => call.resume === false), 'budget exhaustion interrupts the host turn without resuming it');
   } else if (scenario === 'raw') {
-    assert.equal(shellInvocations, 0, 'raw mode does not launch shell');
-    assert.equal(budget.tools, chargedToolInvocations - shellExecuteHooks - 3, 'raw mode charges admitted Code Mode calls and excludes calls blocked by delivery policy');
+    assert.ok(diagnostics.output.invocations.some(entry => entry.hook === 'execute.before' && ['bash', 'shell', 'powershell'].includes(entry.tool)), 'delivery:false permits explicitly requested native shell execution');
+    assert.equal(budget.tools, chargedToolInvocations, 'delivery:false session charges every admitted host tool call exactly once');
+    assert.equal(diagnostics.output.invocations.some(entry => entry.tool?.startsWith('carthagent_delivery_')), false, 'disabled session never executes a delivery workflow tool');
   } else {
-    assert.equal(shellInvocations, 1, 'shell.create.before sees exactly one shell request');
-    assert.equal(budget.tools, chargedToolInvocations - shellExecuteHooks + shellInvocations, 'Code Mode dispatches and shell charge once; shell execute.before is not charged a second time');
+    assert.ok(diagnostics.output.invocations.some(entry => entry.hook === 'execute.before' && ['bash', 'shell', 'powershell'].includes(entry.tool)), 'the real host reports native shell at the session-scoped execution hook');
+    assert.equal(budget.tools, chargedToolInvocations, 'Code Mode dispatches and shell calls each charge once at execute.before');
   }
   console.log(JSON.stringify({ fixtureCalls: fixture.calls, planToolObserved: true, scenario, budget: budget.tools }, null, 2));
+  if (scenario === 'mixed') {
+    const disabledSession = await client.session.create({
+      location: { directory: cwd }, title: 'CTG disabled session in shared worktree',
+      metadata: { 'carthagent.options': { delivery: false, maxTools: 10 } },
+    }, request);
+    await client.session.switchModel({ sessionID: disabledSession.id, model: { providerID: 'fixture', id: 'fixture' } }, request);
+    await client.session.prompt({ sessionID: disabledSession.id, text: 'MIXED_DISABLED run the native shell command once.' }, request);
+    await client.session.wait({ sessionID: disabledSession.id }, { signal: AbortSignal.timeout(45_000) });
+    const disabledHistory = await client.message.list({ sessionID: disabledSession.id }, { signal: AbortSignal.timeout(10_000) });
+    assert.match(JSON.stringify(disabledHistory.data), /DISABLED_SESSION_SHELL_OK/);
+    const disabledDiagnostics = await client.rpc.call({ rpcID: 'carthagent-delivery-observer', method: 'state', input: { sessionID: disabledSession.id }, location: { directory: cwd } }, request);
+    const disabledCount = disabledDiagnostics.output.invocations.filter(entry => entry.hook === 'execute.before').length;
+    assert.equal(disabledDiagnostics.output.budget.tools, disabledCount, 'disabled sibling session counts its own distinct shell call exactly once');
+    assert.ok(disabledDiagnostics.output.budget.limits.tools === 10);
+  }
+  }
   console.log('Native plugin and validated RPC passed against OpenCode 2.0.32.');
 } catch (error) {
   console.error(output.replaceAll(password, '[redacted]'));
