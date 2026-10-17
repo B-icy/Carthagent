@@ -37,13 +37,14 @@ try {
 import { setupCarthagent } from ${JSON.stringify(productionPlugin)};
 const invocations = [];
 const interrupts = [];
+const duplicateInvocations = [];
 const Observer = { id: 'carthagent-delivery-observer', methods: { state: {
   input: { type: 'object', properties: { sessionID: { type: 'string' } }, required: ['sessionID'], additionalProperties: false },
-  output: { type: 'object', properties: { budget: { type: ['object', 'null'], additionalProperties: true }, delivery: { type: ['object', 'null'], additionalProperties: true }, invocations: { type: 'array', items: { type: 'object', additionalProperties: true } }, interrupts: { type: 'array', items: { type: 'object', additionalProperties: true } }, tools: { type: 'array', items: { type: 'string' } } }, required: ['budget', 'delivery', 'invocations', 'interrupts', 'tools'], additionalProperties: false },
+  output: { type: 'object', properties: { budget: { type: ['object', 'null'], additionalProperties: true }, delivery: { type: ['object', 'null'], additionalProperties: true }, invocations: { type: 'array', items: { type: 'object', additionalProperties: true } }, duplicateInvocations: { type: 'array', items: { type: 'object', additionalProperties: true } }, interrupts: { type: 'array', items: { type: 'object', additionalProperties: true } }, tools: { type: 'array', items: { type: 'string' } } }, required: ['budget', 'delivery', 'invocations', 'duplicateInvocations', 'interrupts', 'tools'], additionalProperties: false },
 } }, events: {} };
 export default { id: 'carthagent', async setup(context) {
   const monitored = { ...context,
-    tool: { ...context.tool, hook: async (name, callback) => context.tool.hook(name, async event => { if (name === 'execute.before') invocations.push({ hook: name, sessionID: event.sessionID, tool: event.tool, id: event.id }); await callback(event); }) },
+    tool: { ...context.tool, hook: async (name, callback) => context.tool.hook(name, async event => { if (name === 'execute.before') { const entry = { hook: name, sessionID: event.sessionID, tool: event.tool, id: event.id, messageID: event.messageID }; if (invocations.some(previous => previous.sessionID === entry.sessionID && previous.tool === entry.tool && previous.id === entry.id && previous.messageID === entry.messageID)) duplicateInvocations.push(entry); invocations.push(entry); } await callback(event); }) },
     shell: { ...context.shell, hook: async (name, callback) => context.shell.hook(name, async event => { if (name === 'create.before') invocations.push({ hook: 'shell.' + name, command: event.command }); await callback(event); }) },
     session: { ...context.session, interrupt: async input => { interrupts.push(input); return context.session.interrupt(input); } },
   };
@@ -54,7 +55,7 @@ export default { id: 'carthagent', async setup(context) {
     cleanups.push(await setupCarthagent(monitored, { delivery: true, deliveryOptions: scenarioOptions }));
     const observer = await context.rpc.register(Observer, { state: async input => {
       const stored = await context.storage.get('session/' + input.sessionID);
-      return { budget: stored && stored.budget ? { tools: stored.budget.tools, limits: stored.budget.limits, stopped: stored.budget.stopped } : null, delivery: stored && stored.state ? stored.state : null, invocations: invocations.filter(call => call.sessionID === input.sessionID), interrupts: interrupts.filter(call => call.sessionID === input.sessionID), tools: (await context.tool.list()).map(tool => tool.id) };
+      return { budget: stored && stored.budget ? { tools: stored.budget.tools, limits: stored.budget.limits, stopped: stored.budget.stopped } : null, delivery: stored && stored.state ? stored.state : null, invocations: invocations.filter(call => call.sessionID === input.sessionID), duplicateInvocations: duplicateInvocations.filter(call => call.sessionID === input.sessionID), interrupts: interrupts.filter(call => call.sessionID === input.sessionID), tools: (await context.tool.list()).map(tool => tool.id) };
     } });
     cleanups.push(() => observer.dispose());
     return async () => { for (const cleanup of cleanups.reverse()) await cleanup?.(); };
@@ -257,7 +258,7 @@ export default { id: 'carthagent', async setup(context) {
   const chargedToolInvocations = diagnostics.output.invocations.filter(entry => entry.hook === 'execute.before').length;
   if (scenario === 'strict') {
     assert.equal(diagnostics.output.invocations.some(entry => ['bash', 'shell', 'powershell'].includes(entry.tool)), false, 'strict design scenario never invokes shell');
-    assert.equal(budget.tools, chargedToolInvocations, 'strict design Code Mode calls each charge once');
+    assert.equal(budget.tools, chargedToolInvocations - diagnostics.output.duplicateInvocations.length, 'strict Code Mode calls charge once; hook re-entry is deduplicated');
     assert.ok(diagnostics.output.delivery.planning.approval, 'strict workflow persisted explicit design approval');
   } else if (scenario === 'budget') {
     assert.equal(budget.tools, maxTools, 'native budget stops at its per-session configured tool limit');
@@ -270,7 +271,7 @@ export default { id: 'carthagent', async setup(context) {
     assert.equal(diagnostics.output.invocations.some(entry => entry.tool?.startsWith('carthagent_delivery_')), false, 'disabled session never executes a delivery workflow tool');
   } else {
     assert.ok(diagnostics.output.invocations.some(entry => entry.hook === 'execute.before' && ['bash', 'shell', 'powershell'].includes(entry.tool)), 'the real host reports native shell at the session-scoped execution hook');
-    assert.equal(budget.tools, chargedToolInvocations, 'Code Mode dispatches and shell calls each charge once at execute.before');
+    assert.equal(budget.tools, chargedToolInvocations - diagnostics.output.duplicateInvocations.length, 'Code Mode dispatches and shell calls each charge once at execute.before');
   }
   console.log(JSON.stringify({ fixtureCalls: fixture.calls, planToolObserved: true, scenario, budget: budget.tools }, null, 2));
   if (scenario === 'mixed') {

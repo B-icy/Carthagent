@@ -16,12 +16,13 @@ function host(t) {
   const session = { id: 'ses-a', location: { directory } }
   const sessions = new Map()
   sessions.set(session.id, session)
+  const interrupts = []
   const ctx = {
     location: { directory }, options: {},
     session: {
       get: async ({ sessionID }) => { assert.ok(sessionID); return { ...session, ...sessions.get(sessionID), id: sessionID } },
       hook: async (name, callback) => { hooks.set(name, callback); return { dispose: async () => hooks.delete(name) } },
-      interrupt: async () => {},
+      interrupt: async input => { interrupts.push(input) },
       prompt: async () => {},
     },
     tool: {
@@ -36,7 +37,7 @@ function host(t) {
     },
     event: { subscribe: ({ signal }) => { events.push(signal); return (async function* () { await new Promise(resolve => signal.addEventListener('abort', resolve, { once: true })) })() } },
   }
-  return { ctx, tools, hooks, commands, stores, directory, session, sessions }
+  return { ctx, tools, hooks, commands, stores, directory, session, sessions, interrupts }
 }
 
 test('OpenCode V2 registration exposes domain tools and returns complete cleanup', async t => {
@@ -60,7 +61,7 @@ test('session-scoped plan is stored and implementation cannot start before plan'
   const h = host(t)
   const cleanup = await registerDelivery(h.ctx, { workflow: 'standard' })
   const before = h.hooks.get('tool:execute.before')
-  await assert.rejects(before({ tool: 'edit', sessionID: 'ses-a', input: { path: 'app.ts' } }), /delivery_plan/)
+  await assert.rejects(before({ id: 'edit-before-plan', messageID: 'msg-plan', tool: 'edit', sessionID: 'ses-a', input: { path: 'app.ts' } }), /delivery_plan/)
   const plan = h.tools.get('delivery_plan')
   const result = await plan.execute({
     goal: 'Preserve runnable application behavior', assumptions: [], artifacts: ['.'], steps: ['Implement behavior'],
@@ -69,7 +70,7 @@ test('session-scoped plan is stored and implementation cannot start before plan'
   }, { sessionID: 'ses-a', signal: new AbortController().signal })
   assert.match(result.content, /report\.json/)
   assert.ok(h.stores.has('session/ses-a'))
-  await before({ tool: 'edit', sessionID: 'ses-a', input: { path: 'app.ts' } })
+  await before({ id: 'edit-after-plan', messageID: 'msg-plan', tool: 'edit', sessionID: 'ses-a', input: { path: 'app.ts' } })
   await cleanup()
 })
 
@@ -113,9 +114,9 @@ test('same-worktree sessions with identical concurrent shell commands retain ind
   const after = h.hooks.get('tool:execute.after')
   const shell = h.hooks.get('shell:create.before')
   const command = 'node -e "process.exit(0)"'
-  await before({ id: 'call-a', tool: 'bash', sessionID: 'ses-a', input: { command } })
+  await before({ id: 'call-a', messageID: 'msg-a', tool: 'bash', sessionID: 'ses-a', input: { command } })
   await plan.execute(input, { sessionID: 'ses-b', signal: new AbortController().signal })
-  await before({ id: 'call-b', tool: 'bash', sessionID: 'ses-b', input: { command } })
+  await before({ id: 'call-b', messageID: 'msg-b', tool: 'bash', sessionID: 'ses-b', input: { command } })
   assert.equal(h.stores.get('session/ses-a').budget.tools, 1, 'session A has its identified shell invocation charged')
   assert.equal(h.stores.get('session/ses-b').budget.tools, 1, 'session B has its identified shell invocation charged')
   await shell({ cwd: h.directory, command, timeout: 5000 })
@@ -126,15 +127,79 @@ test('same-worktree sessions with identical concurrent shell commands retain ind
   await cleanup()
 })
 
+test('parallel same-session execute.before admissions serialize at the budget boundary', async t => {
+  const h = host(t)
+  h.sessions.set('ses-a', { ...h.session, metadata: { 'carthagent.options': { delivery: false, maxTools: 1 } } })
+  const cleanup = await registerDelivery(h.ctx)
+  const before = h.hooks.get('tool:execute.before')
+  const results = await Promise.allSettled([
+    before({ id: 'parallel-a', messageID: 'parallel-message', tool: 'read', sessionID: 'ses-a', input: { filePath: 'app.ts' } }),
+    before({ id: 'parallel-b', messageID: 'parallel-message', tool: 'read', sessionID: 'ses-a', input: { filePath: 'app.ts' } }),
+  ])
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 1, 'only one call is admitted at a one-call limit')
+  assert.equal(results.filter(result => result.status === 'rejected').length, 1, 'the competing call is denied')
+  assert.equal(h.stores.get('session/ses-a').budget.tools, 1, 'the persisted counter cannot lose a concurrent increment')
+  assert.equal(h.stores.get('session/ses-a').budget.stopped, 'tool-calls')
+  assert.deepEqual(h.interrupts, [{ sessionID: 'ses-a', resume: false }])
+  await cleanup()
+})
+
+test('parallel admissions in distinct sessions remain independent', async t => {
+  const h = host(t)
+  h.sessions.set('ses-b', { id: 'ses-b', location: { directory: h.directory }, metadata: { 'carthagent.options': { delivery: false, maxTools: 1 } } })
+  h.sessions.set('ses-a', { ...h.session, metadata: { 'carthagent.options': { delivery: false, maxTools: 1 } } })
+  const cleanup = await registerDelivery(h.ctx)
+  const before = h.hooks.get('tool:execute.before')
+  const results = await Promise.all([
+    before({ id: 'session-a-call', messageID: 'parallel-message', tool: 'read', sessionID: 'ses-a', input: {} }),
+    before({ id: 'session-b-call', messageID: 'parallel-message', tool: 'read', sessionID: 'ses-b', input: {} }),
+  ])
+  assert.equal(results.length, 2)
+  assert.equal(h.stores.get('session/ses-a').budget.tools, 1)
+  assert.equal(h.stores.get('session/ses-b').budget.tools, 1)
+  await cleanup()
+})
+
+test('same-session repeated execute.before call ID is charged once', async t => {
+  const h = host(t)
+  const cleanup = await registerDelivery(h.ctx, { maxTools: 2 })
+  const before = h.hooks.get('tool:execute.before')
+  const event = { id: 'same-call-id', messageID: 'message-1', tool: 'read', sessionID: 'ses-a', input: { filePath: 'app.ts' } }
+  await Promise.all([before(event), before(event)])
+  assert.equal(h.stores.get('session/ses-a').budget.tools, 1)
+  await cleanup()
+})
+
+test('failed admission persistence does not charge a denied call or poison the session queue', async t => {
+  const h = host(t)
+  h.sessions.set('ses-a', { ...h.session, metadata: { 'carthagent.options': { delivery: false, maxTools: 1 } } })
+  const cleanup = await registerDelivery(h.ctx)
+  const originalSet = h.ctx.storage.set
+  let failOnce = true
+  h.ctx.storage.set = async (key, value) => {
+    if (key === 'session/ses-a' && failOnce) {
+      failOnce = false
+      throw Error('simulated storage failure')
+    }
+    return originalSet(key, value)
+  }
+  const before = h.hooks.get('tool:execute.before')
+  await assert.rejects(before({ id: 'storage-fails', messageID: 'storage-message', tool: 'read', sessionID: 'ses-a', input: {} }), /simulated storage failure/)
+  assert.equal(h.stores.get('session/ses-a'), undefined, 'failed storage write leaves no phantom persisted admission')
+  await before({ id: 'retry-call', messageID: 'retry-message', tool: 'read', sessionID: 'ses-a', input: {} })
+  assert.equal(h.stores.get('session/ses-a').budget.tools, 1, 'the queue recovers and the next call is admitted once')
+  await cleanup()
+})
+
 test('rejected shell policy leaves no identity claim and later user shell hook cannot charge any session', async t => {
   const h = host(t)
   h.sessions.set('ses-off', { id: 'ses-off', location: { directory: h.directory }, metadata: { 'carthagent.options': { delivery: false } } })
   const cleanup = await registerDelivery(h.ctx, { workflow: 'standard', maxTools: 10 })
   const before = h.hooks.get('tool:execute.before')
   const shell = h.hooks.get('shell:create.before')
-  await assert.rejects(before({ id: 'blocked-1', tool: 'bash', sessionID: 'ses-a', input: { command: 'printf user' } }), /call delivery_plan first/)
-  await assert.rejects(before({ id: 'blocked-2', tool: 'bash', sessionID: 'ses-a', input: { command: 'printf user' } }), /call delivery_plan first/)
-  await before({ id: 'disabled-call', tool: 'bash', sessionID: 'ses-off', input: { command: 'printf user' } })
+  await assert.rejects(before({ id: 'blocked-1', messageID: 'blocked-message-1', tool: 'bash', sessionID: 'ses-a', input: { command: 'printf user' } }), /call delivery_plan first/)
+  await assert.rejects(before({ id: 'blocked-2', messageID: 'blocked-message-2', tool: 'bash', sessionID: 'ses-a', input: { command: 'printf user' } }), /call delivery_plan first/)
+  await before({ id: 'disabled-call', messageID: 'disabled-message', tool: 'bash', sessionID: 'ses-off', input: { command: 'printf user' } })
   await shell({ cwd: h.directory, command: 'printf user', timeout: 5000 })
   assert.equal(h.stores.get('session/ses-a').budget.tools, 0, 'rejected claims are not charged')
   assert.equal(h.stores.get('session/ses-off').budget.tools, 1, 'the disabled session is charged only by its identified tool hook')
@@ -151,11 +216,11 @@ test('delivery:false disables workflow hooks and tools per session while authori
   const sessionState = async () => h.stores.get('session/ses-off')
   const limits = readBudgetLimits({ maxTools: 3, maxSeconds: 0, maxRepairs: 0 })
   h.stores.set('session/ses-off', { state: null, discovery: {}, nudges: 0, touched: false, budget: budgetForSession(undefined, limits), required: [], initialFiles: [], cwd: h.directory })
-  await before({ id: 'edit-off', tool: 'edit', sessionID: 'ses-off', input: { path: 'app.ts' } })
+  await before({ id: 'edit-off', messageID: 'edit-off-message', tool: 'edit', sessionID: 'ses-off', input: { path: 'app.ts' } })
   const state = await sessionState()
   state.budget.limits.tools = 3
   h.stores.set('session/ses-off', state)
-  await before({ id: 'shell-off', tool: 'bash', sessionID: 'ses-off', input: { command: 'printf off' } })
+  await before({ id: 'shell-off', messageID: 'shell-off-message', tool: 'bash', sessionID: 'ses-off', input: { command: 'printf off' } })
   await h.hooks.get('shell:create.before')({ cwd: h.directory, command: 'printf off', timeout: 5000 })
   await assert.rejects(h.tools.get('delivery_plan').execute({ goal: 'Disabled workflow' }, {
     sessionID: 'ses-off', signal: new AbortController().signal,
