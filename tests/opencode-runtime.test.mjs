@@ -289,12 +289,29 @@ test('runtime identity binds compatibility services to the exact executable path
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test('PATH-selected commands resolve to a concrete executable identity', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-path-identity-'));
+  const bin = path.join(root, 'bin');
+  const executable = path.join(bin, 'opencode');
+  const script = path.join(root, 'version.cjs');
+  try {
+    await mkdir(bin, { recursive: true });
+    await writeFile(script, `console.log('opencode v2.0.32')`);
+    await writeFile(executable, `#!/usr/bin/env node\nrequire(${JSON.stringify(script)})\n`, { mode: 0o755 });
+    const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH ?? ''}` };
+    const resolved = await resolveOpenCode({ binary: 'opencode', env });
+    assert.equal(resolved, executable);
+    const identity = await runtimeIdentity('opencode', { binary: 'opencode', env });
+    assert.equal(identity.binaryPath, executable);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test('ensureService rejects normal/owned selector switches without stopping the registered process', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-runtime-selector-switch-'));
   const artifact = path.join(root, 'owned-artifact');
   const binary = path.join(root, 'upstream-opencode');
   const ownedPlatform = `${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch}`;
-  const artifactPlatform = process.platform === 'win32' ? `win32-${process.arch}` : ownedPlatform;
+  const artifactPlatform = ownedPlatform;
   const ownedBinary = path.join(artifact, `cli-${artifactPlatform}`, 'bin', process.platform === 'win32' ? 'opencode.exe' : 'opencode');
   const script = path.join(root, 'fixture-runtime.cjs');
   const originalFetch = globalThis.fetch;
@@ -353,6 +370,23 @@ test('ensureService rejects normal/owned selector switches without stopping the 
   }
 });
 
+test('dead mismatched registration is cleaned before a replacement service starts', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-dead-registration-'));
+  const paths = runtimePaths({ root });
+  const script = path.join(root, 'server.cjs');
+  try {
+    await writeFile(script, `if (process.argv[2] === '--version') { console.log('2.0.32'); process.exit(0); }\nconst http=require('node:http');const s=http.createServer((q,r)=>{if(q.url==='/api/info'){r.setHeader('content-type','application/json');r.end(JSON.stringify({version:'2.0.32',pid:process.pid}));return}r.statusCode=404;r.end()});s.listen(Number(process.argv[process.argv.indexOf('--port')+1]),'127.0.0.1',()=>console.log('server listening on http://127.0.0.1:'+s.address().port));`);
+    await mkdir(path.dirname(paths.serviceFile), { recursive: true });
+    await writeFile(paths.serviceFile, JSON.stringify({ id: 'dead-legacy', pid: 2_000_000_000, url: 'http://127.0.0.1:1', version: '2.0.32' }));
+    const spawnImpl = (command, args, options) => spawn(process.execPath, [script, ...args], options);
+    const service = await ensureService({ root, binary: process.execPath, spawnImpl, startupTimeout: 5000 });
+    assert.equal(service.info.runtimeIdentity.kind, 'upstream-compatible');
+    assert.equal(service.info.pid, service.pid);
+    assert.notEqual(service.pid, 2_000_000_000);
+    await stopService({ root });
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test('ensure and stop serialize on the same lifecycle lock', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-lifecycle-race-'));
   const script = path.join(root, 'fake-opencode.cjs');
@@ -382,7 +416,7 @@ test('owned runtime resolver requires pinned manifest, native platform, checksum
   const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-owned-runtime-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const platform = `${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch}`;
-  const artifactPlatform = process.platform === 'win32' ? `win32-${process.arch}` : platform;
+  const artifactPlatform = platform;
   const executable = path.join(root, `cli-${artifactPlatform}`, 'bin', process.platform === 'win32' ? 'opencode.exe' : 'opencode');
   await mkdir(path.dirname(executable), { recursive: true });
   const fake = path.join(root, 'fixture-runtime.cjs');

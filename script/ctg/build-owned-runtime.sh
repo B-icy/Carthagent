@@ -76,6 +76,7 @@ bun run --cwd packages/client typecheck
 bun run --cwd packages/tui typecheck
 bun test --cwd packages/core test/session-compaction.test.ts
 bun test --cwd packages/core test/shell-retention.test.ts
+bun test --cwd packages/server test/shell-provenance.test.ts
 bun test --cwd packages/tui test/clear-session.test.tsx
 bun test --cwd packages/tui test/util/renderer.test.ts
 

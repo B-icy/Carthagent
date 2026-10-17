@@ -12,7 +12,32 @@ permissions:
   contents: read
 
 jobs:
+  validate-release-target:
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.validate.outputs.release_tag }}
+      release_commit: ${{ steps.validate.outputs.release_commit }}
+    steps:
+      - name: Validate immutable canonical release tag and target before builds
+        id: validate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        shell: bash
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]
+          tag_commit="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq '.object.sha')"
+          tag_type="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq '.object.type')"
+          if [[ "$tag_type" == tag ]]; then
+            tag_commit="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_commit" --jq '.object.sha')"
+          fi
+          [[ "$tag_commit" =~ ^[0-9a-f]{40}$ ]]
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft >/dev/null
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "release_commit=$tag_commit" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: validate-release-target
     strategy:
       fail-fast: false
       matrix:
@@ -21,15 +46,20 @@ jobs:
             target: opencode-linux-x64
           - os: macos-latest
             target: opencode-darwin-arm64
-          - os: macos-13
+          - os: macos-15-intel
             target: opencode-darwin-x64
+          - os: ubuntu-24.04-arm
+            target: opencode-linux-arm64
           - os: windows-latest
             target: opencode-windows-x64
+          - os: windows-11-arm
+            target: opencode-windows-arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
         with:
           path: ctg
+          ref: ${{ needs.validate-release-target.outputs.release_commit }}
       - uses: actions/checkout@v4
         with:
           repository: anomalyco/opencode
@@ -65,10 +95,11 @@ jobs:
             docs/patches/opencode-v2.0.32-session-ui.patch \
             script/ctg/build-owned-runtime.sh \
             docs/opencode-owned-runtime.md
+          (cd release-assets && sha256sum *.tar.gz > SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:
           name: opencode-ctg-${{ matrix.target }}
-          path: release-assets/*.tar.gz
+          path: release-assets/*
           if-no-files-found: error
 
   publish-existing-release:
@@ -78,17 +109,6 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.release_tag }}
-      - name: Require an existing CTG release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
-        run: |
-          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY"
-          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft == true' | grep -qx false
-          test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$GITHUB_SHA"
       - uses: actions/download-artifact@v4
         with:
           pattern: opencode-ctg-*
@@ -100,5 +120,5 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           find runtime-assets -type f -name '*.tar.gz' -print0 | while IFS= read -r -d '' asset; do
-            gh release upload "$RELEASE_TAG" "$asset#$(basename "$asset")" --repo "$GITHUB_REPOSITORY" --clobber
+            gh release upload "$RELEASE_TAG" "$asset#$(basename "$asset")" --repo "$GITHUB_REPOSITORY"
           done
