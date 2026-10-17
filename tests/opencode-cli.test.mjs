@@ -387,7 +387,7 @@ test('interactive native session persists an explicit no-guide setting before la
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
   const calls = [];
   const runtime = await createOpenCodeCliRuntime({ cwd, stdout: { write() {} }, native: {
-    runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }), launchTui: (_service, _cwd, options) => { calls.push(['launch', options.sessionID]); return { once(event, callback) { if (event === 'exit') queueMicrotask(() => callback(0)); return this; }, kill() {} }; } },
+    runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }), launchTui: (_service, _cwd, options) => { calls.push(['launch', options.sessionID, options.theme, options.glyphs]); return { once(event, callback) { if (event === 'exit') queueMicrotask(() => callback(0)); return this; }, kill() {} }; } },
     rpcDefinitions: { Carthagent: {}, SessionControls: {} },
     headless: { createSession: async (_service, _cwd, { body }) => { calls.push(['create', body.metadata['carthagent.options']]); return { id: 'ses_no_guide' }; } },
     clientFactory: async () => ({ rpc: () => ({ health: async () => ({ capabilities: ['delivery.session-options.v1'] }), framing: async input => { calls.push(['framing', input.sessionID, input.enabled]); return { enabled: input.enabled }; } }) }),
@@ -396,7 +396,7 @@ test('interactive native session persists an explicit no-guide setting before la
   assert.deepEqual(calls, [
     ['create', { guide: false }],
     ['framing', 'ses_no_guide', false],
-    ['launch', 'ses_no_guide'],
+    ['launch', 'ses_no_guide', undefined, undefined],
   ]);
 });
 
@@ -553,6 +553,18 @@ test('native login abort closes an in-flight ordinary OAuth form prompt', async 
   process.emit('SIGINT');
   assert.equal(await running, 130);
   assert.equal(promptClosed, true);
+});
+
+test('native CLI fails closed for unsupported non-default glyph overrides', async () => {
+  const calls = [];
+  const runtime = await createOpenCodeCliRuntime({ cwd: '/project', io: ioCapture().io, native: {
+    runtime: {}, service: { ensureService: async () => { calls.push('ensure'); return {}; } }, headless: {},
+    clientFactory: async () => ({ integration: {} }),
+  } });
+  const capture = ioCapture();
+  assert.equal(await runOpenCodeCli({ argv: ['--ascii'], runtime, io: capture.io, stdoutIsTTY: true }), 1);
+  assert.match(capture.output.stderr.join('\n'), /does not expose Carthagent glyph controls/);
+  assert.deepEqual(calls, []);
 });
 
 test('native key login rejects before prompting; secret OAuth form input is masked and hidden fields retain defaults', async () => {

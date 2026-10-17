@@ -219,7 +219,7 @@ test('session API helpers use the v2 envelope, prompt payload, and endpoint cont
   } finally { globalThis.fetch = original; }
 });
 
-test('native TUI attaches to the ensured authenticated service', () => {
+test('native TUI attaches to the ensured authenticated service and applies launch preferences', () => {
   let captured;
   const service = {
     url: 'http://127.0.0.1:4567',
@@ -227,10 +227,11 @@ test('native TUI attaches to the ensured authenticated service', () => {
     binary: '/ctg/opencode',
     paths: { root: '/ctg/profile' },
   };
-  launchTui(service, '/work', { sessionID: 'ses_123', spawnImpl: (...args) => (captured = args) });
+  launchTui(service, '/work', { sessionID: 'ses_123', theme: 'nebula', glyphs: 'ascii', spawnImpl: (...args) => (captured = args) });
   assert.deepEqual(captured[0], '/ctg/opencode');
   assert.deepEqual(captured[1], ['--server', 'http://127.0.0.1:4567', '/work', '--session', 'ses_123']);
   assert.equal(captured[2].env.OPENCODE_PASSWORD, 'ctg-test-password');
+  assert.equal(JSON.parse(captured[2].env.OPENCODE_CONFIG_CONTENT).theme, 'nebula');
   assert.equal(captured[2].cwd, '/work');
 });
 
