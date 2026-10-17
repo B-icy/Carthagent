@@ -58,8 +58,20 @@ test('native benchmark plugin loads in OpenCode 2 with both session and tool hoo
   const root=mk();
   const host=await nativeFixture({
     plugin:join(process.cwd(),'lib/opencode/evaluation-budget-plugin'),
-    plugins:[join(process.cwd(),'tools/benchmark/native-plugin')],
-    env:{BENCH_TOOL_LIMIT:'4',BENCH_GUARD_LOG:join(root,'guard.jsonl'),BENCH_ADVISOR_LOG:join(root,'advisor.jsonl'),BENCH_GATEWAY:'http://127.0.0.1:1',CTG_EVALUATION_MAX_TURNS:'4',CTG_EVALUATION_MAX_COST:'1'},
+    plugins:[join(process.cwd(),'tools/benchmark/native-plugin'),join(process.cwd(),'plugins/carthagent')],
+    env:{BENCH_TOOL_LIMIT:'1',BENCH_RETRY_LIMIT:'0',BENCH_GUARD_LOG:join(root,'guard.jsonl'),BENCH_ADVISOR_LOG:join(root,'advisor.jsonl'),BENCH_GATEWAY:'http://127.0.0.1:1',CTG_EVALUATION_MAX_TURNS:'4',CTG_EVALUATION_MAX_COST:'1'},
+    respond(body,res) {
+      if(JSON.stringify(body.messages).includes('CTG_PARALLEL_GUARD_PROBE')) {
+        const shell=body.tools.find(tool=>tool.function?.name==='shell');
+        assert.ok(shell,'native host must advertise shell for the concurrent tool admission probe');
+        const calls=Array.from({length:8},(_,index)=>({index,id:`parallel-${index}`,type:'function',function:{name:'shell',arguments:JSON.stringify({command:`printf parallel-${index}`})}}));
+        const chunk=(delta,finish_reason=null)=>`data: ${JSON.stringify({id:'parallel-guard-probe',object:'chat.completion.chunk',created:1,model:'fixture',choices:[{index:0,delta,finish_reason}]})}\n\n`;
+        res.writeHead(200,{'content-type':'text/event-stream'});
+        res.end(`${chunk({role:'assistant',tool_calls:calls})}${chunk({},'tool_calls')}data: [DONE]\n\n`);
+        return;
+      }
+      streamText(res);
+    },
   });
   try {
     await host.active('ctg.benchmark');
@@ -67,5 +79,15 @@ test('native benchmark plugin loads in OpenCode 2 with both session and tool hoo
     assert.ok(inventory.data.some(plugin=>plugin.id==='ctg.evaluation-budget'&&plugin.state.status==='active'),JSON.stringify(inventory.data));
     const response=await host.client.session.create({location:host.location,model:host.model,title:'hook initialization probe'},host.request());
     assert.ok(response.id);
+    const session=await host.client.session.create({location:host.location,model:host.model,title:'parallel admission probe',metadata:{'ctg.evaluation.budget':{maxTurns:4,maxCost:1}}},host.request());
+    await host.client.session.prompt({sessionID:session.id,text:'CTG_PARALLEL_GUARD_PROBE'},host.request());
+    await host.client.session.wait({sessionID:session.id},host.request());
+    assert.ok(existsSync(join(root,'guard.jsonl')),`${host.output}\n${JSON.stringify(host.requests)}`);
+    const rows=readFileSync(join(root,'guard.jsonl'),'utf8').trim().split('\n').map(JSON.parse).filter(row=>row.sessionID===session.id);
+    assert.equal(rows.length,8,JSON.stringify(rows));
+    assert.equal(rows.filter(row=>!row.blocked).length,1,JSON.stringify(rows));
+    assert.equal(rows.filter(row=>row.blocked).length,7,JSON.stringify(rows));
+    const ledger=await host.client.session.context({sessionID:session.id},host.request());
+    assert.ok(ledger.at(-1)?.outcome,JSON.stringify(ledger.at(-1)));
   } finally { await host.close(); }
 });
