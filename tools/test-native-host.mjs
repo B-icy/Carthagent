@@ -27,7 +27,19 @@ const fixture = createServer(async (req, res) => {
   for await (const chunk of req) raw += chunk;
   let body;
   try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
-  if (JSON.stringify(body.messages?.at(-1)).includes('WRAPPER_FAILURE')) {
+  const currentUser = [...(body.messages ?? [])].reverse().find((message) => message.role === 'user');
+  const promptText = JSON.stringify(currentUser);
+  if (promptText.includes('WRAPPER_TOOL') && body.tools?.some((tool) => tool.function?.name === 'read') && !(body.messages ?? []).some((message) => message.role === 'tool')) {
+    const chunk = (delta, finish_reason = null) => `data: ${JSON.stringify({
+      id: 'chatcmpl-ctg-tool', object: 'chat.completion.chunk', created: 1, model: 'fixture',
+      choices: [{ index: 0, delta, finish_reason }],
+    })}\n\n`;
+    res.writeHead(200, { 'content-type': 'text/event-stream' });
+    res.end(`${chunk({ role: 'assistant', tool_calls: [{ index: 0, id: 'wrapper-read', type: 'function',
+      function: { name: 'read', arguments: JSON.stringify({ path: join(temp, 'project/wrapper-tool.txt') }) } }] })}${chunk({}, 'tool_calls')}data: [DONE]\n\n`);
+    return;
+  }
+  if (promptText.includes('WRAPPER_FAILURE')) {
     res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: { message: 'Offline wrapper rejection', type: 'invalid_request_error' } }));
     return;
   }
@@ -41,7 +53,7 @@ const fixture = createServer(async (req, res) => {
     id: 'chatcmpl-ctg-fixture', object: 'chat.completion.chunk', created, model: 'fixture',
     choices: [{ index: 0, delta, finish_reason }],
   })}\n\n`;
-  const reply = JSON.stringify(body.messages?.at(-1)).includes('WRAPPER_SECOND') ? 'SECOND_TURN' : 'CTG_FIXTURE_OK';
+  const reply = promptText.includes('WRAPPER_TOOL') ? 'FINAL_AFTER_TOOL' : promptText.includes('WRAPPER_SECOND') ? 'SECOND_TURN' : 'CTG_FIXTURE_OK';
   res.write(chunk({ role: 'assistant', content: reply }));
   res.write(chunk({}, 'stop'));
   res.end('data: [DONE]\n\n');
@@ -200,6 +212,7 @@ try {
   const assistant = wrappedRun.result?.message;
   assert.equal(wrappedRun.outcome, 'succeeded');
   assert.equal(wrappedRun.terminal, true, 'native wrapper must return a projected terminal session outcome');
+  assert.equal(wrappedRun.budgetReason, undefined, 'a successful terminal turn must not carry a budget failure reason');
   assert.ok(assistant, 'headless prompt must produce an assistant response');
   assert.equal(assistant.finish, 'stop');
   assert.equal(assistant.content.filter((part) => part.type === 'text').map((part) => part.text).join(''), 'CTG_FIXTURE_OK');
@@ -209,6 +222,7 @@ try {
   const secondRun = await runHeadless(ensuredService, cwd, 'WRAPPER_SECOND', { sessionID: session.id, timeout: 90_000 });
   assert.equal(secondRun.outcome, 'succeeded');
   assert.equal(secondRun.result.text, 'SECOND_TURN', 'resumed wrapper calls must select the current turn output');
+  assert.equal(secondRun.budgetReason, undefined, 'a successful resumed turn must not carry a budget failure reason');
   let failedRun;
   try { failedRun = await runHeadless(ensuredService, cwd, 'WRAPPER_FAILURE', { sessionID: session.id, timeout: 90_000 }); }
   catch (error) { failedRun = { error }; }
@@ -216,6 +230,10 @@ try {
   const recoveredRun = await runHeadless(ensuredService, cwd, 'WRAPPER_SECOND', { sessionID: session.id, timeout: 90_000 });
   assert.equal(recoveredRun.outcome, 'succeeded');
   assert.equal(recoveredRun.result.text, 'SECOND_TURN');
+  await writeFile(join(cwd, 'wrapper-tool.txt'), 'Read this through the native tool.\n');
+  const toolRun = await runHeadless(ensuredService, cwd, 'WRAPPER_TOOL', { timeout: 90_000 });
+  assert.equal(toolRun.outcome, 'succeeded');
+  assert.equal(toolRun.result.text, 'FINAL_AFTER_TOOL', 'must return the final assistant response after the read tool, not its tool-call message');
   const unavailableRun = await runHeadless(ensuredService, cwd, 'UNAVAILABLE_MODEL', {
     timeout: 30_000,
     session: { model: { providerID: 'absent-fixture', id: 'missing' } },
