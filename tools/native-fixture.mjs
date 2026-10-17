@@ -21,7 +21,8 @@ export function streamText(res, text = 'Fixture response complete.') {
   res.end(`${chunk({}, 'stop')}data: [DONE]\n\n`);
 }
 
-export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'), respond = (_body, res) => streamText(res), env: extraEnv = {} } = {}) {
+export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'), plugins: additionalPlugins = [], respond = (_body, res) => streamText(res), env: extraEnv = {} } = {}) {
+  const pluginPaths = [plugin, ...additionalPlugins].filter(Boolean).map(path => resolve(path));
   const temp = await mkdtemp(join(tmpdir(), 'ctg-native-fixture-'));
   const cwd = join(temp, 'project');
   const config = join(temp, 'config/opencode');
@@ -95,7 +96,7 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
     provider.listen(0, '127.0.0.1');
     await once(provider, 'listening');
     await writeFile(join(config, 'opencode.json'), JSON.stringify({
-      ...(plugin ? { plugins: [resolve(plugin)] } : {}), update: 'disable', model: 'ctg-fixture/fixture', default_agent: 'build',
+      ...(pluginPaths.length ? { plugins: pluginPaths } : {}), update: 'disable', model: 'ctg-fixture/fixture', default_agent: 'build',
       providers: { 'ctg-fixture': {
         package: '@opencode/ai/providers/openai-compatible',
         settings: { baseURL: `http://127.0.0.1:${provider.address().port}/v1`, apiKey: 'offline-fixture' },
@@ -125,13 +126,19 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
       }
     },
     async active(pluginID = 'carthagent', location = { directory: cwd }) {
-      if (pluginID !== 'carthagent') await client.session.create({ location, model:{providerID:'ctg-fixture',id:'fixture'}, title:'plugin activation probe' }, request());
+      if (pluginID && typeof pluginID === 'object') {
+        location = pluginID;
+        pluginID = 'carthagent';
+      }
+      const configured = pluginPaths.some(path => path.includes(pluginID) || (pluginID === 'ctg.evaluation-budget' && path.includes('evaluation-budget-plugin')));
+      if (!configured) throw Error(`Plugin ${pluginID} is not configured in the fixture`);
+      await client.session.create({ location, model:{providerID:'ctg-fixture',id:'fixture'}, title:`${pluginID} activation probe` }, request());
       const deadline = Date.now() + 15_000;
       while (true) {
         const inventory = await client.plugin.list({ location }, request());
         const plugin = inventory.data.find(item => item.id === pluginID);
         if (plugin?.state.status === 'active') return;
-        if (plugin?.state.status === 'error') throw Error(`Native fixture plugin failed: ${JSON.stringify(plugin)}\n${output}`);
+        if (plugin?.state.status === 'failed') throw Error(`Native fixture plugin failed: ${JSON.stringify(plugin)}\n${output}`);
         if (Date.now() >= deadline) throw Error(`Native plugin ${pluginID} activation timed out: ${JSON.stringify(plugin)}\n${output}`);
         await new Promise(done => setTimeout(done, 50));
       }

@@ -10,6 +10,7 @@ import { runNativeEvaluation } from '../lib/opencode/evaluation.mjs';
 let runResult;
 const host = await nativeFixture({
   plugin: join(import.meta.dirname, '../lib/opencode/evaluation-budget-plugin'),
+  plugins: process.argv[2] ? [process.argv[2]] : [join(import.meta.dirname, '../plugins/carthagent')],
   env: { CTG_EVALUATION_MAX_TURNS: '8', CTG_EVALUATION_MAX_COST: '1' },
   respond(body, res) {
     const tools = body.tools || [];
@@ -50,6 +51,7 @@ const host = await nativeFixture({
 try {
   const { client, cwd: directory, location, model, request } = host;
   await host.active('ctg.evaluation-budget', location);
+  await host.active('carthagent', location);
   await mkdir(join(directory, 'src'), { recursive: true });
   await writeFile(join(directory, 'src/value.mjs'), 'export const value = 0;\n');
   await writeFile(join(directory, 'src/value.test.mjs'), [
