@@ -59,12 +59,14 @@ test('model, auth, cloud and domain entrypoints dispatch to injected native capa
   const { io } = ioCapture();
   assert.equal(await runOpenCodeCli({ argv: ['--list-models', 'claude'], runtime, io }), 0);
   assert.equal(await runOpenCodeCli({ argv: ['login'], runtime, io, stdoutIsTTY: true }), 0);
+  assert.equal(await runOpenCodeCli({ argv: ['auth'], runtime, io, stdoutIsTTY: true }), 0);
   assert.equal(await runOpenCodeCli({ argv: ['account'], runtime, io }), 0);
+  assert.equal(await runOpenCodeCli({ argv: ['cloud'], runtime, io }), 0);
   assert.equal(await runOpenCodeCli({ argv: ['billing'], runtime, io }), 0);
   assert.equal(await runOpenCodeCli({ argv: ['logout-cloud', 'session-1'], runtime, io }), 0);
   assert.equal(await runOpenCodeCli({ argv: ['check', 'unit'], runtime, io }), 0);
   assert.deepEqual(calls, [
-    ['models', 'claude'], ['login'], ['account'], ['billing', 'checkout'],
+    ['models', 'claude'], ['login'], ['login'], ['account'], ['account'], ['billing', 'checkout'],
     ['logout', 'session-1'], ['domain', 'check', 'unit'],
   ]);
 });
@@ -109,19 +111,76 @@ test('thinking level maps to native model variant, not an invented prompt proper
   assert.equal(modelWithThinking(undefined, 'high'), undefined);
 });
 
-test('headless terminal reconciliation observes a delayed native session projection', async () => {
+test('headless terminal reconciliation preserves the bounded turn and observes missing terminal state', async () => {
   let reads = 0;
   const latest = await reconcileHeadlessResult({
     session: { id: 'ses_lagging' },
-    messages: [{ type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'answer' }] }],
+    accepted: { id: 'accepted-user' },
+    messages: [{ type: 'user', id: 'accepted-user' }],
   }, { timeoutMs: 500, client: { session: {
     get: async () => ({ id: 'ses_lagging', ...(++reads < 2 ? {} : { outcome: 'succeeded' }) }),
-    context: async () => reads < 2
-      ? [{ type: 'assistant', finish: 'stop' }]
-      : [{ type: 'assistant', finish: 'stop' }, { type: 'idle', outcome: 'succeeded' }],
+    context: async () => {
+      reads++;
+      return [
+        { type: 'user', id: 'older-user' }, { type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'stale answer' }] },
+        { type: 'user', id: 'accepted-user' },
+        ...(reads < 2 ? [] : [{ type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'answer' }] }, { type: 'idle', outcome: 'succeeded' }]),
+      ];
+    },
   } } });
   assert.ok(reads >= 2);
   assert.equal(headlessSucceeded(latest), true);
+  assert.deepEqual(textParts(latest.messages), ['answer']);
+});
+
+test('headless reconciliation stops on abort or timeout and never swaps in stale history', async () => {
+  const result = { session: { id: 'ses_blocked' }, messages: [
+    { type: 'user', id: 'accepted' }, { type: 'assistant', finish: 'error', errorMessage: 'provider failed', content: [] },
+  ], accepted: { id: 'accepted' }, outcome: 'failed', terminal: true, error: 'provider failed' };
+  const controller = new AbortController();
+  controller.abort(new Error('cancelled'));
+  const aborted = await reconcileHeadlessResult(result, { signal: controller.signal, client: { session: {
+    context: async () => { throw new Error('must not request after abort'); },
+  } } });
+  assert.equal(headlessSucceeded(aborted), false);
+  assert.equal(aborted.error, 'provider failed');
+  assert.deepEqual(textParts(aborted.messages), []);
+
+  const started = Date.now();
+  const bounded = await reconcileHeadlessResult({ ...result, terminal: false }, { timeoutMs: 30, client: { session: {
+    context: async () => new Promise(() => {}),
+  } } });
+  assert.ok(Date.now() - started < 500);
+  assert.equal(bounded.terminal, false);
+  assert.equal(headlessSucceeded(bounded), false);
+  assert.deepEqual(textParts(bounded.messages), []);
+});
+
+test('a provider failure after a previous successful assistant turn cannot print stale success', async t => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-opencode-stale-turn-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const output = [];
+  const stdout = { write: text => output.push(String(text)) };
+  const runtime = await createOpenCodeCliRuntime({ cwd, stdout, io: ioCapture().io, native: {
+    runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) },
+    headless: { runHeadless: async () => ({
+      session: { id: 'ses_old_success' }, accepted: { id: 'new-user' }, outcome: 'failed', terminal: true, error: 'provider unavailable',
+      messages: [
+        { type: 'user', id: 'old-user' }, { type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'stale success answer' }] }, { type: 'idle', outcome: 'succeeded' },
+        { type: 'user', id: 'new-user' }, { type: 'assistant', finish: 'error', errorMessage: 'provider unavailable', parts: [] },
+      ],
+    }) },
+    clientFactory: async () => ({ session: {
+      context: async () => [
+        { type: 'user', id: 'old-user' }, { type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'stale success answer' }] }, { type: 'idle', outcome: 'succeeded' },
+      ],
+    } }),
+  } });
+  assert.equal(await runtime.run({ mode: 'headless', options: { prompt: 'new turn' }, prompt: 'new turn' }), 1);
+  assert.deepEqual(output, []);
 });
 
 test('headless text output selects the completed assistant response for the latest user turn', () => {
@@ -171,6 +230,51 @@ test('native JSON failure projection preserves provider error and terminal outco
   assert.deepEqual(events.at(-1).message, { type: 'idle', outcome: 'failed' });
 });
 
+test('native JSON projection uses authoritative headless outcome when admission failed before a new turn', async t => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-opencode-pre-admission-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const lines = [];
+  let contextReads = 0;
+  const runtime = await createOpenCodeCliRuntime({ cwd, stdout: { write: value => lines.push(value) }, io: ioCapture().io, native: {
+    runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) },
+    headless: { runHeadless: async () => ({ session: { id: 'ses_existing' }, messages: [], outcome: 'interrupted', terminal: false, reason: 'aborted' }) },
+    clientFactory: async () => ({ event: { subscribe: () => ({ async *[Symbol.asyncIterator]() { } }) }, session: {
+      get: async () => { throw new Error('must not query existing session after pre-admission failure'); },
+      context: async () => { contextReads++; throw new Error('must not query existing context after pre-admission failure'); },
+    } }),
+  } });
+  assert.equal(await runtime.run({ mode: 'headless', options: { prompt: 'new prompt', session: 'ses_existing', json: true }, prompt: 'new prompt' }), 1);
+  assert.equal(contextReads, 0);
+  const events = lines.map(line => JSON.parse(line));
+  assert.ok(!events.some(event => JSON.stringify(event).includes('old success')));
+  assert.ok(events.some(event => event.type === 'message' && event.message.type === 'idle' && event.message.outcome === 'interrupted'));
+});
+
+test('pre-admission interruption without a session ID emits JSON terminal status without listing old sessions', async t => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-opencode-pre-admission-no-session-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const lines = [];
+  let listed = false;
+  const runtime = await createOpenCodeCliRuntime({ cwd, stdout: { write: value => lines.push(value) }, io: ioCapture().io, native: {
+    runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) },
+    headless: { runHeadless: async () => ({ messages: [], outcome: 'interrupted', terminal: false, reason: 'aborted' }) },
+    clientFactory: async () => ({
+      event: { subscribe: () => ({ async *[Symbol.asyncIterator]() { } }) },
+      session: { list: async () => { listed = true; return { data: [{ id: 'previous', location: { directory: cwd } }] }; } },
+    }),
+  } });
+  assert.equal(await runtime.run({ mode: 'headless', options: { prompt: 'new prompt', json: true }, prompt: 'new prompt' }), 1);
+  assert.equal(listed, false);
+  const events = lines.map(line => JSON.parse(line));
+  assert.deepEqual(events, [{ type: 'message', message: { type: 'idle', outcome: 'interrupted' } }]);
+});
+
 test('headless continuation selects the newest session within the exact workspace', async () => {
   const selected = await latestSessionForWorkspace({ session: { list: async ({ directory }) => ({ data: [
     { id: 'wrong-workspace-newest', location: { directory: '/other' }, time: { updated: 999 } },
@@ -188,6 +292,56 @@ test('native runtime rejects budgets that the active delivery plugin cannot enfo
   for (const [key, value] of [['maxTools', '2'], ['maxSeconds', '20'], ['maxRepairs', '1']]) {
     await assert.rejects(runtime.run({ mode: 'headless', options: { prompt: 'task', [key]: value }, prompt: 'task' }), /not supported until the active native delivery plugin enforces session budgets/);
   }
+});
+
+test('native login uses OpenCode integration OAuth status and completion lifecycle', async () => {
+  const calls = [];
+  const service = { url: 'http://127.0.0.1:1', headers: {} };
+  const integration = {
+    id: 'experiential-labs', name: 'Carthagent Ship',
+    methods: [{ id: 'carthagent-device', type: 'oauth', label: 'Sign in with Carthagent Ship' }],
+  };
+  const runtime = await createOpenCodeCliRuntime({ cwd: '/project', io: ioCapture().io, stdin: { isTTY: true }, stdout: { isTTY: true }, native: {
+    runtime: {}, service: { ensureService: async () => service }, headless: {},
+    clientFactory: async () => ({ integration: {
+      list: async input => { calls.push(['list', input]); return { data: [integration] }; },
+      oauth: {
+        connect: async input => { calls.push(['connect', input]); return { data: {
+          attemptID: 'attempt-1', url: 'https://auth.example/device', instructions: 'Approve access', mode: 'auto',
+          time: { expires: Date.now() + 10_000 },
+        } }; },
+        status: async input => { calls.push(['status', input]); return { data: { status: 'complete', time: { created: 1, expires: 2 } } }; },
+        cancel: async input => { calls.push(['cancel', input]); },
+      },
+    } }),
+  } });
+  assert.equal(await runtime.login(), 0);
+  assert.deepEqual(calls.map(([name]) => name), ['list', 'connect', 'status']);
+  assert.equal(calls[1][1].methodID, 'carthagent-device');
+  assert.deepEqual(calls[1][1].location, { directory: '/project' });
+});
+
+test('native login cancellation maps to 130 and attempts to cancel the pending host flow', async () => {
+  const calls = [];
+  const runtime = await createOpenCodeCliRuntime({ cwd: '/project', io: ioCapture().io, stdin: { isTTY: true }, stdout: { isTTY: true }, native: {
+    runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) }, headless: {},
+    clientFactory: async () => ({ integration: {
+      list: async () => ({ data: [{ id: 'provider', name: 'Provider', methods: [{ id: 'device', type: 'oauth', label: 'Device' }] }] }),
+      oauth: {
+        connect: async () => ({ data: { attemptID: 'attempt-cancel', url: 'https://auth.example', instructions: 'Approve', mode: 'auto', time: { expires: Date.now() + 60_000 } } }),
+        status: async (_input, { signal }) => new Promise((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+        }),
+        cancel: async input => { calls.push(input.attemptID); },
+      },
+    } }),
+  } });
+  const timer = setTimeout(() => process.emit('SIGINT'), 40);
+  timer.unref?.();
+  try {
+    assert.equal(await runOpenCodeCli({ argv: ['login'], runtime, io: ioCapture().io, stdoutIsTTY: true }), 130);
+  } finally { clearTimeout(timer); }
+  assert.deepEqual(calls, ['attempt-cancel']);
 });
 
 test('concrete headless runtime returns failure for failed native session outcome', async t => {
@@ -242,7 +396,8 @@ test('concrete native runtime uses OpenCode service/headless/model APIs and real
     headless: {
       runHeadless: async (selectedService, workspace, prompt, options) => {
         events.push(['headless', selectedService === service, workspace, prompt, options.sessionID]);
-        return { session: { id: 'ses_fixture', outcome: 'succeeded' }, messages: [
+        return { session: { id: 'ses_fixture' }, outcome: 'succeeded', terminal: true, accepted: { id: 'accepted-fixture' }, messages: [
+          { type: 'user', id: 'accepted-fixture' },
           { type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'native answer' }] },
           { type: 'idle', outcome: 'succeeded' },
         ] };
@@ -252,6 +407,7 @@ test('concrete native runtime uses OpenCode service/headless/model APIs and real
       session: {
         get: async () => ({ id: 'ses_fixture', outcome: 'succeeded' }),
         context: async () => [
+          { type: 'user', id: 'accepted-fixture' },
           { type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'native answer' }] },
           { type: 'idle', outcome: 'succeeded' },
         ],

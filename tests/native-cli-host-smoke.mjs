@@ -8,16 +8,26 @@ import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { randomBytes } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { runOpenCodeCli } from '../lib/opencode/cli.mjs';
 import { createOpenCodeCliRuntime } from '../lib/opencode/cli-runtime.mjs';
 
-const binary = process.env.CTG_OPENCODE_BIN || '/tmp/opencode/ctg-packaging/node_modules/@opencode/cli/bin/opencode.exe';
-const runtimeRoot = process.env.CTG_NATIVE_RUNTIME_ROOT || '/tmp/opencode/ctg-runtime';
+const packageRoot = resolve(import.meta.dirname, '..');
+const runtimeRoot = process.env.CTG_NATIVE_RUNTIME_ROOT || packageRoot;
+const binaryOverride = process.env.CTG_OPENCODE_BIN;
 const pluginPath = process.env.CTG_NATIVE_PLUGIN_PATH || join(runtimeRoot, 'plugins/carthagent');
+const runtimeModules = ['runtime.mjs', 'service.mjs', 'headless.mjs'].map(name => join(runtimeRoot, 'lib/opencode', name));
+for (const required of runtimeModules) {
+  if (!existsSync(required)) throw new Error(`Native CLI host smoke dependency not found: ${required}. Install/use the package-owned native runtime or set CTG_NATIVE_RUNTIME_ROOT to the checkout under test.`);
+}
 const modules = await Promise.all(['runtime.mjs', 'service.mjs', 'headless.mjs']
   .map(name => import(pathToFileURL(join(runtimeRoot, 'lib/opencode', name)).href)));
 const [runtimeApi, serviceApi, headlessApi] = modules;
+const binary = await runtimeApi.resolveOpenCode(binaryOverride ? { binary: binaryOverride } : {});
+for (const required of [binary, pluginPath]) {
+  if (!existsSync(required)) throw new Error(`Native CLI host smoke dependency not found: ${required}. Install the package-owned runtime/CLI or set CTG_OPENCODE_BIN and CTG_NATIVE_RUNTIME_ROOT explicitly.`);
+}
 const temp = await mkdtemp(join(tmpdir(), 'ctg-cli-host-smoke-'));
 const cwd = join(temp, 'project');
 const profileRoot = join(temp, 'profile');
@@ -39,9 +49,9 @@ const provider = createServer((req, res) => {
       id: 'ctg-cli-smoke', object: 'chat.completion.chunk', created: 1, model: 'fixture',
       choices: [{ index: 0, delta, finish_reason }],
     })}\n\n`;
-    if (fails) {
+    if (fails || lastUser?.content?.includes('Smoke provider failure after success')) {
       res.writeHead(503, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ error: { message: 'fixture provider unavailable', type: 'server_error' } }));
+      res.end(JSON.stringify({ error: { message: lastUser?.content?.includes('after success') ? 'fixture provider unavailable after success' : 'fixture provider unavailable', type: 'server_error' } }));
       return;
     }
     res.writeHead(200, { 'content-type': 'text/event-stream' });
@@ -82,10 +92,14 @@ try {
   const env = {
     PATH: process.env.PATH,
     HOME: join(profileRoot, 'home'), USERPROFILE: join(profileRoot, 'home'),
+    APPDATA: join(profileRoot, 'appdata'), LOCALAPPDATA: join(profileRoot, 'localappdata'),
     XDG_CONFIG_HOME: join(profileRoot, 'config'), XDG_DATA_HOME: join(profileRoot, 'data'),
     XDG_STATE_HOME: join(profileRoot, 'state'), XDG_CACHE_HOME: join(profileRoot, 'cache'),
+    TMP: join(profileRoot, 'temp'), TEMP: join(profileRoot, 'temp'),
     OPENCODE_DB: join(profileRoot, 'data/opencode.db'), OPENCODE_SERVER_PASSWORD: password,
+    OPENCODE_CONFIG_PROJECT_DISABLE: 'true',
   };
+  await Promise.all(['appdata', 'localappdata', 'temp'].map(path => mkdir(join(profileRoot, path), { recursive: true })));
   child = spawn(binary, ['serve', '--hostname', '127.0.0.1', '--port', '0'], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
   const url = await new Promise((resolveUrl, reject) => {
     const timer = setTimeout(() => reject(Error(`OpenCode startup timed out: ${hostOutput}`)), 30_000);
@@ -145,6 +159,13 @@ try {
   assert.match(secondTurn.lines.join('\n'), /CLI fixture response for Smoke second turn/);
   assert.doesNotMatch(secondTurn.lines.join('\n'), /CLI fixture response for Smoke print/);
 
+  const failureAfterSuccess = capture();
+  const failureAfterSuccessRuntime = await createOpenCodeCliRuntime({ cwd, native, stdout: failureAfterSuccess.stdout, io: failureAfterSuccess.io });
+  const failureAfterSuccessCode = await runOpenCodeCli({ argv: ['-p', '--no-guide', '--session', sessionIDs[0], '--model', 'ctg-fixture/fixture', 'Smoke provider failure after success'], runtime: failureAfterSuccessRuntime, io: failureAfterSuccess.io, stdoutIsTTY: false });
+  assert.equal(failureAfterSuccessCode, 1, `failed turn must not inherit previous success: ${failureAfterSuccess.lines.join('\n')}`);
+  assert.doesNotMatch(failureAfterSuccess.lines.join('\n'), /CLI fixture response for Smoke (print|second turn)/);
+  const admittedRequests = requests.length;
+
   const foreignDir = join(temp, 'foreign');
   await mkdir(foreignDir);
   const { OpenCode } = await import('@opencode/client');
@@ -169,7 +190,7 @@ try {
   assert.equal(jsonCode, 0, `JSON run failed: ${json.lines.join('\n')}\n${hostOutput}`);
   const events = json.lines.filter(line => line.startsWith('{')).map(line => JSON.parse(line));
   assert.ok(events.some(event => event.type === 'message_end' && event.message.role === 'assistant'));
-  assert.equal(requests.length, 5, 'all admitted CLI invocations and the post-tool model turn reached the local provider');
+  assert.ok(requests.length >= 7, 'all admitted CLI invocations and the post-tool model turn reached the local provider');
   assert.ok(events.some(event => event.type === 'tool_execution_start' && event.toolName === 'read'));
   assert.ok(events.some(event => event.type === 'tool_execution_end' && event.toolName === 'read' && event.isError === false), JSON.stringify({ projected: events, native: nativeEventsCaptured }));
 
@@ -185,7 +206,14 @@ try {
   assert.ok(failedEvents.some(event => event.type === 'message' && event.message.type === 'idle' && ['failed', 'interrupted'].includes(event.message.outcome)), JSON.stringify(failedEvents));
   assert.ok(failedEvents.some(event => JSON.stringify(event).includes('fixture provider unavailable')), JSON.stringify(failedEvents));
   assert.ok(!failedEvents.some(event => event.sessionID === foreign.id), 'failure JSONL must not include a foreign or stale session');
-  console.log(JSON.stringify({ binary, host: '2.0.32', providerRequests: requests.length, print: 'passed', repeatedTurn: 'passed', continueWorkspaceIsolation: 'passed', jsonToolEvents: 'passed', jsonProviderFailure: 'passed', profile: 'disposable fixture; existing service injected' }));
+  const failedAfterSuccess = capture();
+  const failedAfterSuccessRuntime = await createOpenCodeCliRuntime({ cwd, native, stdout: failedAfterSuccess.stdout, io: failedAfterSuccess.io });
+  const failedAfterSuccessCode = await runOpenCodeCli({ argv: ['--json', '--no-guide', '--session', sessionIDs[0], '--model', 'ctg-fixture/fixture', 'Smoke provider failure after success'], runtime: failedAfterSuccessRuntime, io: failedAfterSuccess.io, stdoutIsTTY: false });
+  assert.equal(failedAfterSuccessCode, 1, `JSON failure after success should fail: ${failedAfterSuccess.lines.join('\n')}`);
+  const failedAfterSuccessEvents = failedAfterSuccess.lines.filter(line => line.startsWith('{')).map(line => JSON.parse(line));
+  assert.ok(!failedAfterSuccessEvents.some(event => JSON.stringify(event).includes('CLI fixture response for Smoke print') || JSON.stringify(event).includes('CLI fixture response for Smoke second turn')), JSON.stringify(failedAfterSuccessEvents));
+  assert.ok(failedAfterSuccessEvents.some(event => event.type === 'message' && event.message.type === 'idle' && event.message.outcome === 'failed'), JSON.stringify(failedAfterSuccessEvents));
+  console.log(JSON.stringify({ binary, host: '2.0.32', providerRequests: requests.length, admittedRequests, print: 'passed', repeatedTurn: 'passed', providerFailureAfterSuccess: 'passed', jsonProviderFailureAfterSuccess: 'passed', continueWorkspaceIsolation: 'passed', jsonToolEvents: 'passed', jsonProviderFailure: 'passed', profile: 'disposable fixture; existing service injected' }));
 } catch (error) {
   console.error(hostOutput);
   throw error;
