@@ -1,57 +1,20 @@
 diff --git a/packages/client/src/effect/api/api.ts b/packages/client/src/effect/api/api.ts
-index 4580c6b..a16ff03 100644
+index 4580c6b..0f289bf 100644
 --- a/packages/client/src/effect/api/api.ts
 +++ b/packages/client/src/effect/api/api.ts
-@@ -48,7 +48,10 @@ export type ServerInfoOutput = {
+@@ -48,7 +48,9 @@ export type ServerInfoOutput = {
    readonly pid: number
    readonly urls: ReadonlyArray<string>
    readonly paths: { readonly tmp: string }
 -  readonly capabilities?: { readonly persistentPty?: boolean | undefined } | undefined
-+  readonly capabilities?: {
-+    readonly persistentPty?: boolean | undefined
-+    readonly shellOrigin?: boolean | undefined
-+  } | undefined
++  readonly capabilities?:
++    | { readonly persistentPty?: boolean | undefined; readonly shellOrigin?: boolean | undefined }
++    | undefined
  }
  export type ServerInfoOperation<E = never> = () => Effect.Effect<ServerInfoOutput, E>
  
-@@ -319,6 +322,9 @@ export type SessionShellInput = {
-   readonly sessionID: Session.ID
-   readonly id?: SessionMessage.ID | undefined
-   readonly command: string
-+  /** Modern clients identify user `!shell`; servers without the capability keep legacy behavior. */
-+  readonly origin?: "manual" | "tool" | undefined
-+  readonly callID?: string | undefined
- }
- export type SessionShellOutput = void
- export type SessionShellOperation<E = never> = (input: SessionShellInput) => Effect.Effect<SessionShellOutput, E>
-diff --git a/packages/client/src/effect/generated/client.ts b/packages/client/src/effect/generated/client.ts
-index 057240d..7d8c331 100644
---- a/packages/client/src/effect/generated/client.ts
-+++ b/packages/client/src/effect/generated/client.ts
-@@ -566,7 +566,7 @@ const EndpointSessionShell = (raw: RawClient["server.session"]) => (input: Sessi
-   preserveEffect<SessionShellOutput>()(
-     raw["session.shell"]({
-       params: { sessionID: input["sessionID"] },
--      payload: { id: input["id"], command: input["command"] },
-+      payload: { id: input["id"], command: input["command"], origin: input["origin"], callID: input["callID"] },
-     }).pipe(Effect.mapError(mapClientError)),
-   )
- 
-diff --git a/packages/client/src/promise/generated/client.ts b/packages/client/src/promise/generated/client.ts
-index 4441181..d137818 100644
---- a/packages/client/src/promise/generated/client.ts
-+++ b/packages/client/src/promise/generated/client.ts
-@@ -791,7 +791,7 @@ export function make(options: ClientOptions) {
-           {
-             method: "POST",
-             path: `/api/session/${encodeURIComponent(input.sessionID)}/shell`,
--            body: { id: input["id"], command: input["command"] },
-+            body: { id: input["id"], command: input["command"], origin: input["origin"], callID: input["callID"] },
-             successStatus: 204,
-             declaredStatuses: [400, 401, 404],
-             empty: true,
 diff --git a/packages/client/src/promise/generated/types.ts b/packages/client/src/promise/generated/types.ts
-index 96ba475..499f7bf 100644
+index 96ba475..6b08478 100644
 --- a/packages/client/src/promise/generated/types.ts
 +++ b/packages/client/src/promise/generated/types.ts
 @@ -5,7 +5,7 @@ export type ServerInfo = {
@@ -63,15 +26,6 @@ index 96ba475..499f7bf 100644
  }
  
  export type PairingCode = { code: string; expires_in: number }
-@@ -4665,6 +4665,8 @@ export type SessionShellInput = {
-   readonly sessionID: { readonly sessionID: string }["sessionID"]
-   readonly id?: { readonly id?: string | undefined; readonly command: string }["id"]
-   readonly command: { readonly id?: string | undefined; readonly command: string }["command"]
-+  readonly origin?: "manual" | "tool" | undefined
-+  readonly callID?: string | undefined
- }
- 
- export type SessionShellOutput = void
 diff --git a/packages/core/src/codemode/tool.ts b/packages/core/src/codemode/tool.ts
 index ef0d5d6..346cc68 100644
 --- a/packages/core/src/codemode/tool.ts
@@ -102,7 +56,7 @@ index 3cb5279..602114b 100644
          return { status: "skipped" }
        const native = context.model.compaction?.type === "native"
 diff --git a/packages/core/src/session/session.ts b/packages/core/src/session/session.ts
-index 3cd1300..226139a 100644
+index 3cd1300..7d82de8 100644
 --- a/packages/core/src/session/session.ts
 +++ b/packages/core/src/session/session.ts
 @@ -178,12 +178,17 @@ export const make = Effect.fn("Session.make")(function* () {
@@ -110,7 +64,7 @@ index 3cd1300..226139a 100644
    const shell = Effect.fn("Session.shell")(function* (
      sessionID: SessionSchema.ID,
 -    input: { id?: SessionMessage.ID; command: string },
-+    input: { id?: SessionMessage.ID; command: string; origin?: "manual" | "tool"; callID?: string },
++    input: { id?: SessionMessage.ID; command: string; origin?: "manual"; callID?: string },
    ) {
      const session = yield* get(sessionID)
      // The server owns completion recording even if the submitting client disconnects.
@@ -119,14 +73,14 @@ index 3cd1300..226139a 100644
 +      const started = yield* SessionShell.start({
 +        session,
 +        command: input.command,
-+        origin: input.origin ?? "manual",
++        origin: input.origin,
 +        callID: input.callID,
 +      }).pipe(
          Effect.provideService(Instance.Service, instances),
          Effect.tapError((error) =>
            synthetic(sessionID, {
 diff --git a/packages/core/src/session/shell.ts b/packages/core/src/session/shell.ts
-index b4e2a1a..5d08b36 100644
+index b4e2a1a..ee9f13e 100644
 --- a/packages/core/src/session/shell.ts
 +++ b/packages/core/src/session/shell.ts
 @@ -7,14 +7,24 @@ import { Plugin } from "../plugin/service.js"
@@ -137,7 +91,7 @@ index b4e2a1a..5d08b36 100644
 +export const start = Effect.fn("SessionShell.start")(function* (input: {
 +  session: Session.Info
 +  command: string
-+  origin?: "manual" | "tool"
++  origin?: "manual"
 +  callID?: string
 +}) {
    const instances = yield* Instance.Service
@@ -148,16 +102,16 @@ index b4e2a1a..5d08b36 100644
      timeout: 0,
 -    metadata: { sessionID: input.session.id, background: true },
 +    metadata: {
-+      ...(input.origin === "tool" ? { sessionID: input.session.id } : {}),
++      ...(input.origin === "manual" || input.origin === "tool" ? { sessionID: input.session.id } : {}),
 +      background: true,
-+      shellOrigin: input.origin ?? "manual",
++      ...(input.origin === undefined ? {} : { shellOrigin: input.origin }),
 +      ...(input.callID === undefined ? {} : { callID: input.callID }),
 +    },
    })
    // Keep completion tied to the original shell even if the Session moves.
    return {
 diff --git a/packages/core/src/shell.ts b/packages/core/src/shell.ts
-index e1d1017..0c28d5d 100644
+index e1d1017..91b3d07 100644
 --- a/packages/core/src/shell.ts
 +++ b/packages/core/src/shell.ts
 @@ -15,7 +15,7 @@ import { FileRetention } from "./file-retention.js"
@@ -169,17 +123,22 @@ index e1d1017..0c28d5d 100644
  import { PluginHooks } from "./plugin/hooks.js"
  import { SessionEnvironment } from "./session/environment.js"
  import { SessionSchema } from "./session/schema.js"
-@@ -265,12 +265,21 @@ const layer = () =>
+@@ -265,12 +265,26 @@ const layer = () =>
            cwd: input.cwd ?? location.directory,
            timeout: input.timeout ?? 0,
            shell: input.shell ?? (yield* shell.resolve({ priority: "config" })),
-+          ...(Schema.is(SessionSchema.ID)(sessionID) && input.metadata?.shellOrigin === "tool"
++          ...(Schema.is(SessionSchema.ID)(sessionID)
++            && (input.metadata?.shellOrigin === "tool" || input.metadata?.shellOrigin === "manual")
 +            ? { sessionID }
 +            : {}),
 +          ...(input.metadata?.shellOrigin === "tool" || input.metadata?.shellOrigin === "manual"
 +            ? { origin: input.metadata.shellOrigin }
 +            : {}),
-+          ...(typeof input.metadata?.callID === "string" ? { callID: input.metadata.callID } : {}),
++          ...(input.metadata?.shellOrigin === "tool" || input.metadata?.shellOrigin === "manual"
++            ? typeof input.metadata.callID === "string" && input.metadata.callID.length > 0
++              ? { callID: input.metadata.callID }
++              : {}
++            : {}),
            env: {
              ...baseEnv,
              TERM: "xterm-256color",
@@ -191,7 +150,7 @@ index e1d1017..0c28d5d 100644
          yield* hooks.trigger("shell", "create.before", invocation)
          if (before) yield* before(invocation)
  
-@@ -431,6 +440,17 @@ const layer = () =>
+@@ -431,6 +445,17 @@ const layer = () =>
          )
  
          const command = yield* Deferred.await(ready)
@@ -285,10 +244,10 @@ index 1361a0b..1cca9b3 100644
      const inputLimited = { context: 400_000, input: 272_000, output: 128_000 }
      expect(yield* due(input(244_799, inputLimited))).toBe(false)
 diff --git a/packages/core/test/shell-retention.test.ts b/packages/core/test/shell-retention.test.ts
-index 3f776e4..65eb583 100644
+index 3f776e4..12df1e0 100644
 --- a/packages/core/test/shell-retention.test.ts
 +++ b/packages/core/test/shell-retention.test.ts
-@@ -8,14 +8,88 @@ import { Environment } from "@opencode/core/environment/index"
+@@ -8,14 +8,90 @@ import { Environment } from "@opencode/core/environment/index"
  import { Location } from "@opencode/core/location"
  import { AbsolutePath } from "@opencode/core/schema"
  import { Shell } from "@opencode/core/shell"
@@ -338,21 +297,23 @@ index 3f776e4..65eb583 100644
 +      shell.create({ shell: "/bin/sh", command: "sleep 0.03", cwd, metadata: { sessionID: second, shellOrigin: "tool", callID: "call-a" } }),
 +      shell.create({ shell: "/bin/sh", command: "sleep 0.03", cwd: otherCwd.path, metadata: { sessionID: first, shellOrigin: "tool", callID: "call-b" } }),
 +      shell.create({ shell: "/bin/sh", command: "sleep 0.03", cwd, metadata: { sessionID: first, shellOrigin: "manual", callID: "manual:test" } }),
++      shell.create({ shell: "/bin/sh", command: "sleep 0.03", cwd, metadata: { sessionID: first, shellOrigin: "unknown", callID: "forged:call" } }),
 +      shell.create({ shell: "/bin/sh", command: "sleep 0.03", cwd }),
 +    ], { concurrency: "unbounded" })
 +    const before = observed.filter((event) => event.phase === "before")
 +    const after = observed.filter((event) => event.phase === "after")
-+    expect(before).toHaveLength(5)
-+    expect(after).toHaveLength(5)
++    expect(before).toHaveLength(6)
++    expect(after).toHaveLength(6)
 +    expect(before).toContainEqual({ phase: "before", command: "sleep 0.03", cwd, sessionID: first, origin: "tool", callID: "call-a" })
 +    expect(before).toContainEqual({ phase: "before", command: "sleep 0.03", cwd, sessionID: second, origin: "tool", callID: "call-a" })
 +    expect(before).toContainEqual({ phase: "before", command: "sleep 0.03", cwd: otherCwd.path, sessionID: first, origin: "tool", callID: "call-b" })
-+    expect(before).toContainEqual({ phase: "before", command: "sleep 0.03", cwd, sessionID: undefined, origin: "manual", callID: "manual:test" })
++    expect(before).toContainEqual({ phase: "before", command: "sleep 0.03", cwd, sessionID: first, origin: "manual", callID: "manual:test" })
++    expect(before.filter((event) => event.sessionID === undefined && event.origin === undefined && event.callID === undefined)).toHaveLength(2)
 +    expect(before).toContainEqual({ phase: "before", command: "sleep 0.03", cwd, sessionID: undefined, origin: undefined, callID: undefined })
 +    expect(after).toContainEqual(expect.objectContaining({ sessionID: first, origin: "tool", callID: "call-a" }))
 +    expect(after).toContainEqual(expect.objectContaining({ sessionID: second, origin: "tool", callID: "call-a" }))
 +    expect(after).toContainEqual(expect.objectContaining({ sessionID: first, origin: "tool", callID: "call-b" }))
-+    expect(after).toContainEqual(expect.objectContaining({ sessionID: undefined, origin: "manual", callID: "manual:test" }))
++    expect(after).toContainEqual(expect.objectContaining({ sessionID: first, origin: "manual", callID: "manual:test" }))
 +    expect(after).toContainEqual(expect.objectContaining({ sessionID: undefined, origin: undefined, callID: undefined }))
 +    for (const info of created) {
 +      expect(after).toContainEqual(expect.objectContaining({
@@ -482,18 +443,23 @@ index 4b4cab1..e010fc1 100644
    ),
  }).annotate({ identifier: "ServerInfo" })
 diff --git a/packages/protocol/src/groups/session.ts b/packages/protocol/src/groups/session.ts
-index a9ee506..0dfc77d 100644
+index a9ee506..03fb9d3 100644
 --- a/packages/protocol/src/groups/session.ts
 +++ b/packages/protocol/src/groups/session.ts
-@@ -482,6 +482,8 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
-         payload: Schema.Struct({
-           id: SessionMessage.ID.pipe(Schema.optional),
-           command: Schema.String,
-+          origin: Schema.Literals(["manual", "tool"]).pipe(Schema.optional),
-+          callID: Schema.String.pipe(Schema.optional),
-         }),
-         success: HttpApiSchema.NoContent,
-         error: SessionNotFoundError,
+@@ -489,10 +489,9 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
+         .middleware(sessionLocationMiddleware)
+         .annotateMerge(
+           OpenApi.annotations({
+-            identifier: "session.shell",
+-            summary: "Run shell command",
+-            description:
+-              "Execute one shell command in the session's working directory. Emits a shell.started event before execution and a shell.ended event with the merged output after.",
++              identifier: "session.shell",
++              summary: "Run shell command",
++              description: "Run one user-initiated shell command in this session's working directory.",
+           }),
+         ),
+     )
 diff --git a/packages/schema/src/tool.ts b/packages/schema/src/tool.ts
 index 06dec1c..a515a73 100644
 --- a/packages/schema/src/tool.ts
@@ -532,10 +498,18 @@ index d85594b..e618d00 100644
          }),
        )
 diff --git a/packages/server/src/handlers/session.ts b/packages/server/src/handlers/session.ts
-index dd85c2f..2a39289 100644
+index dd85c2f..930d684 100644
 --- a/packages/server/src/handlers/session.ts
 +++ b/packages/server/src/handlers/session.ts
-@@ -427,7 +427,13 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
+@@ -25,6 +25,7 @@ import {
+ import { AbsolutePath } from "@opencode/core/schema"
+ import { locationErrors } from "../location"
+ import { failedMessageDecode, failedSnapshot, missingMessage, missingSession } from "./session-error"
++import { randomUUID } from "node:crypto"
+ 
+ const DefaultSessionsLimit = 50
+ 
+@@ -427,7 +428,13 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
          "session.shell",
          Effect.fn(function* (ctx) {
            yield* session
@@ -544,12 +518,32 @@ index dd85c2f..2a39289 100644
 +              sessionID: ctx.params.sessionID,
 +              id: ctx.payload.id,
 +              command: ctx.payload.command,
-+              origin: ctx.payload.origin,
-+              callID: ctx.payload.callID,
++              origin: "manual",
++              callID: `manual:${randomUUID()}`,
 +            })
              .pipe(Effect.catchTag("Session.NotFoundError", missingSession))
            return HttpApiSchema.NoContent.make()
          }),
+diff --git a/packages/server/src/handlers/shell.ts b/packages/server/src/handlers/shell.ts
+index 6b08faf..8a1c8fc 100644
+--- a/packages/server/src/handlers/shell.ts
++++ b/packages/server/src/handlers/shell.ts
+@@ -21,8 +21,14 @@ export const ShellHandler = HttpApiBuilder.group(Api, "server.shell", (handlers)
+         Effect.fn(function* (ctx) {
+           const shell = yield* Shell.Service
+           const location = yield* Location.Service
++          // This public location-scoped API is not a trusted tool invocation
++          // boundary. Callers cannot self-assert session/call attribution.
++          const metadata = { ...(ctx.payload.metadata ?? {}) }
++          delete metadata.sessionID
++          delete metadata.shellOrigin
++          delete metadata.callID
+           return yield* response(
+-            shell.create({ ...ctx.payload, cwd: ctx.payload.cwd || location.directory }).pipe(Effect.orDie),
++            shell.create({ ...ctx.payload, metadata, cwd: ctx.payload.cwd || location.directory }).pipe(Effect.orDie),
+           )
+         }),
+       )
 diff --git a/packages/tui/src/app.tsx b/packages/tui/src/app.tsx
 index 88939eb..4c343c0 100644
 --- a/packages/tui/src/app.tsx
@@ -644,10 +638,10 @@ index 88939eb..4c343c0 100644
            const model = local.model.current()
            const agent = local.agent.current()
 diff --git a/packages/tui/src/component/prompt/index.tsx b/packages/tui/src/component/prompt/index.tsx
-index a9f699c..7ba9736 100644
+index a9f699c..730a6da 100644
 --- a/packages/tui/src/component/prompt/index.tsx
 +++ b/packages/tui/src/component/prompt/index.tsx
-@@ -1306,7 +1306,12 @@ export function Prompt(props: PromptProps) {
+@@ -1306,7 +1306,10 @@ export function Prompt(props: PromptProps) {
      history.append(entry)
      if (currentMode === "shell") {
        move.startSubmit()
@@ -655,8 +649,6 @@ index a9f699c..7ba9736 100644
 +      const send = () => client.api.session.shell({
 +        sessionID: target,
 +        command: inputText,
-+        origin: "manual",
-+        callID: `manual:${crypto.randomUUID()}`,
 +      })
        void (newSession ? newSession.gate.then(send).catch(newSession.recover) : send())
        setStore("mode", "normal")
@@ -1183,3 +1175,43 @@ index a5c4e7b..6c015fd 100644
 +  destroyUnacquiredRenderer((data) => calls.push(data))
 +  expect(calls).toEqual(["\x1b[23;0t"])
  })
+diff --git a/packages/server/test/shell-provenance.test.ts b/packages/server/test/shell-provenance.test.ts
+new file mode 100644
+index 0000000..2f742d7
+--- /dev/null
++++ b/packages/server/test/shell-provenance.test.ts
+@@ -0,0 +1,34 @@
++import { expect } from "bun:test"
++import { Effect } from "effect"
++import { tmpdir } from "../../core/test/fixture/tmpdir"
++import { it } from "../../core/test/lib/effect"
++import { ServerFetch } from "../src/fetch"
++
++it.live("public shell HTTP requests cannot claim session, origin, or call identity", () =>
++  Effect.gen(function* () {
++    const tmp = yield* Effect.acquireDisposable(Effect.promise(() => tmpdir("opencode-shell-provenance-")))
++    const handler = yield* ServerFetch.make({
++      app: { version: "test" },
++      database: { path: ":memory:" },
++      fs: { filewatcher: false },
++      models: { fetch: false },
++    })
++    const response = yield* Effect.promise(() => handler(new Request("http://opencode.local/api/shell", {
++      method: "POST",
++      headers: { "content-type": "application/json" },
++      body: JSON.stringify({
++        command: "printf provenance",
++        cwd: tmp.path,
++        metadata: {
++          sessionID: "ses_attacker_controlled",
++          shellOrigin: "tool",
++          callID: "forged-tool-call",
++          retained: "ordinary metadata",
++        },
++      }),
++    })))
++    expect(response.status).toBe(200)
++    const body = (yield* Effect.promise(() => response.json())) as { data: { metadata: Record<string, unknown> } }
++    expect(body.data.metadata).toEqual({ retained: "ordinary metadata" })
++  }).pipe(Effect.scoped),
++)

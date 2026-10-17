@@ -6,16 +6,19 @@ binary automatically, touch a user's OpenCode install/profile, or commit a
 large executable. The opt-in runtime can be selected by setting
 `CTG_OWNED_OPENCODE_RUNTIME` to an extracted artifact directory containing
 `ctg-runtime.json`, `SHA256SUMS`, and the platform-specific CLI artifact.
-Without that variable, the existing package-owned `@opencode/cli@2.0.32`
-resolver remains in effect. An explicit `CTG_OPENCODE_BIN`/`--engine-cli`
-continues to use the existing exact compatibility-version path.
+Without that variable, CTG resolves the package-owned `@opencode/cli@2.0.32`
+dependency with Node's package resolver and reads its `bin.opencode` entry,
+working for both nested and npm-hoisted installs. An explicit
+`CTG_OPENCODE_BIN`/`--engine-cli` continues to use the exact compatibility-version
+path. The packed-install test checks this default path before setting any
+override.
 
 ## Pinned inputs and reproducible source application
 
 - Upstream: `https://github.com/anomalyco/opencode`
 - Tag/revision: `v2.0.32` / `843a6c514e606b436a7fe713422ace0a93ad3d61`
 - CTG patch: `docs/patches/opencode-v2.0.32-session-ui.patch`
-- Patch SHA-256: `ade9079bd454087c7fcac6fb3c85bc31636e4bd10a886baafd3c7446e6631788`
+- Patch SHA-256: `36379e0bf4ec0f63929c12b5ac96dfc73df60b124cef9f4adeb36d86287bc92f`
 - Toolchain: Bun `1.4.2` as pinned by the upstream source
 - Compatibility version: `2.0.32`; detached CTG version/channel:
   `0.0.0-ctg.2.0.32` / `ctg.2.0.32`
@@ -58,34 +61,63 @@ The runtime resolver validates every manifest contract field, the native
 platform, executable checksum, and exact detached `--version` before launch.
 It does not search PATH or silently fall back when the opt-in is selected.
 
-The workflow in the companion OpenCode-source change is a proposal, not
-evidence that cross-platform CI or a release job has run. No signing,
-attestation, release download automation, or default-selection integration is
-included. No normal-install behavior is switched.
+The CTG workflow in this branch is a proposal, not release evidence: it builds
+on native runners and can attach platform archives to an existing release, but
+it has not been run or approved. There is no signed/attested end-user download
+channel, and no default-selection or normal-install behavior is switched.
+Distribution is therefore not complete until the workflow is reviewed, run
+under the release environment, publishes the patch/recipe and matching
+per-platform runtime artifacts plus checksums/manifest, and the installed
+package opt-in is tested against those published artifacts.
+
+## Full-TUI glyph compatibility is not implemented
+
+The pinned full TUI currently has no public equivalent of CTG's legacy
+`--ascii` / `--glyphs auto|ascii|unicode` contract. OpenCode's documented
+`mini.mono` setting applies to Mini mode only and is not a substitute for the
+full workspace TUI. Do not claim ASCII-mode compatibility for this runtime.
+
+The implementation contract for a future owned-host change is deliberately
+narrow: introduce or use a central registry for **host chrome glyphs** (borders,
+selection/status markers, spinners, and structural tree/connector marks) and
+resolve the mode once for the full TUI. In ASCII mode, map only those registered
+chrome tokens to readable ASCII alternatives with compatible layout; preserve
+theme colors and typography. Never sanitize or transliterate arbitrary rendered
+strings, user messages, filenames, diffs, shell output, or code. Unicode mode
+must remain unchanged. Auto detection and explicit overrides must be specified
+and tested on the actual full TUI, including unknown/legacy terminals; Mini's
+setting and platform guesses alone do not satisfy this contract.
+
+This glyph work is separate from the current patch freeze. Any source-patch
+change for it changes the patch digest and invalidates the current binary,
+manifest, and title evidence; rebuild and revalidate the exact resulting
+artifact before making terminal-compatibility claims.
 
 ## Recorded artifact and bounded title evidence
 
-The locally available Linux artifact is
-`/tmp/opencode/ctg-parity-prototype/opencode-src/packages/cli/dist-ctg/cli-linux-x64/bin/opencode`:
+The fresh Linux artifact was built from a clean detached worktree of the pinned
+source with the exact patch hash above. It is at
+`/tmp/opencode/ctg-final-runtime-build/resume-build/packages/cli/dist-ctg/cli-linux-x64/bin/opencode`:
 
 - `--version`: `opencode v0.0.0-ctg.2.0.32`
-- SHA-256: `30a3bb65d4d005c7a12e82d3b97579dc97e451c23b0dac660123f91534c9f484`
+- SHA-256: `85bb44a65e8c185f4f33d41507d29acc77f2db0cdcb0103a14476021c8e43794`
 - Build recipe: `script/ctg/build-owned-runtime.sh opencode-linux-x64`
 - Source patch hash: the pinned hash above
+- Manifest lock SHA-256: `9d78379cd264584a495440a217b9d2ecab524c9a56f7f8b4b5bed3926daa330d`
 
-This executable was built before the last handoff-only title lifecycle
-adjustment recorded in the source tree. Its earlier focused PTY run observed
-one title save, one restore, zero title-stack depth, and a controlled terminal
-model ending at `CTG-ORIGINAL-TITLE` on normal exit. This is only evidence for
-that executable and controlled model; it is not evidence of physical terminal
-title readback or of the final patch's binary behavior. A terminal author
-reported an empty final title in another run using an executable identified as
-upstream v2.0.32; exact binary hashes have been requested so these results can
-be reconciled. Do not claim title acceptance until a focused run identifies
-the exact final-patch executable and test model. Picker, resize, and selection
-checks are not asserted by that focused title run.
+This exact-patch executable has not yet had a focused PTY title-lifecycle run
+or physical terminal title readback. The earlier `30a3bb65…` artifact and its
+controlled terminal model are historical only and predate the final title
+adjustment. A terminal author reported an empty final title using a binary
+identified as upstream v2.0.32; binary hashes are still needed to reconcile
+those results. Do not claim title acceptance until the final binary is probed.
 
 No paid provider traffic or real profile was used for the recorded source and
-unit tests. Full two-session state isolation across a server stop/start, and a
-local-fixture automatic context-overflow run, remain release gates. Independent
-review and product-owner architecture approval are also pending.
+unit tests. Package typechecks and focused compaction, shell-retention, shell
+HTTP-provenance, and renderer tests passed for this source patch. The clear UI
+test had three assertions pass but emitted a session-tab lock cleanup error;
+that test is not claimed clean. Full two-session state isolation across a
+server stop/start, visual clear preservation, automatic-overflow on/off,
+manual-compact availability, concurrent authoritative shell attribution, and
+final-binary title probing remain release gates. Independent review and
+product-owner architecture approval are also pending.
