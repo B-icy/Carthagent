@@ -16,6 +16,12 @@ import subprocess
 import tempfile
 import termios
 import time
+from contextlib import nullcontext
+
+
+def host_environment(source):
+    """Do not forward the runtime-download credential to the native TUI host."""
+    return {key: value for key, value in source.items() if key.lower() != 'ctg_runtime_github_token'}
 
 
 def resolve_binary(value):
@@ -34,18 +40,24 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--binary', required=True, help='Binary selected and validated by the production runtime resolver')
     parser.add_argument('--expected-sha256', required=True, help='Independently verified binary identity supplied by the JS acceptance gate')
+    parser.add_argument('--node-executable', required=True, help='Node runtime used to provision the isolated native profile')
     parser.add_argument('--plugin', default=str(pathlib.Path(__file__).resolve().parents[1] / 'plugins/carthagent'))
     parser.add_argument('--command', default='/ctg-status')
+    parser.add_argument('--command-args', help='Type slash-command arguments after selecting the command suggestion')
     parser.add_argument('--after-command', action='append', help='Submit another command after expected output; may be repeated')
     parser.add_argument('--after-expect', action='append', help='Expected output for each additional command')
     parser.add_argument('--expect', default='OpenCode 2.0.32')
     parser.add_argument('--capture', help='Save the full raw PTY transcript for diagnosis')
     parser.add_argument('--expect-color', help='Require a truecolor ANSI RGB sequence after the command, e.g. 230,196,128')
     parser.add_argument('--initial-theme', help='Select a provisioned native theme before launching the TUI')
+    parser.add_argument('--expect-theme', help='Require this native theme selection to persist after command submission')
+    parser.add_argument('--state-dir', help='Reuse an isolated profile across native process restarts')
+    parser.add_argument('--reuse-state', action='store_true', help='Reuse the isolated state without reprovisioning it')
+    parser.add_argument('--expect-startup-color', action='store_true', help='Require the configured accent in the initial process render')
+    parser.add_argument('--write-initial-theme', action='store_true', help='Write --initial-theme before native startup')
     parser.add_argument('--ready', help='Wait for this marker before typing')
     parser.add_argument('--confirm', action='store_true', help='Wait for command submission and confirmation handling to settle')
     parser.add_argument('--second-enter', action='store_true', help='Wait for command submission and confirmation handling to settle')
-    parser.add_argument('--dismiss-completion', action='store_true', help='Dismiss slash suggestions before submitting the explicitly typed command')
     parser.add_argument('--post-submit-marker', help='Require an additional unique marker after submission')
     args = parser.parse_args()
     args.binary = resolve_binary(args.binary)
@@ -56,26 +68,34 @@ def main():
     actual = hashlib.sha256(pathlib.Path(args.binary).read_bytes()).hexdigest()
     if actual != args.expected_sha256:
         parser.error(f'Selected OpenCode binary SHA-256 changed before PTY execution: {actual}')
-    preferred_temp = pathlib.Path('/tmp/opencode')
-    with tempfile.TemporaryDirectory(prefix='ctg-pty-', dir=preferred_temp if preferred_temp.is_dir() else None) as temp:
+    state = pathlib.Path(args.state_dir) if args.state_dir else None
+    temp_context = nullcontext(str(state)) if state else tempfile.TemporaryDirectory(prefix='ctg-pty-')
+    with temp_context as temp:
         root = pathlib.Path(temp)
         for name in ['home', 'project', 'config/opencode', 'data', 'state', 'cache']:
             (root / name).mkdir(parents=True, exist_ok=True)
-        (root / 'config/opencode/opencode.json').write_text(json.dumps({
-            'plugins': [str(pathlib.Path(args.plugin).resolve())], 'update': 'disable',
-        }))
         # Mirror the launcher contract: custom themes are installed before the
         # native TUI scans its profile. Installing from inside the running TUI
         # cannot make a newly-created theme selectable in that same process.
         provisioner = pathlib.Path(args.plugin).resolve() / 'src/ui/theme-provision.mjs'
-        subprocess.run([
-            'node', '--input-type=module', '-e',
-            "const { provisionDefaultNativeTheme } = await import(process.argv[1]); await provisionDefaultNativeTheme(process.argv[2]);",
-            str(provisioner), str(root / 'config/opencode'),
-        ], check=True)
-        if args.initial_theme:
+        if not args.reuse_state:
+            (root / 'config/opencode/opencode.json').write_text(json.dumps({
+                'plugins': [str(pathlib.Path(args.plugin).resolve())], 'update': 'disable',
+            }))
+            subprocess.run([
+                args.node_executable, '--input-type=module', '-e',
+                "const { provisionDefaultNativeTheme } = await import(process.argv[1]); await provisionDefaultNativeTheme(process.argv[2]);",
+                str(provisioner), str(root / 'config/opencode'),
+            ], check=True)
+        if args.initial_theme and args.write_initial_theme:
             (root / 'config/opencode/cli.json').write_text(json.dumps({'theme': {'name': args.initial_theme}}))
-        env = {key: os.environ[key] for key in ['PATH', 'LANG', 'LC_ALL'] if key in os.environ}
+        cli_config_path = root / 'config/opencode/cli.json'
+        initial_config = json.loads(cli_config_path.read_text()) if cli_config_path.exists() else {}
+        env = host_environment(os.environ)
+        node_binary = pathlib.Path(args.node_executable).resolve()
+        if not node_binary.is_file():
+            parser.error(f'Trusted Node executable does not exist: {node_binary}')
+        env['CTG_NODE_EXECUTABLE'] = str(node_binary)
         env.update({
             'HOME': str(root / 'home'), 'TERM': 'xterm-256color', 'COLORTERM': 'truecolor',
             'XDG_CONFIG_HOME': str(root / 'config'), 'XDG_DATA_HOME': str(root / 'data'),
@@ -94,14 +114,16 @@ def main():
         started = time.monotonic()
         sent = False
         sent_at = None
+        selected_at = None
         submitted = False
         confirmation_complete = False
         completion_dismissed = False
+        after_completion_dismissed = False
         submission_at = None
         enter_count = 0
         after_index = 0
         after_typed_at = None
-        after_completion_dismissed = False
+        pre_submit_transcript = None
         try:
             while time.monotonic() - started < 30:
                 if child.poll() is not None:
@@ -117,20 +139,25 @@ def main():
                         os.write(master, b'\x1b[?1;2c')
                 ready = args.ready.encode() in transcript if args.ready else time.monotonic() - started > 8
                 if not sent and ready:
+                    pre_submit_transcript = bytes(transcript)
                     output.clear()
                     sent_at = time.monotonic()
                     os.write(master, args.command.encode())
                     sent = True
-                if sent and args.dismiss_completion and not completion_dismissed and time.monotonic() - sent_at > 1:
+                if sent and not submitted and after_index == 0 and time.monotonic() - sent_at > 1:
+                    # First Enter accepts native slash completion; after any
+                    # explicit args, a second natural Enter submits the command.
                     output.clear()
-                    os.write(master, b'\x1b')
-                    completion_dismissed = True
-                    sent_at = time.monotonic()
-                if sent and not submitted and after_index == 0 and time.monotonic() - sent_at > (0.5 if args.dismiss_completion and completion_dismissed else 1):
-                    # Typed slash text has usually populated autocomplete now.
-                    # Discard that frame before accepting the completion so it
-                    # cannot satisfy the post-command assertion.
-                    output.clear()
+                    os.write(master, b'\r')
+                    enter_count += 1
+                    if args.command_args:
+                        time.sleep(0.15)
+                        os.write(master, args.command_args.encode())
+                    sent = False
+                    sent_at = None
+                    selected_at = time.monotonic()
+                    continue
+                if enter_count == 1 and after_index == 0 and not submitted and time.monotonic() - selected_at > 0.5:
                     os.write(master, b'\r')
                     enter_count += 1
                     submitted = True
@@ -179,19 +206,25 @@ def main():
                 if result_output:
                     if b'runtime unavailable' in output or b'No matching commands' in output:
                         raise RuntimeError('Command was unavailable or its RPC failed')
-                    if args.expect_color and args.initial_theme:
-                        theme_config = json.loads((root / 'config/opencode/cli.json').read_text())
-                        assert theme_config['theme']['name'] == args.initial_theme, theme_config
+                    if args.expect_theme:
+                        theme_config = json.loads(cli_config_path.read_text())
+                        assert theme_config.get('theme', {}).get('name') == args.expect_theme, theme_config
+                    if args.expect_color and (args.initial_theme or args.expect_theme):
                         channels = [part.strip() for part in args.expect_color.split(',')]
                         if len(channels) != 3 or any(not part.isdigit() or int(part) > 255 for part in channels):
                             raise ValueError('--expect-color must be an RGB triple such as 242,198,109')
                         ansi = f"\x1b[38;2;{';'.join(channels)}m".encode()
-                        if ansi not in transcript:
+                        if ansi not in output:
                             print(f'Expected rendered foreground color {ansi!r} was not observed; recent raw PTY bytes: {output[-12000:]!r}')
                             raise AssertionError('Rendered accent color did not match the selected native theme')
+                    if args.expect_startup_color and args.expect_color:
+                        channels = [part.strip() for part in args.expect_color.split(',')]
+                        ansi = f"\x1b[38;2;{';'.join(channels)}m".encode()
+                        if ansi not in pre_submit_transcript:
+                            raise AssertionError('Persisted theme accent was not present in the restarted process initial render')
                     print(json.dumps({'command': args.command, 'observed': expected_output,
                                       'postSubmission': True, 'enterCount': enter_count,
-                                       'theme': args.initial_theme if args.expect_color else None,
+                                       'theme': args.expect_theme or args.initial_theme if args.expect_color else None,
                                       'ansiColor': args.expect_color,
                                       'elapsedMs': round((time.monotonic() - started) * 1000),
                                       'terminalBytes': len(output)}))
