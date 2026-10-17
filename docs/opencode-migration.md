@@ -77,7 +77,7 @@ integration check before its PR merges. In-progress does not mean shipped.
 | Review | In progress | Fresh-context findings bound to source and PR head; bounded admission |
 | Legacy archive | In progress | Read-only searchable transcripts; no implicit continuation |
 | CLI/headless/dashboard | CLI/headless in progress; dashboard lease fix merged #142 | Output/exit/locking behavior verified against native runtime |
-| Packaging/upgrade | #143/#149 reviewed; telemetry race blocks merge | Fresh installation and migration tested from packaged artifact |
+| Packaging/upgrade | Telemetry fix #151 merged; refreshed #143/#149 in review | Fresh installation and migration tested from packaged artifact |
 | Terminal/performance | Pending | PTY, interaction, streaming and reconnect evidence |
 | Default switch/retirement | Pending | No supported default execution path depends on Pi |
 
@@ -92,9 +92,10 @@ passing domain fixture alone does not satisfy these gates:
 | `test:native-host` | All four archive methods, output schemas, declared errors, and unchanged transcript bytes passed through production registration |
 | `test:native-controls` | Concurrent framing settings and compaction notes reach the real provider; settings persist across service restart |
 | `test:native-outcomes` | Failed/interrupted/succeeded outcomes, HTTP disconnect, neighboring-session isolation, and recovery passed; interruption explicitly uses `resume: false` and leaves a queued prompt pending |
-| `test:native-tasks` | Creates two real Git worktrees and checks restart reconciliation; currently blocked by an undefined optional `branch` in the workspace RPC output |
-| `test:native-review` | Exercises independent reviewer creation, receipt persistence, and approval invalidation after source changes; currently blocked by the bridge ignoring configured `reviewModel` |
-| `test:native-pty` | Production workspace route rendered in the host terminal; both health and workspace commands must pass after plugin readiness and slash-completion confirmation |
+| `test:native-tasks` | Two real Git worktrees, concurrent isolated turns and framing settings, independent root sessions, and restart reconciliation passed |
+| `test:native-review` | Configured-model independent reviewer creation, receipt persistence, and approval invalidation after source changes passed |
+| `test:native-runtime` | Actual service reuse, repeated turns, provider rejection and recovery passed; unavailable-provider/no-assistant failure still lacks an explicit authoritative outcome |
+| `test:native-pty` | Both production health and workspace commands passed after plugin readiness and slash-completion confirmation |
 | `test:native-package` | Clean production install passed host/controls/outcome probes; expanded installed-product and PTY gates must pass on the integrated head |
 
 Native runtime-wrapper acceptance, delivery enforcement, provider authentication,
@@ -102,6 +103,13 @@ command compatibility, installed SWE workflows, reconnect behavior, and performa
 remain release gates. The legacy seconds-budget shutdown test still fails in a
 parent reproduction even though PR #154 CI passed; it is not waived as timing noise.
 Native execution remains opt-in until these gates pass.
+
+Pinned-host extension gaps remain for visual-only transcript `/clear` and
+per-session `/autocompact`. The 2.0.32 plugin interface exposes neither a
+transcript presentation boundary nor a per-session automatic-compaction policy.
+CTG-owned host extension work must prove these behaviors without deleting history
+or mutating shared compaction settings. Theme acceptance also requires installing
+the semantic JSON theme in the owned profile and verifying actual rendered colors.
 
 ## Review workflow
 
