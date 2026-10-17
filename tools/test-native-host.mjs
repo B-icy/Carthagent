@@ -4,75 +4,122 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { randomBytes } from 'node:crypto';
+import { promisify } from 'node:util';
 import { OpenCode } from '@opencode/client';
-import { createNativeFixture, toolCall, assistantText } from './native-fixture.mjs';
+import { resolveOpenCode } from '../lib/opencode/runtime.mjs';
+import { cancelSession } from '../lib/opencode/service.mjs';
+import { runHeadless } from '../lib/opencode/headless.mjs';
 
 const root = resolve(import.meta.dirname, '..');
-const plugin = resolve(process.argv[2] ?? join(root, 'plugins/carthagent/test-plugin'));
-const deliveryPlugin = resolve(root, 'plugins/carthagent/test-plugin');
+const plugin = resolve(process.argv[2] ?? join(root, 'plugins/carthagent'));
 const archiveFixture = resolve(root, 'tests/fixtures/archive-plugin');
-const binary = process.env.CTG_OPENCODE_BIN ?? join(root, 'node_modules/@opencode/cli/bin/opencode.exe');
+const binary = await resolveOpenCode();
+const execFileAsync = promisify(execFile);
 const temp = await mkdtemp(join(tmpdir(), 'ctg-host-smoke-'));
 const password = randomBytes(24).toString('hex');
+const providerKey = `sentinel-${randomBytes(24).toString('hex')}`;
 let child;
+let childClosed = false;
 let output = '';
-let fixture;
-const observed = [];
+let deviceAuthorizationBody;
+const gatewayAuth = [];
+const gatewayServer = createServer((request, response) => {
+  gatewayAuth.push({ authorization: request.headers.authorization, url: request.url });
+  response.writeHead(200, { 'content-type': 'application/json' });
+  response.end(JSON.stringify(request.url?.endsWith('/models')
+    ? { data: [{ id: 'sentinel-model' }] }
+    : { id: 'chatcmpl-sentinel', object: 'chat.completion', choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } }));
+});
+await new Promise((resolveListen, reject) => gatewayServer.listen(0, '127.0.0.1', resolveListen).once('error', reject));
+const gatewayAddress = gatewayServer.address();
+const authServer = createServer((request, response) => {
+  let body = '';
+  request.setEncoding('utf8').on('data', (chunk) => { body += chunk; });
+  request.on('end', () => {
+  if (request.url === '/v1/device/authorizations') {
+    deviceAuthorizationBody = JSON.parse(body);
+    response.writeHead(201, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ deviceCode: 'offline-device-code', userCode: 'OFFLINE', verificationUri: 'http://127.0.0.1/verify', expiresIn: 120, interval: 1 }));
+  } else if (request.url === '/v1/device/token') {
+    response.writeHead(400, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ error: 'authorization_pending' }));
+  } else {
+    response.writeHead(404).end();
+  }
+  });
+});
+await new Promise((resolveListen, reject) => authServer.listen(0, '127.0.0.1', resolveListen).once('error', reject));
+const authAddress = authServer.address();
+let fixtureRequests = 0;
+const fixture = createServer(async (req, res) => {
+  fixtureRequests += 1;
+  let raw = '';
+  for await (const chunk of req) raw += chunk;
+  let body;
+  try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
+  const currentUser = [...(body.messages ?? [])].reverse().find((message) => message.role === 'user');
+  const promptText = JSON.stringify(currentUser);
+  if (promptText.includes('WRAPPER_TOOL') && body.tools?.some((tool) => tool.function?.name === 'read') && !(body.messages ?? []).some((message) => message.role === 'tool')) {
+    const chunk = (delta, finish_reason = null) => `data: ${JSON.stringify({
+      id: 'chatcmpl-ctg-tool', object: 'chat.completion.chunk', created: 1, model: 'fixture',
+      choices: [{ index: 0, delta, finish_reason }],
+    })}\n\n`;
+    res.writeHead(200, { 'content-type': 'text/event-stream' });
+    res.end(`${chunk({ role: 'assistant', tool_calls: [{ index: 0, id: 'wrapper-read', type: 'function',
+      function: { name: 'read', arguments: JSON.stringify({ path: join(temp, 'project/wrapper-tool.txt') }) } }] })}${chunk({}, 'tool_calls')}data: [DONE]\n\n`);
+    return;
+  }
+  if (promptText.includes('WRAPPER_FAILURE')) {
+    res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: { message: 'Offline wrapper rejection', type: 'invalid_request_error' } }));
+    return;
+  }
+  if (req.method !== 'POST' || req.url !== '/v1/chat/completions') {
+    res.writeHead(404).end();
+    return;
+  }
+  res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
+  const created = Math.floor(Date.now() / 1000);
+  const chunk = (delta, finish_reason = null) => `data: ${JSON.stringify({
+    id: 'chatcmpl-ctg-fixture', object: 'chat.completion.chunk', created, model: 'fixture',
+    choices: [{ index: 0, delta, finish_reason }],
+  })}\n\n`;
+  const reply = promptText.includes('WRAPPER_TOOL') ? 'FINAL_AFTER_TOOL' : promptText.includes('WRAPPER_SECOND') ? 'SECOND_TURN' : 'CTG_FIXTURE_OK';
+  res.write(chunk({ role: 'assistant', content: reply }));
+  res.write(chunk({}, 'stop'));
+  res.end('data: [DONE]\n\n');
+});
+await new Promise((resolveListen, reject) => fixture.once('error', reject).listen(0, '127.0.0.1', resolveListen));
 try {
   const cwd = join(temp, 'project');
   const config = join(temp, 'config/opencode');
-  const scenario = process.env.CTG_NATIVE_SCENARIO ?? 'standard';
-  const maxTools = scenario === 'budget' ? 6 : 0;
-  const workflow = scenario === 'strict' ? 'strict' : 'standard';
-  await Promise.all([mkdir(cwd), mkdir(config, { recursive: true }), mkdir(join(temp, 'home'))]);
+  const homeConfig = join(temp, 'home/.config/opencode');
   const legacy = join(temp, 'home/.carthagent/agent/sessions');
-  await mkdir(legacy, { recursive: true });
+  await Promise.all([
+    mkdir(cwd), mkdir(config, { recursive: true }), mkdir(homeConfig, { recursive: true }), mkdir(legacy, { recursive: true }),
+    mkdir(join(temp, 'appdata'), { recursive: true }), mkdir(join(temp, 'localappdata'), { recursive: true }),
+  ]);
+  await writeFile(join(homeConfig, 'opencode.json'), JSON.stringify({ model: 'home-poison/model', plugins: ['home-poison-plugin'] }));
+  await writeFile(join(cwd, 'opencode.json'), JSON.stringify({ model: 'project-poison/model', plugins: ['project-poison-plugin'] }));
   await writeFile(join(legacy, 'legacy.jsonl'), '{"type":"session","id":"legacy-fixture"}\n{"type":"message","message":{"role":"user","content":"fixture needle"}}\nmalformed\n');
-  const configuredPlugins = [...new Set([plugin, ...(plugin.endsWith('/.ctg-test-plugin') ? [] : [deliveryPlugin]), archiveFixture])];
-  await writeFile(join(config, 'opencode.json'), JSON.stringify({ plugins: configuredPlugins, update: 'disable' }));
-  fixture = createNativeFixture({ inspect: ({ body }) => observed.push({ tools: (body.tools ?? []).map(tool => tool.function?.name), messages: body.messages ?? [] }), respond: ({ body, response }) => {
-    const messages = body.messages ?? [];
-    const tools = (body.tools ?? []).map(tool => tool.function?.name);
-    const toolResults = messages.filter(message => message.role === 'tool').length;
-    if (tools.includes('execute') && toolResults === 0) {
-      toolCall(response, { name: 'execute', arguments: { code: 'const result = await search({ query: "carthagent delivery tools", namespace: "carthagent", limit: 10 }); return result' } });
-    } else if (scenario === 'raw' && tools.includes('execute') && toolResults === 1) {
-      toolCall(response, { name: 'execute', arguments: { code: 'return await tools.carthagent["delivery_progress"]({ step: "create-fixture", status: "done" })' } });
-    } else if (tools.includes('execute') && toolResults === 1) {
-      toolCall(response, { name: 'execute', arguments: { code: 'return await tools.carthagent["delivery_plan"]({ goal: "Add fixture output", assumptions: [], artifacts: ["fixture.txt"], outputs: ["fixture.txt"], steps: [{ id: "create-fixture", title: "Create fixture file" }], acceptance: [{ requirement: "fixture exists", checks: ["fixture-check"] }], checks: [{ id: "fixture-check", kind: "test", argv: ["node", "-e", "require(\\\"node:fs\\\").accessSync(\\\"fixture.txt\\\")"], timeoutSeconds: 5 }] })' } });
-    } else if (scenario === 'raw' && tools.includes('execute') && toolResults === 2) {
-      toolCall(response, { name: 'execute', arguments: { code: 'return await tools.carthagent["delivery_status"]({})' } });
-    } else if (scenario === 'strict' && tools.includes('execute') && toolResults === 2) {
-      toolCall(response, { name: 'execute', arguments: { code: 'return await tools.carthagent["delivery_design"]({ action: "validate" })' } });
-    } else if (scenario === 'strict' && tools.includes('execute') && toolResults === 3) {
-      toolCall(response, { name: 'execute', arguments: { code: 'return await tools.carthagent["delivery_revise"]({ reason: "Add valid design evidence", patch: { design: { components: [{ id: "fixture", responsibility: "Create fixture output", excludes: ["verification"], layer: "core", dependencies: [], externalDependencies: [], requirements: ["fixture exists"] }], ports: [], risks: [], scenarios: [{ id: "positive", requirement: "fixture exists", kind: "positive", path: ["fixture"], input: "create file", expected: "file exists", assertion: "accessSync succeeds", checks: ["fixture-check"] }, { id: "negative", requirement: "fixture exists", kind: "failure", path: ["fixture"], input: "missing file", expected: "ENOENT", assertion: "accessSync throws ENOENT", checks: ["fixture-check"] }] } } })' } });
-    } else if (scenario === 'strict' && tools.includes('execute') && toolResults === 4) {
-      toolCall(response, { name: 'execute', arguments: { code: 'await tools.carthagent["delivery_design"]({ action: "validate" }); const inspected = await tools.carthagent["delivery_design"]({ action: "inspect" }); const captureId = String(inspected).match(/"captureId"\\s*:\\s*"([^"]+)"/)?.[1]; if (!captureId) throw Error("inspect did not expose a capture ID"); await tools.carthagent["delivery_design"]({ action: "review", captureId, review: { captureId, challenges: ["Could a missing output be accepted?"], findings: [], walkthroughs: [{ scenario: "positive", trace: "fixture -> exists", assertion: "accessSync succeeds" }, { scenario: "negative", trace: "missing -> ENOENT", assertion: "accessSync throws ENOENT" }], limitations: ["Model-authored review is not independent proof."] } }); return await tools.carthagent["delivery_design"]({ action: "approve" })' } });
-    } else if (scenario === 'strict' && tools.includes('execute') && toolResults === 5) {
-      toolCall(response, { name: 'execute', arguments: { code: 'return await tools.carthagent["delivery_finish"]({ status: "verified", review: "dishonest strict fixture attempt", launch: "not run", limitations: [] })' } });
-    } else if (tools.includes('shell') && toolResults === 2) {
-      toolCall(response, { name: 'shell', arguments: { command: "printf 'fixture output\\n' > fixture.txt" } });
-    } else if (tools.includes('execute') && toolResults === 3) {
-      toolCall(response, { name: 'execute', arguments: { code: 'return await tools.carthagent["delivery_progress"]({ step: "create-fixture", status: "done" })' } });
-    } else if (tools.includes('execute') && toolResults === 4) {
-      toolCall(response, { name: 'execute', arguments: { code: 'return await tools.carthagent["delivery_check"]({ id: "all" })' } });
-    } else if (tools.includes('execute') && toolResults === 5) {
-      if (scenario === 'budget') assistantText(response, 'Budget scenario intentionally stops before validation.');
-      else toolCall(response, { name: 'execute', arguments: { code: 'return await tools.carthagent["delivery_finish"]({ status: "verified", review: "dishonest fixture attempt", launch: "not run", limitations: [] })' } });
-    } else {
-      assistantText(response, 'Fixture completed its offline workflow; no verification claim is made.');
-    }
-  } });
-  const fixtureURL = await fixture.listen();
-  const fixtureConfig = join(config, 'opencode.json');
-  const cfg = JSON.parse(await (await import('node:fs/promises')).readFile(fixtureConfig, 'utf8'));
-  cfg.providers = { fixture: { name: 'Offline fixture', package: '@opencode/ai/providers/openai-compatible', settings: { baseURL: fixtureURL, apiKey: 'offline-test' }, models: { fixture: { name: 'Offline fixture', capabilities: { tools: true }, limit: { context: 64000, output: 1024 }, settings: { baseURL: fixtureURL, apiKey: 'offline-test' } } } } };
-  await writeFile(fixtureConfig, JSON.stringify(cfg));
+  await writeFile(join(config, 'opencode.json'), JSON.stringify({
+    plugins: [plugin, archiveFixture], update: 'disable',
+    model: 'ctgfixture/fixture',
+    providers: {
+      ctgfixture: {
+        name: 'CTG local prompt fixture',
+        package: '@opencode/ai/providers/openai-compatible',
+        settings: { baseURL: `http://127.0.0.1:${fixture.address().port}/v1` },
+        models: { fixture: { name: 'Fixture', limit: { context: 8192, output: 1024 } } },
+      },
+    },
+  }));
   const env = Object.fromEntries(['PATH', 'SystemRoot', 'WINDIR', 'ComSpec', 'PATHEXT', 'USERPROFILE']
-    .filter(key => process.env[key]).map(key => [key, process.env[key]]));
+    .filter((key) => process.env[key])
+    .map((key) => [key, process.env[key]]));
   Object.assign(env, {
     HOME: join(temp, 'home'),
     USERPROFILE: join(temp, 'home'),
@@ -82,13 +129,19 @@ try {
     XDG_DATA_HOME: join(temp, 'data'),
     XDG_STATE_HOME: join(temp, 'state'),
     XDG_CACHE_HOME: join(temp, 'cache'),
+    OPENCODE_CONFIG_DIR: config,
+    OPENCODE_CONFIG: join(config, 'opencode.json'),
+    OPENCODE_CONFIG_PROJECT_DISABLE: 'true',
     OPENCODE_DB: join(temp, 'database.sqlite'),
     OPENCODE_SERVER_PASSWORD: password,
+    CARTHAGENT_CLOUD_URL: `http://127.0.0.1:${authAddress.port}`,
+    EXPLABS_API_KEY: providerKey,
+    EXP_GATEWAY_URL: `http://127.0.0.1:${gatewayAddress.port}`,
   });
-  await Promise.all([mkdir(join(temp, 'appdata'), { recursive: true }), mkdir(join(temp, 'localappdata'), { recursive: true })]);
   child = spawn(binary, [
     'serve', '--hostname', '127.0.0.1', '--port', '0', '--print-logs', '--log-level', 'debug',
   ], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  child.once('close', () => { childClosed = true; });
   const endpoint = await new Promise((resolveEndpoint, reject) => {
     const timer = setTimeout(() => reject(new Error(`Host startup timed out: ${output}`)), 30_000);
     const collect = (chunk) => {
@@ -105,14 +158,33 @@ try {
     baseUrl: endpoint,
     headers: { authorization: `Basic ${Buffer.from(`opencode:${password}`).toString('base64')}` },
   });
-  // Reused request objects must not carry a deadline that expires during the
-  // multi-turn offline workflow; give each host call its own bounded signal.
-  const request = { signal: AbortSignal.timeout(120_000) };
+  const request = { signal: AbortSignal.timeout(90_000) };
   const info = await client.server.info(request);
   assert.equal(info.version, '2.0.32');
+  const isolationFetch = async (url, init) => {
+    const response = await fetch(url, init);
+    if (new URL(url).pathname === '/api/config') {
+      const entries = await response.clone().json();
+      assert.ok(!entries.some((entry) => entry.type === 'document' && [join(homeConfig, 'opencode.json'), join(cwd, 'opencode.json')].includes(entry.path)), `home and workspace config must not be discovered: ${JSON.stringify(entries)}`);
+      assert.ok(!JSON.stringify(entries).includes('poison'), `foreign config/plugin discovery must not leak into the CTG profile: ${JSON.stringify(entries)}`);
+    }
+    return response;
+  };
+  const isolatedClient = OpenCode.make({
+    baseUrl: endpoint,
+    headers: { authorization: `Basic ${Buffer.from(`opencode:${password}`).toString('base64')}` },
+    fetch: isolationFetch,
+  });
+  const configEntries = await isolatedClient.config.get({ location: { directory: cwd } }, request);
+  const merged = configEntries.find((entry) => entry.type === 'document')?.info;
+  assert.deepEqual(merged.model, { providerID: 'ctgfixture', model: 'fixture' }, 'local model config must be loaded');
+  assert.ok(merged.providers?.ctgfixture, 'custom fixture provider config must be loaded');
   const unauthorized = await fetch(`${endpoint}/api/info`, { signal: request.signal });
   assert.equal(unauthorized.status, 401);
-  await client.session.create({ location: { directory: cwd }, title: 'CTG host smoke' }, request);
+  const session = await client.session.create({
+    location: { directory: cwd }, title: 'CTG host smoke',
+    model: { providerID: 'ctgfixture', id: 'fixture' },
+  }, request);
   let plugins;
   const deadline = Date.now() + 15_000;
   do {
@@ -122,15 +194,139 @@ try {
   } while (Date.now() < deadline);
   const nativePlugin = plugins.data.find((entry) => entry.id === 'carthagent');
   const archivePlugin = plugins.data.find((entry) => entry.id === 'ctg-archive-fixture');
-  assert.ok(nativePlugin, 'Carthagent plugin must become visible');
+  assert.ok(nativePlugin, `Carthagent plugin must become visible: ${JSON.stringify(plugins.data)}`);
   assert.equal(nativePlugin.state.status, 'active');
   assert.equal(archivePlugin?.state.status, 'active', 'archive registration fixture must become visible');
+  const providers = await client.provider.list({ location: { directory: cwd } }, request);
+  assert.ok(providers.data.some((provider) => provider.id === 'experiential-labs'),
+    'plugin setup must register the Ship provider with the real host');
+  const integrations = await client.integration.list({ location: { directory: cwd } }, request);
+  const ship = integrations.data.find(({ id }) => id === 'experiential-labs');
+  assert.ok(ship, 'the native provider catalog must supply a real Ship integration record');
+  assert.ok(ship.methods.some(({ type, id }) => type === 'oauth' && id === 'carthagent-device'),
+    'plugin integration transform must register the Ship device-OAuth method');
+  assert.ok(ship.methods.some(({ type }) => type === 'key'),
+    'plugin integration transform must register the Ship API-key method');
+  assert.ok(ship.methods.some(({ type, names }) => type === 'env' && names?.includes('EXPLABS_API_KEY')),
+    'the native integration catalog resolves BYOK from the named environment credential');
+  const models = await client.model.list({ location: { directory: cwd } }, request);
+  const serializedInventory = JSON.stringify({ providers: providers.data, models: models.data, integrations: integrations.data });
+  assert.equal(serializedInventory.includes(providerKey), false, 'provider and integration inventories must not expose the environment secret');
+  assert.equal(output.includes(providerKey), false, 'OpenCode/plugin logs must not expose the environment secret');
+  assert.ok(models.data.some(model => model.providerID === 'experiential-labs' && model.id === 'sentinel-model'),
+    'environment-backed Ship model must be available through native model inventory');
+  const inferenceSession = await client.session.create({
+    location: { directory: cwd },
+    title: 'CTG BYOK auth fixture',
+    model: { id: 'sentinel-model', providerID: 'experiential-labs' },
+  }, request);
+  await client.session.prompt({ sessionID: inferenceSession.id, text: 'Reply with ok.' }, request);
+  const inferenceDeadline = Date.now() + 10_000;
+  while (!gatewayAuth.some(({ authorization, url }) => authorization === `Bearer ${providerKey}` && url.endsWith('/chat/completions')) && Date.now() < inferenceDeadline) {
+    await new Promise(done => setTimeout(done, 50));
+  }
+  assert.ok(gatewayAuth.some(({ authorization, url }) => authorization === `Bearer ${providerKey}` && url.endsWith('/chat/completions')),
+    'the native-resolved key must authenticate an actual provider inference request');
+  console.log(JSON.stringify({ providers: providers.data.map((provider) => provider.id), shipMethods: ship.methods.map(({ id, type, names }) => ({ id, type, names })) }));
   const health = await client.rpc.call({
     rpcID: 'carthagent', method: 'health', input: {}, location: { directory: cwd },
   }, request);
   console.log(JSON.stringify({ version: info.version, plugin: nativePlugin, health }, null, 2));
   assert.equal(health.output.directory, cwd);
   assert.equal(health.output.protocol, 1);
+  const auth = await client.rpc.call({
+    rpcID: 'carthagent', method: 'authStart', input: {}, location: { directory: cwd },
+  }, request);
+  assert.equal(auth.output.userCode, 'OFFLINE');
+  assert.match(auth.output.flowId, /^[0-9a-f-]{36}$/);
+  assert.match(deviceAuthorizationBody.installId, /^[0-9a-f-]{36}$/);
+  assert.equal((await client.rpc.call({
+    rpcID: 'carthagent', method: 'authCancel', input: { flowId: auth.output.flowId }, location: { directory: cwd },
+  }, request)).output.cancelled, true);
+  console.log('Device authorization start/cancel RPC passed against offline OpenCode host.');
+  const echo = await client.rpc.call({
+    rpcID: 'carthagent', method: 'echo', input: { text: 'native RPC fixture' }, location: { directory: cwd },
+  }, request);
+  assert.deepEqual(echo.output, { text: 'native RPC fixture' });
+  const ensuredService = {
+    url: endpoint,
+    headers: { authorization: `Basic ${Buffer.from(`opencode:${password}`).toString('base64')}` },
+    info: { password },
+  };
+  const wrappedRun = await runHeadless(ensuredService, cwd, 'Reply with the fixture response.', { sessionID: session.id, timeout: 90_000 });
+  const assistant = wrappedRun.result?.message;
+  assert.equal(wrappedRun.outcome, 'succeeded');
+  assert.equal(wrappedRun.terminal, true, 'native wrapper must return a projected terminal session outcome');
+  assert.equal(wrappedRun.budgetReason, undefined, 'a successful terminal turn must not carry a budget failure reason');
+  assert.ok(assistant, 'headless prompt must produce an assistant response');
+  assert.equal(assistant.finish, 'stop');
+  assert.equal(assistant.content.filter((part) => part.type === 'text').map((part) => part.text).join(''), 'CTG_FIXTURE_OK');
+  assert.equal(wrappedRun.accepted.type, 'user');
+  assert.ok(wrappedRun.messages.length >= 2);
+  assert.ok(fixtureRequests > 0, 'assistant prompt must reach the local fixture endpoint');
+  const secondRun = await runHeadless(ensuredService, cwd, 'WRAPPER_SECOND', { sessionID: session.id, timeout: 90_000 });
+  assert.equal(secondRun.outcome, 'succeeded');
+  assert.equal(secondRun.result.text, 'SECOND_TURN', 'resumed wrapper calls must select the current turn output');
+  assert.equal(secondRun.budgetReason, undefined, 'a successful resumed turn must not carry a budget failure reason');
+  let failedRun;
+  try { failedRun = await runHeadless(ensuredService, cwd, 'WRAPPER_FAILURE', { sessionID: session.id, timeout: 90_000 }); }
+  catch (error) { failedRun = { error }; }
+  assert.ok(failedRun.error || failedRun.outcome === 'failed' || failedRun.session?.outcome === 'failed', `provider failure should be exposed, not hidden by prior output: ${JSON.stringify(failedRun)}`);
+  const recoveredRun = await runHeadless(ensuredService, cwd, 'WRAPPER_SECOND', { sessionID: session.id, timeout: 90_000 });
+  assert.equal(recoveredRun.outcome, 'succeeded');
+  assert.equal(recoveredRun.result.text, 'SECOND_TURN');
+  await writeFile(join(cwd, 'wrapper-tool.txt'), 'Read this through the native tool.\n');
+  const toolRun = await runHeadless(ensuredService, cwd, 'WRAPPER_TOOL', { timeout: 90_000 });
+  assert.equal(toolRun.outcome, 'succeeded');
+  assert.equal(toolRun.result.text, 'FINAL_AFTER_TOOL', 'must return the final assistant response after the read tool, not its tool-call message');
+  const unavailableRun = await runHeadless(ensuredService, cwd, 'UNAVAILABLE_MODEL', {
+    timeout: 30_000,
+    session: { model: { providerID: 'absent-fixture', id: 'missing' } },
+  });
+  assert.equal(unavailableRun.outcome, 'failed', `missing provider must be exposed as a terminal failure: ${JSON.stringify(unavailableRun)}`);
+  assert.equal(unavailableRun.terminal, true);
+  assert.ok(unavailableRun.error || unavailableRun.session.error, 'missing provider failure should preserve a useful error');
+  const idleInterrupt = await cancelSession(ensuredService, session.id, { location: { directory: cwd }, timeout: 5000 });
+  assert.equal(idleInterrupt.interrupted, false, 'wrapper cancellation should use the v2 bounded interrupt API and report idle state');
+  const requestsBeforeAttach = fixtureRequests;
+  const attachedRun = await new Promise((resolveRun, reject) => {
+    const attached = spawn(binary, [
+      'run', '--server', endpoint, '--session', session.id, '--format', 'json',
+      'Reply with the fixture response.',
+    ], { cwd, env: { ...env, OPENCODE_PASSWORD: password }, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    const timer = setTimeout(() => attached.kill('SIGKILL'), 90_000);
+    attached.stdout.setEncoding('utf8').on('data', (chunk) => { stdout += chunk; });
+    attached.stderr.setEncoding('utf8').on('data', (chunk) => { stderr += chunk; });
+    attached.once('error', (error) => { clearTimeout(timer); reject(error); });
+    attached.once('close', (code, signal) => {
+      clearTimeout(timer);
+      if (code === 0) resolveRun(stdout);
+      else reject(new Error(`Attached native CLI exited ${code ?? signal}: ${stderr}`));
+    });
+  });
+  assert.match(attachedRun, /CTG_FIXTURE_OK/, 'the packaged CLI should attach to and prompt the ensured service');
+  assert.ok(fixtureRequests > requestsBeforeAttach, 'the attached CLI request must be handled by the already-running fixture-backed service');
+  const pty = await client.pty.create({
+    location: { directory: cwd },
+    command: binary,
+    args: ['--server', endpoint, cwd],
+    cwd,
+    title: 'CTG native TUI attach smoke',
+    env: { ...env, OPENCODE_PASSWORD: password },
+  }, request);
+  const ptyID = pty.data.id;
+  assert.ok(ptyID, 'the attached service should create a native PTY');
+  let ptyState;
+  const ptyDeadline = Date.now() + 10_000;
+  do {
+    ptyState = await client.pty.get({ ptyID, location: { directory: cwd } }, request);
+    if (ptyState.data.status === 'running') break;
+    await new Promise((done) => setTimeout(done, 100));
+  } while (Date.now() < ptyDeadline);
+  assert.equal(ptyState.data.status, 'running', 'native TUI should attach and remain active in the service-owned PTY');
+  await client.pty.remove({ ptyID, location: { directory: cwd } }, request);
   await assert.rejects(client.rpc.call({
     rpcID: 'carthagent', method: 'health', input: { unexpected: true }, location: { directory: cwd },
   }, request));
@@ -150,82 +346,40 @@ try {
   assert.deepEqual(transcript.output.malformedLines, [{ line: 3 }]);
   const exported = await archiveCall('export', { id: archiveID, format: 'jsonl' });
   assert.match(exported.output.content, /legacy-fixture/);
-  await assert.rejects(archiveCall('read', { id: join(temp, 'outside.jsonl') }), error => error.type === 'archive_error');
-  await assert.rejects(archiveCall('search', { query: '   ' }), error => error.type === 'archive_error');
-  await assert.rejects(archiveCall('list', { limit: 101 }), error => error.type === 'rpc.invalid_input');
+  await assert.rejects(archiveCall('read', { id: join(temp, 'outside.jsonl') }), (error) => error.type === 'archive_error');
+  await assert.rejects(archiveCall('search', { query: '   ' }), (error) => error.type === 'archive_error');
+  await assert.rejects(archiveCall('list', { limit: 101 }), (error) => error.type === 'rpc.invalid_input');
   assert.equal(await readFile(join(legacy, 'legacy.jsonl'), 'utf8'), '{"type":"session","id":"legacy-fixture"}\n{"type":"message","message":{"role":"user","content":"fixture needle"}}\nmalformed\n');
-  const session = await client.session.create({
-    location: { directory: cwd }, title: 'CTG delivery host',
-    metadata: { 'carthagent.options': { workflow, maxTools } },
-  }, request);
-  await client.session.switchModel({ sessionID: session.id, model: { providerID: 'fixture', id: 'fixture' } }, request);
-  const promptText = scenario === 'raw' ? 'Run this shell command exactly: printf raw bypass > raw.txt' : 'Create and verify a tiny fixture file.';
-  const turn = await client.session.prompt({ sessionID: session.id, text: promptText, ...(scenario === 'raw' ? { metadata: { 'ctg.raw': true } } : {}) }, request);
-  await client.session.wait({ sessionID: session.id }, { signal: AbortSignal.timeout(45_000) });
-  assert.equal(turn.type, 'user', 'model request was admitted');
-  const history = await client.message.list({ sessionID: session.id }, { signal: AbortSignal.timeout(10_000) });
-  const serialized = JSON.stringify(history.data);
-  assert.match(serialized, /delivery_plan/, 'the offline provider must call the registered delivery tool');
-  if (scenario !== 'raw') assert.match(serialized, /fixture-check/, 'the host run must persist the declared check');
-  if (scenario === 'raw') {
-    assert.match(serialized, /Call delivery_plan first/, 'raw prompt cannot bypass delivery policy for implementation tools');
-  }
-  if (scenario !== 'strict' && scenario !== 'raw') {
-    assert.match(serialized, /fixture output/, 'the host must execute the implementation shell command');
-    if (scenario !== 'budget') assert.match(serialized, /passed.{0,40}true/, 'the declared validator must produce real passing evidence');
-  }
-  if (scenario !== 'budget' && scenario !== 'raw') assert.match(serialized, /Cannot verify:/, 'the host must reject a dishonest verified finish');
-  assert.ok(observed.some(request => request.tools.includes('execute')), 'the provider request must use the native Code Mode dispatcher');
-  if (scenario === 'strict') {
-    const strictCalls = observed.filter(request => request.messages.some(message =>
-      message.role === 'tool' && String(message.content ?? '').includes('planningStatus'),
-    ));
-    assert.ok(strictCalls.length > 0, 'strict host transcript includes persisted design-gate responses');
-    assert.ok(strictCalls.some(request => !request.tools.includes('shell')), 'strict workflow hides shell while the design gate is active');
-  }
-  if (scenario !== 'budget' && scenario !== 'raw') assert.match(serialized, /carthagent\.delivery_finish.{0,180}status.{0,40}error/s, 'dishonest finish must remain an error, not successful evidence');
-  assert.ok(fixture.calls >= 2, 'host made real SSE requests to the local fixture');
-  const diagnostics = await client.rpc.call({ rpcID: 'carthagent-test', method: 'state', input: { sessionID: session.id }, location: { directory: cwd } }, request);
-  const budget = diagnostics.output.budget;
-  if (scenario === 'strict') {
-    assert.equal(diagnostics.output.delivery?.workflowMode, 'strict');
-    assert.ok(diagnostics.output.delivery.planning.validation?.findings.length === 0, 'strict design validates with no blocking findings');
-    assert.equal(diagnostics.output.delivery.planning.review?.provenance, 'model-authored; not independent assurance', `${JSON.stringify(diagnostics.output.delivery.planning)}\n${serialized}`);
-    assert.ok(diagnostics.output.delivery.planning.approval, `strict workflow persisted explicit design approval\n${serialized}`);
-    assert.equal(diagnostics.output.delivery.planning.started, undefined, 'approval does not silently start implementation');
-  }
-  assert.ok(budget, 'native tool hook persisted a session budget');
-  const chargedToolInvocations = diagnostics.output.invocations.filter(entry => entry.hook === 'execute.before').length;
-  const shellInvocations = diagnostics.output.invocations.filter(entry => entry.hook === 'shell.create.before').length;
-  const shellExecuteHooks = diagnostics.output.invocations.filter(entry => entry.hook === 'execute.before' && ['bash', 'shell', 'powershell'].includes(entry.tool)).length;
-  if (scenario === 'strict') {
-    assert.equal(shellInvocations, 0, 'strict design scenario never invokes shell');
-    assert.equal(budget.tools, chargedToolInvocations, 'strict design Code Mode calls each charge once');
-    assert.ok(diagnostics.output.delivery.planning.approval, 'strict workflow persisted explicit design approval');
-  } else if (scenario === 'budget') {
-    assert.equal(budget.tools, maxTools, 'native budget stops at its per-session configured tool limit');
-    assert.ok(diagnostics.output.invocations.some(entry => entry.hook === 'execute.before' && entry.tool === 'execute'), 'execution hook persisted the admission that reached the cap');
-    assert.ok(serialized.includes('Delivery budget exhausted:'), 'exhaustion is surfaced in the host tool result');
-  } else if (scenario === 'raw') {
-    assert.equal(shellInvocations, 0, 'raw mode does not launch shell');
-    assert.equal(budget.tools, chargedToolInvocations - shellExecuteHooks - 3, 'raw mode charges admitted Code Mode calls and excludes calls blocked by delivery policy');
-  } else {
-    assert.equal(shellInvocations, 1, 'shell.create.before sees exactly one shell request');
-    assert.equal(budget.tools, chargedToolInvocations - shellExecuteHooks + shellInvocations, 'Code Mode dispatches and shell charge once; shell execute.before is not charged a second time');
-  }
-  console.log(JSON.stringify({ fixtureCalls: fixture.calls, planToolObserved: true, scenario, budget: budget.tools }, null, 2));
-  console.log('Native plugin and validated RPC passed against OpenCode 2.0.32.');
+  console.log('Native plugin, archive RPC methods, output schemas, and declared failures passed against OpenCode 2.0.32.');
 } catch (error) {
+  console.error(JSON.stringify({ fixtureRequests }));
   console.error(output.replaceAll(password, '[redacted]'));
   throw error;
 } finally {
-  await fixture?.close().catch(() => {});
-  if (child && child.exitCode === null && child.signalCode === null) {
-    const exited = once(child, 'exit');
-    child.kill('SIGTERM');
-    const timer = setTimeout(() => child.kill('SIGKILL'), 5_000);
-    await exited;
-    clearTimeout(timer);
+  if (child) {
+    const closed = childClosed ? Promise.resolve() : once(child, 'close').then(() => { childClosed = true; });
+    if (child.exitCode === null && child.signalCode === null) {
+      if (process.platform === 'win32') {
+        // This PID is the exact host process spawned above; /T is needed to
+        // close any descendants that can keep the temporary workspace locked.
+        await execFileAsync('taskkill.exe', ['/PID', String(child.pid), '/T', '/F']).catch(() => {});
+      } else {
+        child.kill('SIGTERM');
+        const timer = setTimeout(() => {
+          if (!childClosed && child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+        }, 5_000);
+        await closed;
+        clearTimeout(timer);
+      }
+      if (!childClosed) await closed;
+    } else {
+      await closed;
+    }
   }
-  await rm(temp, { recursive: true, force: true });
+  await Promise.all([
+    new Promise((resolveClose) => authServer.close(resolveClose)),
+    new Promise((resolveClose) => gatewayServer.close(resolveClose)),
+    new Promise((resolveClose) => fixture.close(resolveClose)),
+  ]);
+  await rm(temp, { recursive: true, force: true, maxRetries: 12, retryDelay: 250 });
 }

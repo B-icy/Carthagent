@@ -47,6 +47,9 @@ export async function setupNativeTestPlugin(context: Parameters<typeof registerS
     cleanups.push(await registerCodegraph(monitored));
     const registration = await context.rpc.register(Carthagent, {
       health: async () => ({ protocol: 1, hostVersion: context.app.version, directory: context.location.directory }),
+      echo: async input => ({ text: (input as { text: string }).text }),
+      authStart: async () => { throw new Error('Device authorization is not available in the isolated delivery test plugin.'); },
+      authCancel: async () => ({ cancelled: false }),
     });
     cleanups.push(async () => registration.dispose());
     const diagnostics = await context.rpc.register(TestDiagnostics, {

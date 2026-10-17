@@ -51,8 +51,10 @@ try {
   await writeFile(join(installedPlugin, 'index.ts'), `import { Plugin } from '@opencode/plugin';\nimport { setupNativeTestPlugin } from '../src/testing';\nexport default Plugin.define({ id: 'carthagent', setup: setupNativeTestPlugin });\n`);
   // Run the acceptance harness from the installed artifact itself so its
   // imports (including @opencode/client) resolve only through that install.
-  for (const test of ['test-native-host.mjs', 'test-native-controls.mjs', 'test-native-outcomes.mjs']) {
-    run(process.execPath, [join(installed, 'tools', test), installedPlugin], { cwd: install, env });
+  const productPlugin = join(installed, 'plugins/carthagent');
+  for (const test of ['test-native-host.mjs', 'test-native-delivery-host.mjs', 'test-native-controls.mjs', 'test-native-outcomes.mjs']) {
+    const composedPlugin = test === 'test-native-host.mjs' ? productPlugin : installedPlugin;
+    run(process.execPath, [join(installed, 'tools', test), composedPlugin], { cwd: install, env });
   }
   console.log(JSON.stringify({ tarball: packed[0].filename, unpackedSize: packed[0].unpackedSize, binary, version }, null, 2));
 } finally {
