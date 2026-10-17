@@ -172,11 +172,15 @@ export function aggregateConditionExit(statuses, interrupted = false) {
 }
 
 export function assertSnapshotProvenance(provenance, { verifyArtifactFiles = false } = {}) {
-  for (const key of ['binarySha256', 'binaryVersion', 'sourceCommit', 'sourceTree', 'sourceDirty',
+  for (const key of ['binarySha256', 'binaryVersion', 'sourceCommit', 'sourceTree',
     'sourceSnapshotSha256', 'packageLockSha256', 'dependencyNodeModulesRealpath',
     'installedPackageLockSha256', 'sourceComponentSha256', 'harnessComponentSha256', 'sourceArchiveSha256',
-    'executionSnapshotTar', 'executionSnapshotSha256', 'sourceSnapshotTar', 'binary', 'dependencyInstallSha256', 'dependencyInstallRealpath']) {
+    'executionSnapshotTar', 'executionSnapshotSha256', 'sourceSnapshotTar', 'binary', 'dependencyInstallSha256', 'dependencyInstallRealpath',
+    'sourceCheckoutStatusSha256']) {
     if (typeof provenance?.[key] !== 'string' || !provenance[key]) throw new Error(`Missing provenance field: ${key}`);
+  }
+  if (typeof provenance.sourceCheckoutDirtyStatus !== 'string' || typeof provenance.harnessDirtyStatus !== 'string') {
+    throw new Error('Missing checkout dirty-state status provenance');
   }
   if (provenance.binaryVersion !== '2.0.32' || !/^[a-f0-9]{64}$/.test(provenance.binarySha256) ||
       !/^[a-f0-9]{40}$/.test(provenance.sourceCommit) || !/^[a-f0-9]{40}$/.test(provenance.sourceTree) ||
@@ -185,9 +189,18 @@ export function assertSnapshotProvenance(provenance, { verifyArtifactFiles = fal
       !/^[a-f0-9]{64}$/.test(provenance.sourceArchiveSha256) ||
       !/^[a-f0-9]{64}$/.test(provenance.executionSnapshotSha256) ||
       !/^[a-f0-9]{64}$/.test(provenance.dependencyInstallSha256) ||
+      !/^[a-f0-9]{64}$/.test(provenance.sourceCheckoutStatusSha256) ||
       !provenance.dependencyNodeModulesRealpath.startsWith('/') || !provenance.dependencyInstallRealpath.startsWith('/')) {
     throw new Error('Pinned binary or source snapshot provenance is invalid');
   }
+  if (typeof provenance.sourceDirty !== 'boolean' || typeof provenance.sourceCheckoutDirty !== 'boolean' ||
+      provenance.sourceCheckoutDirty !== (provenance.sourceCheckoutDirtyStatus.length > 0) ||
+      createHash('sha256').update(provenance.sourceCheckoutDirtyStatus).digest('hex') !== provenance.sourceCheckoutStatusSha256 ||
+      typeof provenance.harnessDirty !== 'boolean' ||
+      provenance.harnessDirty !== (provenance.harnessDirtyStatus.length > 0)) {
+    throw new Error('Checkout dirty-state provenance is invalid');
+  }
+  if (provenance.sourceDirty !== false) throw new Error('Source snapshot must be created from a clean immutable commit');
   const dependencyPackages = provenance.dependencyPackages;
   if (!dependencyPackages || typeof dependencyPackages !== 'object') throw new Error('Pinned dependency package provenance is missing');
   for (const name of ['@opencode/cli', '@opencode/client', '@opencode/plugin']) {
@@ -197,7 +210,6 @@ export function assertSnapshotProvenance(provenance, { verifyArtifactFiles = fal
       throw new Error(`Pinned dependency provenance is invalid for ${name}`);
     }
   }
-  if (provenance.sourceDirty !== 'false') throw new Error('Source snapshot must be created from a clean immutable commit');
   if (provenance.installedPackageLockSha256 !== provenance.packageLockSha256) {
     throw new Error('Installed dependencies are not identical to the selected source lockfile');
   }
@@ -224,7 +236,8 @@ export function assertSnapshotProvenance(provenance, { verifyArtifactFiles = fal
 
 export function verifySnapshotIdentity(expected, observed, { verifyArtifactFiles = true } = {}) {
   assertSnapshotProvenance(observed, { verifyArtifactFiles });
-  for (const key of ['binarySha256', 'binaryVersion', 'sourceCommit', 'sourceTree', 'sourceDirty',
+  for (const key of ['binarySha256', 'binaryVersion', 'sourceCommit', 'sourceTree',
+    'sourceDirty', 'sourceCheckoutDirty', 'sourceCheckoutDirtyStatus', 'sourceCheckoutStatusSha256', 'harnessDirty', 'harnessDirtyStatus',
     'sourceSnapshotSha256', 'packageLockSha256', 'dependencyNodeModulesRealpath',
     'installedPackageLockSha256', 'sourceComponentSha256', 'harnessComponentSha256', 'sourceArchiveSha256',
     'executionSnapshotTar', 'executionSnapshotSha256', 'sourceSnapshotTar', 'binary', 'dependencyInstallSha256', 'dependencyInstallRealpath']) {
