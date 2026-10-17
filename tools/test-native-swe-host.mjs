@@ -10,6 +10,7 @@ import { runNativeEvaluation } from '../lib/opencode/evaluation.mjs';
 let runResult;
 let reviewRequests = 0;
 let reviewerSource = '';
+let prePlanTools = [];
 const host = await nativeFixture({
   plugin: process.argv[2] ?? join(import.meta.dirname, '../plugins/carthagent'),
   pluginOptions: { reviewModel: { providerID: 'ctg-fixture', id: 'fixture' } },
@@ -20,8 +21,6 @@ const host = await nativeFixture({
   },
   respond(body, res) {
     const reviewText = JSON.stringify(body.messages ?? []);
-    const reviewSnapshot = reviewText.match(/Snapshot SHA-256: ([a-f0-9]+)/)?.[1];
-    const reviewHead = reviewText.match(/HEAD: ([a-f0-9]+)/)?.[1];
     const root = host.cwd;
     const fixedFile = join(root, 'src/value.mjs');
     const messages = body.messages ?? [];
@@ -41,6 +40,9 @@ const host = await nativeFixture({
     };
     const executed = source => executeCalls.some(call => codeOf(call).includes(source));
     const execution = (code) => dispatch('execute', { code });
+    if (messages.some(message => message.role === 'user' && String(message.content).includes('CTG_SWE_DELIVERY_FIXTURE')) && !executed('delivery_plan') && !prePlanTools.length) {
+      prePlanTools = tools;
+    }
     if (reviewText.includes('Snapshot SHA-256:') && reviewText.includes('REVIEW_JSON:')) {
       const snapshot = reviewText.match(/Snapshot SHA-256: ([a-f0-9]+)/)?.[1];
       const head = reviewText.match(/HEAD: ([a-f0-9]+)/)?.[1];
@@ -65,10 +67,6 @@ const host = await nativeFixture({
       assert.ok(tools.includes('execute'), 'production host must expose the Code Mode tool for discovery');
       return execution('const result = await search({ query: "delivery plan acceptance checks review design tools", namespace: "carthagent", limit: 20 }); return result');
     }
-    if (!done('shell').length) {
-      return dispatch('shell', { command: `node -e "require('node:fs').writeFileSync('unplanned.txt','bypass')"`, workdir: root }, { requireAdvertised: false });
-    }
-    assert.match(done('shell')[0].output, /(?:Implementation locked: call delivery_plan first|not found|unknown tool)/i, 'host/server must reject a real unplanned native shell attempt');
     if (!executeCalls.some(call => codeOf(call).includes('delivery_finish'))) {
       return execution('const result = await tools.carthagent["delivery_finish"]({status:"verified",review:"premature no-plan attempt",launch:"not applicable",limitations:[]}); return result');
     }
@@ -94,11 +92,11 @@ const host = await nativeFixture({
     if (!executed('delivery_check')) {
       return execution('return await tools.carthagent["delivery_check"]({id:"all"})');
     }
-    if (!executed('delivery_progress')) {
-      return execution('const result = await tools.carthagent["delivery_progress"]({step:"repair-value",status:"done",note:"Native red/edit/green chronology completed."}); return {marker:"CTG_SWE_PROGRESS_DONE",result}');
-    }
     if (!executeCalls.some(call => codeOf(call).includes('delivery_finish') && /premature attempt before progress/.test(codeOf(call)))) {
       return execution('const result = await tools.carthagent["delivery_finish"]({status:"verified",review:"premature attempt before progress",launch:"not applicable",limitations:[]}); return result');
+    }
+    if (!executed('delivery_progress')) {
+      return execution('const result = await tools.carthagent["delivery_progress"]({step:"repair-value",status:"done",note:"Native red/edit/green chronology completed."}); return {marker:"CTG_SWE_PROGRESS_DONE",result}');
     }
     const reviewCall = [...completed].reverse().find(call => call.name === 'execute'
       && /delivery_review/.test(codeOf(call)) && /inspect/.test(codeOf(call)));
@@ -116,12 +114,13 @@ const host = await nativeFixture({
     }
     return respondText('The fixture fix passed the declared check and the composed delivery workflow accepted its honest, limited handoff.');
 
-    function dispatch(name, args, { requireAdvertised = true } = {}) {
-      if (requireAdvertised && !tools.includes(name)) throw Error(`Production delivery policy is withholding required native tool ${name}; advertised: ${tools.join(', ')}`);
+    function dispatch(name, args) {
+      if (!tools.includes(name)) throw Error(`Production delivery policy is withholding required native tool ${name}; advertised: ${tools.join(', ')}`);
       const call = { index:0, id:`fixture-call-${host.requests.length}`, type:'function', function:{name,arguments:JSON.stringify(args)} };
       res.writeHead(200, { 'content-type':'text/event-stream', 'cache-control':'no-cache', connection:'keep-alive' });
       const chunk = (delta, finish_reason = null, usage) => `data: ${JSON.stringify({id:`native-swe-${host.requests.length}`,object:'chat.completion.chunk',created:1,model:'fixture',choices:[{index:0,delta,finish_reason}],...(usage?{usage}:{})})}\n\n`;
       res.end(`${chunk({role:'assistant',tool_calls:[call]})}${chunk({},'tool_calls',{prompt_tokens:20,completion_tokens:8,total_tokens:28})}data: [DONE]\n\n`);
+      return call.id;
     }
     function respondText(text) {
       res.writeHead(200, { 'content-type':'text/event-stream' });
@@ -152,6 +151,7 @@ try {
   git('-c', 'user.name=CTG fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'SWE fixture baseline');
   await host.active('ctg.evaluation-budget', location);
   await host.active('carthagent', location);
+  await assert.rejects(readFile(join(directory, 'unplanned.txt')), 'no unplanned shell execution was issued or created its requested file');
   const baseline = spawnSync(process.execPath, ['--test', '--test-reporter=tap', join(directory, 'src/value.test.mjs')], { cwd: directory, encoding: 'utf8' });
   assert.notEqual(baseline.status, 0, `fixture acceptance starts red: ${baseline.stdout}${baseline.stderr}`);
 
@@ -165,6 +165,7 @@ try {
   assert.equal(result.opencodeVersion, '2.0.32');
   assert.equal(result.exitCode, 0, JSON.stringify(result));
   assert.equal(result.outcome, 'succeeded');
+  assert.equal(prePlanTools.includes('shell'), false, 'native host withholds shell before a valid standard plan');
   assert.ok(result.productiveTurns >= 8, JSON.stringify(result));
   assert.ok(result.tools.edit >= 1, JSON.stringify(result));
   assert.ok(result.tools.shell >= 2, JSON.stringify(result));
@@ -173,7 +174,6 @@ try {
   assert.equal(final.status, 0, final.stdout + final.stderr);
   assert.match(final.stdout, /(?:# pass 1|ℹ pass 1)/);
   assert.equal(await readFile(join(directory, 'src/value.mjs'), 'utf8'), 'export const value = 42;\n');
-  await assert.rejects(readFile(join(directory, 'unplanned.txt')), 'rejected unplanned shell must not create its requested file');
   const aggregate = await client.session.get({ sessionID: result.sessionID }, request());
   assert.equal(result.cost, aggregate.cost);
   assert.ok(result.tokens > 0);
@@ -210,12 +210,14 @@ try {
     assert.ok(workflowTools.has(tool), `composed production workflow must execute ${tool}`);
   }
   const finishCalls = timeline.filter(item => item.kind === 'call' && item.name === 'execute' && String(item.arguments.code ?? '').includes('delivery_finish'));
-  assert.ok(finishCalls.length >= 2, 'fixture must issue both an early rejected and a final verified finish');
+  assert.ok(finishCalls.length >= 3, 'fixture must issue no-plan, pre-progress, and final finish attempts');
   const noPlanFinish = timeline.find(item => item.kind === 'result' && item.id === finishCalls[0].id);
   assert.match(noPlanFinish?.output ?? '', /Call delivery_plan first/);
   const beforeProgress = finishCalls.find(call => /premature attempt before progress/.test(String(call.arguments.code ?? '')));
   assert.ok(beforeProgress);
-  assert.match(timeline.find(item => item.kind === 'result' && item.id === beforeProgress.id)?.output ?? '', /incompleteSteps/);
+  const beforeProgressResult = timeline.find(item => item.kind === 'result' && item.id === beforeProgress.id)?.output ?? '';
+  assert.match(beforeProgressResult, /incompleteSteps/);
+  assert.match(beforeProgressResult, /repair-value/);
   const finishCall = finishCalls.at(-1);
   assert.ok(finishCall, 'native workflow must issue delivery_finish');
   const finishResult = timeline.find(item => item.kind === 'result' && item.id === finishCall.id);
@@ -256,14 +258,33 @@ try {
   assert.equal(reviewRequests, beforeAlteredFinish, 'review admission must stop after its configured round cap');
   await client.session.prompt({sessionID:result.sessionID,text:'STALE_FINISH_ATTEMPT: try to finish verified using now stale evidence.'},request());
   await client.session.wait({sessionID:result.sessionID},{signal:AbortSignal.timeout(45_000)});
-  const staleFinishHistory = await client.message.list({sessionID:result.sessionID},{signal:AbortSignal.timeout(10_000)});
-  assert.match(JSON.stringify(staleFinishHistory.data),/independent receipt is stale[\s\S]*Cannot verify:/,'a real native verified finish after review-source mutation must be rejected, not reported as verified');
+  const staleFinishPrompt = [...host.requests].reverse().find(request => request.messages?.some(message => message.role === 'user' && String(message.content).includes('STALE_FINISH_ATTEMPT')))
+    ?? host.requests.at(-1);
+  assert.ok(staleFinishPrompt, 'stale-finish probe must have its own model request');
+  const staleFinishCall = [...staleFinishPrompt.messages.flatMap(message => message.tool_calls ?? [])].reverse().find(call => {
+    if (call.function?.name !== 'execute') return false;
+    try { return JSON.parse(call.function.arguments ?? '{}').code?.includes('independent receipt is stale after source mutation'); }
+    catch { return false; }
+  });
+  assert.ok(staleFinishCall, 'stale-finish turn must issue its own verified-finish call');
+  const staleFinishResult = staleFinishPrompt.messages.find(message => message.role === 'tool' && message.tool_call_id === staleFinishCall.id);
+  assert.ok(staleFinishResult, `stale-finish tool call ${staleFinishCall.id} must have a correlated result`);
+  assert.match(String(staleFinishResult.content), /Cannot verify:/, 'the source-mutated finish call itself must be rejected');
+  assert.match(String(staleFinishResult.content), /pendingChecks/, 'source mutation must invalidate declared check evidence');
+  assert.doesNotMatch(String(staleFinishResult.content), /"status"\s*:\s*"verified"/);
   console.log(JSON.stringify({
     host: '2.0.32', outcome: result.outcome, productiveTurns: result.productiveTurns,
     tools: result.tools, cost: result.cost, baseline: 'native shell failed', nativePostEditCheck: 'native shell passed', finalTest: 'passed',
     realOpenCodeHost: true, loopbackProvider: true, composedProductionDelivery: true,
-    policyRejections: { unplannedNativeShell: 'rejected', verifiedFinishWithoutPlan: 'rejected', verifiedFinishBeforeProgress: 'rejected', verifiedFinishAfterReviewSourceChange: 'rejected' },
-    review: 'same-worktree read-only root reviewer; source-bound receipt invalidated by later edit; deterministic verdict proves receipt plumbing only, not review quality', deliveryPolicyEnforcement: true,
+    policyEvidence: {
+      unplannedShell: 'withheld before plan; no policy-hook rejection claim',
+      plannedNativeShellPositiveControl: 'passed',
+      verifiedFinishWithoutPlan: 'rejected',
+      verifiedFinishBeforeProgress: 'rejected',
+      verifiedFinishAfterSourceMutation: 'rejected because declared evidence is stale',
+    },
+    review: 'same-worktree root reviewer configured with persisted read-only permissions; source-bound receipt invalidated by later edit; deterministic verdict proves receipt plumbing only, not review quality',
+    finalTestPassedBeforeMutation: true, alteredSourceTestFailedIntentionally: true,
   }));
 } finally {
   if (runResult?.exitCode) {
