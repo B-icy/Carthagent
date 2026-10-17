@@ -30,6 +30,8 @@ export async function verifyOwnedRuntimeRelease({
   assetsBaseUrl,
   repoRoot,
   acquireRuntime,
+  cacheRoot,
+  fetchImpl,
 }) {
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
   validateRuntimeReleaseManifest(manifest, releaseVersion);
@@ -50,6 +52,9 @@ export async function verifyOwnedRuntimeRelease({
       expectedLockSha256: manifest.lockSha256,
       expectedCompatibilityVersion: manifest.compatibilityVersion,
       expectedRuntimeVersion: manifest.runtimeVersion,
+      expectedChannel: `ctg.${manifest.compatibilityVersion}`,
+      ...(cacheRoot ? { cacheRoot } : {}),
+      ...(fetchImpl ? { fetchImpl } : {}),
     });
     if (typeof installed !== 'string' || !installed) throw new Error(`Acquisition did not verify ${name}`);
   }
