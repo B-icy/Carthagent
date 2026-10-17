@@ -30,14 +30,15 @@ export function deliveryReadiness(delivery: {
   freshness?: string;
   truncation?: Record<string, { returned: number; total: number }>;
 } | undefined) {
-  if (!delivery) return { complete: false, status: "not loaded" };
+  if (!delivery) return { complete: false, coverage: "unknown", status: "not loaded" };
   const truncation = delivery.truncation;
-  const capped = truncation ? Object.entries(truncation).filter(([, value]) => value.returned !== value.total) : [["coverage metadata unavailable", { returned: 0, total: 1 }] as const];
-  const complete = delivery.completion === "ready" && delivery.gate === "open" && delivery.freshness === "current" && capped.length === 0;
+  const capped = truncation ? Object.entries(truncation).filter(([, value]) => value.returned !== value.total) : [];
+  const complete = delivery.completion === "ready";
   const totals = capped.map(([name, value]) => `${name} ${value.returned}/${value.total}`);
   return {
     complete,
-    status: `${delivery.completion ?? "unknown"} · gate ${delivery.gate ?? "unknown"} · ${delivery.freshness ?? "freshness unknown"}${totals.length ? ` · truncated: ${totals.join(", ")}` : ""}`,
+    coverage: truncation ? (totals.length ? "partial" : "complete") : "unknown",
+    status: `completion ${delivery.completion ?? "unknown"} · gate ${delivery.gate ?? "unknown"} · freshness ${delivery.freshness ?? "unknown"}${totals.length ? ` · partial coverage: ${totals.join(", ")}` : ""}`,
   };
 }
 
@@ -48,9 +49,12 @@ export function renderDeliveryReadiness(delivery: Parameters<typeof deliveryRead
     : ["Coverage metadata unavailable: completeness cannot be confirmed"];
   const receipts = (delivery && "evidence" in delivery && Array.isArray(delivery.evidence) ? delivery.evidence : [])
     .map((item) => `Receipt ${item.id}: ${item.status}`);
+  const gate = delivery?.gate === "open" || delivery?.gate === "locked" ? delivery.gate : "unknown";
   return {
-    label: `Readiness: ${readiness.complete ? "ready" : "incomplete"} · ${readiness.status}`,
-    gate: delivery?.gate === "open" && readiness.complete ? "open" : "locked",
+    label: `Readiness: ${delivery?.completion === "ready" ? "ready" : delivery?.completion === "incomplete" ? "incomplete" : "unknown"} · ${readiness.status}`,
+    gate,
+    coverageLabel: readiness.coverage === "unknown" ? "Coverage: unknown" : `Coverage: ${readiness.coverage}`,
+    coverage: readiness.coverage,
     sections,
     receipts,
   };

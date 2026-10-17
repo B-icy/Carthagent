@@ -337,8 +337,8 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
           <text fg={context.theme.text.action.primary.base}>Delivery receipt</text>
           <Show when={deliveryEvidence()} fallback={<text fg={context.theme.text.faint}>Loading delivery receipt…</text>}>
             <text fg={context.theme.text.base}>Status: {deliveryEvidence()?.status} · {deliveryEvidence()?.freshness ?? "freshness unavailable"} · revision {deliveryEvidence()?.revision ?? "—"} · run {deliveryEvidence()?.runId ?? "—"}</text>
-            <text fg={readiness().gate === "open" ? context.theme.text.feedback.success.base : context.theme.text.feedback.warning.base}>{readiness().label} · finish gate {readiness().gate}</text>
-            <For each={readiness().sections}>{(section) => <text fg={context.theme.text.feedback.warning.base}>Incomplete DTO section · {section}</text>}</For>
+            <text fg={readiness().gate === "open" ? context.theme.text.feedback.success.base : readiness().gate === "locked" ? context.theme.text.feedback.warning.base : context.theme.text.muted}>{readiness().label} · finish gate {readiness().gate} · {readiness().coverageLabel}</text>
+            <For each={readiness().sections}>{(section) => <text fg={context.theme.text.muted}>Returned DTO section · {section}</text>}</For>
             <For each={readiness().receipts}>{(receipt) => <text fg={context.theme.text.feedback.warning.base}>{receipt}</text>}</For>
             <Show when={deliveryEvidence()?.plan}>{(plan) => <box flexDirection="column">
               <text fg={context.theme.text.action.primary.base}>Goal: {plan().goal}</text>
