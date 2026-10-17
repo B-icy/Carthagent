@@ -242,20 +242,23 @@ test('packaged release manifest automatically acquires the pinned owned runtime 
     await writeFile(manifestPath, JSON.stringify(release));
     const calls = [];
     const spawnImpl = (command, args, options) => spawn(process.execPath, ['-e', `process.stdout.write('opencode v${CTG_RUNTIME_VERSION}')`], options);
-    const resolved = await resolveOpenCode({
+    const options = {
       runtimeReleaseManifestPath: manifestPath,
       runtimeCacheRoot: path.join(root, 'owned-cache'),
       runtimeReleaseBaseUrl: `https://example.test/releases/v${packageMetadata.version}`,
       acquireOwnedRuntime: async (input) => { calls.push(input); return artifact; },
       spawnImpl,
-    });
+    };
+    const resolved = await resolveOpenCode(options);
     assert.equal(resolved, binary);
     assert.equal(calls.length, 1);
     assert.equal(calls[0].releaseVersion, packageMetadata.version);
     assert.equal(calls[0].expectedArchiveSha256, assets[target].archiveSha256);
     assert.equal(calls[0].expectedExecutableSha256, assets[target].executableSha256);
     assert.equal(calls[0].expectedChannel, `ctg.${OPENCODE_VERSION}`);
-    const identity = await runtimeIdentity(resolved, { spawnImpl });
+    // Production ensureService resolves and identifies with one shared options
+    // object; resolveOpenCode records the acquired artifact root on that object.
+    const identity = await runtimeIdentity(resolved, options);
     assert.equal(identity.kind, 'ctg-owned');
     assert.equal(identity.patchSha256, CTG_RUNTIME_PATCH_SHA256);
   } finally { await rm(root, { recursive: true, force: true }); }
