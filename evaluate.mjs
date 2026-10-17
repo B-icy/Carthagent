@@ -202,6 +202,7 @@ for (const mode of args.mode === 'both' ? ['baseline', 'custom'] : [args.mode]) 
     timedOut: result.timedOut,
     budgetReason: result.budgetReason,
     outcome: result.outcome,
+    interruptionStatus: result.interruptionStatus,
     sessionInfo: { costScope:'session', usageSource:'session.get', terminalAuthority:'session.outcome', outcome:result.outcome },
     turns: result.turns,
     productiveTurns: result.productiveTurns,
