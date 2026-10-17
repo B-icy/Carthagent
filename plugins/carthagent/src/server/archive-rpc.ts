@@ -13,12 +13,13 @@ const MAX_TOTAL_BYTES = 50_000_000;
 const MAX_PAGE = 100;
 const MAX_DIAGNOSTICS = 1000;
 const MAX_RECORDS = 10_000;
+const MAX_SCAN_RECORDS = 100_000;
 const READ_CHUNK = 64 * 1024;
 
 type Options = { archiveRoots?: string[]; archiveDir?: string };
 type FileInfo = { path: string; root: string; id: string; size: number };
 type Row = { type?: string; timestamp?: unknown; message?: unknown; [key: string]: unknown };
-type Parsed = { records: Row[]; malformedLines: Array<{ line: number }>; moreMalformedLines: boolean; recordsBytes: number };
+type Parsed = { records: Row[]; malformedLines: Array<{ line: number }>; moreMalformedLines: boolean; recordsBytes: number; recordCount: number };
 type ArchiveItem = { path: string; id: string; createdAt: unknown; messageCount: number; malformedLines: Array<{ line: number }>; moreMalformedLines: boolean; searchText: string; excerpt?: string };
 type FailureCode = 'invalid_request' | 'not_found' | 'limit_exceeded' | 'archive_io';
 class ArchiveFailure extends Error {
@@ -159,7 +160,7 @@ function totalLimitCheck(size: number) {
   if (size > MAX_FILE_BYTES) throw new ArchiveFailure('limit_exceeded', `Archive transcript exceeds the ${MAX_FILE_BYTES} byte limit`);
 }
 
-function parse(bytes: Buffer): Parsed {
+function parse(bytes: Buffer, maxRecords = MAX_RECORDS): Parsed {
   const records: Row[] = [];
   const malformedLines: Array<{ line: number }> = [];
   let lineStart = 0;
@@ -176,7 +177,7 @@ function parse(bytes: Buffer): Parsed {
     if (!line.trim()) continue;
     try {
       const record = JSON.parse(line) as Row;
-      if (records.length >= MAX_RECORDS) throw new ArchiveFailure('limit_exceeded', `Archive transcript exceeds the ${MAX_RECORDS} record response limit`);
+      if (records.length >= maxRecords) throw new ArchiveFailure('limit_exceeded', `Archive transcript exceeds the ${maxRecords} record processing limit`);
       // Account before retaining parsed objects; no full transcript stringify.
       encodedRecordsBytes += Buffer.byteLength(JSON.stringify(record));
       if (encodedRecordsBytes > MAX_FILE_BYTES) throw new ArchiveFailure('limit_exceeded', 'Archive transcript response exceeds the 4,000,000 character limit');
@@ -187,12 +188,12 @@ function parse(bytes: Buffer): Parsed {
       else moreMalformedLines = true;
     }
   }
-  return { records, malformedLines, moreMalformedLines, recordsBytes: encodedRecordsBytes };
+  return { records, malformedLines, moreMalformedLines, recordsBytes: encodedRecordsBytes, recordCount: records.length };
 }
 
-async function itemFor(file: FileInfo, signal: AbortSignal, maxBytes: number): Promise<{ item: ArchiveItem; bytes: number }> {
+async function itemFor(file: FileInfo, signal: AbortSignal, maxBytes: number, maxRecords: number): Promise<{ item: ArchiveItem; bytes: number; records: number }> {
   const bytes = await readBounded(file, signal, maxBytes);
-  const transcript = parse(bytes);
+  const transcript = parse(bytes, maxRecords);
   const header = transcript.records.find(row => row?.type === 'session') ?? transcript.records[0] ?? {};
   const messages = transcript.records.filter(row => row?.type === 'message');
   const searchText = messages.map(row => JSON.stringify(row.message ?? row)).join('\n');
@@ -200,7 +201,7 @@ async function itemFor(file: FileInfo, signal: AbortSignal, maxBytes: number): P
     path: file.path, id: file.id, createdAt: header.timestamp ?? null,
     messageCount: messages.length, malformedLines: transcript.malformedLines.slice(0, MAX_DIAGNOSTICS),
     moreMalformedLines: transcript.moreMalformedLines, searchText,
-  }, bytes: bytes.length };
+  }, bytes: bytes.length, records: transcript.recordCount };
 }
 
 function pageArgs(input: { offset?: number; limit?: number }) {
@@ -225,10 +226,12 @@ async function allItems(roots: string[], signal: AbortSignal) {
   const indexed = await enumerate(roots, signal);
   const items: ArchiveItem[] = [];
   let bytesRead = 0;
+  let recordsRead = 0;
   for (const file of indexed) {
     aborted(signal);
-    const result = await itemFor(file, signal, MAX_TOTAL_BYTES - bytesRead);
+    const result = await itemFor(file, signal, MAX_TOTAL_BYTES - bytesRead, MAX_SCAN_RECORDS - recordsRead);
     bytesRead += result.bytes;
+    recordsRead += result.records;
     items.push(result.item);
   }
   return { indexed, items };
