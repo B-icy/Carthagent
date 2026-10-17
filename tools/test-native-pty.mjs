@@ -1,12 +1,11 @@
 #!/usr/bin/env node
 /** Unix-only command and native-theme smoke tests in an isolated OpenCode PTY. */
 import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { selectNativePtyRuntime } from './native-pty-runtime.mjs';
 
 if (process.platform === 'win32') {
   console.log('Native PTY smoke skipped: the Python PTY implementation is Unix-only.');
@@ -14,41 +13,10 @@ if (process.platform === 'win32') {
 }
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
-// Always use the same resolver that the shipped launcher uses. In particular,
-// acceptance must not be redirected to a separately supplied selector module.
 const runtime = await import(pathToFileURL(resolve(root, 'lib/opencode/runtime.mjs')).href);
-const explicitBinary = process.env.CTG_OPENCODE_BIN ?? process.env.OPENCODE_BIN;
-let explicitDigest;
-if (explicitBinary) {
-  if (!explicitBinary.includes('/') && !explicitBinary.includes('\\')) {
-    throw new Error('An explicit native PTY binary must be a filesystem path so its bytes can be verified before execution.');
-  }
-  const expected = process.env.CTG_NATIVE_PTY_EXPECTED_SHA256;
-  if (!/^[a-f0-9]{64}$/i.test(expected ?? '')) {
-    throw new Error('Explicit native PTY binary requires CTG_NATIVE_PTY_EXPECTED_SHA256, captured independently before execution.');
-  }
-  const explicitPath = resolve(explicitBinary);
-  explicitDigest = createHash('sha256').update(await readFile(explicitPath)).digest('hex');
-  if (explicitDigest !== expected.toLowerCase()) {
-    throw new Error(`Explicit native PTY binary SHA-256 mismatch before runtime selection: ${explicitDigest}`);
-  }
-}
-const binaryOptions = explicitBinary ? { binary: explicitBinary } : {};
-if (typeof runtime.resolveOpenCode !== 'function' || typeof runtime.runtimeIdentity !== 'function') {
-  throw new Error('Native PTY acceptance requires resolveOpenCode(options) and runtimeIdentity(binary, options) from the production runtime selector.');
-}
-const binary = await runtime.resolveOpenCode(binaryOptions);
-const runtimeIdentity = await runtime.runtimeIdentity(binary, binaryOptions);
-if (explicitBinary) {
-  const actual = createHash('sha256').update(await readFile(runtimeIdentity.binaryPath ?? binary)).digest('hex');
-  if (actual !== explicitDigest) throw new Error(`Explicit native PTY binary changed during runtime selection: ${actual}`);
-} else if (runtimeIdentity.kind !== 'ctg-owned') {
-  throw new Error(`Default native PTY must select the owned runtime, got ${runtimeIdentity.kind}.`);
-}
-if (!runtimeIdentity.binaryPath || resolve(runtimeIdentity.binaryPath) !== resolve(binary)) {
-  throw new Error(`Runtime identity does not bind the selected executable: selected ${binary}, identity ${runtimeIdentity.binaryPath ?? 'missing'}.`);
-}
-console.log(JSON.stringify({ selectedNativeRuntime: runtimeIdentity }));
+const selected = await selectNativePtyRuntime({ runtime, root });
+const { binary, identity: runtimeIdentity } = selected;
+console.log(JSON.stringify({ selectedNativeRuntime: runtimeIdentity, independentlyVerifiedRuntime: selected.verified }));
 const plugin = resolve(process.argv[2] ?? resolve(root, 'plugins/carthagent'));
 const themeState = mkdtempSync(join(tmpdir(), 'ctg-theme-reload-'));
 const probes = [

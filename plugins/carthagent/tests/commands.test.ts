@@ -26,6 +26,22 @@ test("native theme adapter requires the host capability and verifies its resolve
   assert.deepEqual(setNativeTheme(control, "paper", "light"), { status: "updated", current: { name: "paper", mode: "light" } });
   assert.deepEqual(calls, [{ name: "carthage" }, { name: "paper", mode: "light" }]);
 
+  // Name-only selection may resolve to the theme's available mode instead
+  // of preserving the previous active mode.
+  current = { name: "paper", mode: "light" };
+  const darkOnly = {
+    current: () => current,
+    set: (selection: { name: string; mode?: "dark" | "light" }) => {
+      if (selection.name === "dark-only" && selection.mode === "light") return false;
+      current = { name: selection.name, mode: "dark" };
+      return true;
+    },
+  };
+  assert.deepEqual(setNativeTheme(darkOnly, "dark-only"), { status: "updated", current: { name: "dark-only", mode: "dark" } });
+  const beforeUnsupported = current;
+  assert.deepEqual(setNativeTheme(darkOnly, "dark-only", "light"), { status: "rejected" });
+  assert.deepEqual(current, beforeUnsupported, "an explicitly rejected mode must leave the active theme unchanged");
+
   const rejected = { current: () => current, set: () => false };
   assert.deepEqual(setNativeTheme(rejected, "opencode"), { status: "rejected" });
   const mismatched = { current: () => current, set: () => true };

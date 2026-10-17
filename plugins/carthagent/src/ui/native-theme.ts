@@ -24,13 +24,13 @@ export function setNativeTheme(
   mode?: NativeThemeMode,
 ): NativeThemeSetResult {
   if (!control) return { status: "unsupported" };
-  const before = control.current();
   if (!control.set({ name, ...(mode ? { mode } : {}) })) return { status: "rejected" };
   const current = control.current();
   if (current.name !== name || (mode && current.mode !== mode)) {
     return { status: "mismatch", current };
   }
-  // A name-only set must preserve the existing resolved light/dark mode.
-  if (!mode && current.mode !== before.mode) return { status: "mismatch", current };
+  // With an omitted mode the host resolves the requested theme's compatible
+  // active mode (which may fall back from the previous theme's mode). Verify
+  // the requested name, but treat the returned mode as authoritative.
   return { status: "updated", current };
 }
