@@ -82,15 +82,22 @@ try {
   // Run the acceptance harness from the installed artifact itself so its
   // imports (including @opencode/client) resolve only through that install.
   const probes = [];
-  const tests = focused ? [focused] : [
+  const acceptanceTests = [
     'test-native-host.mjs', 'test-native-controls.mjs', 'test-native-outcomes.mjs',
     'test-native-product.mjs', 'test-native-runtime.mjs', 'test-native-tasks.mjs',
     'test-native-review.mjs', 'test-native-swe-host.mjs', 'test-native-pty.mjs',
     'test-native-evaluation.mjs', 'test-native-swe.mjs',
     'test-native-report.mjs',
+    'test-native-delivery-host.mjs',
     '../tests/native-cli-host-smoke.mjs',
   ];
-  for (const test of tests) {
+  assert.ok(!focused || acceptanceTests.includes(focused), `Unknown installed acceptance probe: ${focused}`);
+  const tests = focused ? [focused] : acceptanceTests;
+  const cases = tests.flatMap(test => test === 'test-native-delivery-host.mjs'
+    ? ['standard', 'strict', 'budget', 'raw', 'mixed', 'concurrent'].map(scenario => ({ test, scenario }))
+    : [{ test }]);
+  for (const { test, scenario } of cases) {
+    const identity = { test, ...(scenario ? { scenario } : {}) };
     if (test === 'test-native-pty.mjs' && process.platform === 'win32') {
       const result = { test, status: 'skipped', reason: 'Unix-only Python PTY harness' };
       probes.push(result);
@@ -98,18 +105,20 @@ try {
       continue;
     }
     const started = performance.now();
-    console.log(JSON.stringify({ test, status: 'started' }));
+    console.log(JSON.stringify({ ...identity, status: 'started' }));
     try {
-      run(process.execPath, [join(installed, 'tools', test), installedPlugin], { cwd: install, env });
+      run(process.execPath, [join(installed, 'tools', test), installedPlugin], {
+        cwd: install, env: { ...env, CTG_NATIVE_SCENARIO: scenario ?? '' },
+      });
     } catch (error) {
-      console.error(JSON.stringify({ test, status: 'failed', elapsedMs: Math.round(performance.now() - started), completed: probes }));
+      console.error(JSON.stringify({ ...identity, status: 'failed', elapsedMs: Math.round(performance.now() - started), completed: probes }));
       throw error;
     }
-    const result = { test, status: 'passed', elapsedMs: Math.round(performance.now() - started) };
+    const result = { ...identity, status: 'passed', elapsedMs: Math.round(performance.now() - started) };
     probes.push(result);
     console.log(JSON.stringify(result));
   }
-  console.log(JSON.stringify({ tarball: packed[0].filename, unpackedSize: packed[0].unpackedSize, binary, version, probes }, null, 2));
+  console.log(JSON.stringify({ scope: focused ? 'focused' : 'full', tarball: packed[0].filename, unpackedSize: packed[0].unpackedSize, binary, version, probes }, null, 2));
 } finally {
   await rm(temp, { recursive: true, force: true });
 }
