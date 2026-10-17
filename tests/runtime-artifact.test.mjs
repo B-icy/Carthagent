@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile, chmod } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { once } from 'node:events';
+import { promisify } from 'node:util';
 import { gzipSync } from 'node:zlib';
 import { after, before, test } from 'node:test';
 import { acquireOwnedRuntime } from '../lib/opencode/runtime-artifact.mjs';
@@ -16,6 +18,7 @@ const version = '9.8.7';
 const targetKey = 'linux-x64';
 const executableRelative = `cli-${targetKey}/bin/opencode`;
 const executableBytes = Buffer.from('#!/bin/sh\necho opencode 9.8.7\n');
+const execFileAsync = promisify(execFile);
 let temp;
 let server;
 let baseUrl;
@@ -81,6 +84,23 @@ function makeArchive(entries = []) {
 function setArchive(archive) {
   assets = new Map([[`/releases/${version}/opencode-${targetKey}.tar.gz`, archive]]);
 }
+async function makeSystemTarArchive() {
+  const fixture = path.join(temp, 'system-tar-fixture');
+  const executable = path.join(fixture, executableRelative);
+  await mkdir(path.dirname(executable), { recursive: true });
+  await writeFile(executable, executableBytes);
+  await chmod(executable, 0o755);
+  await writeFile(path.join(fixture, 'SHA256SUMS'), `${sha(executableBytes)}  ${executableRelative}\n`);
+  await writeFile(path.join(fixture, 'ctg-runtime.json'), JSON.stringify({
+    owner: 'Carthagent', sourceRepository: 'https://github.com/anomalyco/opencode',
+    sourceRevision, lockSha256, patchSha256,
+    compatibilityVersion: '2.0.32', runtimeVersion: '0.0.0-ctg.2.0.32',
+    channel: 'ctg.2.0.32', platform: 'linux-x64', webUI: false,
+  }));
+  const archivePath = path.join(temp, 'system-ustar.tar.gz');
+  await execFileAsync('tar', ['-czf', archivePath, '--format=ustar', '-C', fixture, '.']);
+  return readFile(archivePath);
+}
 function args(extra = {}) {
   return {
     releaseVersion: version, platform: 'linux', arch: 'x64', expectedArchiveSha256: assets.size ? sha(assets.values().next().value) : 'd'.repeat(64),
@@ -109,6 +129,24 @@ test('follows a normal release-asset redirect while retaining the pinned digest 
   const redirectedUrl = `${baseUrl}/redirect`;
   const destination = await acquireOwnedRuntime(args({ baseUrl: redirectedUrl, cacheRoot: path.join(temp, 'redirect-cache') }));
   assert.equal(await readFile(path.join(destination, 'SHA256SUMS'), 'utf8'), `${sha(executableBytes)}  ${executableRelative}\n`);
+});
+
+test('extracts a system tar USTAR artifact in the resolver-compatible root layout', async (t) => {
+  let archive;
+  try { archive = await makeSystemTarArchive(); }
+  catch (error) {
+    if (error.code === 'ENOENT') return t.skip('system tar executable is unavailable');
+    throw error;
+  }
+  setArchive(archive);
+  const destination = await acquireOwnedRuntime(args({ cacheRoot: path.join(temp, 'system-tar-cache') }));
+  assert.deepEqual(await readFile(path.join(destination, 'cli-linux-x64', 'bin', 'opencode')), executableBytes);
+  assert.deepEqual((await readdir(destination)).sort(), ['SHA256SUMS', 'cli-linux-x64', 'ctg-runtime.json']);
+});
+
+test('rejects PAX extensions because release assets are required to use USTAR format', async () => {
+  setArchive(makeArchive([tarEntry('PaxHeaders/entry', Buffer.from('path=cli-linux-x64/bin/opencode\n'), 'x')]));
+  await assert.rejects(acquireOwnedRuntime(args({ cacheRoot: path.join(temp, 'pax-cache') })), /must use USTAR format/);
 });
 
 test('rejects tampered cached executables and archive digest mismatches without publishing', async () => {
