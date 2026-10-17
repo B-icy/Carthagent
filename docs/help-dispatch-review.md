@@ -4,8 +4,8 @@ Standalone upstream patch: `docs/patches/opencode-v2.0.32-help-dispatch.patch`
 
 - Upstream baseline: OpenCode `843a6c514e606b436a7fe713422ace0a93ad3d61` (v2.0.32)
 - Upstream implementation commit: `75fea3b9475da6bbc59c5eeb6461a2994c84341b`
-- Final upstream source including review corrections: `3858bfdf5d8797230237435ea933eef9d031077c`
-- Patch SHA-256: `f6993068688df82f407d5c44b7d58da27047845f2bd7a3ce88060c037a8b9097`
+- Final upstream source including review corrections: `242cbb79cab1b473b63e5abbc29973cf6938ecbc`
+- Patch SHA-256: `c1ce7d983be8ecdd3481b16da103fb32d144b0ec01f894915a110b46acdc6fe5`
 
 The TUI's native `/help` command is a fallback rather than an exclusive
 reservation. Autocomplete presents one `/help` option: the most recently
@@ -29,35 +29,29 @@ Run from `packages/tui` with Bun 1.4.2:
 bun test --timeout 30000 --test-name-pattern 'plugin /help' test/plugin-keymap.test.tsx
 ```
 
-Result on final source: **1 passed, 0 failed**. The fixture types `/help` while
-autocomplete is open and presses Enter without escaping or dismissing it. Two
-plugin commands claim `/help`; the later handler runs. The test verifies no
-`/session` request was made, disables the plugin through the plugin UI, then
-submits `/help` again and verifies native help appears, also without a session
-request.
+Result on final source: focused test **1 passed, 0 failed**; the complete
+`plugin-keymap.test.tsx` file **5 passed, 0 failed**. The fixture types `/help`
+while autocomplete is open and presses Enter once without escaping or
+dismissing it. Two plugin commands claim `/help`; the later handler runs. The
+test verifies no `/session` request was made, disables the plugin through the
+plugin UI, then submits `/help` again and verifies native help appears, also
+without a session request. The fixture uses bare, no-argument `/help`, matching
+the CTG command definition.
 
 ## Broader test observations
 
-An earlier unfiltered run of `plugin-keymap.test.tsx` against the initial
-implementation reported **4 passed, 1 failed**. The failing test was the new
-help test, because the temporary fixture did not match the plugin identity used
-by the plugin-management UI. The fixture was corrected; it is not a passing
-result for the final source and is retained here as investigation history.
+An intermediate unfiltered run failed the existing test `setup layers before
+and after await reach keyboard, palette, and slash across disable and enable`:
+the new test's `help-override` query had accidentally been applied to that
+existing test even though it registered `setup-keymap`. The query was restored
+to the existing helper default; the help-specific query is used only by the new
+test. The captured full-file run then passed **5/5**. This was an actual test
+regression in the intermediate branch and is corrected in the published head.
 
-A later unfiltered run during concurrent typecheck activity timed out in the
-existing test `setup layers before and after await reach keyboard, palette, and
-slash across disable and enable`; the help test also timed out while trying to
-locate the plugin entry. The captured terminal showed the plugin UI still at
-`fixture.help-override`, while the helper waited for `fixture.setup-keymap`.
-This was an intermediate fixture-selection mismatch, subsequently corrected by
-making the helper query the fixture's actual plugin ID. That full-file run is
-not evidence of a final-code regression.
-
-Baseline control: the unmodified `843a6c5` worktree ran that existing
+Baseline control: the unmodified `843a6c5` worktree ran the existing
 `setup layers before and after await...` test alone and passed (**1 passed, 0
-failed**). The final focused help test also passes alone. The unfiltered file
-has not been rerun successfully on final source; no claim is made that the
-entire file is green.
+failed**). Final corrected source ran the entire test file successfully (**5
+passed, 0 failed**).
 
 ## Typecheck and fixture limits
 

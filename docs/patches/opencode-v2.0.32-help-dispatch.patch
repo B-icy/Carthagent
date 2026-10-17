@@ -55,27 +55,9 @@ index a9f699c..63fe438 100644
    return { command, input: head.arguments }
  }
 diff --git a/packages/tui/test/plugin-keymap.test.tsx b/packages/tui/test/plugin-keymap.test.tsx
-index 0790e9a..fd545fc 100644
+index 0790e9a..23f502c 100644
 --- a/packages/tui/test/plugin-keymap.test.tsx
 +++ b/packages/tui/test/plugin-keymap.test.tsx
-@@ -35,7 +35,7 @@ test("setup layers before and after await reach keyboard, palette, and slash acr
-   setup.mockInput.pressEnter()
-   await setup.waitForFrame((frame) => frame.includes("Setup keymap ran 3"))
- 
--  await openPlugin(setup)
-+  await openPlugin(setup, "help-override")
-   await setup.waitForFrame((frame) => frame.includes("disable"))
-   setup.mockInput.pressEnter()
-   await setup.waitForFrame((frame) => frame.includes("inactive"))
-@@ -48,7 +48,7 @@ test("setup layers before and after await reach keyboard, palette, and slash acr
-   expect(setup.captureCharFrame()).not.toContain("Sync keymap ran 2")
-   setup.mockInput.pressEscape()
- 
--  await openPlugin(setup)
-+  await openPlugin(setup, "help-override")
-   await setup.waitForFrame((frame) => frame.includes("inactive"))
-   setup.mockInput.pressEnter()
-   await setup.waitForFrame((frame) => frame.includes("Fixture ready generation 1"))
 @@ -59,6 +59,38 @@ test("setup layers before and after await reach keyboard, palette, and slash acr
    await setup.waitForFrame((frame) => frame.includes("Sync keymap ran 1"))
  })
