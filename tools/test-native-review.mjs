@@ -19,6 +19,7 @@ const host = await nativeFixture({
     streamText(res, `Fixture source review complete.\nREVIEW_JSON: ${JSON.stringify({ version: 1, snapshot, head, findings: [] })}\nVERDICT: APPROVE`);
   },
 });
+const identity = host.runtimeIdentity;
 try {
   const git = (...args) => execFileSync('git', args, { cwd: host.cwd, encoding: 'utf8' });
   git('init', '--initial-branch=main');
@@ -57,7 +58,9 @@ try {
   const admissions = reviewRequests;
   await assert.rejects(rpc('startReview'), error => error.type === 'reviewFailed' && /round limit/i.test(error.message));
   assert.equal(reviewRequests, admissions, 'Restart and changed source must not bypass the three-review admission limit');
-  console.log(JSON.stringify({ host: '2.0.32', independentReview: 'passed', persistedReceipt: 'passed', staleInvalidation: 'passed', persistentAdmissionLimit: 'passed' }));
+  console.log(JSON.stringify({ host: identity.runtimeVersion, compatibilityVersion: identity.compatibilityVersion,
+    ...(identity.binarySha256 ? { binarySha256: identity.binarySha256 } : {}),
+    independentReview: 'passed', persistedReceipt: 'passed', staleInvalidation: 'passed', persistentAdmissionLimit: 'passed' }));
 } catch (error) {
   console.error(host.output);
   const reviews = join(host.cwd, '.harness/reviews');

@@ -36,10 +36,12 @@ const host = await nativeFixture({
     } else streamText(res, text.includes('WRAPPER_TOOL') ? 'FINAL_AFTER_TOOL' : text.includes('WRAPPER_SECOND') ? 'SECOND_TURN' : 'FIRST_TURN');
   },
 });
+const identity = host.runtimeIdentity;
 const options = { root: join(host.temp, 'runtime'), pluginPath: process.argv[2] ?? join(import.meta.dirname, '../plugins/carthagent') };
 try {
   options.profile = JSON.parse(await readFile(join(host.temp, 'config/opencode/opencode.json'), 'utf8'));
   const service = await ensureService(options);
+  assert.equal(service.info.version, identity.runtimeVersion, 'Owned service must run the fixture-identified native binary');
   const reused = await ensureService(options);
   assert.equal(reused.info.pid, service.info.pid);
   assert.equal(reused.url, service.url);
@@ -109,7 +111,9 @@ try {
   assert.equal(resumed.session.id, first.session.id);
   assert.equal(resumed.result?.text, 'SECOND_TURN', 'Session state remains usable after the owned service restarts');
   assert.equal(await stopService(options), true);
-  console.log(JSON.stringify({ host: '2.0.32', serviceReuse: 'passed', repeatedTurns: 'passed', finalAnswerAfterTool: 'passed', successMetadata: 'passed', failure: 'passed', recovery: 'passed', cancellation: 'passed', neighboringSession: 'passed', preAbortedInvocation: 'passed', serviceRestart: 'passed' }));
+  console.log(JSON.stringify({ host: identity.runtimeVersion, compatibilityVersion: identity.compatibilityVersion,
+    ...(identity.binarySha256 ? { binarySha256: identity.binarySha256 } : {}),
+    serviceReuse: 'passed', repeatedTurns: 'passed', finalAnswerAfterTool: 'passed', successMetadata: 'passed', failure: 'passed', recovery: 'passed', cancellation: 'passed', neighboringSession: 'passed', preAbortedInvocation: 'passed', serviceRestart: 'passed' }));
 } finally {
   try { await stopService(options); }
   finally { await host.close(); }
