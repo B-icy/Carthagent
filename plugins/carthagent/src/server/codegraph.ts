@@ -29,7 +29,11 @@ export async function registerCodegraph(ctx: Context, options: { maxFiles?: numb
         const input = rawInput as CodeNavInput
         const session = await ctx.session.get({ sessionID: toolContext.sessionID })
         const root = resolve(session.location.directory, session.subpath || ".")
-        const configuredMaxFiles = (effectiveSessionOptions(session, { ...ctx.options, ...options }) as Record<string, unknown>).codegraphMaxFiles
+        const defaults = {
+          ...ctx.options,
+          ...(options.maxFiles === undefined ? {} : { codegraphMaxFiles: options.maxFiles }),
+        }
+        const configuredMaxFiles = (effectiveSessionOptions(session, defaults) as Record<string, unknown>).codegraphMaxFiles
         const maxFiles = typeof configuredMaxFiles === "number" ? configuredMaxFiles : 8000
         if (!Number.isSafeInteger(maxFiles) || maxFiles < 1) throw Error("codegraph maxFiles must be a positive safe integer")
         const cacheKey = `${root}\0${maxFiles}`
