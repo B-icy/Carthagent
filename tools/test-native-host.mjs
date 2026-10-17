@@ -23,18 +23,26 @@ let output = '';
 let fixtureRequests = 0;
 const fixture = createServer(async (req, res) => {
   fixtureRequests += 1;
+  let raw = '';
+  for await (const chunk of req) raw += chunk;
+  let body;
+  try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
+  if (JSON.stringify(body.messages?.at(-1)).includes('WRAPPER_FAILURE')) {
+    res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: { message: 'Offline wrapper rejection', type: 'invalid_request_error' } }));
+    return;
+  }
   if (req.method !== 'POST' || req.url !== '/v1/chat/completions') {
     res.writeHead(404).end();
     return;
   }
-  for await (const _chunk of req) { /* Consume request body. */ }
   res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
   const created = Math.floor(Date.now() / 1000);
   const chunk = (delta, finish_reason = null) => `data: ${JSON.stringify({
     id: 'chatcmpl-ctg-fixture', object: 'chat.completion.chunk', created, model: 'fixture',
     choices: [{ index: 0, delta, finish_reason }],
   })}\n\n`;
-  res.write(chunk({ role: 'assistant', content: 'CTG_FIXTURE_OK' }));
+  const reply = JSON.stringify(body.messages?.at(-1)).includes('WRAPPER_SECOND') ? 'SECOND_TURN' : 'CTG_FIXTURE_OK';
+  res.write(chunk({ role: 'assistant', content: reply }));
   res.write(chunk({}, 'stop'));
   res.end('data: [DONE]\n\n');
 });
@@ -190,12 +198,31 @@ try {
   };
   const wrappedRun = await runHeadless(ensuredService, cwd, 'Reply with the fixture response.', { sessionID: session.id, timeout: 90_000 });
   const assistant = wrappedRun.result?.message;
+  assert.equal(wrappedRun.outcome, 'succeeded');
+  assert.equal(wrappedRun.terminal, true, 'native wrapper must return a projected terminal session outcome');
   assert.ok(assistant, 'headless prompt must produce an assistant response');
   assert.equal(assistant.finish, 'stop');
   assert.equal(assistant.content.filter((part) => part.type === 'text').map((part) => part.text).join(''), 'CTG_FIXTURE_OK');
   assert.equal(wrappedRun.accepted.type, 'user');
   assert.ok(wrappedRun.messages.length >= 2);
   assert.ok(fixtureRequests > 0, 'assistant prompt must reach the local fixture endpoint');
+  const secondRun = await runHeadless(ensuredService, cwd, 'WRAPPER_SECOND', { sessionID: session.id, timeout: 90_000 });
+  assert.equal(secondRun.outcome, 'succeeded');
+  assert.equal(secondRun.result.text, 'SECOND_TURN', 'resumed wrapper calls must select the current turn output');
+  let failedRun;
+  try { failedRun = await runHeadless(ensuredService, cwd, 'WRAPPER_FAILURE', { sessionID: session.id, timeout: 90_000 }); }
+  catch (error) { failedRun = { error }; }
+  assert.ok(failedRun.error || failedRun.outcome === 'failed' || failedRun.session?.outcome === 'failed', `provider failure should be exposed, not hidden by prior output: ${JSON.stringify(failedRun)}`);
+  const recoveredRun = await runHeadless(ensuredService, cwd, 'WRAPPER_SECOND', { sessionID: session.id, timeout: 90_000 });
+  assert.equal(recoveredRun.outcome, 'succeeded');
+  assert.equal(recoveredRun.result.text, 'SECOND_TURN');
+  const unavailableRun = await runHeadless(ensuredService, cwd, 'UNAVAILABLE_MODEL', {
+    timeout: 30_000,
+    session: { model: { providerID: 'absent-fixture', id: 'missing' } },
+  });
+  assert.equal(unavailableRun.outcome, 'failed', `missing provider must be exposed as a terminal failure: ${JSON.stringify(unavailableRun)}`);
+  assert.equal(unavailableRun.terminal, true);
+  assert.ok(unavailableRun.error || unavailableRun.session.error, 'missing provider failure should preserve a useful error');
   const idleInterrupt = await cancelSession(ensuredService, session.id, { location: { directory: cwd }, timeout: 5000 });
   assert.equal(idleInterrupt.interrupted, false, 'wrapper cancellation should use the v2 bounded interrupt API and report idle state');
   const requestsBeforeAttach = fixtureRequests;

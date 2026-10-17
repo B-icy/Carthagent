@@ -6,7 +6,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { spawn } from 'node:child_process';
 import { nativeCommandConfig } from '../lib/opencode/compatibility.mjs';
 import { provisionRuntime, resolveOpenCode, runtimeEnvironment, runtimePaths, withFileLock, workspaceEnvironment } from '../lib/opencode/runtime.mjs';
-import { cancelSession, createSession, ensureService, launchTui, promptSession, serviceRequest, sessionMessages, setSessionEnvironment, stopService } from '../lib/opencode/service.mjs';
+import { cancelSession, createSession, ensureService, getSession, launchTui, promptSession, serviceRequest, sessionMessages, setSessionEnvironment, stopService } from '../lib/opencode/service.mjs';
 import { runHeadless } from '../lib/opencode/headless.mjs';
 
 test('CTG runtime paths and env are isolated from host OpenCode roots', () => {
@@ -176,6 +176,9 @@ test('session API helpers use the v2 envelope, prompt payload, and endpoint cont
     assert.equal(interrupt.searchParams.get('location[directory]'), '/workspace');
     assert.equal(interrupt.searchParams.get('resume'), 'false');
     assert.ok(calls[4].init.signal instanceof AbortSignal, 'interrupt requests have a bounded abort signal');
+    await getSession(service, 'ses_example', { location: '/workspace' });
+    assert.equal(new URL(calls[5].url).pathname, '/api/session/ses_example');
+    assert.equal(new URL(calls[5].url).searchParams.get('location[directory]'), '/workspace');
   } finally { globalThis.fetch = original; }
 });
 
@@ -244,6 +247,7 @@ test('headless runner passes workspace environment and returns assistant content
       if (pathname.endsWith('/environment')) return new Response(null, { status: 204 });
       if (pathname.endsWith('/prompt')) return new Response('{"data":{"id":"inbox_1"}}');
       if (pathname.endsWith('/wait')) return new Response(null, { status: 204 });
+      if (/\/api\/session\/ses_headless$/.test(pathname)) return new Response('{"data":{"id":"ses_headless","outcome":"succeeded"}}');
       if (pathname.endsWith('/message')) return new Response(JSON.stringify({ data: [{ type: 'assistant', finish: 'stop', content: [{ type: 'text', text: 'fixture result' }] }] }));
       throw new Error(`Unexpected endpoint ${pathname}`);
     };
@@ -257,6 +261,8 @@ test('headless runner passes workspace environment and returns assistant content
     assert.equal(calls.find((call) => call.pathname.endsWith('/environment')).init.method, 'PUT');
     assert.equal(JSON.parse(calls.find((call) => call.pathname.endsWith('/environment')).init.body).variables.FIXTURE_KEY, 'injected');
     assert.equal(JSON.parse(calls.find((call) => call.pathname.endsWith('/prompt')).init.body).text, 'say the fixture');
+    assert.equal(result.outcome, 'succeeded');
+    assert.equal(result.terminal, true);
   } finally { globalThis.fetch = original; }
 });
 
@@ -268,6 +274,7 @@ test('headless result uses newest terminal assistant from chronological conversa
       if (pathname === '/api/session') return new Response('{"data":{"id":"ses_resume"}}');
       if (pathname.endsWith('/environment') || pathname.endsWith('/wait')) return new Response(null, { status: 204 });
       if (pathname.endsWith('/prompt')) return new Response('{"data":{"id":"inbox_new"}}');
+      if (pathname === '/api/session/ses_resume') return new Response('{"data":{"id":"ses_resume","outcome":"succeeded"}}');
       if (pathname.endsWith('/message')) return new Response(JSON.stringify({ data: [
         { id: 'assistant-new', type: 'assistant', time: { created: 300 }, finish: 'stop', content: [{ type: 'text', text: 'new result' }] },
         { id: 'user-new', type: 'user', time: { created: 200 }, content: [{ type: 'text', text: 'new prompt' }] },
@@ -276,9 +283,37 @@ test('headless result uses newest terminal assistant from chronological conversa
       throw new Error(`Unexpected endpoint ${pathname}`);
     };
     const result = await runHeadless({ url: 'http://127.0.0.1:3333', headers: {} }, '/workspace', 'continue', { sessionID: 'ses_resume' });
-    assert.deepEqual(result.messages.map((item) => item.id), ['assistant-old', 'user-new', 'assistant-new']);
+    assert.deepEqual(result.messages.map((item) => item.id), ['user-new', 'assistant-new']);
     assert.equal(result.result.text, 'new result');
     assert.equal(result.result.message.id, 'assistant-new');
+  } finally { globalThis.fetch = original; }
+});
+
+test('headless fails closed for 503 outcome projection and preserves terminal idle errors', async () => {
+  const original = globalThis.fetch;
+  let projectionCalls = 0;
+  try {
+    globalThis.fetch = async (url) => {
+      const pathname = new URL(url).pathname;
+      if (pathname === '/api/session') return new Response('{"data":{"id":"ses_projection"}}');
+      if (pathname.endsWith('/environment') || pathname.endsWith('/wait')) return new Response(null, { status: 204 });
+      if (pathname.endsWith('/prompt')) return new Response('{"data":{"id":"inbox_projection"}}');
+      if (pathname === '/api/session/ses_projection') {
+        projectionCalls += 1;
+        return new Response('{"error":"projection unavailable"}', { status: 503 });
+      }
+      if (pathname.endsWith('/message')) return new Response(JSON.stringify({ data: [
+        { id: 'idle-error', type: 'idle', outcome: 'failed', error: { message: 'provider offline' }, time: { created: 300 } },
+        { id: 'user-current', type: 'user', time: { created: 200 } },
+      ] }));
+      throw new Error(`Unexpected endpoint ${pathname}`);
+    };
+    const result = await runHeadless({ url: 'http://127.0.0.1:3333', headers: {} }, '/workspace', 'go', { timeout: 100 });
+    assert.equal(projectionCalls > 0, true);
+    assert.equal(result.outcome, 'failed');
+    assert.equal(result.terminal, true);
+    assert.equal(result.error.message, 'provider offline');
+    assert.equal(result.result, undefined, 'idle failure must not accidentally select an earlier assistant result');
   } finally { globalThis.fetch = original; }
 });
 
@@ -297,10 +332,12 @@ test('aborting headless execution sends a native interrupt for that session', as
       throw new Error(`Unexpected endpoint ${pathname}`);
     };
     const controller = new AbortController();
-    const result = runHeadless({ url: 'http://127.0.0.1:3333', headers: {} }, '/workspace', 'wait', { signal: controller.signal });
+    const resultPromise = runHeadless({ url: 'http://127.0.0.1:3333', headers: {} }, '/workspace', 'wait', { signal: controller.signal });
     await new Promise((resolve) => setTimeout(resolve, 20));
     controller.abort(new Error('test cancellation'));
-    await assert.rejects(result, /aborted|canceled|cancelled/i);
+    const result = await resultPromise;
+    assert.equal(result.outcome, 'interrupted');
+    assert.equal(result.budgetReason, undefined);
     assert.ok(paths.includes('/api/session/ses_cancel/interrupt'));
   } finally { globalThis.fetch = original; }
 });
@@ -317,12 +354,34 @@ test('headless timeout aborts the wait request and interrupts the native session
       if (pathname.endsWith('/prompt')) return new Response('{"data":{"id":"inbox_timeout"}}');
       if (pathname.endsWith('/wait')) return new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true }));
       if (pathname.endsWith('/interrupt')) return new Response(null, { status: 204 });
+      if (pathname.endsWith('/message')) return new Response('{"data":[{"id":"idle-timeout","type":"idle","outcome":"interrupted","time":{"created":3}}]}');
       throw new Error(`Unexpected endpoint ${pathname}`);
     };
-    await assert.rejects(
-      runHeadless({ url: 'http://127.0.0.1:3333', headers: {} }, '/workspace', 'hang', { timeout: 30 }),
-      /timed out after 30ms/,
-    );
+    const result = await runHeadless({ url: 'http://127.0.0.1:3333', headers: {} }, '/workspace', 'hang', { timeout: 30 });
+    assert.equal(result.outcome, 'interrupted');
+    assert.equal(result.terminal, true);
+    assert.equal(result.budgetReason, undefined);
     assert.ok(paths.includes('/api/session/ses_timeout/interrupt'));
+  } finally { globalThis.fetch = original; }
+});
+
+test('headless reports timeout distinctly when no terminal outcome can be observed', async () => {
+  const original = globalThis.fetch;
+  try {
+    globalThis.fetch = async (url, init = {}) => {
+      const pathname = new URL(url).pathname;
+      if (pathname === '/api/session') return new Response('{"data":{"id":"ses_no_outcome"}}');
+      if (pathname.endsWith('/environment')) return new Response(null, { status: 204 });
+      if (pathname.endsWith('/prompt')) return new Response('{"data":{"id":"inbox_no_outcome"}}');
+      if (pathname.endsWith('/wait')) return new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true }));
+      if (pathname.endsWith('/interrupt')) return new Response(null, { status: 204 });
+      if (pathname.endsWith('/message')) return new Response('{"data":[]}');
+      if (pathname === '/api/session/ses_no_outcome') return new Response('{"data":{"id":"ses_no_outcome"}}');
+      throw new Error(`Unexpected endpoint ${pathname}`);
+    };
+    const result = await runHeadless({ url: 'http://127.0.0.1:3333', headers: {} }, '/workspace', 'hang', { timeout: 25 });
+    assert.equal(result.outcome, 'timed-out');
+    assert.equal(result.terminal, false);
+    assert.equal(result.budgetReason, 'timed-out');
   } finally { globalThis.fetch = original; }
 });
