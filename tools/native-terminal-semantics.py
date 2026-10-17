@@ -8,9 +8,11 @@ import argparse
 import base64
 import fcntl
 import errno
+import hashlib
 import http.server
 import json
 import os
+from pathlib import Path
 import pty
 import re
 import select
@@ -22,6 +24,7 @@ import tempfile
 import termios
 import threading
 import time
+from datetime import datetime, timezone
 
 
 class Provider(http.server.BaseHTTPRequestHandler):
@@ -52,18 +55,30 @@ class Provider(http.server.BaseHTTPRequestHandler):
 
 class Screen:
     """Small terminal host model for screen, title-stack, and OSC 52 state."""
-    def __init__(self, rows=32, columns=100, title='CTG-ORIGINAL-TITLE'):
+    ORIGINAL_TITLE = 'CTG-ORIGINAL-TITLE'
+    ORIGINAL_CLIPBOARD = 'CTG-SEEDED-CLIPBOARD'
+
+    def __init__(self, rows=32, columns=100, title=ORIGINAL_TITLE, clipboard=ORIGINAL_CLIPBOARD):
         self.rows, self.columns = rows, columns
         self.cells = [[' '] * columns for _ in range(rows)]
         self.x = self.y = 0
         self.mode = 'text'
         self.csi = ''
+        self.csi_sequences = []
         self.osc_escape = False
         self.osc = ''
         self.title = title
         self.title_stack = []
         self.title_history = []
-        self.clipboard_values = []
+        self.title_controls = []
+        self.title_control_sequences = []
+        self.osc_title_updates = []
+        self.clipboard = clipboard
+        self.clipboard_history = []
+        self.clipboard_queries = []
+        self.rejected_clipboard_payloads = []
+        self.clipboard_readbacks = []
+        self.wrapCount = 0
 
     def resize(self, rows, columns):
         self.rows, self.columns = rows, columns
@@ -85,6 +100,8 @@ class Screen:
                 continue
             if self.mode == 'csi':
                 if '@' <= char <= '~':
+                    if char == 't':
+                        self.csi_sequences.append((self.csi, char))
                     self._csi(char, self.csi)
                     self.mode, self.csi = 'text', ''
                 else:
@@ -108,6 +125,7 @@ class Screen:
                 self.x = max(0, self.x - 1)
             elif char >= ' ':
                 if self.x >= self.columns:
+                    self.wrapCount += 1
                     self.x, self.y = 0, min(self.y + 1, self.rows - 1)
                 self.cells[self.y][self.x] = char
                 self.x += 1
@@ -129,35 +147,135 @@ class Screen:
         elif final == 't' and values:
             if values[0] == 22:
                 self.title_stack.append(self.title)
+                self.title_controls.append('save')
+                self.title_control_sequences.append(params)
             elif values[0] == 23 and self.title_stack:
                 self.title = self.title_stack.pop()
                 self.title_history.append(self.title)
+                self.title_controls.append('restore')
+                self.title_control_sequences.append(params)
 
     def _osc(self, value):
         fields = value.split(';', 2)
-        if len(fields) == 3 and fields[0] in ('0', '2'):
-            self.title = fields[2]
+        if len(fields) >= 2 and fields[0] in ('0', '2'):
+            self.title = fields[-1]
             self.title_history.append(self.title)
+            self.osc_title_updates.append({'kind': fields[0], 'title': self.title})
         elif len(fields) == 3 and fields[0] == '52':
+            selection, encoded = fields[1], fields[2]
+            if selection != 'c':
+                self.rejected_clipboard_payloads.append({'reason': 'unsupported-selection', 'value': value})
+                return
+            if encoded == '?':
+                self.clipboard_queries.append(selection)
+                reply = f'\x1b]52;{selection};{base64.b64encode(self.clipboard.encode("utf8")).decode("ascii")}\x07'
+                self.clipboard_readbacks.append(reply)
+                return
             try:
-                self.clipboard_values.append(base64.b64decode(fields[2], validate=True).decode('utf8'))
-            except (ValueError, UnicodeDecodeError):
-                pass
+                decoded = base64.b64decode(encoded, validate=True).decode('utf8')
+            except (ValueError, UnicodeDecodeError) as error:
+                self.rejected_clipboard_payloads.append({'reason': type(error).__name__, 'value': value})
+                return
+            self.clipboard = decoded
+            self.clipboard_history.append(decoded)
+
+    def query_clipboard(self):
+        before = len(self.clipboard_readbacks)
+        self.feed(b'\x1b]52;c;?\x07')
+        if len(self.clipboard_readbacks) != before + 1:
+            raise AssertionError('controlled host did not answer its OSC 52 clipboard query')
+        reply = self.clipboard_readbacks[-1]
+        fields = reply[2:-1].split(';', 2)
+        if len(fields) != 3 or fields[:2] != ['52', 'c']:
+            raise AssertionError('controlled host produced malformed OSC 52 clipboard query response')
+        try:
+            return base64.b64decode(fields[2], validate=True).decode('utf8')
+        except (ValueError, UnicodeDecodeError) as error:
+            raise AssertionError('controlled host produced invalid OSC 52 clipboard query payload') from error
 
     def visible(self):
         return '\n'.join(''.join(row).rstrip() for row in self.cells)
 
 
+def controlled_terminal_model_fixture():
+    """Self-test host state semantics; this is not physical OS clipboard proof."""
+    host = Screen()
+    host.feed(b'\x1b]52;c;a\x07')  # invalid base64 padding
+    host.feed(b'\x1b]52;c;@@@\x07')
+    host.feed(b'\x1b]52;c;/w==\x07')  # valid base64, invalid UTF-8
+    rejected_before_valid = len(host.rejected_clipboard_payloads)
+    if host.clipboard != Screen.ORIGINAL_CLIPBOARD or rejected_before_valid != 3:
+        raise AssertionError('controlled host accepted malformed OSC 52 or modified seeded clipboard')
+
+    expected_selection = 'SNIP'
+    expected_response = 'FINAL[SNIP]END'
+    for text in (expected_selection, expected_response):
+        sequence = f'\x1b]52;c;{base64.b64encode(text.encode()).decode()}\x07'
+        host.feed(sequence.encode())
+        if host.clipboard != text:
+            raise AssertionError('controlled host did not apply a valid OSC 52 clipboard write')
+        if host.query_clipboard() != text:
+            raise AssertionError('controlled host OSC 52 query did not read back the exact clipboard value')
+    if host.clipboard_queries != ['c', 'c']:
+        raise AssertionError('controlled host did not record both clipboard readback queries')
+
+    host.feed(b'\x1b[22;0t\x1b]0;TEMP-TUI-TITLE\x07\x1b]2;ANOTHER-TUI-TITLE\x07\x1b[23;0t')
+    if host.title != Screen.ORIGINAL_TITLE or host.title_history[-1] != Screen.ORIGINAL_TITLE:
+        raise AssertionError('controlled host did not restore the seeded title from its title stack')
+    return {
+        'status': 'MODEL_SELFTEST_PASS_NOT_NATIVE_ACCEPTANCE',
+        'scope': 'parser/state-model self-test only; does not launch OpenCode or exercise native PTY input',
+        'nativeAcceptance': 'NOT_RUN',
+        'physicalOSClipboardVerified': False,
+        'seedClipboardPreservedOnInvalidPayloads': True,
+        'invalidPayloadsRejected': rejected_before_valid,
+        'exactSelectionRoundTrip': expected_selection,
+        'exactLatestCopyRoundTrip': expected_response,
+        'clipboardQueries': len(host.clipboard_queries),
+        'titleRestoredFromStack': host.title,
+        'titleSaveRestoreOrder': host.title_controls,
+    }
+
+
+def sha256_file(path):
+    digest = hashlib.sha256()
+    with open(path, 'rb') as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b''):
+            digest.update(chunk)
+    return digest.hexdigest()
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--binary', default=os.environ.get('CTG_OPENCODE_BIN'))
     parser.add_argument('--timeout', type=int, default=75)
+    parser.add_argument('--host-model-only', action='store_true',
+                        help='run controlled terminal-host fixture without launching OpenCode')
+    parser.add_argument('--focused-host-roundtrip', action='store_true',
+                        help='test short distinct selection/copy payloads and title restoration only')
+    parser.add_argument('--assertion-regression-only', action='store_true',
+                        help='test picker return state and rendered narrow layout without large paste')
+    parser.add_argument('--picker-regression-only', action='store_true',
+                        help='test Escape dismissal and restored home composer without sending a prompt')
+    parser.add_argument('--artifact', help='write the JSON result to this path as well as stdout')
     args = parser.parse_args()
+    if args.host_model_only:
+        model_result = controlled_terminal_model_fixture()
+        rendered = json.dumps(model_result, ensure_ascii=False, indent=2) + '\n'
+        print(rendered, end='')
+        if args.artifact:
+            artifact_path = Path(args.artifact).resolve()
+            artifact_path.parent.mkdir(parents=True, exist_ok=True)
+            artifact_path.write_text(rendered, encoding='utf8')
+        return 0
     if not args.binary:
         parser.error('pass --binary or set CTG_OPENCODE_BIN to an owned native executable')
     binary = os.path.abspath(args.binary)
     if not os.path.isfile(binary):
         parser.error(f'native binary does not exist: {binary}')
+    binary = os.path.realpath(binary)
+    binary_version = subprocess.run([binary, '--version'], capture_output=True, text=True, timeout=20)
+    if binary_version.returncode != 0 or '2.0.32' not in (binary_version.stdout + binary_version.stderr):
+        parser.error(f'owned executable must identify the OpenCode 2.0.32 line; got {binary_version.stdout.strip()!r}')
     with open(binary, 'rb') as executable:
         if executable.read(256).startswith(b'echo "Error: @opencode/cli'):
             parser.error('native binary is the package postinstall placeholder, not an owned executable')
@@ -165,7 +283,36 @@ def main():
     server = socketserver.ThreadingTCPServer(('127.0.0.1', 0), Provider)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     port = server.server_address[1]
-    result = {'binary': binary, 'provider': 'loopback offline fixture', 'checks': {}}
+    repo_root = Path(__file__).resolve().parents[1]
+    source_status = subprocess.run(['git', '-C', str(repo_root), 'status', '--porcelain', '--untracked-files=no'],
+                                   capture_output=True, text=True).stdout.strip()
+    source_commit = subprocess.run(['git', '-C', str(repo_root), 'rev-parse', 'HEAD'],
+                                   capture_output=True, text=True).stdout.strip()
+    binary_sha = sha256_file(binary)
+    result = {'startedAtUtc': datetime.now(timezone.utc).isoformat(),
+              'case': ('focused-host-roundtrip' if args.focused_host_roundtrip else
+                       'layout-regression' if args.assertion_regression_only else
+                       'picker-regression' if args.picker_regression_only else 'full-native-probe'),
+              'binary': binary, 'binaryResolvedPath': os.path.realpath(binary),
+              'binarySha256': binary_sha, 'buildHash': binary_sha,
+              'binaryVersion': (binary_version.stdout + binary_version.stderr).strip(),
+              'probeSha256': sha256_file(__file__),
+              'pluginSha256': sha256_file(repo_root / 'plugins' / 'carthagent' / 'src' / 'tui.tsx'),
+              'sourceCommit': source_commit,
+              'workingTreeDirty': bool(source_status),
+              'sourceStatus': source_status,
+              'sourceTreeSha256': hashlib.sha256(subprocess.run(
+                  ['git', '-C', str(repo_root), 'diff', 'HEAD'], capture_output=True).stdout).hexdigest(),
+              'sourceDiffDirty': subprocess.run(['git', '-C', str(repo_root), 'diff', '--quiet'],
+                                                capture_output=True).returncode != 0,
+              'provider': 'loopback offline fixture',
+              'terminal': {'initialRows': 32, 'initialColumns': 100,
+                           'resizeRows': None if args.focused_host_roundtrip or args.picker_regression_only else 12,
+                           'resizeColumns': None if args.focused_host_roundtrip or args.picker_regression_only else 40,
+                           'TERM': 'xterm-256color'},
+              'controlledHostClipboardModel': True,
+              'physicalOSClipboardVerified': False,
+              'checks': {}}
     with tempfile.TemporaryDirectory(prefix='ctg-terminal-semantics-') as temp:
         root = os.path.abspath(temp)
         project = os.path.join(root, 'project')
@@ -194,20 +341,33 @@ def main():
         os.close(slave)
         output = bytearray()
         screen = Screen()
+        initial_title = screen.title
         errors = bytearray()
         start = time.monotonic()
         sent = False
         resized = False
         picker_started = False
         picker_cancelled = False
+        picker_home_before = False
+        picker_home_restored = False
         copy_invoked = False
         copy_confirmed = False
         selection_sent = False
         selection_confirmed = False
+        selected_clipboard_count = 0
+        copy_clipboard_count = 0
+        auth_dismissed = False
         # Text is intentionally multi-line, Unicode, and large enough to expose
         # truncation/byte-boundary bugs. It is sent only as bracketed paste.
-        exact = 'native-pty: café 日本語 😀\n' + 'large-paste-λ-' * 1200 + '\nEND-PASTE-終'
-        fixture_response = 'FIXTURE_RESPONSE_OK'
+        regression_case = args.assertion_regression_only
+        picker_only = args.picker_regression_only
+        layout_only = regression_case and not picker_only
+        focused_case = args.focused_host_roundtrip or regression_case or picker_only
+        resize_case = layout_only or (not focused_case and not args.picker_regression_only)
+        exact = ('focused-host-request' if focused_case else
+                 'native-pty: café 日本語 😀\n' + 'large-paste-λ-' * 1200 + '\nEND-PASTE-終')
+        fixture_response = 'FINAL[SNIP]END'
+        selection_target = 'SNIP'
         payload = exact.encode('utf8')
         Provider.received.clear()
         Provider.reply = fixture_response
@@ -233,11 +393,22 @@ def main():
                 visible = screen.visible().lower()
                 visible_original = screen.visible()
                 home_ready = 'ask anything' in visible or 'what is the tech' in visible
-                if not picker_started and elapsed > 2 and home_ready:
+                onboarding_visible = ('connect opencode go' in visible or
+                                      'connect an integration to' in visible or
+                                      'send prompts' in visible)
+                if focused_case and not auth_dismissed and onboarding_visible:
+                    os.write(master, b'\x1b')
+                    auth_dismissed = True
+                    auth_dismissed_at = time.monotonic()
+                if focused_case and auth_dismissed and time.monotonic() - auth_dismissed_at > .4:
+                    visible = screen.visible().lower()
+                    home_ready = 'ask anything' in visible or 'what is the tech' in visible
+                if not focused_case and not picker_started and elapsed > 2 and home_ready:
                     # Ctrl+P opens the native model picker without selecting or
                     # submitting a prompt; Escape is a non-mutating cancel.
                     os.write(master, b'\x10')
                     picker_started = True
+                    picker_home_before = home_ready
                     picker_at = time.monotonic()
                 if picker_started and not picker_cancelled and (
                         'select model' in visible or 'model' in visible and ('search' in visible or 'provider' in visible)):
@@ -251,11 +422,17 @@ def main():
                 if picker_cancelled and result['checks'].get('pickerEscapeCancel', {}).get('status') == 'PENDING':
                     if time.monotonic() - picker_cancelled_at > .5:
                         still_open = picker_heading in screen.visible().lower()
+                        picker_home_restored = ('ask anything' in screen.visible().lower() or
+                                                'what is the tech' in screen.visible().lower())
+                        no_provider_request = len(Provider.received) == 0
                         result['checks']['pickerEscapeCancel'] = {
-                            'status': 'FAIL' if still_open else 'PASS',
+                            'status': 'PASS' if picker_home_before and picker_home_restored and not still_open and no_provider_request else 'FAIL',
                             'pickerObserved': True, 'cancelKey': 'Escape',
-                            'dismissed': not still_open,
-                            'providerRequestsBeforePrompt': len(Provider.received)}
+                            'dismissed': not still_open, 'composerRestored': picker_home_restored,
+                            'providerRequestsBeforePrompt': len(Provider.received),
+                            'noPromptProviderRequestBeforeAcceptance': no_provider_request}
+                        if picker_only:
+                            break
                 if picker_started and not picker_cancelled and time.monotonic() - picker_at > 3:
                     # Escape regardless, so a command completion/menu cannot
                     # linger into the subsequent prompt entry.
@@ -266,14 +443,18 @@ def main():
                         'reason': 'native model picker did not expose a recognizable visible heading; '
                                   'Escape was sent to dismiss any command menu',
                         'providerRequestsBeforePrompt': len(Provider.received)}
-                if not sent and picker_cancelled and elapsed > 5 and home_ready:
+                if not sent and not picker_only and (((not focused_case) and
+                                  picker_cancelled and elapsed > 5 and home_ready) or
+                                 (args.focused_host_roundtrip and elapsed > 2 and home_ready) or
+                                 (layout_only and elapsed > 2 and home_ready)):
                     # Narrow terminal stress is an actual resize on the PTY.
-                    fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', 12, 40, 0, 0))
-                    screen.resize(12, 40)
-                    output_before_resize = len(output)
-                    os.kill(child.pid, signal.SIGWINCH)
-                    resized = True
-                    time.sleep(.25)
+                    if resize_case:
+                        fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', 12, 40, 0, 0))
+                        screen.resize(12, 40)
+                        output_before_resize = len(output)
+                        os.kill(child.pid, signal.SIGWINCH)
+                        resized = True
+                        time.sleep(.25)
                     os.write(master, b'\x1b[200~' + payload + b'\x1b[201~')
                     sent = True
                     pasted_at = time.monotonic()
@@ -289,41 +470,90 @@ def main():
                 if Provider.received and 'provider_received_at' not in locals():
                     provider_received_at = time.monotonic()
                 visible_lines = screen.visible().splitlines()
-                if not selection_sent and fixture_response in '\n'.join(visible_lines):
-                    target_row = next(index for index, line in enumerate(visible_lines, 1)
-                                      if fixture_response in line)
+                mouse_mode = (b'\x1b[?1000h' in output or b'\x1b[?1002h' in output or
+                              b'\x1b[?1006h' in output)
+                response_rows = [index for index, line in enumerate(visible_lines, 1)
+                                 if ('FINAL' in line and selection_target in line and 'END' in line and
+                                     4 <= index <= screen.rows - 4)]
+                if (not selection_sent and response_rows and mouse_mode):
+                    target_row = response_rows[-1]
                     target_line = visible_lines[target_row - 1]
-                    start_col = target_line.index(fixture_response) + 1
-                    end_col = start_col + len(fixture_response) - 1
-                    os.write(master, f'\x1b[<0;{start_col};{target_row}M'.encode())
-                    os.write(master, f'\x1b[<32;{end_col};{target_row}M'.encode())
-                    os.write(master, f'\x1b[<0;{end_col};{target_row}m'.encode())
+                    # Derive terminal cells from the original VT paint stream:
+                    # the simple display model strips ANSI/does not model wide cells.
+                    # For the ASCII fixture response on a single row, find the last
+                    # matching occurrence and use the rendered cell substring.
+                    start_col = target_line.rfind(selection_target) + 1
+                    end_col = start_col + len(selection_target) - 1
+                    selected_text = target_line[start_col - 1:end_col]
+                    selected_clipboard_count = len(screen.clipboard_history)
+                    selection_coordinates = {'startColumn': start_col, 'endColumn': end_col,
+                                             'row': target_row, 'screenLine': target_line,
+                                             'coordinateBasis': '1-based displayed terminal cells'}
+                    # Send a real SGR press, held-button drag, and release as three
+                    # separate PTY events, allowing the TUI event loop to process each.
+                    for event in (f'\x1b[<0;{start_col};{target_row}M',
+                                  f'\x1b[<32;{end_col};{target_row}M',
+                                  f'\x1b[<0;{end_col};{target_row}m'):
+                        os.write(master, event.encode())
+                        time.sleep(.12)
                     selection_sent = True
                     selection_sent_at = time.monotonic()
-                    selection_clipboard_count = len(screen.clipboard_values)
-                if Provider.received and selection_confirmed and fixture_response.encode() in output and not copy_invoked:
-                    os.write(master, b'/copy')
-                    time.sleep(.2)
-                    os.write(master, b'\r')
+                response_observed = fixture_response.encode() in output
+                response_settled = ('provider_received_at' in locals() and
+                                    time.monotonic() - provider_received_at > 1.0)
+                selection_values_now = screen.clipboard_history[selected_clipboard_count:]
+                selection_observed = (selection_sent and selection_confirmed and
+                                      selection_values_now == [selected_text])
+                if selection_observed and 'selection_readback_at_selection' not in locals():
+                    selection_readback_at_selection = screen.query_clipboard()
+                if (Provider.received and not copy_invoked and
+                        (response_observed or (args.focused_host_roundtrip and response_settled)) and
+                        (not args.focused_host_roundtrip or selection_observed) and
+                        not args.assertion_regression_only):
+                    copy_clipboard_count = len(screen.clipboard_history)
+                    os.write(master, b'/copy\r')
                     copy_invoked = True
                     copy_sent_at = time.monotonic()
                 if selection_sent and not selection_confirmed and time.monotonic() - selection_sent_at > .3:
                     selection_confirmed = True
                 if copy_invoked and not copy_confirmed and time.monotonic() - copy_sent_at > .75:
-                    os.write(master, b'\r')
                     copy_confirmed = True
                 if Provider.received and copy_confirmed and time.monotonic() - provider_received_at > 2:
                     break
-            if not Provider.received:
+            if not Provider.received and not picker_only:
                 raise RuntimeError('loopback provider received no request; TUI may not have accepted prompt; '
                                    f'pickerStarted={picker_started}, pickerCancelled={picker_cancelled}, '
                                    f'visible={screen.visible()[-1500:]!r}, transcript={bytes(output[-4000:])!r}')
             bodies = Provider.received
-            messages = bodies[-1].get('messages', [])
-            received_text = '\n'.join(str(part.get('text', '')) for message in messages
-                                      for part in (message.get('content', []) if isinstance(message.get('content'), list)
-                                                   else [{'text': message.get('content', '')}]))
-            if exact not in received_text:
+            if picker_only:
+                result['checks']['pickerEscapeCancel'] = result['checks'].get('pickerEscapeCancel', {
+                    'status': 'UNVERIFIED', 'reason': 'picker case did not complete observable Escape dismissal'})
+                result['checks']['promptSubmission'] = {
+                    'status': 'PASS' if not bodies and result['checks']['pickerEscapeCancel']['status'] == 'PASS' else 'FAIL',
+                    'providerRequests': len(bodies),
+                    'noPromptSentDuringPickerAcceptance': not bodies}
+                result['checks']['narrowLayout'] = {'status': 'NOT_RUN', 'reason': 'picker-only case does not resize terminal'}
+                result['checks']['focusedPromptTransport'] = {'status': 'NOT_RUN', 'reason': 'picker-only case intentionally submits no prompt'}
+                result['checks']['terminalTitleRestoration'] = {'status': 'NOT_RUN', 'reason': 'picker-only case exits without title acceptance'}
+                result['checks']['selectionClipboard'] = {'status': 'NOT_RUN', 'reason': 'picker-only case does not exercise selection'}
+                result['checks']['clipboardOSC52'] = {'status': 'NOT_RUN', 'reason': 'picker-only case does not exercise /copy'}
+                incomplete = [name for name, check in result['checks'].items()
+                              if check['status'] not in ('PASS', 'NOT_RUN')]
+                result['status'] = 'INCOMPLETE' if incomplete else 'PASS'
+                result['incompleteChecks'] = incomplete
+                rendered = json.dumps(result, ensure_ascii=False, indent=2) + '\n'
+                print(rendered, end='')
+                if args.artifact:
+                    artifact_path = Path(args.artifact).resolve()
+                    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+                    artifact_path.write_text(rendered, encoding='utf8')
+                return 2 if incomplete else 0
+            else:
+                messages = bodies[-1].get('messages', [])
+                received_text = '\n'.join(str(part.get('text', '')) for message in messages
+                                          for part in (message.get('content', []) if isinstance(message.get('content'), list)
+                                                       else [{'text': message.get('content', '')}]))
+            if not picker_only and exact not in received_text:
                 raise AssertionError(f'provider prompt differs: expected {len(exact)} chars, '
                                      f'got {len(received_text)} chars')
             matching_bodies = []
@@ -335,38 +565,85 @@ def main():
                 if any(message.get('role') == 'user' and exact in str(message.get('content', ''))
                        for message in request_messages):
                     matching_bodies.append(body)
-            if not matching_bodies:
+            if not picker_only and not matching_bodies:
                 details = [[(message.get('role'), len(str(message.get('content', ''))),
                              exact in str(message.get('content', '')))
                             for message in body.get('messages', [])] for body in bodies]
                 raise AssertionError(f'expected exact user prompt, provider received {len(matching_bodies)} '
                                      f'matching requests (total fixture requests {len(bodies)}): {details}')
-            result['checks']['unicodeAndLargeBracketedPaste'] = {
-                'status': 'PASS', 'exactProviderText': True, 'characters': len(exact),
-                'utf8Bytes': len(payload), 'matchingPromptRequests': len(matching_bodies),
-                'totalFixtureRequests': len(bodies)}
-            result['checks']['narrowLayout'] = {'status': 'PASS' if resized and child.poll() is None else 'FAIL',
-                                                 'rows': 12, 'columns': 40,
-                                                 'noExit': child.poll() is None,
-                                                 'observedTerminalOutputBytes': len(output) - output_before_resize}
+            if picker_only:
+                pass
+            elif focused_case:
+                result['checks']['focusedPromptTransport'] = {
+                    'status': 'PASS' if exact in received_text else 'FAIL',
+                    'exactProviderUserMessage': exact in received_text,
+                    'providerRequests': len(bodies)}
+                if args.focused_host_roundtrip:
+                    result['checks']['pickerEscapeCancel'] = {'status': 'NOT_RUN', 'reason': 'focused terminal-host case intentionally skips picker scenario'}
+                    result['checks']['narrowLayout'] = {'status': 'NOT_RUN', 'reason': 'focused terminal-host case intentionally skips resize scenario'}
+                else:
+                    result['checks']['pickerEscapeCancel'] = result['checks'].get('pickerEscapeCancel', {
+                        'status': 'NOT_RUN', 'reason': 'focused layout regression case does not open picker'})
+                    visible_after_resize = screen.visible()
+                    narrow_content = fixture_response in visible_after_resize and '┃' in visible_after_resize
+                    picker_absent = not any(heading in visible_after_resize.lower()
+                                            for heading in ('select model', 'models', 'search models'))
+                    result['checks']['narrowLayout'] = {
+                        'status': 'PASS' if resized and screen.rows == 12 and screen.columns == 40 and
+                                  child.poll() is None and narrow_content and picker_absent and
+                                  all(len(line) <= screen.columns for line in visible_after_resize.splitlines()) else 'UNVERIFIED',
+                        'rows': screen.rows, 'columns': screen.columns, 'resizeRequested': resized,
+                        'hostAlive': child.poll() is None, 'fixtureResponseVisible': fixture_response in visible_after_resize,
+                        'composerVisible': '┃' in visible_after_resize, 'pickerAbsent': picker_absent,
+                        'visibleRowsWithinWidth': all(len(row) <= screen.columns for row in screen.cells),
+                        'visibleScreenExcerpt': visible_after_resize[-600:]}
+            else:
+                result['checks']['unicodeAndLargeBracketedPaste'] = {
+                    'status': 'PASS' if exact in received_text else 'FAIL', 'exactProviderText': exact in received_text,
+                    'characters': len(exact), 'utf8Bytes': len(payload),
+                    'matchingPromptRequests': len(matching_bodies), 'totalFixtureRequests': len(bodies)}
+                visible_after_resize = screen.visible()
+                narrow_content = fixture_response in visible_after_resize and '┃' in visible_after_resize
+                picker_absent = 'select model' not in visible_after_resize.lower()
+                result['checks']['narrowLayout'] = {
+                    'status': 'PASS' if resized and screen.rows == 12 and screen.columns == 40 and
+                              child.poll() is None and narrow_content and picker_absent and
+                              all(len(line) <= screen.columns for line in visible_after_resize.splitlines()) else 'UNVERIFIED',
+                    'rows': screen.rows, 'columns': screen.columns, 'resizeRequested': resized,
+                    'hostAlive': child.poll() is None, 'fixtureResponseVisible': fixture_response in visible_after_resize,
+                    'composerVisible': '┃' in visible_after_resize, 'pickerAbsent': picker_absent,
+                    'visibleRowsWithinWidth': all(len(row) <= screen.columns for row in screen.cells),
+                    'observedTerminalOutputBytes': len(output) - output_before_resize,
+                    'visibleScreenExcerpt': visible_after_resize[-600:]}
             if child.poll() is not None:
                 raise AssertionError('host exited during narrow-layout probe')
-            # Selection belongs to the terminal host/emulator, not app output.
-            # We send a real mouse drag only if the app advertised mouse mode;
-            # PTY has no clipboard-capable emulator to read back a selection.
+            # Selection is exercised by an SGR mouse drag. Screen applies OSC
+            # clipboard writes as a controlled host model, not an OS clipboard.
             mouse_mode = b'\x1b[?1000h' in output or b'\x1b[?1002h' in output or b'\x1b[?1006h' in output
-            if mouse_mode:
-                os.write(master, b'\x1b[<0;2;2M\x1b[<32;8;2M\x1b[<0;8;2m')
             result['checks'].setdefault('pickerEscapeCancel', {
                 'status': 'UNSUPPORTED',
                 'reason': 'native home screen did not become interactive; no picker was opened'})
             # Ask the TUI to exit through its own quit command so screen cleanup
             # and title restoration run before inspecting final output.
-            os.write(master, b'/quit')
-            time.sleep(.1)
-            os.write(master, b'\r')
+            if child.poll() is None:
+                # Clear any remaining command/editor text, then request a normal
+                # TUI exit. Do not use a signal as a success-path substitute.
+                os.write(master, b'\x15/quit\r')
             exit_deadline = time.monotonic() + 5
+            second_enter_sent = False
+            ctrl_c_sent = False
+            exit_actions = ['ctrl-u+quit+enter']
             while child.poll() is None and time.monotonic() < exit_deadline:
+                remaining = exit_deadline - time.monotonic()
+                if not second_enter_sent and remaining < 4.2:
+                    os.write(master, b'\r')
+                    second_enter_sent = True
+                    exit_actions.append('enter')
+                elif not ctrl_c_sent and remaining < 3.3:
+                    # Ctrl-C is a TUI key in raw mode and calls the normal cleanup path.
+                    os.write(master, b'\x03')
+                    ctrl_c_sent = True
+                    exit_actions.append('ctrl-c')
                 if select.select([master], [], [], .05)[0]:
                     try: chunk = os.read(master, 65536)
                     except OSError as error:
@@ -374,35 +651,104 @@ def main():
                         raise
                     output.extend(chunk)
                     screen.feed(chunk)
-            child.wait(timeout=max(1, exit_deadline - time.monotonic()))
-            title_pushes = len(re.findall(rb'\x1b\[22(?:;[^t]*)?t', output))
-            title_pops = len(re.findall(rb'\x1b\[23(?:;[^t]*)?t', output))
+            exit_request_sent = False
+            try:
+                child.wait(timeout=max(1, exit_deadline - time.monotonic()))
+            except subprocess.TimeoutExpired:
+                exit_request_sent = True
+                os.killpg(child.pid, signal.SIGTERM)
+                child.wait(timeout=2)
+            exit_code = child.returncode
+            # A PTY may still contain delayed teardown writes after child exit.
+            # Drain to EOF, bounded, before judging title restoration.
+            drain_deadline = time.monotonic() + 1.5
+            pty_eof = False
+            while time.monotonic() < drain_deadline and not pty_eof:
+                if not select.select([master], [], [], .05)[0]:
+                    continue
+                try:
+                    chunk = os.read(master, 65536)
+                except OSError as error:
+                    if error.errno == errno.EIO:
+                        pty_eof = True
+                        break
+                    raise
+                if not chunk:
+                    pty_eof = True
+                    break
+                output.extend(chunk)
+                screen.feed(chunk)
+            title_pushes = screen.title_controls.count('save')
+            title_pops = screen.title_controls.count('restore')
+            save_index = screen.title_controls.index('save') if 'save' in screen.title_controls else -1
+            restore_index = screen.title_controls.index('restore') if 'restore' in screen.title_controls else -1
+            title_round_trip = (title_pushes > 0 and title_pops > 0 and not screen.title_stack and
+                                save_index >= 0 and restore_index > save_index and
+                                screen.title == initial_title and initial_title in screen.title_history and
+                                exit_code == 0 and not exit_request_sent and pty_eof)
+            if restore_index >= 0:
+                restored_title = screen.title_history[-1] if screen.title_history else None
+                title_round_trip = title_round_trip and restored_title == initial_title
             result['checks']['terminalTitleRestoration'] = {
-                'status': 'FAIL' if not title_pushes or not title_pops else 'OBSERVED_NOT_VERIFIED',
-                'reason': ('Native TUI emitted title-stack controls, but PTY has no real terminal host title readback' if title_pushes and title_pops else
-                           'Native OpenCode 2.0.32 emitted OSC title changes but no VT title-stack save/restore controls'),
+                'status': 'PASS' if title_round_trip else 'FAIL',
+                'reason': ('Controlled terminal host restored the seeded original title after normal TUI exit' if title_round_trip else
+                           'Normal exit completed, but captured terminal output did not restore the seeded title through an ordered VT title-stack round trip'),
+                'controlledHostModel': True,
+                'normalExitCode': exit_code,
+                'exitActions': exit_actions,
+                'forcedTerminationAfterExitRequestTimeout': exit_request_sent,
+                'ptyDrainedToEof': pty_eof,
                 'titleSaveControls': title_pushes,
                 'titleRestoreControls': title_pops,
-                'titleSequenceObserved': screen.title_history}
-            selection_values = screen.clipboard_values[selection_clipboard_count:] if selection_sent else []
+                'titleControlOrder': screen.title_controls,
+                'modeledTitleStackDepth': len(screen.title_stack),
+                'titleControlsObserved': screen.title_controls,
+                'titleControlSequences': screen.title_control_sequences,
+                'initialTitle': initial_title,
+                'finalTitle': screen.title,
+                'titleSequenceObserved': screen.title_history,
+                'oscTitleUpdates': screen.osc_title_updates}
+            selection_values = screen.clipboard_history[selected_clipboard_count:copy_clipboard_count] if selection_sent else []
+            selection_readback = locals().get('selection_readback_at_selection')
+            selection_model_pass = (selection_sent and selected_text == selection_target and
+                                    selection_values == [selection_target] and
+                                    selection_readback == selection_target)
             result['checks']['selectionClipboard'] = {
-                'status': 'OBSERVED_NOT_VERIFIED' if selection_sent and any(fixture_response in value for value in selection_values) else 'FAIL',
-                'reason': ('A real SGR mouse drag emitted OSC 52 containing the selected text; PTY cannot read actual terminal clipboard state' if selection_sent and selection_values
-                           else 'Mouse drag did not produce an observable selection clipboard OSC 52'),
+                'status': 'PASS' if selection_model_pass else 'UNVERIFIED',
+                'reason': ('Controlled host model accepted and queried OSC 52 containing only the exact selected substring; this is not physical OS clipboard proof' if selection_sent and selection_values == [selected_text] and selection_readback == selected_text
+                           else 'Native selection gesture did not yield an exact selection OSC 52 update and modeled readback'),
                 'mouseReporting': mouse_mode, 'mouseDragSent': selection_sent,
-                'decodedSelectionPayloads': selection_values}
-            decoded_clipboards = screen.clipboard_values
+                'fixtureResponseInCapturedPty': fixture_response.encode() in output,
+                'fixtureResponseInScreenModel': fixture_response in screen.visible(),
+                'screenExcerpt': screen.visible()[-500:],
+                'selectedSubstring': selected_text if selection_sent else None,
+                'mouseCoordinates': selection_coordinates if selection_sent else None,
+                'controlledHostClipboardUpdates': selection_values,
+                'clipboardUpdateDeltaBeforeCopy': selection_values,
+                'controlledHostClipboardReadback': selection_readback,
+                'physicalOSClipboardVerified': False}
+            copy_values = screen.clipboard_history[copy_clipboard_count:] if copy_invoked else []
+            copy_readback = screen.query_clipboard() if copy_invoked and copy_values else None
+            copy_model_pass = (copy_invoked and copy_values == [fixture_response] and
+                               copy_readback == fixture_response)
             result['checks']['clipboardOSC52'] = {
-                'status': 'OBSERVED_NOT_VERIFIED' if copy_invoked and fixture_response in decoded_clipboards else 'FAIL',
-                'reason': 'Native /copy emitted OSC 52 with the exact fixture assistant response; PTY cannot verify actual clipboard readback' if copy_invoked and fixture_response in decoded_clipboards else 'No matching OSC 52 clipboard value observed after /copy',
+                'status': 'PASS' if copy_model_pass else 'UNVERIFIED',
+                'reason': 'Controlled host model accepted and queried OSC 52 with the exact distinct latest fixture response; this is not physical OS clipboard proof' if copy_invoked and copy_values == [fixture_response] and copy_readback == fixture_response else 'No exact new OSC 52 clipboard value and readback observed after /copy',
                 'copyActionSent': copy_invoked,
-                'decodedClipboardValues': decoded_clipboards,
-                'sequences': len(decoded_clipboards)}
+                'controlledHostClipboardUpdates': copy_values,
+                'clipboardUpdateDeltaAfterSelection': copy_values,
+                'controlledHostClipboardReadback': copy_readback,
+                'physicalOSClipboardVerified': False}
             incomplete = [name for name, check in result['checks'].items()
                           if check['status'] != 'PASS']
             result['status'] = 'INCOMPLETE' if incomplete else 'PASS'
             result['incompleteChecks'] = incomplete
-            print(json.dumps(result, ensure_ascii=False))
+            rendered = json.dumps(result, ensure_ascii=False, indent=2) + '\n'
+            print(rendered, end='')
+            if args.artifact:
+                artifact_path = Path(args.artifact).resolve()
+                artifact_path.parent.mkdir(parents=True, exist_ok=True)
+                artifact_path.write_text(rendered, encoding='utf8')
             return 2 if incomplete else 0
         finally:
             if child.poll() is None:
