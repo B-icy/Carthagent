@@ -283,7 +283,7 @@ test('headless result uses newest terminal assistant from chronological conversa
       throw new Error(`Unexpected endpoint ${pathname}`);
     };
     const result = await runHeadless({ url: 'http://127.0.0.1:3333', headers: {} }, '/workspace', 'continue', { sessionID: 'ses_resume' });
-    assert.deepEqual(result.messages.map((item) => item.id), ['assistant-old', 'user-new', 'assistant-new']);
+    assert.deepEqual(result.messages.map((item) => item.id), ['user-new', 'assistant-new']);
     assert.equal(result.result.text, 'new result');
     assert.equal(result.result.message.id, 'assistant-new');
   } finally { globalThis.fetch = original; }

@@ -174,7 +174,9 @@ try {
     timeout: 30_000,
     session: { model: { providerID: 'absent-fixture', id: 'missing' } },
   });
-  assert.ok(unavailableRun.error || unavailableRun.outcome === 'failed' || unavailableRun.session?.outcome === 'failed', `missing provider must be an observable failed outcome: ${JSON.stringify(unavailableRun)}`);
+  assert.equal(unavailableRun.outcome, 'failed', `missing provider must be exposed as a terminal failure: ${JSON.stringify(unavailableRun)}`);
+  assert.equal(unavailableRun.terminal, true);
+  assert.ok(unavailableRun.error || unavailableRun.session.error, 'missing provider failure should preserve a useful error');
   const idleInterrupt = await cancelSession(ensuredService, session.id, { location: { directory: cwd }, timeout: 5000 });
   assert.equal(idleInterrupt.interrupted, false, 'wrapper cancellation should use the v2 bounded interrupt API and report idle state');
   const requestsBeforeAttach = fixtureRequests;
