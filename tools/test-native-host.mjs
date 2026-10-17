@@ -46,6 +46,7 @@ try {
     XDG_CACHE_HOME: join(temp, 'cache'),
     OPENCODE_DB: join(temp, 'database.sqlite'),
     OPENCODE_SERVER_PASSWORD: password,
+    OPENCODE_CONFIG_PROJECT_DISABLE: 'true',
   });
   child = spawn(binary, [
     'serve', '--hostname', '127.0.0.1', '--port', '0', '--print-logs', '--log-level', 'debug',

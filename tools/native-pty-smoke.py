@@ -43,6 +43,7 @@ def main():
             'XDG_CONFIG_HOME': str(root / 'config'), 'XDG_DATA_HOME': str(root / 'data'),
             'XDG_STATE_HOME': str(root / 'state'), 'XDG_CACHE_HOME': str(root / 'cache'),
             'OPENCODE_DB': str(root / 'database.sqlite'),
+            'OPENCODE_CONFIG_PROJECT_DISABLE': 'true',
         })
         master, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 36, 120, 0, 0))

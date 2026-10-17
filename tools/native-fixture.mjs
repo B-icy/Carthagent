@@ -65,9 +65,11 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
       .filter(key => process.env[key]).map(key => [key, process.env[key]]));
     Object.assign(env, {
       HOME: join(temp, 'home'), USERPROFILE: join(temp, 'home'),
+      APPDATA: join(temp, 'appdata'), LOCALAPPDATA: join(temp, 'localappdata'),
       XDG_CONFIG_HOME: join(temp, 'config'), XDG_DATA_HOME: join(temp, 'data'),
       XDG_CACHE_HOME: join(temp, 'cache'), XDG_STATE_HOME: join(temp, 'state'),
       OPENCODE_DB: join(temp, 'database.sqlite'), OPENCODE_SERVER_PASSWORD: password,
+      OPENCODE_CONFIG_PROJECT_DISABLE: 'true',
     });
     child = spawn(process.env.CTG_OPENCODE_BIN ?? join(root, 'node_modules/@opencode/cli/bin/opencode.exe'),
       ['serve', '--hostname', '127.0.0.1', '--port', '0'], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -89,7 +91,7 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
     return client;
   };
   try {
-    await Promise.all(['project', 'home', 'config/opencode', 'data', 'state', 'cache']
+    await Promise.all(['project', 'home', 'config/opencode', 'data', 'state', 'cache', 'appdata', 'localappdata']
       .map(directory => mkdir(join(temp, directory), { recursive: true })));
     provider.listen(0, '127.0.0.1');
     await once(provider, 'listening');
