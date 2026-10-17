@@ -29,6 +29,8 @@ jobs:
       - run: npm run build
       - run: npm test
       - run: npm run test:native-host
+      - run: npm run test:native-controls
+      - run: npm run test:native-outcomes
       - if: runner.os != 'Windows'
         run: npm run test:native-pty
       - run: python -m pip install Pillow==11.3.0
