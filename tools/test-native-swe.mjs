@@ -45,6 +45,10 @@ test('native evaluation adapter consumes native event shapes and reconciles sess
       get: async () => ({outcome:'succeeded',cost:0,tokens:{input:8,output:4,reasoning:0,cache:{read:0,write:0}}}),
       interrupt: async () => ({}),
     },
+    message: { list: async () => ({ data:[{id:'m1',type:'assistant',finish:'stop',cost:0,tokens:{total:12},content:[
+      {type:'tool',name:'edit',id:'t1',state:{status:'completed',input:{path:'src/value.mjs'},content:[]}},
+      {type:'tool',name:'shell',id:'t2',state:{status:'completed',input:{command:'node --test src/value.test.mjs'},content:[]}},
+    ]}],cursor:{}}) },
     event: { subscribe: async function* ({signal}) { await new Promise((resolve,reject) => { if (signal.aborted) return resolve(); signal.addEventListener('abort',resolve,{once:true}); setTimeout(resolve,40); }); for (const event of events) yield event; } },
   };
   const root = mkdtempSync(join(tmpdir(), 'ctg-native-swe-'));
@@ -88,4 +92,31 @@ test('native evaluation bounds a nonresponsive interrupt cleanup and reports int
     assert.equal(result.budgetReason,'cancelled');
     assert.ok(Date.now()-started < 3000, 'a never-resolving interrupt must not hold evaluation cleanup');
   } finally { clearTimeout(abortTimer); }
+});
+
+test('native evaluation interrupts its own session after a non-abort API failure without terminal outcome', async () => {
+  const interrupts = [];
+  let terminal = false;
+  const api = {
+    server: { info: async () => ({ version:'2.0.32' }) },
+    plugin: { list: async () => ({ data:[{id:'ctg.evaluation-budget',state:{status:'active'}}] }) },
+    session: {
+      create: async () => ({ id:'api-failure-session' }),
+      prompt: async () => { throw Error('fixture API transport failure'); },
+      wait: async () => {},
+      get: async () => terminal
+        ? { outcome:'interrupted',cost:0,tokens:{input:0,output:0,reasoning:0,cache:{read:0,write:0}} }
+        : { cost:0,tokens:{input:0,output:0,reasoning:0,cache:{read:0,write:0}} },
+      interrupt: async (input) => { interrupts.push(input); terminal=true; },
+    },
+    event: { subscribe: async function* ({signal}) { await new Promise(resolve => signal.addEventListener('abort',resolve,{once:true})); } },
+  };
+  const result = await runNativeEvaluation({client:api,directory:tmpdir(),prompt:'fail API',model:'fixture',provider:'local',timeoutSeconds:5,maxTurns:2,maxCost:1,outcomeTimeoutSeconds:1});
+  assert.equal(result.exitCode,1);
+  assert.equal(result.outcome,'interrupted');
+  assert.equal(result.interruptionStatus,'confirmed');
+  assert.equal(interrupts.length,1);
+  assert.equal(interrupts[0].sessionID,'api-failure-session');
+  assert.equal(interrupts[0].resume,false);
+  assert.ok(result.errors.some(error=>/fixture API transport failure/.test(error)));
 });

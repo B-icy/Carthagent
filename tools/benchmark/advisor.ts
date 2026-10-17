@@ -1,8 +1,8 @@
 // Benchmark-only treatment adapter; never modifies approval state or tool availability.
 import { appendFileSync } from 'node:fs';
-export default function advisor(ctx: any) {
+export default async function advisor(ctx: any): Promise<() => Promise<void>> {
   const seen = new Set<string>();
-  ctx.tool.hook('execute.after', async (event: any) => {
+  const registration = await ctx.tool.hook('execute.after', async (event: any) => {
     if (event.tool !== 'delivery_design' || event.input?.action !== 'inspect' || event.status !== 'completed' || seen.size >= 3) return;
     let capture: any;
     try { capture = JSON.parse(event.result.content.filter((c: any) => c.type === 'text').map((c: any) => c.text).join('\n')).result; } catch { return; }
@@ -23,4 +23,5 @@ export default function advisor(ctx: any) {
     appendFileSync(process.env.BENCH_ADVISOR_LOG!, JSON.stringify(feedback) + '\n');
     event.result.content.push({ type: 'text', text: '\nOptional Jev advisory:\n' + JSON.stringify(feedback) });
   });
+  return () => registration.dispose();
 }
