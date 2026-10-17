@@ -1,0 +1,59 @@
+{
+  "status": "BOUNDED_MULTI_RUN_PASS_PHYSICAL_CLIPBOARD_UNVERIFIED",
+  "generatedAtUtc": "2026-10-17",
+  "sourceCommit": "1a79b489ba9f287efc03cf2c580ade546d0c9140",
+  "workingTreeDirtyAtEvidenceCapture": true,
+  "harnessSourceSha256AtEvidenceCapture": "f35acbcd8e506a32c0ee5240b3cd53be34fe551c7166e3327017c69ab2a57809",
+  "finalAuthorBinary": {
+    "path": "/tmp/opencode/ctg-final-runtime-build/resume-build/packages/cli/dist-ctg/cli-linux-x64/bin/opencode",
+    "version": "opencode v0.0.0-ctg.2.0.32",
+    "packageManifest": "/tmp/opencode/ctg-final-runtime-build/resume-build/packages/cli/dist-ctg/cli-linux-x64/package.json",
+    "packageVersion": "0.0.0-ctg.2.0.32",
+    "sha256": "85bb44a65e8c185f4f33d41507d29acc77f2db0cdcb0103a14476021c8e43794",
+    "status": "IDENTIFIED_AND_TESTED"
+  },
+  "checks": {
+    "controlledHostModelSelfTest": {
+      "status": "PASS",
+      "scope": "parser/state-model only; not native acceptance"
+    },
+    "pickerEscapeCancel": {
+      "status": "PASS",
+      "evidence": "final-binary-full-incomplete-85bb44a.json",
+      "note": "Exact supplied binary: Ctrl+O recent-sessions menu observed, Escape dismissed it, home composer restored, and zero provider requests occurred before prompt acceptance."
+    },
+    "narrowLayout": {
+      "status": "PASS",
+      "evidence": ["final-binary-full-incomplete-85bb44a.json", "final-binary-layout-85bb44a.json"],
+      "note": "Exact supplied binary rendered fixture response and composer in the actual 40x12 PTY; an additional interactive pass typed unique input, backspaced one character, opened the recent-sessions menu, navigated, cancelled with Escape, and verified the edited input returned in the composer. See final-binary-layout-interactive-85bb44a.json."
+    },
+    "selectionClipboard": {
+      "status": "PASS_CONTROLLED_HOST_MODEL",
+      "evidence": "final-binary-focused-85bb44a.json",
+      "note": "Focused run sent a real SGR drag over exactly SNIP and the modeled host accepted and queried exactly SNIP. Full-run selection was unstable and incomplete. Physical OS clipboard is not verified."
+    },
+    "clipboardOSC52": {
+      "status": "PASS_CONTROLLED_HOST_MODEL",
+      "evidence": "final-binary-focused-85bb44a.json",
+      "note": "Distinct /copy action emitted exactly FINAL[SNIP]END and the modeled OSC 52 host query returned the same value. This is not physical OS clipboard verification."
+    },
+    "terminalTitleRestoration": {
+      "status": "PASS_CONTROLLED_HOST_MODEL",
+      "evidence": ["final-binary-focused-85bb44a.json", "final-binary-full-incomplete-85bb44a.json"],
+      "note": "Exact supplied binary: ordered 22;0 save / 23;0 restore, seeded modeled title restored, PTY drained to EOF, normal exit code 0, no forced termination."
+    }
+  },
+  "modelPickerNavigationAndEscapeUnchangedModel": {
+    "status": "PASS_BOUNDED",
+    "evidence": "final-binary-model-picker-exact-identity-85bb44a.json",
+    "note": "Native model picker presented offline A/B options; current A was visible, ArrowDown moved the captured selected styling from A to B, first Escape cleared the active filter and second Escape dismissed the dialog, no provider request occurred during cancel, the rendered active-session model label still showed A, and a unique subsequent prompt used fixture model A. The rerun required an exact expected version and independently supplied SHA-256 checked before binary execution. Earlier failed attempt is retained separately and superseded only for this lane."
+  },
+  "recentSessionsMenuEscapeAndComposerRestoration": {
+    "status": "PASS",
+    "evidence": ["final-binary-full-incomplete-85bb44a.json", "final-binary-layout-interactive-85bb44a.json"],
+    "note": "Distinct from model-picker acceptance; the recent-sessions menu was opened, navigated, and cancelled, restoring the composer."
+  },
+  "physicalOSClipboardVerified": false,
+  "paidProviderTraffic": false,
+  "runCaveat": "Results are bounded across separate runs, not one all-green invocation. The full run's native selection gesture remains incomplete; a focused run established the selection clipboard round trip only in the controlled host model. The earlier model-picker attempt remains retained as incomplete, while the newer focused offline A/B model-picker probe passed navigation, Escape dismissal, and unchanged-model verification for that lane. Ctrl+O recent-sessions cancellation is separate from model-picker acceptance. No physical OS clipboard claim is made."
+}

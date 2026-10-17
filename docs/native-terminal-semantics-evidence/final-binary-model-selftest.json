@@ -1,0 +1,16 @@
+{
+  "status": "MODEL_SELFTEST_PASS_NOT_NATIVE_ACCEPTANCE",
+  "scope": "parser/state-model self-test only; does not launch OpenCode or exercise native PTY input",
+  "nativeAcceptance": "NOT_RUN",
+  "physicalOSClipboardVerified": false,
+  "seedClipboardPreservedOnInvalidPayloads": true,
+  "invalidPayloadsRejected": 3,
+  "exactSelectionRoundTrip": "SNIP",
+  "exactLatestCopyRoundTrip": "FINAL[SNIP]END",
+  "clipboardQueries": 2,
+  "titleRestoredFromStack": "CTG-ORIGINAL-TITLE",
+  "titleSaveRestoreOrder": [
+    "save",
+    "restore"
+  ]
+}

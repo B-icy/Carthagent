@@ -82,6 +82,16 @@ test('normalizeRelease rejects install specs that do not install the release tag
   assert.equal(normalizeRelease(manifest).installSpec, 'github:B-icy/Carthagent#v0.3.0');
 });
 
+test('normalizeRelease binds the install ref exactly to the validated version', () => {
+  for (const tag of ['main', 'v0.3.1', 'v0.3.0%2Fmain', ' v0.3.0', 'v0.3.0\n']) {
+    assert.equal(normalizeRelease({ version: '0.3.0', tag }), null, `rejected tag ${JSON.stringify(tag)}`);
+  }
+  assert.equal(normalizeRelease({ version: '1.2.3-beta.2', tag_name: 'v1.2.3-beta.2' })?.installSpec,
+    'github:B-icy/Carthagent#v1.2.3-beta.2');
+  assert.equal(normalizeRelease({ version: '1.2.3-beta.2', tag_name: 'v1.2.3' }), null);
+  assert.equal(normalizeRelease({ version: '01.2.3', tag: 'v01.2.3' }), null);
+});
+
 test('fetchLatestRelease falls back to GitHub when the manifest fails validation', async () => {
   // A control-plane 200 whose installSpec is rejected must not dead-end the
   // update — the GitHub release still resolves.

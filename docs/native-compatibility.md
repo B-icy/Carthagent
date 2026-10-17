@@ -61,6 +61,15 @@ bounded cancellation, and a documented JSONL contract for evaluation consumers.
 
 ## Cross-cutting gates
 
+The PR #152 TUI scope owns theme provisioning, workspace presentation, and
+session-scoped host commands. `/login`, `/auth`, `/account`, `/cloud`, `/usage`,
+`/billing`, `/logout-cloud`, `/update`, and `/upgrade` remain CLI-authoritative
+operations and must be integrated through the separate CLI author RPC; this TUI
+must not create a second provider/cloud/update implementation. `/quit`, `/q`,
+and `/exit` remain native host lifecycle commands rather than plugin aliases.
+These responsibilities are not counted as complete by listing them in a command
+manifest.
+
 - Two simultaneous tasks in different worktrees cannot share active contracts,
   budget counters, Ship telemetry identities, or review receipts.
 - Normal OpenCode configuration, credentials, service and sessions remain
@@ -91,6 +100,13 @@ The following probes use a disposable profile and deterministic loopback provide
 `CTG_OPENCODE_BIN` can select an explicit test binary; the default is the pinned
 package-owned `node_modules/@opencode/cli/bin/opencode.exe`. An optional first
 argument selects an installed plugin directory.
+
+The interactive help command must be checked with both `/help` and `/ctg-help`.
+Strict post-submit probes on the pinned OpenCode 2.0.32 host currently show
+`/help` opening native Help. Earlier positive results could match autocomplete
+text before submission. `/ctg-help` works, but neither that alias nor dismissing
+autocomplete before submitting `/help` satisfies the required command behavior.
+Native command precedence remains an open acceptance gate.
 
 - `node tools/test-native-controls.mjs`: concurrent framing/raw admission,
   persisted launcher settings and framing overrides, compaction notes reaching

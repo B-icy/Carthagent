@@ -1,0 +1,107 @@
+--- a/packages/tui/test/plugin-theme-provider.test.tsx
++++ b/packages/tui/test/plugin-theme-provider.test.tsx
+@@ -0,0 +1,104 @@
++/** @jsxImportSource @opentui/solid */
++import { testRender } from "@opentui/solid"
++import { expect, test } from "bun:test"
++import { ConfigProvider, type Info } from "../src/config"
++import { ThemeProvider, useThemes } from "../src/context/theme"
++import { createPluginContext, type Registry, type usePluginHost } from "../src/plugin/api"
++import opencode from "../src/theme/assets/v2/opencode.json" with { type: "json" }
++import { emptyThemeSource, tmpdir } from "./fixture/fixture"
++import { TestTuiContexts } from "./fixture/tui-environment"
++import { createTuiResolvedConfig } from "./fixture/tui-runtime"
++
++const custom = {
++  ...opencode,
++  base: {
++    ...opencode.base,
++    background: { ...opencode.base.background, base: "#aabbcc" },
++    text: { ...opencode.base.text, base: "#123456" },
++  },
++  dark: { hue: opencode.dark.hue },
++  light: { hue: opencode.dark.hue },
++}
++const darkOnly = {
++  ...custom,
++  base: {
++    ...custom.base,
++    background: { ...custom.base.background, base: "#334455" },
++  },
++  light: undefined,
++}
++
++test("plugin theme API reactively updates real ThemeProvider palette and persists selection", async () => {
++  await using temporary = await tmpdir()
++  const settings: Info = {}
++  let themes!: ReturnType<typeof useThemes>
++  let plugin!: ReturnType<typeof createPluginContext>
++  const app = await testRender(() => (
++    <TestTuiContexts paths={{ state: temporary.path }}>
++      <ConfigProvider
++        config={createTuiResolvedConfig(settings)}
++        service={{
++          get: async () => settings,
++          update: async (update) => {
++            update(settings)
++            return settings
++          },
++        }}
++      >
++        <ThemeProvider
++          mode="dark"
++          source={{
++            ...emptyThemeSource,
++            discover: async () => ({ "fixture-live": custom, "fixture-dark-only": darkOnly }),
++          }}
++        >
++          <Probe />
++        </ThemeProvider>
++      </ConfigProvider>
++    </TestTuiContexts>
++  ))
++
++  function Probe() {
++    themes = useThemes()
++    const host = {
++      app: {}, client: {}, keymap: {}, shortcuts: {}, keymapState: {}, sessionTabs: {},
++      themes,
++    } as unknown as ReturnType<typeof usePluginHost>
++    const registry: Registry = { has: () => false, set() {}, remove() {}, active: () => true }
++    plugin = createPluginContext({ host, id: "fixture", options: undefined, owned: [], registry })
++    return <text>{`${plugin.ui.theme.current().name} ${plugin.ui.theme.current().mode} ${plugin.theme.background.base} ${plugin.theme.text.base}`}</text>
++  }
++
++  try {
++    app.renderer.start()
++    await app.waitForFrame(() => themes?.ready)
++    await app.waitForFrame((frame) => frame.includes("opencode dark"))
++    expect(plugin.ui.theme.current()).toEqual({ name: "opencode", mode: "dark" })
++
++    expect(plugin.ui.theme.set({ name: "fixture-live", mode: "light" })).toBe(true)
++    await app.waitForFrame((frame) => frame.includes("fixture-live light"))
++    expect(plugin.ui.theme.current()).toEqual({ name: "fixture-live", mode: "light" })
++    expect(settings.theme).toEqual({ name: "fixture-live", mode: "light" })
++    expect(plugin.theme.background.base.toInts()).toEqual([170, 187, 204, 255])
++    expect(plugin.theme.text.base.toInts()).toEqual([18, 52, 86, 255])
++
++    const before = structuredClone(settings.theme)
++    expect(plugin.ui.theme.set({ name: "missing-theme", mode: "dark" })).toBe(false)
++    expect(plugin.ui.theme.set({ name: "fixture-dark-only", mode: "light" })).toBe(false)
++    expect(plugin.ui.theme.current()).toEqual({ name: "fixture-live", mode: "light" })
++    expect(settings.theme).toEqual(before)
++    expect(plugin.ui.theme.set({ name: "fixture-dark-only" })).toBe(true)
++    await app.waitForFrame((frame) => frame.includes("fixture-dark-only dark"))
++    expect(plugin.theme.background.base.toInts()).toEqual([51, 68, 85, 255])
++    expect(plugin.ui.theme.current()).toEqual({ name: "fixture-dark-only", mode: "dark" })
++    expect(settings.theme).toEqual({ name: "fixture-dark-only", mode: "light" })
++    const afterFallback = structuredClone(settings.theme)
++    expect(plugin.ui.theme.set({ name: "fixture-live", mode: "invalid" as "dark" })).toBe(false)
++    await Bun.sleep(20)
++    expect(plugin.ui.theme.current()).toEqual({ name: "fixture-dark-only", mode: "dark" })
++    expect(settings.theme).toEqual(afterFallback)
++    expect(before).toEqual({ name: "fixture-live", mode: "light" })
++  } finally {
++    app.renderer.destroy()
++  }
++})

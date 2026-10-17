@@ -17,32 +17,60 @@ import termios
 import time
 
 
+def resolve_binary(value):
+    """Resolve PATH names before path normalization; otherwise use only the pinned package binary."""
+    if value and (os.path.isabs(value) or os.sep in value or (os.altsep and os.altsep in value)):
+        candidate = pathlib.Path(value).expanduser().resolve()
+        return str(candidate) if candidate.is_file() else None
+    if value:
+        found = shutil.which(value)
+        if found:
+            return str(pathlib.Path(found).resolve())
+    owned = pathlib.Path(__file__).resolve().parents[1] / 'node_modules/@opencode/cli/bin/opencode.exe'
+    if value in (None, '', 'opencode') and owned.is_file():
+        return str(owned.resolve())
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--binary', default=shutil.which('opencode'))
-    parser.add_argument('--plugin', default=str(pathlib.Path(__file__).resolve().parents[1] / 'plugins/carthagent/test-plugin'))
-    parser.add_argument('--delivery-plugin', default=str(pathlib.Path(__file__).resolve().parents[1] / 'plugins/carthagent/test-plugin'))
+    parser.add_argument('--binary', default=os.environ.get('CTG_OPENCODE_BIN') or os.environ.get('OPENCODE_BIN') or 'opencode')
+    parser.add_argument('--plugin', default=str(pathlib.Path(__file__).resolve().parents[1] / 'plugins/carthagent'))
     parser.add_argument('--command', default='/ctg-status')
-    parser.add_argument('--expect', default=None)
-    parser.add_argument('--completion', default='Carthagent runtime status')
+    parser.add_argument('--after-command', action='append', help='Submit another command after expected output; may be repeated')
+    parser.add_argument('--after-expect', action='append', help='Expected output for each additional command')
+    parser.add_argument('--expect', default='OpenCode 2.0.32')
+    parser.add_argument('--capture', help='Save the full raw PTY transcript for diagnosis')
+    parser.add_argument('--expect-color', help='Require a truecolor ANSI RGB sequence after the command, e.g. 230,196,128')
+    parser.add_argument('--ready', help='Wait for this marker before typing')
+    parser.add_argument('--confirm', action='store_true', help='Press Enter again after selecting slash completion')
+    parser.add_argument('--second-enter', action='store_true', help='Send a second Enter after the initial command submission')
     args = parser.parse_args()
+    args.binary = resolve_binary(args.binary)
     if not args.binary:
-        parser.error('OpenCode binary is required')
-    args.binary = str(pathlib.Path(args.binary).resolve())
-    with tempfile.TemporaryDirectory(prefix='ctg-pty-') as temp:
+        parser.error('OpenCode binary was not found on PATH or at the owned package path node_modules/@opencode/cli/bin/opencode.exe')
+    preferred_temp = pathlib.Path('/tmp/opencode')
+    with tempfile.TemporaryDirectory(prefix='ctg-pty-', dir=preferred_temp if preferred_temp.is_dir() else None) as temp:
         root = pathlib.Path(temp)
         for name in ['home', 'project', 'config/opencode', 'data', 'state', 'cache']:
             (root / name).mkdir(parents=True, exist_ok=True)
         (root / 'config/opencode/opencode.json').write_text(json.dumps({
-            'plugins': list(dict.fromkeys([str(pathlib.Path(args.plugin).resolve()), str(pathlib.Path(args.delivery_plugin).resolve())])), 'update': 'disable',
+            'plugins': [str(pathlib.Path(args.plugin).resolve())], 'update': 'disable',
         }))
-        expected = args.expect or 'OpenCode 2.0.32 ·'
+        if args.expect_color:
+            provisioner = pathlib.Path(args.plugin).resolve() / 'src/ui/theme-provision.mjs'
+            subprocess.run([
+                'node', '--input-type=module', '-e',
+                "const { provisionDefaultNativeTheme } = await import(process.argv[1]); await provisionDefaultNativeTheme(process.argv[2]);",
+                str(provisioner), str(root / 'config/opencode'),
+            ], check=True)
         env = {key: os.environ[key] for key in ['PATH', 'LANG', 'LC_ALL'] if key in os.environ}
         env.update({
             'HOME': str(root / 'home'), 'TERM': 'xterm-256color', 'COLORTERM': 'truecolor',
             'XDG_CONFIG_HOME': str(root / 'config'), 'XDG_DATA_HOME': str(root / 'data'),
             'XDG_STATE_HOME': str(root / 'state'), 'XDG_CACHE_HOME': str(root / 'cache'),
             'OPENCODE_DB': str(root / 'database.sqlite'),
+            'OPENCODE_CONFIG_PROJECT_DISABLE': 'true',
         })
         master, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 36, 120, 0, 0))
@@ -50,10 +78,16 @@ def main():
                                  stdin=slave, stdout=slave, stderr=slave, start_new_session=True)
         os.close(slave)
         output = bytearray()
+        transcript = bytearray()
         started = time.monotonic()
         sent = False
-        completion_accepted = False
+        sent_at = None
         submitted = False
+        confirmation_complete = False
+        confirmation_at = None
+        enter_count = 0
+        after_index = 0
+        after_typed_at = None
         try:
             while time.monotonic() - started < 30:
                 if child.poll() is not None:
@@ -61,29 +95,96 @@ def main():
                 if select.select([master], [], [], 0.1)[0]:
                     chunk = os.read(master, 65536)
                     output.extend(chunk)
+                    transcript.extend(chunk)
                     # Terminal capability requests need replies on a headless PTY.
                     if b'\x1b[6n' in chunk:
                         os.write(master, b'\x1b[1;1R')
                     if b'\x1b[c' in chunk:
                         os.write(master, b'\x1b[?1;2c')
-                if not sent and time.monotonic() - started > 8:
+                ready = args.ready.encode() in transcript if args.ready else time.monotonic() - started > 8
+                if not sent and ready:
+                    output.clear()
+                    sent_at = time.monotonic()
                     os.write(master, args.command.encode())
                     sent = True
-                # The completion row is evidence that the TUI plugin has
-                # registered its command. Enter submits the highlighted slash
-                # command; inspect only output produced after that submission.
-                if sent and not completion_accepted and args.completion.encode() in output:
-                    completion_accepted = True
+                if sent and not submitted and after_index == 0 and time.monotonic() - sent_at > 1:
+                    # Typed slash text has usually populated autocomplete now.
+                    # Discard that frame before accepting the completion so it
+                    # cannot satisfy the post-command assertion.
+                    output.clear()
+                    os.write(master, b'\r')
+                    enter_count += 1
+                    submitted = True
+                confirmation_prompt = re.search(rb'(?i)(?:are you sure|confirm\?|\[y/n\]|\(y/n\)|press enter to confirm)', output)
+                if submitted and (args.confirm or args.second_enter) and not confirmation_complete and confirmation_prompt and time.monotonic() - sent_at > 0.5:
+                    # Some commands open an explicit confirmation dialog. Do
+                    # not blindly press Enter again: the initial Enter submits
+                    # the selected slash command, and a second Enter can invoke
+                    # an unrelated native TUI action.
+                    output.clear()
+                    os.write(master, b'\r')
+                    enter_count += 1
+                    confirmation_at = None
+                    confirmation_complete = True
+                    if args.second_enter:
+                        sent_at = time.monotonic()
+                if submitted and (args.confirm or args.second_enter) and not confirmation_complete and not confirmation_prompt and time.monotonic() - sent_at > 2.5:
+                    # Let the submitted command's UI render fully before the
+                    # assertion; commands without a confirmation dialog need
+                    # no extra Enter.
+                    confirmation_complete = True
+                after_commands = args.after_command or []
+                after_expects = args.after_expect or []
+                if len(after_commands) != len(after_expects):
+                    raise ValueError('--after-command and --after-expect must be supplied in matching counts')
+                expected_output = args.expect if after_index == 0 else after_expects[after_index - 1]
+                if after_index < len(after_commands) and args.expect.encode() in output and b'/theme' in args.command.encode():
+                    try:
+                        theme_config = json.loads((root / 'config/opencode/cli.json').read_text())
+                    except FileNotFoundError:
+                        theme_config = {}
+                    if theme_config.get('theme', {}).get('name') == 'carthage':
+                        output.clear()
+                        os.write(master, after_commands[after_index].encode())
+                        after_typed_at = time.monotonic()
+                        after_index += 1
+                        submitted = False
+                        continue
+                if submitted and expected_output.encode() in output and after_index < len(after_commands):
+                    if args.command.startswith('/theme ') and after_index == 1:
+                        theme_config = json.loads((root / 'config/opencode/cli.json').read_text())
+                        assert theme_config['theme']['name'] == 'carthage', theme_config
+                    output.clear()
+                    os.write(master, after_commands[after_index].encode())
+                    after_typed_at = time.monotonic()
+                    after_index += 1
+                    submitted = False
+                    continue
+                if after_index and not submitted and time.monotonic() - after_typed_at > 1:
                     os.write(master, b'\r')
                     submitted = True
+                    sent_at = time.monotonic()
                     output.clear()
-                plain_output = re.sub(rb'\x1b\[[0-?]*[ -/]*[@-~]', b'', bytes(output))
-                if submitted and expected.encode() in plain_output:
-                    if b'runtime unavailable' in plain_output or args.completion.encode() in plain_output:
+                command_submitted = submitted and (confirmation_complete or not (args.confirm or args.second_enter))
+                result_output = command_submitted and expected_output.encode() in output
+                if result_output:
+                    if b'runtime unavailable' in output or b'No matching commands' in output:
                         raise RuntimeError('Command was unavailable or its RPC failed')
-                    print(json.dumps({'command': args.command, 'observed': expected,
-                                      'completionAccepted': completion_accepted,
-                                      'commandSubmitted': submitted,
+                    if args.expect_color and args.command.startswith('/theme ') and after_index == len(after_commands):
+                        theme_config = json.loads((root / 'config/opencode/cli.json').read_text())
+                        assert theme_config['theme']['name'] == 'carthage', theme_config
+                    if args.expect_color and after_index == len(after_commands):
+                        channels = [part.strip() for part in args.expect_color.split(',')]
+                        if len(channels) != 3 or any(not part.isdigit() or int(part) > 255 for part in channels):
+                            raise ValueError('--expect-color must be an RGB triple such as 242,198,109')
+                        ansi = f"\x1b[38;2;{';'.join(channels)}m".encode()
+                        if ansi not in output:
+                            print(f'Expected rendered foreground color {ansi!r} was not observed; recent raw PTY bytes: {output[-12000:]!r}')
+                            raise AssertionError('Rendered accent color did not match the selected native theme')
+                    print(json.dumps({'command': args.command, 'observed': expected_output,
+                                      'postSubmission': True, 'enterCount': enter_count,
+                                      'theme': 'carthage' if args.expect_color else None,
+                                      'ansiColor': args.expect_color,
                                       'elapsedMs': round((time.monotonic() - started) * 1000),
                                       'terminalBytes': len(output)}))
                     return
@@ -92,8 +193,10 @@ def main():
                 lines = [line for line in log.read_text(errors='replace').splitlines()
                          if 'plugin' in line.lower() or 'error' in line.lower()]
                 print('\n'.join(lines[-30:]))
-            raise RuntimeError(f'Expected post-command response {expected!r} not rendered (sent={sent}, completionAccepted={completion_accepted}, submitted={submitted}): {plain[-8000:].decode(errors="replace")}')
+            raise RuntimeError(f'Expected {args.expect!r} not rendered: {plain[-8000:].decode(errors="replace")}')
         finally:
+            if args.capture:
+                pathlib.Path(args.capture).write_bytes(transcript)
             if child.poll() is None:
                 os.killpg(child.pid, signal.SIGTERM)
                 try:
