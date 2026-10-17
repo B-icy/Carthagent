@@ -6,107 +6,56 @@ Carthagent is a delivery-focused AI coding console and CLI built on a bundled de
 
 `docs/workflow.svg` shows the flow; `docs/evaluation.md` has the honest trial history, failures included.
 
-## Install
+## Native OpenCode preview
 
-Core CLI requires Node ≥ 22.19. Optional workflows need additional tools: Git and authenticated `gh` for PR review, and Python with the scenario dependencies for game graders. Real-browser checks use a bundled lightweight headless browser (`chrome-headless-shell`, auto-downloaded on first use to `~/.carthagent/browser/`) — no local browser install needed; an external WebDriver endpoint remains supported. The engine is bundled inside the package.
-
-Install directly from GitHub:
+The native OpenCode interface is currently an **opt-in preview**, not the default `ctg` experience. The regular CLI remains the default until the installed-product acceptance gates are complete. To try the native route in a checkout with its dependencies installed:
 
 ```sh
-npm install -g --install-links=true github:B-icy/Carthagent
+CTG_NATIVE=1 node bin/ctg.mjs
+CTG_NATIVE=1 node bin/ctg.mjs --help
+```
+
+Do not set `CTG_NATIVE=1` globally if you intend to keep using the regular CLI. The native route launches the package-owned, pinned OpenCode 2.0.32 runtime and uses a separate Carthagent-owned profile beneath `~/.carthagent/opencode/` (override with `CTG_OPENCODE_HOME`). Its config, database, sessions, auth, state, and cache are separate from regular OpenCode. It does not install, upgrade, or reuse regular OpenCode credentials. Project files and native task metadata/worktrees are separate again: task records live in each project’s `.harness/opencode-tasks.json`.
+
+Native projects use OpenCode’s project/session model. CTG task creation associates a task with an independent native session and OpenCode worktree; task relations are CTG metadata, not parent/child OpenCode sessions. Native session resume/continue is scoped to the active workspace. Legacy Pi transcripts can be listed, searched, read, and exported with `ctg archive`; they are **read-only archives** and cannot be resumed or imported as native sessions. See the [native upgrade and migration guide](docs/native-upgrade.md) before switching workflows.
+
+The native TUI exposes CTG workspace/task actions such as `/ctg-workspace`, `/ctg-open`, `/ctg-worktree`, and `/ctg-task`, alongside delivery and session commands. OpenCode owns the terminal renderer and lifecycle. Do not assume a listed command overrides a built-in host command: submitted `/help` precedence is a known unresolved acceptance gate.
+
+```sh
+CTG_NATIVE=1 node bin/ctg.mjs                         # native interactive TUI
+CTG_NATIVE=1 node bin/ctg.mjs "Build a task CLI"      # task in the TUI
+CTG_NATIVE=1 node bin/ctg.mjs resume                  # native session picker
+CTG_NATIVE=1 node bin/ctg.mjs continue                # latest native session here
+CTG_NATIVE=1 node bin/ctg.mjs -p "Summarize this repo" # headless text
+CTG_NATIVE=1 node bin/ctg.mjs --json -p "Run checks" # native lifecycle JSONL
+CTG_NATIVE=1 node bin/ctg.mjs status --json           # delivery status JSON
+CTG_NATIVE=1 node bin/ctg.mjs archive list            # legacy archive (read-only)
+```
+
+The native CLI retains command aliases such as `ui`/`interactive`, `sessions`, `s`, `c`, `fingerprint`, `auth`, `cloud`, `web`, `start`, and `upgrade`. `--json` with a headless prompt emits JSONL records for native tool start/end, assistant message completion, and terminal outcome; it is not the text `-p` stream. Headless success requires the native completed assistant turn and successful terminal outcome. Options whose enforcement is not advertised by the active native plugin fail closed; in particular `--bash-cap` and `--isolate` are currently unsupported. Refer to [native CLI compatibility details](docs/native-cli.md).
+
+**Acceptance is still open.** This preview is not a release-readiness or default-switch claim. Native host command precedence and final-binary terminal semantics remain explicit acceptance items; the migration ledger tracks current findings and required gates: [OpenCode migration ledger](docs/opencode-migration.md#delivery-ledger), [native compatibility matrix](docs/native-compatibility.md), and [terminal evidence status](docs/native-terminal-semantics.md#evidence-status-pr-162).
+
+## Install and update
+
+The package requires Node ≥ 22.19. A published stable release is installed from its exact release tag, not an unpinned branch:
+
+```sh
+npm install -g --install-links=true github:B-icy/Carthagent#vX.Y.Z
 ctg
 ```
 
-With npm 11, `--install-links=true` is required for this `github:` global install. Without it, npm can leave `ctg` linked to a temporary clone that is deleted after installation. To make the setting persistent for future GitHub installs:
+Replace `vX.Y.Z` with a version that has actually been published. npm 11 requires `--install-links=true` for this GitHub global install. To persist that setting, run `npm config set install-links true --location=user`. To install a checked-out source tree for development, use `git clone https://github.com/B-icy/Carthagent`, then `npm ci && npm install -g .`; this is not a published-release installation.
 
-```sh
-npm config set install-links true --location=user
-npm install -g github:B-icy/Carthagent
-ctg
-```
+`ctg update --check` checks for a published release without installing; `ctg update` installs the validated exact `v<version>` release tag using the existing install method. Source-clone updates fail closed if the clone is dirty. Do not treat this documentation change as a release: version selection, publishing, and tagging happen separately after product acceptance. See [native upgrade guidance](docs/native-upgrade.md) and the [UNRELEASED draft notes](docs/release-notes-native-draft.md).
 
-If installation succeeds but your shell cannot find `ctg`, restart the terminal and confirm that npm's global executable directory is on `PATH` (`$(npm prefix -g)/bin` on Linux/macOS; the directory shown by `npm prefix -g` on Windows).
+## Regular CLI
 
-If `npm install -g` fails with `ENOTDIR`/`EEXIST` while renaming `…/node_modules/carthagent`, a stale entry from an earlier install (or an `npm link`) is in the way. Remove it and retry:
+Without `CTG_NATIVE=1`, `ctg` continues to launch the existing split-terminal CLI and its existing Carthagent agent profile. This behavior remains the default for now. Its data and provider setup are distinct from the native preview described above.
 
-```sh
-rm -rf "$(npm root -g)/carthagent" "$(npm root -g)"/.carthagent-*
-npm install -g --install-links=true github:B-icy/Carthagent
-```
+## Delivery engine and existing CLI
 
-`ctg update` performs this cleanup automatically and retries.
-
-Or install from a clone:
-
-```sh
-git clone https://github.com/B-icy/Carthagent && cd Carthagent
-npm ci && npm install -g .    # gives you `ctg`; or run `node bin/ctg.mjs`
-```
-
-## Update
-
-`ctg update` resolves the latest release (the Carthagent control plane first, GitHub releases as fallback) and reinstalls it the way you installed: checkout the tag + `npm ci` in a clone install, or `npm install -g --install-links=true github:B-icy/Carthagent#<tag>` for a `github:` install. `ctg update --check` reports without installing. The console also prints a notice once a day when a newer release exists — set `CARTHAGENT_NO_UPDATE_CHECK=1` to opt out.
-
-**Releasing:** bump `version` in `package.json` and `package-lock.json`, merge, then tag `vX.Y.Z` on main and push. The `Release` workflow publishes the manifest to the control plane (`POST /v1/cli/releases`), making the tag resolvable by `ctg update` and the dashboard badge. It needs the `CARTHAGENT_CLI_RELEASE_TOKEN` repository secret set to the backend's `CARTHAGENT_CLI_RELEASE_ADMIN_TOKEN`; `CARTHAGENT_CLOUD_URL` can override the API origin as a repository variable.
-
-## Connect a provider
-
-First run needs AI credentials. One store (`~/.carthagent/agent/auth.json`) covers the console, headless runs, and the dashboard.
-
-Run `ctg login`, or use `/login` (`/auth`) inside the console. All three entry points open the same provider picker. Carthagent Ship appears first as the recommended managed option, while Anthropic, OpenAI, OpenRouter, and the other direct providers remain immediately selectable. Connected providers are marked without changing the stable ordering.
-
-The popup handles OAuth URLs, device codes, and API-key prompts inline. An in-session login returns to the active workspace and refreshes the agent without discarding the transcript or editor state.
-
-**Carthagent Ship** — choosing the recommended Ship row starts browser device authorization. Carthagent stores only the resulting short-lived access token and rotating refresh token in its isolated credential store; it does not ask users to paste a long-lived managed gateway key. After signing in:
-
-```sh
-ctg account                    # credit, grants, plan, and CLI sessions
-ctg billing checkout           # Builder subscription checkout URL
-ctg billing portal             # Stripe customer portal URL
-ctg logout-cloud [session-id]  # revoke the current or a named CLI session
-```
-
-Inside the console, `/account`, `/billing checkout`, `/billing portal`, and `/logout-cloud <session-id>` provide the same account controls without leaving the workspace. If Ship credit is exhausted, the console offers billing and `/login`; direct Anthropic, OpenAI, OpenRouter, custom, and other BYOK providers remain available without an upsell.
-
-Operators and internal pilots may still provide `EXPLABS_API_KEY` through the environment for direct upstream access; that key path remains separate from the public device flow. `CARTHAGENT_CLOUD_URL` may override the Carthagent account/control-plane origin, while `EXP_GATEWAY_URL` specifically overrides the direct upstream model gateway origin for preview or staging. Browser-account requests use the Ship authority at the control-plane origin; API-key requests continue to use the configured upstream gateway directly. Carthagent discovers model identities from `GET /v1/models`; the endpoint may also publish each alias's operating caps (`contextWindow`, `maxTokens`), which managed models adopt when they are stricter than the catalogued model profile. The endpoint does not provide pricing metadata, so Carthagent does not infer that field.
-
-The embeddable Cloud service also includes a hosted request authority for `GET /v1/models`, `POST /v1/chat/completions`, and `POST /v1/responses`. Operators publish immutable customer-pricing versions and versioned Carthagent aliases in the control plane. Every request receives a bounded output limit and atomically reserves its maximum customer charge before upstream dispatch. Settlement requires authoritative gateway request and physical-attempt identities plus measured token usage; known pre-dispatch failures release the hold, while ambiguous transport or accounting outcomes retain it for reconciliation instead of guessing a charge.
-
-**Direct provider API key** — export the provider's env var, or choose it in the shared login picker to store it:
-
-```sh
-export ANTHROPIC_API_KEY=sk-ant-...   # or OPENAI_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, XAI_API_KEY, ...
-ctg
-```
-
-Multiple providers can be connected at once — credentials coexist in `~/.carthagent/agent/auth.json`. In the console, `^t` (settings) has a **provider** row above **model**: `←→` switches providers (and selects that provider's first model), while the model picker stays scoped to the chosen provider. `/login` adds another provider at any time.
-
-Full provider list: [provider docs](https://github.com/earendil-works/pi-coding-agent/blob/main/docs/providers.md). Override the default model with `--model <id>` (e.g. `ctg --model sonnet`). Your last model choice (via `--model`, `/model`, or the `^t` settings picker) is saved to `~/.carthagent/config.json` and reused on the next launch — pass a flag to override it for that run.
-
-## Use it
-
-```sh
-ctg                           # interactive console (persistent engine session)
-ctg "Build a task CLI"        # console, with a task
-ctg -p "..."                  # headless run (auto when stdout isn't a TTY)
-ctg demo                      # scripted mock run — no provider needed
-ctg status                    # fingerprint, contract, pending checks
-ctg check all                 # run declared checks
-ctg account                   # Ship balance, plan, grants, and sessions
-ctg billing checkout          # Ship Builder checkout URL
-ctg serve                     # web dashboard (127.0.0.1, authenticated URL)
-ctg test                      # unit suite
-ctg update                    # install the latest release (--check to peek)
-ctg --help                    # everything else
-```
-
-Inside the console: `enter` send/steer · `esc` abort (again = force-restart the engine, nothing is lost) · `^r` session picker · `tab`/`⇧tab` panes · `x` expand tool output · `^v` paste · `/copy` copy the full last assistant response · `^t` settings · `^c` quit. Drag-select copies text; hold at the top or bottom of the message pane to scroll while selecting. Clipboard writes use native tools and OSC 52 (remote terminals must allow clipboard access and may impose size limits). Sessions persist under `~/.carthagent/agent/sessions/`; `ctg -c` continues the last one, `-r` opens the picker.
-
-**Themes:** 22 AA-contrast-verified options — the default purple-and-gold `carthage` palette; dark (`opencode`, `tokyonight`, `nebula`, `ember`, `forest`, `mono`, `obsidian`, `midnight`, `nord`, `solarized-dark`, `okabe-dark`, `contrast-dark`); light (`paper`, `daylight`, `solarized-light`, `okabe-light`, `contrast-light`); and adaptive (`solarized`, `okabe`, `contrast`, `system`) themes that follow `COLORFGBG` or `CARTHAGENT_THEME_MODE=light|dark`. Pick via `--theme`, `/theme`, or `^t`; moving through the picker previews each colorway before Enter commits it. The choice is saved to `~/.carthagent/config.json` and reused on the next launch. The dashboard picker also previews themes on hover and persists the selected theme in `localStorage`. `okabe-*` uses the colorblind-safe Okabe-Ito palette.
-
-Useful flags: `--model`, `--thinking`, `--validators <file>`, `--context <file>`, `--bash-cap <sec>`, `--review ask|yes|no`, `--isolate`, `--no-delivery`, `--no-guide`, `--ascii`, `--glyphs <mode>`, `-c`/`-r`/`--session`.
-
-**Glyphs:** icons, status dots, spinners and the D2 graph adapt to your terminal. `--glyphs auto` (default) keeps the Unicode set on terminals known to render it and falls back to an ASCII icon tier everywhere else, so tool icons, status marks and spinners never show up as `?` on limited fonts. Force one with `--ascii`, `--glyphs unicode|ascii`, or `CARTHAGENT_GLYPHS=unicode|ascii` / `CARTHAGENT_ASCII=1`.
+The following delivery-engine documentation describes Carthagent's shared delivery concepts and the existing CLI behavior. Native-preview coverage and compatibility are tracked separately in the [native CLI guide](docs/native-cli.md) and [migration ledger](docs/opencode-migration.md); feature parity must not be inferred from the presence of a shared delivery module.
 
 ## How it works
 
