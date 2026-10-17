@@ -102,7 +102,7 @@ test('durable task creation propagates cancellation into native worktree creatio
     rpc: { async register(_definition, handlers) { Object.assign(registered, handlers); return { events: { async emit() {} }, dispose() {} }; } },
     event: { subscribe: () => ({ async *[Symbol.asyncIterator]() {} }) },
   };
-  const dispose = await registerWorkspaceRpc(ctx); t.after(dispose);
+  const dispose = await registerWorkspaceRpc(ctx, { reviewModel: { providerID: 'fixture', id: 'review-model' } }); t.after(dispose);
   await assert.rejects(registered.createTask({ task: 'cancel me' }, { signal: controller.signal }), /cancelled create/);
   const journal = JSON.parse(readFileSync(join(root, '.harness/opencode-tasks.json'), 'utf8'));
   assert.equal(journal.operations[0].status, 'recovery-required');

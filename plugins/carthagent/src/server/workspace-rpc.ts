@@ -14,6 +14,18 @@ type TaskState = { tasks: TaskRecord[]; operations: OperationRecord[] };
 type NativeSession = Awaited<ReturnType<Context['session']['get']>>;
 type DeliveryCheck = { id: string } & Record<string, unknown>;
 type DeliveryState = { runId: string; revision: number; status?: string; plan: { checks?: DeliveryCheck[] } & Record<string, unknown>; evidence?: Record<string, unknown> };
+type ReviewModel = { providerID: string; id: string; variant?: string };
+
+function configuredReviewModel(value: unknown): ReviewModel | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== 'object' || !('providerID' in value) || typeof value.providerID !== 'string' || !value.providerID.trim() || !('id' in value) || typeof value.id !== 'string' || !value.id.trim()) {
+    throw new Error('Invalid server reviewModel: providerID and id must be non-empty strings');
+  }
+  if ('variant' in value && value.variant !== undefined && (typeof value.variant !== 'string' || !value.variant.trim())) {
+    throw new Error('Invalid server reviewModel: variant must be a non-empty string when provided');
+  }
+  return { providerID: value.providerID.trim(), id: value.id.trim(), ...('variant' in value && typeof value.variant === 'string' ? { variant: value.variant.trim() } : {}) };
+}
 
 function taskStatus(session?: NativeSession, running = false) {
   if (!session) return 'unavailable';
@@ -40,7 +52,9 @@ function reportFor(directory: string, sessionID: string) {
  * must be verified through the location-scoped native API; the TUI adds its full native list. */
 export async function registerWorkspaceRpc(ctx: Context, options: {
   notify?: (summary: WorkspaceSnapshot) => void;
-}) {
+  reviewModel?: ReviewModel;
+} = {}) {
+  const reviewModel = configuredReviewModel(options.reviewModel);
   const root = resolve(ctx.location.project.canonical);
   const locationDirectory = resolve(ctx.location.directory);
   const projectID = ctx.location.project.id;
@@ -157,8 +171,13 @@ export async function registerWorkspaceRpc(ctx: Context, options: {
     startReview: async (value, call) => {
       const input = value as { sessionID: string };
       const session = await owns(input.sessionID, call.signal);
-      const result = await startReview({ ctx, cwd: session.location.directory, identity: `session:${session.id}`, signal: call.signal });
-      return { status: result.verdict === 'APPROVE' ? 'approved' : 'changes-requested', summary: `${result.findings.findings.length} findings · ${result.snapshot}`, sessionID: result.reviewerSessionID };
+      try {
+        const result = await startReview({ ctx, cwd: session.location.directory, identity: `session:${session.id}`, model: reviewModel, signal: call.signal });
+        return { status: result.verdict === 'APPROVE' ? 'approved' : 'changes-requested', summary: `${result.findings.findings.length} findings · ${result.snapshot}`, sessionID: result.reviewerSessionID };
+      } catch (error) {
+        if (call.signal.aborted) throw error;
+        return call.error('reviewFailed', error instanceof Error ? error.message : String(error), { message: error instanceof Error ? error.message : String(error) });
+      }
     },
   });
 
