@@ -25,13 +25,13 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
-      - run: npm run quality
-      - run: npm run test:native-package
       - name: Verify release tag and package versions
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: node tools/verify-release-version.mjs "$RELEASE_TAG"
+      - run: npm ci
+      - run: npm run quality
+      - run: npm run test:native-package
       - id: commit
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
@@ -41,6 +41,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.release_tag }}
           fetch-depth: 0
       - name: Verify tag still points to the tested commit
         env:
@@ -54,9 +55,9 @@ jobs:
             echo "::error::Release tag ${RELEASE_TAG} resolves to ${tag_sha}, not tested commit ${EXPECTED_SHA}." >&2
             exit 1
           fi
-      # Sequence: build the immutable runtime-asset manifest, pass packed-package
-      # acceptance, create the GitHub release, dispatch the owned-runtime workflow
-      # to attach assets, then dispatch this workflow to publish the manifest.
+      # Sequence: build runtime assets from the source revision pinned in the
+      # trusted manifest; verify the final package and acceptance gates; create
+      # the GitHub release with those archives; publish only after final review.
       - name: Require the completed GitHub release and runtime assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -68,12 +69,21 @@ jobs:
             echo "::error::Publish the GitHub release with its runtime assets before publishing the control-plane manifest." >&2
             exit 1
           fi
-          mkdir -p runtime-assets
-          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir runtime-assets --pattern 'opencode-*.tar.gz'
+          for asset in \
+            opencode-linux-x64.tar.gz \
+            opencode-linux-arm64.tar.gz \
+            opencode-darwin-x64.tar.gz \
+            opencode-darwin-arm64.tar.gz \
+            opencode-windows-x64.tar.gz; do
+            if ! jq -e --arg name "$asset" '.assets | any(.name == $name)' <<<"$release" >/dev/null; then
+              echo "::error::Missing required runtime archive ${asset}." >&2
+              exit 1
+            fi
+          done
       - name: Verify runtime archives against the packaged immutable manifest
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
-        run: node tools/verify-owned-runtime-release.mjs "${RELEASE_TAG#v}" lib/opencode/runtime-release.json runtime-assets
+        run: node tools/verify-owned-runtime-release.mjs "${RELEASE_TAG#v}" lib/opencode/runtime-release.json "https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}"
       - name: Publish the CLI release manifest to the control plane
         env:
           CARTHAGENT_CLI_RELEASE_TOKEN: ${{ secrets.CARTHAGENT_CLI_RELEASE_TOKEN }}
