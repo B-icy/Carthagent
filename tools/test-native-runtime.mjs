@@ -48,6 +48,9 @@ try {
   await writeFile(join(host.cwd, 'wrapper-tool.txt'), 'Read this through the native tool.\n');
   const toolTurn = await runHeadless(service, host.cwd, 'WRAPPER_TOOL', common);
   assert.equal(toolTurn.outcome, 'succeeded');
+  const readTool = toolTurn.messages.flatMap(message => message.content ?? []).find(part => part.type === 'tool' && part.name === 'read');
+  assert.equal(readTool?.state.status, 'completed', 'The native read tool must really complete before the final answer');
+  assert.ok(readTool.state.content.some(part => part.type === 'text' && part.text.includes('Read this through the native tool.')));
   assert.equal(toolTurn.result?.text, 'FINAL_AFTER_TOOL', 'Return the final assistant after tools, not the initial tool-call message');
   let failure;
   try { failure = await runHeadless(service, host.cwd, 'WRAPPER_FAILURE', { ...common, sessionID: first.session.id }); }

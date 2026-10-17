@@ -88,13 +88,13 @@ passing domain fixture alone does not satisfy these gates:
 
 | Probe | Evidence and remaining gate |
 | --- | --- |
-| `test:native-product` | Workspace, archives, controls, and execution-event invalidation passed through the production entrypoint on 2.0.32 |
+| `test:native-product` | Workspace, archives, controls, execution-event invalidation, disconnected-turn snapshot recovery, and fresh events after reconnect passed through the production entrypoint on 2.0.32 |
 | `test:native-host` | All four archive methods, output schemas, declared errors, and unchanged transcript bytes passed through production registration |
 | `test:native-controls` | Concurrent framing settings and compaction notes reach the real provider; settings persist across service restart |
 | `test:native-outcomes` | Failed/interrupted/succeeded outcomes, HTTP disconnect, neighboring-session isolation, and recovery passed; interruption explicitly uses `resume: false` and leaves a queued prompt pending |
 | `test:native-tasks` | Two real Git worktrees, concurrent isolated turns and framing settings, independent root sessions, and restart reconciliation passed |
 | `test:native-review` | Configured-model independent review, receipt persistence, source-change invalidation, and three-review admission cap across restart passed |
-| `test:native-runtime` | Service reuse, repeated turns, provider rejection, recovery, and unavailable-provider failure passed; final-answer selection after tools and erroneous success budget metadata remain under correction |
+| `test:native-runtime` | Service reuse, repeated turns, provider rejection, recovery, unavailable-provider failure, final response after tools, and correct success metadata passed |
 | `test:native-pty` | Both production health and workspace commands passed after plugin readiness and slash-completion confirmation |
 | `test:native-package` | Clean production install passed host/controls/outcome/product probes; expanded PTY gate exposed missing `@opentui/solid` in the production artifact |
 | `test:native-performance` | Cached workspace RPC: 30 samples, p95 64.8 ms, maximum 181.6 ms; input and session-switch latency require separate terminal measurements |

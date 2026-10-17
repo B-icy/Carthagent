@@ -38,6 +38,9 @@ try {
     ...process.env,
     CTG_OPENCODE_BIN: binary,
     HOME: join(temp, 'home'),
+    USERPROFILE: join(temp, 'home'),
+    APPDATA: join(temp, 'appdata'),
+    LOCALAPPDATA: join(temp, 'localappdata'),
     XDG_CONFIG_HOME: join(temp, 'config'),
     XDG_DATA_HOME: join(temp, 'data'),
     XDG_STATE_HOME: join(temp, 'state'),
@@ -47,7 +50,11 @@ try {
   const installedPlugin = join(installed, 'plugins/carthagent');
   // Run the acceptance harness from the installed artifact itself so its
   // imports (including @opencode/client) resolve only through that install.
-  for (const test of ['test-native-host.mjs', 'test-native-controls.mjs', 'test-native-outcomes.mjs', 'test-native-product.mjs', 'test-native-pty.mjs']) {
+  for (const test of [
+    'test-native-host.mjs', 'test-native-controls.mjs', 'test-native-outcomes.mjs',
+    'test-native-product.mjs', 'test-native-runtime.mjs', 'test-native-tasks.mjs',
+    'test-native-review.mjs', 'test-native-pty.mjs',
+  ]) {
     run(process.execPath, [join(installed, 'tools', test), installedPlugin], { cwd: install, env });
   }
   console.log(JSON.stringify({ tarball: packed[0].filename, unpackedSize: packed[0].unpackedSize, binary, version }, null, 2));
