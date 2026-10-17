@@ -75,6 +75,15 @@ The runtime resolver validates every manifest contract field, the native
 platform, executable checksum, and exact detached `--version` before launch.
 It does not search PATH or silently fall back when the opt-in is selected.
 
+The CTG workflow has separate `prebuild` and `publish` dispatch modes. Prebuild
+uses a reviewed source commit and planned package version, performs five native
+builds, records executable digests from the built bytes, and carries the exact
+USTAR archives and records through the manifest generator into a reviewable
+candidate artifact. It does not require a final tag. Publish accepts only a
+successful run of this workflow, downloads that run's candidate bytes,
+regenerates and compares the manifest against the final tagged package, and
+refuses to overwrite an existing runtime asset on the draft release.
+
 Release sequencing is deliberately split across two manual workflows. First,
 build and review the immutable five-platform-archive set, package the final
 trusted runtime manifest, tag the exact package commit, create a GitHub draft
