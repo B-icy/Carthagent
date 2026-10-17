@@ -58,12 +58,18 @@ explicitly superseded. Its controlled-host OSC 52 observations do not prove
 physical OS clipboard behavior. The latest picker attempt is incomplete and
 does not supersede the earlier recorded picker pass.
 
-At this revision, narrow-layout acceptance is unresolved, and exact native
-selection/copy plus final-binary title restoration are pending rerun on the
-author's final binary. The controlled model self-test is parser/state-model
-only, not native acceptance. See `docs/native-terminal-semantics-evidence/`
-for statuses, hashes, and per-artifact caveats. No physical clipboard claim is
-made; overall acceptance remains open.
+The supplied binary was identified as `opencode v0.0.0-ctg.2.0.32`, package
+manifest `@opencode/cli-linux-x64` `0.0.0-ctg.2.0.32`, SHA-256
+`85bb44a65e8c185f4f33d41507d29acc77f2db0cdcb0103a14476021c8e43794`. A
+corrected full run passed picker Escape, actual 40x12 layout, exact Unicode
+large-paste transport (18,047 UTF-8 bytes), `/copy`, and ordered title
+restoration. Its selection gesture was incomplete; a focused rerun on the same
+binary passed exact `SNIP` selection/readback, exact distinct `FINAL[SNIP]END`
+copy/readback, and title restoration. These clipboard results are controlled
+OSC 52 host-model results, not physical OS clipboard verification. Results are
+bounded across runs and the full suite remains incomplete as one invocation;
+see `docs/native-terminal-semantics-evidence/` for exact harness hashes and
+per-run caveats. No physical clipboard claim is made.
 
 The existing `tests/tui-copy-paste.test.mjs` covers parser logic and selection
 string calculation only; it is not a substitute for this native probe.

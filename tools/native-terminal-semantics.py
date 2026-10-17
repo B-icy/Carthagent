@@ -404,17 +404,21 @@ def main():
                     visible = screen.visible().lower()
                     home_ready = 'ask anything' in visible or 'what is the tech' in visible
                 if not focused_case and not picker_started and elapsed > 2 and home_ready:
-                    # Ctrl+P opens the native model picker without selecting or
-                    # submitting a prompt; Escape is a non-mutating cancel.
-                    os.write(master, b'\x10')
+                    # Ctrl+O opens OpenCode's recent sessions/projects menu.
+                    # Ctrl+P is command completion on this runtime and must not
+                    # be mistaken for a session picker.
+                    os.write(master, b'\x0f')
                     picker_started = True
                     picker_home_before = home_ready
                     picker_at = time.monotonic()
                 if picker_started and not picker_cancelled and (
-                        'select model' in visible or 'model' in visible and ('search' in visible or 'provider' in visible)):
+                        'recent sessions' in visible or 'sessions and projects' in visible or
+                        'select session' in visible):
                     os.write(master, b'\x1b')
                     picker_cancelled = True
-                    picker_heading = ('select model' if 'select model' in visible else 'models')
+                    picker_heading = next(heading for heading in
+                                          ('recent sessions', 'sessions and projects', 'select session')
+                                          if heading in visible)
                     picker_cancelled_at = time.monotonic()
                     result['checks']['pickerEscapeCancel'] = {
                         'status': 'PENDING', 'pickerObserved': True,
