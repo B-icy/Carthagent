@@ -52,10 +52,11 @@ syncBuiltinESMExports();
 async function makeOwnedRuntime(t) {
   const root = await mkdtemp(join(tmpdir(), 'ctg-owned-env-'));
   t.after(() => rm(root, { recursive: true, force: true }));
+  const targetPlatform = `${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch}`;
   const owned = join(root, 'owned');
-  const binary = join(owned, 'cli-linux-x64', 'bin', 'opencode');
+  const binary = join(owned, `cli-${targetPlatform}`, 'bin', process.platform === 'win32' ? 'opencode.exe' : 'opencode');
   const manifest = join(root, 'runtime-release.json');
-  await import('node:fs/promises').then(fs => fs.mkdir(join(owned, 'cli-linux-x64', 'bin'), { recursive: true }));
+  await import('node:fs/promises').then(fs => fs.mkdir(join(owned, `cli-${targetPlatform}`, 'bin'), { recursive: true }));
   const sourceRevision = 'a'.repeat(40);
   const patchSha256 = 'b'.repeat(64);
   const lockSha256 = 'c'.repeat(64);
@@ -66,13 +67,13 @@ async function makeOwnedRuntime(t) {
   const provenance = {
     owner: 'Carthagent', sourceRepository: 'https://github.com/anomalyco/opencode', sourceRevision,
     patchSha256, lockSha256, compatibilityVersion: '2.0.32', runtimeVersion,
-    channel: 'ctg.2.0.32', platform: 'linux-x64', webUI: false,
+    channel: 'ctg.2.0.32', platform: targetPlatform, webUI: false,
   };
   await writeFile(join(owned, 'ctg-runtime.json'), JSON.stringify(provenance));
   await writeFile(manifest, JSON.stringify({
     version: 1, releaseVersion: '1.2.3', compatibilityVersion: '2.0.32', runtimeVersion,
     sourceRevision, patchSha256, lockSha256,
-    assets: { 'linux-x64': { name: 'opencode-linux-x64.tar.gz', archiveSha256: 'd'.repeat(64), executableSha256: digest } },
+    assets: { [targetPlatform]: { name: `opencode-${targetPlatform}.tar.gz`, archiveSha256: 'd'.repeat(64), executableSha256: digest } },
   }));
   return { root, owned, binary, manifest, digest };
 }

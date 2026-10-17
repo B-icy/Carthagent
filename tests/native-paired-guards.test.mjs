@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { aggregateConditionExit, assertCompletePluginSource, assertDependencyPackageIdentity, assertPluginCondition, assertPluginImportDependencies, assertSelectedSourceHead, assertSnapshotProvenance, resolveFixtureSourceRoot, verifySnapshotIdentity } from '../tools/native-paired-guards.mjs';
+import { aggregateConditionExit, assertCompletePluginSource, assertDependencyPackageIdentity, assertPluginCondition, assertPluginImportDependencies, assertSelectedSourceHead, assertSnapshotProvenance, resolveFixtureSourceRoot, verifySnapshotIdentity, isPathWithinRoot } from '../tools/native-paired-guards.mjs';
 
 function shellPath(path) {
   return process.platform === 'win32'
@@ -79,6 +79,25 @@ test('complete plugin staging resolves extensionless native TypeScript imports w
     assert.deepEqual(assertPluginImportDependencies(entry), { sourceImports: ['./rpc'], workspaceImports: ['@opencode/plugin'] });
     await rm(join(dirname(entry), 'rpc.ts'));
     assert.throws(() => assertPluginImportDependencies(entry), /Plugin source import is missing from immutable tree.*\.\/rpc/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('plugin import containment rejects traversal and cross-drive targets', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'native-paired-import-containment-'));
+  try {
+    const sourceRoot = join(root, 'snapshot');
+    const entry = join(sourceRoot, 'plugins/carthagent/src/index.ts');
+    await mkdir(dirname(entry), { recursive: true });
+    await writeFile(entry, "import { outside } from '../../../../outside';\nexport { outside };\n");
+    await writeFile(join(root, 'outside.ts'), 'export const outside = true;\n');
+    assert.throws(() => assertPluginImportDependencies(entry), /missing from immutable tree.*\.\.\/\.\.\/\.\.\/\.\.\/outside/);
+
+    const win32Path = await import('node:path').then(({ win32 }) => win32);
+    assert.equal(isPathWithinRoot('C:\\immutable\\snapshot', 'C:\\immutable\\snapshot\\plugins\\rpc.ts', win32Path), true);
+    assert.equal(isPathWithinRoot('C:\\immutable\\snapshot', 'C:\\immutable\\outside\\rpc.ts', win32Path), false);
+    assert.equal(isPathWithinRoot('C:\\immutable\\snapshot', 'D:\\outside\\rpc.ts', win32Path), false);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
