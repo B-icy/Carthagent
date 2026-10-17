@@ -35,7 +35,8 @@ test('CTG runtime paths and env are isolated from host OpenCode roots', () => {
   assert.equal(env.LOCALAPPDATA, path.join(paths.home, 'AppData', 'Local'));
   assert.equal(env.OPENCODE_TEST_HOME, paths.home);
   assert.equal(env.OPENCODE_CONFIG_DIR, paths.configDir);
-  assert.equal(env.OPENCODE_CONFIG_PROJECT_DISABLE, 'true');
+  assert.equal(env.OPENCODE_CONFIG_PROJECT_DISABLE, undefined);
+  assert.equal(env.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS, undefined);
   assert.equal(env.OPENCODE_DB, path.join(paths.data, 'opencode.db'));
   assert.equal(env.ANTHROPIC_API_KEY, 'test');
   assert.equal(env.CTG_RUNTIME_GITHUB_TOKEN, undefined);
@@ -56,12 +57,26 @@ test('runtime removes inherited OpenCode profile overrides', () => {
   } });
   assert.equal(env.OPENCODE_CONFIG_DIR, paths.configDir);
   assert.equal(env.OPENCODE_CONFIG, paths.configFile);
-  assert.equal(env.OPENCODE_CONFIG_PROJECT_DISABLE, 'true');
+  assert.equal(env.OPENCODE_CONFIG_PROJECT_DISABLE, undefined);
   assert.equal(env.OPENCODE_SERVER_PASSWORD, undefined);
   assert.equal(env.OPENAI_API_KEY, 'preserved');
   assert.equal(env.CTG_RUNTIME_GITHUB_TOKEN, undefined);
   assert.equal(env.APPDATA, paths.appData);
   assert.equal(env.LOCALAPPDATA, paths.localAppData);
+});
+
+test('normal native runtime leaves pinned-host project discovery at its default', () => {
+  const env = runtimeEnvironment({ root: path.resolve('/tmp/ctg-normal-discovery') });
+  assert.equal(env.OPENCODE_CONFIG_PROJECT_DISABLE, undefined);
+  assert.equal(env.OPENCODE_DISABLE_CLAUDE_CODE, undefined);
+  assert.equal(env.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS, undefined);
+});
+
+test('isolated runtime explicitly disables project and Claude skill discovery', () => {
+  const env = runtimeEnvironment({ root: path.resolve('/tmp/ctg-isolate-test'), isolate: true });
+  assert.equal(env.OPENCODE_CONFIG_PROJECT_DISABLE, 'true');
+  assert.equal(env.OPENCODE_DISABLE_CLAUDE_CODE, 'true');
+  assert.equal(env.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS, 'true');
 });
 
 test('runtime overrides inherited Windows profile roots with CTG-owned paths', () => {
@@ -74,7 +89,7 @@ test('runtime overrides inherited Windows profile roots with CTG-owned paths', (
   } });
   assert.equal(env.APPDATA, paths.appData);
   assert.equal(env.LOCALAPPDATA, paths.localAppData);
-  assert.equal(env.OPENCODE_CONFIG_PROJECT_DISABLE, 'true');
+  assert.equal(env.OPENCODE_CONFIG_PROJECT_DISABLE, undefined);
 });
 
 test('stale-lock recovery is serialized across independent processes', async () => {
