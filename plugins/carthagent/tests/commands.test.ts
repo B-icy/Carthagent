@@ -8,6 +8,29 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { provisionNativeThemes } from "../src/ui/theme-provision.mjs";
+import { setNativeTheme, type NativeThemeSelection } from "../src/ui/native-theme.js";
+
+test("native theme adapter requires the host capability and verifies its resolved selection", () => {
+  let current: NativeThemeSelection = { name: "opencode", mode: "dark" };
+  const calls: unknown[] = [];
+  const control = {
+    current: () => current,
+    set: (selection: { name: string; mode?: "dark" | "light" }) => {
+      calls.push(selection);
+      current = { name: selection.name, mode: selection.mode ?? current.mode };
+      return true;
+    },
+  };
+  assert.deepEqual(setNativeTheme(undefined, "carthage"), { status: "unsupported" });
+  assert.deepEqual(setNativeTheme(control, "carthage"), { status: "updated", current: { name: "carthage", mode: "dark" } });
+  assert.deepEqual(setNativeTheme(control, "paper", "light"), { status: "updated", current: { name: "paper", mode: "light" } });
+  assert.deepEqual(calls, [{ name: "carthage" }, { name: "paper", mode: "light" }]);
+
+  const rejected = { current: () => current, set: () => false };
+  assert.deepEqual(setNativeTheme(rejected, "opencode"), { status: "rejected" });
+  const mismatched = { current: () => current, set: () => true };
+  assert.deepEqual(setNativeTheme(mismatched, "opencode"), { status: "mismatch", current });
+});
 
 test("Carthagent command manifest resolves visible CTG commands", () => {
   assert.equal(resolveCommand("/help")?.id, "help");

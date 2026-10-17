@@ -3,6 +3,7 @@ import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { usePlugin } from "@opencode/plugin/tui";
 import { pullRequestClient, rpcEventOptions, workspaceClient, type PullRequestRecord, type WorkspaceDelivery, type WorkspaceSnapshot } from "./client.js";
 import { createLatestRequestGate, onWorkspaceUpdated, renderDeliveryReadiness } from "./workspace-live.js";
+import { uiChromeGlyph } from "./chrome.js";
 
 function sessionAttention(context: ReturnType<typeof usePlugin>, sessionID: string) {
   return (context.data.session.permission.list(sessionID)?.length ?? 0) + (context.data.session.form.list(sessionID)?.length ?? 0);
@@ -278,7 +279,7 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
     <box flexDirection="row" gap={1}>
       <text fg={context.theme.text.action.secondary.base}>Filter:</text>
       <input placeholder="project name or path" value={query()} onInput={setQuery} />
-      <text fg={context.theme.text.action.primary.base} on:click={() => void refresh()}>↻ Refresh</text>
+      <text fg={context.theme.text.action.primary.base} on:click={() => void refresh()}>{uiChromeGlyph("refresh")} Refresh</text>
     </box>
     <Show when={error()}><text fg={context.theme.text.feedback.error.base}>{error()}</text></Show>
     <Show when={!rpcConnected()}><text fg={context.theme.text.feedback.warning.base}>Workspace RPC disconnected · cached view may be stale; waiting for native reconnect</text></Show>
@@ -298,8 +299,8 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
         <text fg={context.theme.text.action.secondary.base} on:click={() => void associatePullRequest(active())}>+ Associate pull request…</text>
         <For each={pullRequests()[taskForSession(active())!] ?? []}>{(pr) => <box flexDirection="column">
           <text fg={context.theme.text.base}>#{pr.number} · {pr.state}{pr.draft ? " · draft" : ""} · checks {pr.checks} · review {pr.review} · {pr.source}</text>
-          <text fg={context.theme.text.muted}>{pr.headRef} → {pr.baseRef} · {pr.head.slice(0, 10)} · updated {pr.updatedAt}</text>
-          <text fg={context.theme.text.action.secondary.base} on:click={() => void refreshPullRequest(active(), pr.taskID, pr.number)}>↻ Refresh #{pr.number} from GitHub</text>
+          <text fg={context.theme.text.muted}>{pr.headRef} {uiChromeGlyph("edge")} {pr.baseRef} {uiChromeGlyph("separator")} {pr.head.slice(0, 10)} {uiChromeGlyph("separator")} updated {pr.updatedAt}</text>
+          <text fg={context.theme.text.action.secondary.base} on:click={() => void refreshPullRequest(active(), pr.taskID, pr.number)}>{uiChromeGlyph("refresh")} Refresh #{pr.number} from GitHub</text>
         </box>}</For>
       </Show>
     </box>}</Show>
@@ -312,9 +313,9 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
         <Show when={deliveryEvidence()?.workflow} fallback={<text fg={context.theme.text.faint}>Select a session with a delivery report to load workflow nodes, edges, and step receipts.</text>}>
           <text fg={context.theme.text.muted}>{deliveryEvidence()?.workflow?.semantics}</text>
           <For each={deliveryEvidence()?.workflow?.nodes ?? []}>{(node) => <text fg={node.status === "failed" || node.status === "blocked" ? context.theme.text.feedback.error.base : node.status === "complete" || node.status === "passed" ? context.theme.text.feedback.success.base : context.theme.text.base}>[{node.status}] {node.title} · {node.type}{node.step ? ` · step ${node.step}` : ""} · checks: {node.checks.join(", ") || "none"}</text>}</For>
-          <For each={deliveryEvidence()?.workflow?.edges ?? []}>{(edge) => <text fg={context.theme.text.muted}>{edge.from} → {edge.to} · {edge.label ?? edge.kind}{edge.when ? ` · when ${edge.when}` : ""}</text>}</For>
+              <For each={deliveryEvidence()?.workflow?.edges ?? []}>{(edge) => <text fg={context.theme.text.muted}>{edge.from} {uiChromeGlyph("edge")} {edge.to} {uiChromeGlyph("separator")} {edge.label ?? edge.kind}{edge.when ? ` ${uiChromeGlyph("separator")} when ${edge.when}` : ""}</text>}</For>
         </Show>
-        <text fg={context.theme.text.action.secondary.base} on:click={() => activeSession() && void refreshEvidence(activeSession()!)}>↻ Refresh delivery workflow</text>
+        <text fg={context.theme.text.action.secondary.base} on:click={() => activeSession() && void refreshEvidence(activeSession()!)}>{uiChromeGlyph("refresh")} Refresh delivery workflow</text>
       </Show>
       <Show when={props.view === "architecture"}>
         <text fg={context.theme.text.action.primary.base}>Delivery architecture · {deliveryEvidence()?.status ?? "select a session"}</text>
@@ -322,18 +323,18 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
         <For each={readiness().sections}>{(section) => <text fg={context.theme.text.feedback.warning.base}>Incomplete DTO section · {section}</text>}</For>
         <For each={readiness().receipts}>{(receipt) => <text fg={context.theme.text.feedback.warning.base}>{receipt}</text>}</For>
         <Show when={deliveryEvidence()?.architecture} fallback={<text fg={context.theme.text.faint}>Select a session with a delivery report to load authored architecture nodes, edges, and ports.</text>}>
-          <For each={deliveryEvidence()?.architecture?.nodes ?? []}>{(node) => <text fg={context.theme.text.base}>◆ {node.title} · {node.type ?? "component"}{node.layer ? ` · layer ${node.layer}` : ""}{node.status ? ` · ${node.status}` : ""}</text>}</For>
-          <For each={deliveryEvidence()?.architecture?.edges ?? []}>{(edge) => <text fg={context.theme.text.muted}>{edge.from} → {edge.to} · {edge.label ?? edge.kind}</text>}</For>
-          <For each={deliveryEvidence()?.architecture?.ports ?? []}>{(port) => <text fg={context.theme.text.action.secondary.base}>⇄ {port.id} · {port.owner} via {port.adapter} · root {port.compositionRoot}{port.integrationAssertion ? ` · verifies ${port.integrationAssertion}` : ""}</text>}</For>
+          <For each={deliveryEvidence()?.architecture?.nodes ?? []}>{(node) => <text fg={context.theme.text.base}>{uiChromeGlyph("project")} {node.title} {uiChromeGlyph("separator")} {node.type ?? "component"}{node.layer ? ` ${uiChromeGlyph("separator")} layer ${node.layer}` : ""}{node.status ? ` ${uiChromeGlyph("separator")} ${node.status}` : ""}</text>}</For>
+          <For each={deliveryEvidence()?.architecture?.edges ?? []}>{(edge) => <text fg={context.theme.text.muted}>{edge.from} {uiChromeGlyph("edge")} {edge.to} {uiChromeGlyph("separator")} {edge.label ?? edge.kind}</text>}</For>
+          <For each={deliveryEvidence()?.architecture?.ports ?? []}>{(port) => <text fg={context.theme.text.action.secondary.base}>{uiChromeGlyph("port")} {port.id} {uiChromeGlyph("separator")} {port.owner} via {port.adapter} {uiChromeGlyph("separator")} root {port.compositionRoot}{port.integrationAssertion ? ` ${uiChromeGlyph("separator")} verifies ${port.integrationAssertion}` : ""}</text>}</For>
         </Show>
-        <text fg={context.theme.text.action.secondary.base} on:click={() => activeSession() && void refreshEvidence(activeSession()!)}>↻ Refresh delivery architecture</text>
+        <text fg={context.theme.text.action.secondary.base} on:click={() => activeSession() && void refreshEvidence(activeSession()!)}>{uiChromeGlyph("refresh")} Refresh delivery architecture</text>
       </Show>
       <Show when={props.view === "evidence"}>
         <text fg={context.theme.text.action.primary.base}>Observed delivery evidence</text>
         <For each={evidenceSessions()}>{(session) => <text fg={context.theme.text.muted}>{session.title} · {session.status} · {session.directory}</text>}</For>
         <Show when={evidenceSessions().length === 0}><text fg={context.theme.text.faint}>No matching workspace session has recorded evidence.</text></Show>
         <Show when={activeSession()}>
-          <text fg={context.theme.text.action.secondary.base} on:click={() => void refreshEvidence(activeSession()!)}>↻ Refresh selected session evidence</text>
+          <text fg={context.theme.text.action.secondary.base} on:click={() => void refreshEvidence(activeSession()!)}>{uiChromeGlyph("refresh")} Refresh selected session evidence</text>
           <text fg={context.theme.text.action.primary.base}>Delivery receipt</text>
           <Show when={deliveryEvidence()} fallback={<text fg={context.theme.text.faint}>Loading delivery receipt…</text>}>
             <text fg={context.theme.text.base}>Status: {deliveryEvidence()?.status} · {deliveryEvidence()?.freshness ?? "freshness unavailable"} · revision {deliveryEvidence()?.revision ?? "—"} · run {deliveryEvidence()?.runId ?? "—"}</text>
@@ -356,23 +357,23 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
       </Show>
       <select options={navigationOptions()} onSelect={(_index, option) => selectNavigation(option)} focused />
       <For each={filteredProjects()}>{(project) => <box flexDirection="column" marginTop={1}>
-        <text fg={context.theme.text.action.primary.base}>◆ {project.name ?? project.directory}</text>
+        <text fg={context.theme.text.action.primary.base}>{uiChromeGlyph("project")} {project.name ?? project.directory}</text>
         <text fg={context.theme.text.muted}>{context.ui.format.path(project.directory)}</text>
         <text fg={context.theme.text.action.secondary.base} on:click={() => void worktree(project.id)}>+ Create worktree</text>
         <For each={snapshot()?.tasks.filter((task) => task.projectID === project.id)}>{(task) => <box flexDirection="column" paddingLeft={2}>
-          <text fg={task.attention ? context.theme.text.feedback.warning.base : context.theme.text.base}>{task.attention ? "! " : "· "}{task.title}  [{task.status}]</text>
+          <text fg={task.attention ? context.theme.text.feedback.warning.base : context.theme.text.base}>{task.attention ? "! " : `${uiChromeGlyph("bullet")} `}{task.title}  [{task.status}]</text>
          <For each={snapshot()?.sessions.filter((session) => session.taskID === task.id)}>{(session) =>
-            <text fg={context.theme.text.muted}>  ↳ {session.title} · {session.status}</text>}</For>
+            <text fg={context.theme.text.muted}>  {uiChromeGlyph("tree")} {session.title} {uiChromeGlyph("separator")} {session.status}</text>}</For>
         </box>}</For>
       </box>}</For>
     </Show>
     <Show when={snapshot()}>
       <text fg={context.theme.text.action.primary.base}>Workspace native sessions</text>
-      <For each={workspaceSessions()}>{(session) => <text fg={session.attention ? context.theme.text.feedback.warning.base : context.theme.text.action.secondary.base} on:click={() => void openSession(session.id)}>{session.attention ? "! " : "· "}{session.title} [{session.attention ? `${session.attention} pending` : session.status}] · {session.directory}</text>}</For>
+      <For each={workspaceSessions()}>{(session) => <text fg={session.attention ? context.theme.text.feedback.warning.base : context.theme.text.action.secondary.base} on:click={() => void openSession(session.id)}>{session.attention ? "! " : `${uiChromeGlyph("bullet")} `}{session.title} [{session.attention ? `${session.attention} pending` : session.status}] {uiChromeGlyph("separator")} {session.directory}</text>}</For>
     </Show>
     <Show when={!snapshot()}>
       <text fg={context.theme.text.action.primary.base}>Local OpenCode sessions</text>
-      <For each={localSessions().filter((session) => !query() || `${session.title ?? ""} ${session.id} ${session.location.directory}`.toLowerCase().includes(query().toLowerCase()))}>{(session) => <text fg={context.theme.text.action.secondary.base} on:click={() => context.ui.router.navigate({ type: "session", sessionID: session.id })}>· {session.title ?? session.id} [{context.data.session.status(session.id)}]</text>}</For>
+      <For each={localSessions().filter((session) => !query() || `${session.title ?? ""} ${session.id} ${session.location.directory}`.toLowerCase().includes(query().toLowerCase()))}>{(session) => <text fg={context.theme.text.action.secondary.base} on:click={() => context.ui.router.navigate({ type: "session", sessionID: session.id })}>{uiChromeGlyph("bullet")} {session.title ?? session.id} [{context.data.session.status(session.id)}]</text>}</For>
     </Show>
     <text fg={context.theme.text.faint}>Keyboard: use /ctg-open to search sessions; /ctg-worktree creates a worktree; /ctg-task starts a task.</text>
   </box>;

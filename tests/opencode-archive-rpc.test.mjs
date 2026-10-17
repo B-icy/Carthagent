@@ -30,6 +30,8 @@ test('archive RPC uses opaque IDs, confines roots, skips symlinks, and never cha
   assert.equal(transcript.archiveOnly, true);
   assert.equal(transcript.records.length, 2);
   assert.deepEqual(transcript.malformedLines, [{ line: 3 }]);
+  assert.equal(transcript.moreMalformedLines, false);
+  assert.equal((await methods.search({ query: 'absent', limit: 1 }, call)).total, 0);
   assert.equal((await methods.export({ id, format: 'jsonl' }, call)).content, bytes);
   assert.equal((await methods.read({ id: join(outside, 'escape.jsonl') }, call)).code, 'not_found');
   assert.equal(readFileSync(source, 'utf8'), bytes);

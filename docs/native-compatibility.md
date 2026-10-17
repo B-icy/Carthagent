@@ -13,7 +13,7 @@ the installed native package.
 | `/resume` | `/sessions`, `[id\|name]` | Search every native session page and open one; legacy results explicitly archive-only |
 | `/new` | | New independent native session, without deleting current work |
 | `/restart` | `/kill` | Interrupt/recover the selected session without restarting other sessions |
-| `/theme` | `[name]` | Native theme picker; explicit name persists selection; custom compatibility themes require pre-launch provisioning and native CLI restart to apply |
+| `/theme` | `[name [dark\|light]]` | Switches through the native host theme API and verifies the resolved name/mode; pinned host without the API must report unsupported and make no change |
 | `/model` | `[name]` | Provider-aware search/selection; exact provider/model or unique name actually selects a model |
 | `/thinking` | | Supported variant selection, honest errors for unsupported levels |
 | `/compact` | `[notes]` | Await or report admitted compaction correctly; notes reach summary context |

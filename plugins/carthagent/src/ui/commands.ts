@@ -18,11 +18,11 @@ export interface CarthagentCommand {
 }
 
 export const COMMANDS: readonly CarthagentCommand[] = [
-  { id: "help", name: "help", aliases: ["ctg-help"], submitSlash: true, description: "List Carthagent commands and native shortcuts" },
+  { id: "help", name: "help", aliases: ["ctg-help"], submitSlash: true, description: "List Carthagent commands and native shortcuts; /help is host-owned where native Help takes precedence" },
   { id: "resume", name: "resume", aliases: ["sessions"], args: "[id|name]", description: "Search and resume native sessions; legacy archives are read-only" },
   { id: "restart", name: "restart", aliases: ["kill"], description: "Recover the selected session by interrupting its active turn" },
-  { id: "theme", name: "theme", args: "[name]", description: "Pick or set a compatibility theme provisioned before native startup" },
-  { id: "model", name: "model", args: "[name]", description: "Select an exact provider/model or search by a unique name" },
+  { id: "theme", name: "theme", args: "[name [dark|light]|preview <name>]", description: "Switch the live native theme or inspect preview availability" },
+  { id: "model", name: "model", args: "[provider/model [variant]]", description: "Select a provider model and one of its declared variants" },
   { id: "thinking", name: "thinking", description: "Choose a thinking variant when the model supports it" },
   { id: "compact", name: "compact", args: "[notes]", description: "Compact the selected session, optionally with notes" },
   { id: "autocompact", name: "autocompact", args: "[on|off]", description: "Check automatic-compaction policy support (currently unavailable in the native API)" },
