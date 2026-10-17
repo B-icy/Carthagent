@@ -127,7 +127,7 @@ test('draft workflow has read-only token limited to installed acceptance and no 
   const workflow = await readFile(new URL('../.github/workflows/accept-draft-release.yml', import.meta.url), 'utf8');
   assert.match(workflow, /permissions:\s*\n\s+contents:\s+read/);
   assert.doesNotMatch(workflow, /contents:\s+write/);
-  const acceptance = workflow.match(/- name: Accept the complete installed package through the default resolver([\s\S]*?\n\s+run: npm run test:native-package)/)?.[0];
+  const acceptance = workflow.match(/- name: Run the current full non-focused installed-package gate through the default resolver([\s\S]*?\n\s+run: npm run test:native-package)/)?.[0];
   assert.ok(acceptance);
   assert.match(acceptance, /CTG_REQUIRE_OWNED_RUNTIME:\s*['"]?1/);
   assert.match(acceptance, /CTG_RUNTIME_GITHUB_TOKEN:\s*\$\{\{ github\.token \}\}/);
@@ -139,6 +139,11 @@ test('draft workflow has read-only token limited to installed acceptance and no 
   assert.match(workflow, /verify-draft-runtime-gate\.mjs before/);
   assert.match(workflow, /verify-draft-runtime-gate\.mjs recheck/);
   assert.match(workflow, /verify-draft-runtime-gate\.mjs after/);
+  const docs = await readFile(new URL('../docs/opencode-owned-runtime.md', import.meta.url), 'utf8');
+  assert.match(docs, /not, by itself, the final\s+installed release acceptance/);
+  assert.match(docs, /test-owned-host-controls\.mjs/);
+  assert.match(docs, /glyph and\s+clear\/reopen probes from reviewed heads/);
+  assert.match(docs, /additional controls\/glyph\/clear evidence gates remain pending/);
 });
 
 test('published release workflow explicitly empties optional draft credentials for public acceptance', async () => {
