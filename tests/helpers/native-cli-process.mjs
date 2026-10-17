@@ -1,14 +1,32 @@
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { once } from 'node:events';
 import { stopService, ensureService } from '../../lib/opencode/service.mjs';
 import { OpenCode } from '@opencode/client';
 
 const root = resolve(import.meta.dirname, '../..');
 const binary = process.env.CTG_OPENCODE_BIN || join(root, 'node_modules/@opencode/cli/bin/opencode.exe');
+const carthagentEntryUrl = pathToFileURL(join(root, 'plugins/carthagent/src/index.ts')).href;
+
+function terminateProcessTree(child, force = false) {
+  if (!child.pid) return;
+  if (process.platform === 'win32') {
+    try {
+      execFileSync('taskkill.exe', ['/PID', String(child.pid), '/T', ...(force ? ['/F'] : [])], {
+        windowsHide: true, stdio: 'ignore', timeout: 3000,
+      });
+    } catch {
+      try { child.kill('SIGKILL'); } catch {}
+    }
+    return;
+  }
+  try { process.kill(-child.pid, force ? 'SIGKILL' : 'SIGTERM'); }
+  catch { try { child.kill(force ? 'SIGKILL' : 'SIGTERM'); } catch {} }
+}
 
 function git(cwd, ...args) {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -30,14 +48,8 @@ function modelResponse(messages, { verdict = 'APPROVE', omitVerdict = false } = 
     + 'data: [DONE]\n\n';
 }
 
-export async function nativeCliFixture(t, { verdict = 'APPROVE', omitVerdict = false } = {}) {
-  if (process.platform === 'win32') throw new Error('native CLI process fixtures currently require POSIX shell scripts');
+export async function nativeCliFixture(t, { verdict = 'APPROVE', omitVerdict = false, deliveryOptions, observeDeliveryState = false } = {}) {
   const temp = mkdtempSync(join(tmpdir(), 'ctg-native-cli-process-'));
-  t.after(async () => {
-    await stopService({ root: profile }).catch(() => {});
-    rmSync(temp, { recursive: true, force: true });
-    await new Promise(resolveClose => provider.close(resolveClose));
-  });
   const cwd = join(temp, 'project');
   const profile = join(temp, 'profile');
   mkdirSync(cwd, { recursive: true });
@@ -53,9 +65,13 @@ export async function nativeCliFixture(t, { verdict = 'APPROVE', omitVerdict = f
         response.end(JSON.stringify({ data: [{ id: 'fixture', object: 'model', owned_by: 'Carthagent Ship' }] }));
         return;
       }
-      response.writeHead(200, { 'content-type': 'text/event-stream' });
       const messages = body.messages || [];
       const prompt = [...messages].reverse().find(message => message.role === 'user')?.content || '';
+      response.writeHead(200, { 'content-type': 'text/event-stream' });
+      if (fixtureState.providerResponse) {
+        await fixtureState.providerResponse({ body, messages, prompt, response });
+        return;
+      }
       const isPRReview = prompt.includes('Review this exact GitHub pull request source snapshot');
       if (isPRReview) {
         fixtureState.reviewRequests ||= [];
@@ -80,9 +96,50 @@ export async function nativeCliFixture(t, { verdict = 'APPROVE', omitVerdict = f
       response.end(error.message);
     });
   });
+  t.after(async () => {
+    provider.closeAllConnections();
+  const cleanup = Promise.all([
+      stopService({ root: profile, stopTimeout: 3000, lockTimeout: 3000 }).catch(() => {}),
+      new Promise(resolveClose => provider.close(resolveClose)),
+    ]);
+    let cleanupTimer;
+    await Promise.race([cleanup, new Promise(resolveCleanup => { cleanupTimer = setTimeout(resolveCleanup, 7000); })]);
+    clearTimeout(cleanupTimer);
+    rmSync(temp, { recursive: true, force: true });
+  });
+  let observerPlugin;
+  if (observeDeliveryState) {
+    observerPlugin = join(temp, 'delivery-observer');
+    mkdirSync(observerPlugin);
+    writeFileSync(join(observerPlugin, 'index.ts'), `
+import { Rpc } from '@opencode/plugin/rpc';
+import { setupCarthagent } from ${JSON.stringify(carthagentEntryUrl)};
+const deliveryOptions = ${JSON.stringify(deliveryOptions || {})};
+const stateCache = new Map();
+const State = Rpc.define({ id: 'ctg-budget-test', methods: { get: {
+  input: { type: 'object', properties: { sessionID: { type: 'string' } }, required: ['sessionID'], additionalProperties: false },
+  output: { type: 'object', properties: { tools: { type: 'integer' }, repairs: { type: 'integer' }, limits: { type: 'object', additionalProperties: true }, stopped: { type: ['string', 'null'] }, startedAt: { type: 'integer' }, error: { type: 'string' } }, additionalProperties: false },
+} }, events: {} });
+export default { id: 'ctg-budget-observer', async setup(ctx) {
+  const monitored = { ...ctx, storage: { ...ctx.storage,
+    get: async key => { const value = await ctx.storage.get(key); if (key.startsWith('session/') && value?.budget) stateCache.set(key.slice(8), structuredClone(value.budget)); return value; },
+    set: async (key, value) => { if (key.startsWith('session/') && value?.budget) stateCache.set(key.slice(8), structuredClone(value.budget)); return ctx.storage.set(key, value); },
+  } };
+  const cleanup = await setupCarthagent(monitored, { deliveryOptions });
+  const observer = await ctx.rpc.register(State, { get: async input => {
+    const budget = stateCache.get(input.sessionID);
+    return budget ? { tools: budget.tools, repairs: budget.repairs, limits: budget.limits, stopped: budget.stopped, startedAt: budget.startedAt } : { error: 'Native delivery budget state is not yet observed for this session' };
+  } });
+  return async () => { await observer.dispose(); await cleanup(); };
+} };
+`);
+  }
   provider.listen(0, '127.0.0.1');
   await once(provider, 'listening');
   writeFileSync(join(profile, 'config', 'opencode', 'opencode.json'), JSON.stringify({
+    ...(deliveryOptions || observerPlugin ? { plugins: [
+      ...(observerPlugin ? [observerPlugin] : deliveryOptions ? [{ package: join(root, 'plugins/carthagent'), options: { deliveryOptions } }] : []),
+    ] } : {}),
     model: 'ctg-fixture/fixture',
     update: 'disable',
     providers: { lattice: {
@@ -100,61 +157,109 @@ export async function nativeCliFixture(t, { verdict = 'APPROVE', omitVerdict = f
     CTG_OPENCODE_HOME: profile,
     CTG_OPENCODE_BIN: binary,
     CARTHAGENT_CONFIG: join(temp, 'carthagent-config.json'),
-    PATH: `${join(temp, 'bin')}${delimiter}${process.env.PATH}`,
-    OPENCODE_DISABLE_AUTOUPDATE: 'true',
-  };
-  mkdirSync(join(temp, 'bin'));
-  const gh = join(temp, 'bin', 'gh');
-  writeFileSync(gh, `#!/bin/sh
-if [ "$1" = pr ] && [ "$2" = view ]; then cat "${join(temp, 'pr-view.json')}"; exit $?; fi
-if [ "$1" = api ]; then cat "${join(temp, 'pr-api.json')}"; exit $?; fi
-echo unsupported gh fixture request >&2; exit 2
+      PATH: process.env.PATH,
+      OPENCODE_DISABLE_AUTOUPDATE: 'true',
+    };
+  const ghShim = join(temp, 'gh-fixture.mjs');
+  writeFileSync(ghShim, `
+import { readFileSync } from 'node:fs';
+const [group, command, ...args] = process.argv.slice(2);
+if (group === 'pr' && command === 'view') process.stdout.write(readFileSync(${JSON.stringify(join(temp, 'pr-view.json'))}));
+else if (group === 'api') process.stdout.write(readFileSync(${JSON.stringify(join(temp, 'pr-api.json'))}));
+else { console.error('unsupported gh fixture request', group, command, ...args); process.exitCode = 2; }
 `);
-  chmodSync(gh, 0o755);
   const run = (...args) => new Promise((resolveRun, rejectRun) => {
     const child = spawn(process.execPath, [join(root, 'bin/ctg.mjs'), ...args], {
-      cwd, env: { ...env, CTG_NATIVE_RUNTIME_ROOT: root }, stdio: ['ignore', 'pipe', 'pipe'],
+      cwd, env: { ...env, CTG_NATIVE_RUNTIME_ROOT: root, CTG_GH_FIXTURE: ghShim }, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '';
     let stderr = '';
     child.stdout.setEncoding('utf8').on('data', chunk => { stdout += chunk; });
     child.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk; });
-    const timer = setTimeout(() => child.kill('SIGTERM'), 30_000);
-    child.once('error', error => { clearTimeout(timer); rejectRun(error); });
-    child.once('close', (status, signal) => {
+    let timedOut = false;
+    let settled = false;
+    let escalation;
+    let hardBound;
+    const finish = (status, signal) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
-      resolveRun({ status, signal, stdout, stderr });
+      clearTimeout(escalation);
+      clearTimeout(hardBound);
+      resolveRun({ status, signal, stdout, stderr, timedOut });
+    };
+    let timer = setTimeout(() => {
+      timedOut = true;
+      terminateProcessTree(child);
+      escalation = setTimeout(() => terminateProcessTree(child, true), 1500);
+      // Do not wait forever for descendants to close inherited stdio handles.
+      hardBound = setTimeout(() => {
+        terminateProcessTree(child, true);
+        child.stdout.destroy();
+        child.stderr.destroy();
+        finish(null, 'TIMEOUT');
+      }, 5000);
+    }, 30_000);
+    child.once('error', error => {
+      clearTimeout(timer);
+      clearTimeout(escalation);
+      clearTimeout(hardBound);
+      if (!settled) { settled = true; rejectRun(error); }
+    });
+    child.once('close', (status, signal) => {
+      finish(status, signal);
     });
   });
   const service = await ensureService({ root: profile, pluginPath: join(root, 'plugins/carthagent') });
   const client = OpenCode.make({ baseUrl: service.url, headers: service.headers });
   const request = { signal: AbortSignal.timeout(15_000) };
-  await client.session.create({
+  const activationSession = await client.session.create({
     location: { directory: cwd },
-    model: { providerID: 'ctg-fixture', id: 'fixture' },
+        model: { providerID: 'ctg-fixture', id: 'fixture' },
     title: 'Activate native review fixture',
   }, request);
   const activatedBy = Date.now() + 15_000;
   while (true) {
-    const [plugins, agents] = await Promise.all([
-      client.plugin.list({ location: { directory: cwd } }, request),
-      client.agent.list({ location: { directory: cwd } }, request),
-    ]);
-    if (plugins.data.some(plugin => plugin.id === 'carthagent' && plugin.state.status === 'active')
-      && agents.data.some(agent => agent.id === 'build')) break;
+    const plugins = await client.plugin.list({ location: { directory: cwd } }, request);
+    if (plugins.data.some(plugin => plugin.id === 'carthagent' && plugin.state.status === 'active')) break;
     if (plugins.data.some(plugin => plugin.id === 'carthagent' && plugin.state.status === 'error')) {
       throw new Error(`Native fixture plugin failed to activate: ${JSON.stringify(plugins.data)}`);
     }
-    if (Date.now() >= activatedBy) throw new Error(`Native review fixture did not activate plugin/build agent: ${JSON.stringify({ plugins: plugins.data, agents: agents.data })}`);
+    if (Date.now() >= activatedBy) throw new Error(`Native fixture plugin did not activate: ${JSON.stringify(plugins.data)}`);
+    await new Promise(resolveDelay => setTimeout(resolveDelay, 50));
+  }
+  const agentDeadline = Date.now() + 15_000;
+  let agentInventory;
+  while (true) {
+    agentInventory = await client.agent.list({ location: { directory: cwd } }, request);
+    if (agentInventory.data.some(agent => agent.id === 'build' && agent.mode === 'primary')) break;
+    if (Date.now() >= agentDeadline) throw new Error(`Native fixture build agent did not register after workspace activation: ${JSON.stringify(agentInventory.data)}`);
     await new Promise(resolveDelay => setTimeout(resolveDelay, 50));
   }
   return {
-    cwd, env, temp, run, git,
+    cwd, env, temp, run, git, profile, activationSession,
+    model: { providerID: 'ctg-fixture', id: 'fixture' }, client,
+    request: () => ({ signal: AbortSignal.timeout(15_000) }),
+    setProviderResponse(callback) { fixtureState.providerResponse = callback; },
     get reviewRequests() { return fixtureState.reviewRequests || []; },
     get mutationError() { return fixtureState.mutationError; },
     get advancedPullRequestHead() { return fixtureState.advancedPullRequestHead; },
     set advancedPullRequestHead(value) { fixtureState.advancedPullRequestHead = value; },
     setReviewMutation(callback) { fixtureState.onReviewRequest = callback; },
+    async deliveryBudget(sessionID, { timeout = 15_000, stopped, tools, repairs } = {}) {
+      const deadline = Date.now() + timeout;
+      let latest;
+      do {
+        const value = await client.rpc.call({ rpcID: 'ctg-budget-test', method: 'get', location: { directory: cwd }, input: { sessionID } }, { signal: AbortSignal.timeout(5_000) });
+        latest = value.output;
+        if (!latest.error
+          && (stopped === undefined || latest.stopped === stopped)
+          && (tools === undefined || latest.tools === tools)
+          && (repairs === undefined || latest.repairs === repairs)) return latest;
+        await new Promise(resolveDelay => setTimeout(resolveDelay, 50));
+      } while (Date.now() < deadline);
+      return latest;
+    },
   };
 }
 
