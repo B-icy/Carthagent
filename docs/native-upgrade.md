@@ -27,8 +27,16 @@
 
 ## Try the native route from a checkout
 
-Install dependencies in a development checkout as its contributor instructions
-require, then invoke the native route for one command at a time:
+The current native preview instructions target a source checkout with its
+dependencies installed; fresh npm-installed runtime resolution is not yet
+accepted. In particular, the preview's hard-coded runtime lookup does not
+currently resolve the hoisted OpenCode package layout in a fresh npm install.
+The native installed-package resolver/install acceptance gate remains open in
+the [migration ledger](opencode-migration.md#delivery-ledger); the npm install
+form below must not be read as proof that this preview currently works from a
+fresh global install. Install dependencies in a development checkout as its
+contributor instructions require, then invoke the native route for one command
+at a time:
 
 ```sh
 CTG_NATIVE=1 node bin/ctg.mjs --help
@@ -106,17 +114,37 @@ and unresolved turns are not success. `-p` text is not a live tool-event stream.
 
 ## Release installation and update
 
-This guide does not publish a version and does not change release state. Once a
-version has actually been accepted, published, and tagged by the release owner,
-the exact-tag install form is:
+This guide does not publish a version and does not change release state. The
+following is the exact-tag npm installation form for a future accepted release,
+not a claim that a fresh npm installation currently passes native runtime
+resolution. Once a version has actually been accepted, published, and tagged by
+the release owner, the command is:
 
 ```sh
 npm install -g --install-links=true github:B-icy/Carthagent#vX.Y.Z
 ```
 
 Substitute only a real published `vX.Y.Z` tag. `ctg update --check` checks for
-an available release; `ctg update` installs the validated exact release tag
-using the detected install method. The updater is Carthagent's updater, not a
+an available release. The native `ctg update` installs the validated exact
+release tag only when Carthagent was installed as an npm package. Unlike the
+currently-default legacy CLI updater, the native updater refuses to check out a
+release into an active source clone even when it is clean. It will not force a
+checkout or wipe edits. To update a development clone manually, preserve and
+review any local work first, then fetch tags and check out the exact release
+tag:
+
+```sh
+git status --short
+git diff                         # review and preserve any edits before proceeding
+git fetch origin --tags
+git checkout --detach vX.Y.Z     # use an actual published tag; no force option
+npm ci
+```
+
+Do not discard or overwrite local changes to make this procedure succeed. If
+the checkout has work you need, commit it or preserve it outside the checkout
+before changing revisions; resolve conflicts or recovery deliberately rather
+than using a destructive reset. The updater is Carthagent's updater, not a
 regular OpenCode updater. As long as native execution is opt-in, updating the
 package does not change the CLI default. Do not install a branch or guess a
 version to obtain a future native default.

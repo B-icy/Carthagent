@@ -39,13 +39,23 @@
 ## Install/update (for a future published release only)
 
 After a release owner selects, accepts, and publishes an actual version, the
-documented exact-tag installation form is:
+documented exact-tag npm installation form is:
 
 ```sh
 npm install -g --install-links=true github:B-icy/Carthagent#vX.Y.Z
 ```
 
 Replace the placeholder only with the real published release tag. No version
-or tag is chosen in this draft. `ctg update` updates the Carthagent package using
-its validated release resolver; it does not upgrade a user's regular OpenCode
-installation, and it does not change the native opt-in default.
+or tag is chosen in this draft. This command is not fresh-install acceptance:
+the current preview's runtime resolver does not yet handle the hoisted OpenCode
+package layout in a fresh npm install, and native installed-package acceptance
+remains open in the [migration ledger](opencode-migration.md#delivery-ledger).
+The current preview should be exercised from a dependency-installed source
+checkout. Its native updater accepts npm-installed packages only and refuses to
+checkout into any active source clone, clean or dirty. For development clones,
+preserve local edits and use the non-forced exact-tag manual procedure in the
+[upgrade guide](native-upgrade.md#release-installation-and-update). `ctg update`
+updates the Carthagent package using its validated release resolver; it does not
+upgrade a user's regular OpenCode installation, and it does not change the
+native opt-in default. The currently-default legacy CLI's clean-clone update
+behavior is distinct from this native updater.
