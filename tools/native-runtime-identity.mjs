@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
-import { resolve, join, relative, sep } from 'node:path';
+import { resolve, join } from 'node:path';
 
 export const NATIVE_TEST_COMPATIBILITY_VERSION = '2.0.32';
 
