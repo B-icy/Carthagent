@@ -503,6 +503,58 @@ test('native login honors an already-delivered SIGINT without starting an authen
   assert.deepEqual(calls, []);
 });
 
+test('native login cancels an OAuth attempt returned after SIGINT during connect', async () => {
+  const calls = [];
+  let connectReady;
+  let finishConnect;
+  const connectEntered = new Promise(resolve => { connectReady = resolve; });
+  const connectResponse = new Promise(resolve => { finishConnect = resolve; });
+  const runtime = await createOpenCodeCliRuntime({ cwd: '/project', io: ioCapture().io, stdin: { isTTY: true }, stdout: { isTTY: true }, native: {
+    runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) }, headless: {},
+    clientFactory: async () => ({ integration: {
+      list: async () => ({ data: [{ id: 'provider', name: 'Provider', methods: [{ id: 'oauth', type: 'oauth', label: 'OAuth' }] }] }),
+      oauth: {
+        connect: async () => { calls.push('connect'); connectReady(); return connectResponse; },
+        status: async () => { calls.push('status'); return { data: { status: 'pending' } }; },
+        cancel: async input => { calls.push(['cancel', input.attemptID]); },
+      },
+    } }),
+  } });
+  const running = runOpenCodeCli({ argv: ['login'], runtime, io: ioCapture().io, stdoutIsTTY: true });
+  await connectEntered;
+  process.emit('SIGINT');
+  finishConnect({ data: { attemptID: 'attempt-connect-race', url: 'https://auth.example', instructions: 'Approve', mode: 'auto', time: { expires: Date.now() + 60_000 } } });
+  assert.equal(await running, 130);
+  assert.deepEqual(calls, ['connect', ['cancel', 'attempt-connect-race']]);
+});
+
+test('native login abort closes an in-flight ordinary OAuth form prompt', async () => {
+  const { EventEmitter } = await import('node:events');
+  const input = Object.assign(new EventEmitter(), { isTTY: true });
+  let promptClosed = false;
+  let promptReady;
+  const ready = new Promise(resolve => { promptReady = resolve; });
+  const runtime = await createOpenCodeCliRuntime({ cwd: '/project', io: ioCapture().io, stdin: input, stdout: { isTTY: true }, readlineFactory: () => ({
+    question: () => { promptReady(); return new Promise(() => {}); },
+    close: () => { promptClosed = true; },
+  }), native: {
+    runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) }, headless: {},
+    clientFactory: async () => ({ integration: {
+      list: async () => ({ data: [{ id: 'provider', name: 'Provider', methods: [{ id: 'oauth', type: 'oauth', label: 'OAuth', form: [{ key: 'tenant', type: 'string', title: 'Tenant', required: true }] }] }] }),
+      oauth: {
+        connect: async () => { throw Error('connect must not run'); },
+        status: async () => ({ data: { status: 'pending' } }),
+        cancel: async () => {},
+      },
+    } }),
+  } });
+  const running = runOpenCodeCli({ argv: ['login'], runtime, io: ioCapture().io, stdoutIsTTY: true });
+  await ready;
+  process.emit('SIGINT');
+  assert.equal(await running, 130);
+  assert.equal(promptClosed, true);
+});
+
 test('native key login rejects before prompting; secret OAuth form input is masked and hidden fields retain defaults', async () => {
   const calls = [];
   const keyRuntime = await createOpenCodeCliRuntime({ cwd: '/project', io: ioCapture().io, stdin: { isTTY: true }, stdout: { isTTY: true }, native: {
