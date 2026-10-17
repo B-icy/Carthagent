@@ -90,12 +90,22 @@ try {
     '../tests/native-cli-host-smoke.mjs',
   ]) {
     if (test === 'test-native-pty.mjs' && process.platform === 'win32') {
-      probes.push({ test, status: 'skipped', reason: 'Unix-only Python PTY harness' });
+      const result = { test, status: 'skipped', reason: 'Unix-only Python PTY harness' };
+      probes.push(result);
+      console.log(JSON.stringify(result));
       continue;
     }
     const started = performance.now();
-    run(process.execPath, [join(installed, 'tools', test), installedPlugin], { cwd: install, env });
-    probes.push({ test, status: 'passed', elapsedMs: Math.round(performance.now() - started) });
+    console.log(JSON.stringify({ test, status: 'started' }));
+    try {
+      run(process.execPath, [join(installed, 'tools', test), installedPlugin], { cwd: install, env });
+    } catch (error) {
+      console.error(JSON.stringify({ test, status: 'failed', elapsedMs: Math.round(performance.now() - started), completed: probes }));
+      throw error;
+    }
+    const result = { test, status: 'passed', elapsedMs: Math.round(performance.now() - started) };
+    probes.push(result);
+    console.log(JSON.stringify(result));
   }
   console.log(JSON.stringify({ tarball: packed[0].filename, unpackedSize: packed[0].unpackedSize, binary, version, probes }, null, 2));
 } finally {
