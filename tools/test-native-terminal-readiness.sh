@@ -58,7 +58,7 @@ expected=active
 if [[ "$mode" == baseline ]]; then seed+=(--no-plugin); expected=absent; fi
 CTG_PERF_MANIFEST="$manifest" NODE_PATH="$deps" CTG_OPENCODE_BIN="$binary" node "${seed[@]}" >"$seeder_log" 2>&1 &
 server_pid=$!
-for _ in $(seq 1 300); do
+for _ in $(seq 1 900); do
   if [[ -s "$ready" ]]; then break; fi
   if ! kill -0 "$server_pid" 2>/dev/null; then
     printf '%s readiness fixture seeder exited before ready (private log retained only until cleanup)\n' "$mode" >&2

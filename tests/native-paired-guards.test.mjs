@@ -230,6 +230,16 @@ test('paired provenance requires the immutable source snapshot and pinned binary
   assert.throws(() => assertSnapshotProvenance({ ...valid, sourceDirty: true }), /Source snapshot must be created from a clean immutable commit/);
 });
 
+test('native paired manifest preserves input, switch, and rendered workspace targets plus reviewed memory gate', async () => {
+  const { createPairedManifest } = await import('../tools/native-paired-manifest.mjs');
+  const manifest = createPairedManifest({});
+  assert.deepEqual(manifest.thresholds, { inputP95Ms: 50, switchP95Ms: 150, workspaceRenderMs: 300 });
+  assert.match(manifest.workspaceUiAcceptance, /post-submit PTY route\/data-render/);
+  assert.match(manifest.sustainedMemoryAcceptance, /<=128 MiB/);
+  assert.match(manifest.sustainedMemoryAcceptance, /<=32 MiB/);
+  assert.match(manifest.sustainedMemoryAcceptance, /exact calculation.*require separate review/);
+});
+
 test('actual manifest generator emits valid typed JSON for clean and dirty quoted checkout metadata', () => {
   const dirtyStatus = ' M "quoted path\\name"\n?? file with newline\ninside\n';
   const fields = {
