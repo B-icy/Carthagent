@@ -30,19 +30,27 @@ without a task fail with an actionable message.
 
 Headless success requires both the assistant's completed `finish: stop` message
 and a terminal `idle` message with `outcome: succeeded`; text output alone is not
-success. Native thinking levels are passed as model variants. The adapter still
-rejects `--no-delivery`, `--no-strict`, `--bash-cap`, and `--isolate` until the
-native policy/plugin paths enforce them; parsed support is not a claim of runtime
-compatibility. Demo mode and complete Ship credential/account/billing flows also
-remain integration gaps.
+success. Native thinking levels are passed as model variants. The adapter rejects
+`--max-tools`, `--max-seconds`, and `--max-repairs` until the active native
+delivery plugin enforces session budgets. It also rejects `--no-delivery`,
+`--no-strict`, `--bash-cap`, and `--isolate` until their native policy/plugin
+paths enforce them; parsed support is not runtime compatibility. Demo mode and
+complete Ship credential/account/billing flows remain integration gaps.
+
+`--json` translates real native session tool lifecycle and completed assistant
+messages into the documented `tool_execution_start`, `tool_execution_end`, and
+`message_end` JSONL records. It filters to the selected session and reconciles
+message history after execution so stream/history projections do not duplicate a
+turn.
 
 The disposable real-host adapter smoke is `node tests/native-cli-host-smoke.mjs`.
 Set `CTG_OPENCODE_BIN` to the pinned OpenCode 2.0.32 executable and
 `CTG_NATIVE_RUNTIME_ROOT` to a native runtime/plugin checkout. It starts its own
 temporary profile and local OpenAI-compatible fixture provider, injects that
 already-running service through the adapter test seam, and verifies print, a
-second print turn in the same session, and JSONL output plus successful terminal
-status. It does not verify normal runtime
+second print turn in the same session, workspace-scoped continuation when a
+newer foreign-workspace session exists, a successful actual tool lifecycle in
+JSONL, and explicit rejection of unenforced budget flags. It does not verify normal runtime
 service provisioning, profile isolation, or provider login/account/billing.
 
 ## Migration notes

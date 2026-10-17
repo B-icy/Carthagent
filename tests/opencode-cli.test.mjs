@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cliHelp, openCodeCliManifest, parseOpenCodeArgs, runOpenCodeCli } from '../lib/opencode/cli.mjs';
-import { createOpenCodeCliRuntime, headlessSucceeded, modelWithThinking, reconcileHeadlessResult, textParts } from '../lib/opencode/cli-runtime.mjs';
+import { createOpenCodeCliRuntime, headlessSucceeded, latestSessionForWorkspace, modelWithThinking, nativeJsonEvents, reconcileHeadlessResult, textParts } from '../lib/opencode/cli-runtime.mjs';
 
 function ioCapture() {
   const output = { stdout: [], stderr: [] };
@@ -133,6 +133,44 @@ test('headless text output selects the completed assistant response for the late
     { type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'current answer' }] },
     { type: 'idle', outcome: 'succeeded' },
   ]), ['current answer']);
+});
+
+test('native JSON event projection translates real tool lifecycle and filters unrelated sessions', () => {
+  const events = nativeJsonEvents([
+    { id: 'foreign', created: 1, type: 'session.tool.called', data: { sessionID: 'other', id: 'x', input: { name: 'bash' } } },
+    { id: 'called', created: 2, type: 'session.tool.called', data: { sessionID: 'selected', id: 'call-1', input: { name: 'bash', arguments: { command: 'printf ok' } } } },
+    { id: 'success', created: 3, type: 'session.tool.success', data: { sessionID: 'selected', id: 'call-1', content: [{ type: 'text', text: 'ok' }] } },
+  ], 'selected', [
+    { type: 'user', text: 'run' },
+    { type: 'assistant', finish: 'tool-calls', parts: [] },
+    { type: 'tool', state: { status: 'completed' } },
+    { type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'done' }] },
+    { type: 'idle', outcome: 'succeeded' },
+  ]);
+  assert.deepEqual(events.map(event => event.type), ['tool_execution_start', 'tool_execution_end', 'message_end']);
+  assert.equal(events[0].toolName, 'bash');
+  assert.deepEqual(events[0].args, { command: 'printf ok' });
+  assert.equal(events[1].isError, false);
+  assert.deepEqual(events[2].message.content, [{ type: 'text', text: 'done' }]);
+});
+
+test('headless continuation selects the newest session within the exact workspace', async () => {
+  const selected = await latestSessionForWorkspace({ session: { list: async ({ directory }) => ({ data: [
+    { id: 'wrong-workspace-newest', location: { directory: '/other' }, time: { updated: 999 } },
+    { id: 'older-workspace-session', location: { directory }, time: { updated: 10 } },
+    { id: 'newest-workspace-session', location: { directory }, time: { updated: 20 } },
+  ] }) } }, '/project');
+  assert.equal(selected, 'newest-workspace-session');
+});
+
+test('native runtime rejects budgets that the active delivery plugin cannot enforce', async () => {
+  const runtime = await createOpenCodeCliRuntime({ cwd: process.cwd(), native: {
+    runtime: {}, service: { ensureService: async () => { throw new Error('must not start service'); } },
+    headless: {},
+  } });
+  for (const [key, value] of [['maxTools', '2'], ['maxSeconds', '20'], ['maxRepairs', '1']]) {
+    await assert.rejects(runtime.run({ mode: 'headless', options: { prompt: 'task', [key]: value }, prompt: 'task' }), /not supported until the active native delivery plugin enforces session budgets/);
+  }
 });
 
 test('concrete headless runtime returns failure for failed native session outcome', async t => {
