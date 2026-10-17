@@ -204,7 +204,7 @@ test('default packaged OpenCode resolves through Node package exports when hoist
       const child = spawn(process.execPath, ['-e', `process.stdout.write('opencode v${OPENCODE_VERSION}')`], options);
       return child;
     };
-    assert.equal(await imported.resolveOpenCode({ spawnImpl }), await realpath(binary));
+    assert.equal(await realpath(await imported.resolveOpenCode({ spawnImpl })), await realpath(binary));
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -333,7 +333,7 @@ test('missing runtime release manifest keeps the developer-preview package resol
     const { pathToFileURL } = await import('node:url');
     const imported = await import(`${pathToFileURL(path.join(packageRoot, 'lib/opencode/runtime.mjs')).href}?missing=${Date.now()}`);
     const spawnImpl = (_command, _args, options) => spawn(process.execPath, ['-e', `process.stdout.write('opencode v${OPENCODE_VERSION}')`], options);
-    assert.equal(await imported.resolveOpenCode({ spawnImpl }), await realpath(binary));
+    assert.equal(await realpath(await imported.resolveOpenCode({ spawnImpl })), await realpath(binary));
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
