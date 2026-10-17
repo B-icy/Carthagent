@@ -7,12 +7,13 @@ export const Carthagent = Rpc.define({
     health: {
       input: { type: 'object', additionalProperties: false },
       output: {
-        type: 'object',
-        properties: {
-          protocol: { type: 'integer', const: 1 },
-          hostVersion: { type: 'string' },
-          directory: { type: 'string' },
-        },
+          type: 'object',
+          properties: {
+            protocol: { type: 'integer', const: 1 },
+            hostVersion: { type: 'string' },
+            directory: { type: 'string' },
+            capabilities: { type: 'array', items: { type: 'string', enum: ['delivery.session-options.v1', 'delivery.budgets.v1', 'delivery.policy-overrides.v1'] }, uniqueItems: true },
+          },
         required: ['protocol', 'hostVersion', 'directory'],
         additionalProperties: false,
       },
@@ -61,11 +62,11 @@ export const Carthagent = Rpc.define({
     },
     shipAccount: {
       input: { type: 'object', additionalProperties: false },
-      output: { type: 'object', properties: { account: { type: 'object', additionalProperties: true }, error: { type: 'string' } }, required: ['account'], additionalProperties: true },
+      output: { type: 'object', properties: { account: { type: 'object', additionalProperties: true }, error: { type: 'string' } }, required: ['account'], additionalProperties: false },
     },
     shipBilling: {
       input: { type: 'object', properties: { action: { type: 'string', enum: ['checkout', 'portal'] } }, required: ['action'], additionalProperties: false },
-      output: { type: 'object', properties: { url: { type: 'string', minLength: 1 } }, required: ['url'], additionalProperties: false },
+      output: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'], additionalProperties: false },
     },
     shipLogout: {
       input: { type: 'object', properties: { session: { type: 'string', minLength: 1, maxLength: 128 } }, additionalProperties: false },

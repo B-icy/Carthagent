@@ -454,3 +454,33 @@ test('headless reports timeout distinctly when no terminal outcome can be observ
     assert.equal(result.budgetReason, 'timed-out');
   } finally { globalThis.fetch = original; }
 });
+
+test('accepted timeout does not inherit the previous session outcome and keeps the admitted turn', async () => {
+  const original = globalThis.fetch;
+  try {
+    globalThis.fetch = async (url, init = {}) => {
+      const pathname = new URL(url).pathname;
+      if (pathname.endsWith('/environment')) return new Response(null, { status: 204 });
+      if (pathname.endsWith('/prompt')) return new Response('{"data":{"id":"inbox_new","messageID":"user-new"}}');
+      if (pathname.endsWith('/wait')) return pendingUntilAbort(init.signal);
+      if (pathname.endsWith('/interrupt')) return new Response(null, { status: 204 });
+      if (pathname === '/api/session/ses_previous') return new Response('{"data":{"id":"ses_previous","outcome":"succeeded"}}');
+      if (pathname.endsWith('/message')) return new Response(JSON.stringify({ data: [
+        { id: 'assistant-old', type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'stale prior result' }], time: { created: 1 } },
+        { id: 'user-new', type: 'user', time: { created: 2 } },
+        { id: 'assistant-new', type: 'assistant', finish: 'tool-calls', parts: [{ type: 'tool', callID: 'tool-new' }], time: { created: 3 } },
+      ] }));
+      throw new Error(`Unexpected endpoint ${pathname}`);
+    };
+    const controller = new AbortController();
+    const resultPromise = runHeadless({ url: 'http://127.0.0.1:3333', headers: {} }, '/workspace', 'new turn', { sessionID: 'ses_previous', signal: controller.signal });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    controller.abort(new Error('test timeout/cancel'));
+    const result = await resultPromise;
+    assert.equal(result.session.id, 'ses_previous');
+    assert.equal(result.outcome, 'interrupted');
+    assert.equal(result.terminal, false, 'prior successful session state is not terminal for this admission');
+    assert.deepEqual(result.messages.map(message => message.id), ['user-new', 'assistant-new']);
+    assert.notEqual(result.result?.text, 'stale prior result', 'previous assistant response is never reused');
+  } finally { globalThis.fetch = original; }
+});

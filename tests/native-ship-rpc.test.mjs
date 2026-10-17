@@ -43,13 +43,13 @@ test('Ship account and billing RPCs use the active profile credential and inject
   assert.ok(calls.some(([name, input]) => name === 'checkout' && input.successUrl === 'https://ship.example.test/account'));
 });
 
-test('Ship logout revokes either one session or current token and removes current connection', async () => {
+test('Ship logout revokes either one session or the active profile token', async () => {
   const { calls, handlers } = setup();
   assert.deepEqual(await handlers.shipLogout({ session: 'session-1' }, call), { revoked: true });
   assert.deepEqual(await handlers.shipLogout({}, call), { revoked: true, credentialID: 'ship-credential' });
   assert.ok(calls.some(([name, input]) => name === 'revokeSession' && input.sessionId === 'session-1'));
   assert.ok(calls.some(([name, input]) => name === 'revokeCurrent' && input.accessToken === 'fixture-token'));
-  assert.ok(calls.some(([name, id]) => name === 'remove' && id === 'ship-credential'));
+  assert.equal(calls.some(([name]) => name === 'remove'), false);
 });
 
 test('Ship RPC requires its managed OAuth credential and honors cancellation before cloud traffic', async () => {

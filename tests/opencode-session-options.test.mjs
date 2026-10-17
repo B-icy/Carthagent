@@ -17,9 +17,10 @@ test('native session options isolate concurrent settings and resolve paths at th
 });
 
 test('invalid persisted limits fail closed and non-runtime options never enter metadata', () => {
-  for (const options of [{ maxTools: -1 }, { maxSeconds: 'no' }, { delivery: false, maxTools: 1 }, { codegraphMaxFiles: 0 }, { guide: 'false' }, { workflow: 'anything' }]) {
+  for (const options of [{ maxTools: -1 }, { maxSeconds: 'no' }, { codegraphMaxFiles: 0 }, { guide: 'false' }, { workflow: 'anything' }]) {
     assert.throws(() => normalizeSessionOptions(options));
   }
+  assert.deepEqual(normalizeSessionOptions({ delivery: false, maxTools: 1 }), { delivery: false, maxTools: 1 });
   assert.deepEqual(normalizeSessionOptions({ apiKey: 'secret', theme: 'carthage', model: 'provider/model', guide: false }), { guide: false });
   assert.throws(() => effectiveSessionOptions({ location: { directory: resolve('.') }, metadata: { 'carthagent.options': [] } }), /persisted/);
 });

@@ -6,7 +6,7 @@ type ShipContext = Pick<Context, 'integration'>;
 type ActiveCredential = Extract<ConnectionInfo, { type: 'credential' }>;
 type CloudClientPort = Pick<CloudClient, 'account' | 'checkout' | 'portal' | 'revokeCurrent' | 'revokeSession'>;
 
-/** Published #140 Ship contract, kept injectable for offline handler tests. */
+/** Create profile-scoped Ship RPC handlers; injection keeps cloud behavior testable offline. */
 export function createShipRpcHandlers(ctx: ShipContext, options: {
   cloudClient?: CloudClientPort;
   baseUrl?: string;
@@ -48,7 +48,6 @@ export function createShipRpcHandlers(ctx: ShipContext, options: {
         return { revoked: true };
       }
       await cloud.revokeCurrent({ accessToken: token, signal: call.signal });
-      await ctx.integration.transform((editor) => editor.remove(active.id));
       return { revoked: true, credentialID: active.id };
     },
   };

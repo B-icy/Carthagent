@@ -8,6 +8,7 @@ import { registerWorkspaceRpc } from './server/workspace-rpc';
 import { registerPullRequests } from './server/pull-request-rpc';
 import { registerArchive } from './server/archive-rpc';
 import { createShipRpcHandlers } from './server/ship-rpc';
+import { registerNativeDelivery } from './server/native-delivery';
 
 async function cleanup(resources: Array<() => Promise<void>>, originalError?: unknown) {
   const failures: unknown[] = [];
@@ -22,19 +23,20 @@ async function cleanup(resources: Array<() => Promise<void>>, originalError?: un
   if (failures.length) throw new AggregateError(failures, 'One or more plugin registrations could not be disposed.');
 }
 
-export default Plugin.define({
-  id: 'carthagent',
-  async setup(context) {
-    const cleanups: Array<() => Promise<void>> = [];
-    try {
+export async function setupCarthagent(context: Parameters<typeof registerSessionControls>[0], options: { delivery?: boolean; deliveryOptions?: Parameters<typeof registerNativeDelivery>[1] } = {}) {
+  const cleanups: Array<() => Promise<void>> = [];
+  try {
+      let configuredRoots;
+      try { configuredRoots = process.env.CTG_NATIVE_ARCHIVE_ROOTS ? JSON.parse(process.env.CTG_NATIVE_ARCHIVE_ROOTS) : undefined; }
+      catch { throw new Error('Invalid native archive roots from the CTG host'); }
+      const roots = configuredRoots ?? [`${shipAgentDir(process.env).replace(/[\\/]+$/, '')}/sessions`];
+      if (!Array.isArray(roots) || roots.some(root => typeof root !== 'string')) throw new Error('Invalid native archive roots from the CTG host');
+      const archiveRegistration = await registerArchive(context, { archiveRoots: roots });
+      cleanups.push(() => archiveRegistration.dispose());
       cleanups.push(await registerSessionControls(context));
       cleanups.push(await registerWorkspaceRpc(context));
       cleanups.push(await registerPullRequests(context));
-      const configuredRoots = process.env.CTG_NATIVE_ARCHIVE_ROOTS ? JSON.parse(process.env.CTG_NATIVE_ARCHIVE_ROOTS) : undefined;
-      const roots = configuredRoots ?? [`${shipAgentDir(process.env).replace(/[\\/]+$/, '')}/sessions`];
-      if (!Array.isArray(roots) || roots.some((root) => typeof root !== 'string')) throw new Error('Invalid native archive roots from the CTG host');
-      const archiveRegistration = await registerArchive(context, { archiveRoots: roots });
-      cleanups.push(() => archiveRegistration.dispose());
+      if (options.delivery !== false) cleanups.push(await registerNativeDelivery(context, { ...options.deliveryOptions, ...sessionOptionDefaults(context.options) }));
       const deviceAuth = createDeviceAuthController({ env: process.env, agentDir: shipAgentDir() });
       cleanups.push(() => deviceAuth.cleanup());
       const shipHandlers = createShipRpcHandlers(context);
@@ -43,6 +45,7 @@ export default Plugin.define({
           protocol: 1,
           hostVersion: context.app.version,
           directory: context.location.directory,
+          capabilities: options.delivery === false ? [] : ['delivery.session-options.v1', 'delivery.budgets.v1', 'delivery.policy-overrides.v1'],
         }),
         echo: async input => ({ text: (input as { text: string }).text }),
         authStart: async (_input, call) => {
@@ -66,9 +69,18 @@ export default Plugin.define({
       });
       cleanups.push(() => rpcRegistration.dispose());
       cleanups.push(await registerProviders(context, { deviceAuth }));
-    } catch (error) {
-      await cleanup(cleanups, error);
-    }
-    return async () => cleanup(cleanups);
-  },
+  } catch (error) {
+    await cleanup(cleanups, error);
+  }
+  return async () => cleanup(cleanups);
+}
+
+function sessionOptionDefaults(options: Record<string, unknown>) {
+  const allowed = ['maxTools', 'maxSeconds', 'maxRepairs', 'codegraphMaxFiles', 'bashCap', 'workflow', 'validators', 'context', 'strict', 'delivery', 'protectExisting', 'rewriteCap', 'toolOutputCap'];
+  return Object.fromEntries(allowed.filter(key => options[key] !== undefined).map(key => [key, options[key]]));
+}
+
+export default Plugin.define({
+  id: 'carthagent',
+  setup: setupCarthagent,
 });
