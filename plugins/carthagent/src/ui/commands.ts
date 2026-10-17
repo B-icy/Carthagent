@@ -3,7 +3,7 @@ export type CommandId =
   | "help" | "resume" | "new" | "restart" | "theme" | "model" | "thinking"
   | "compact" | "autocompact" | "review" | "export" | "copy" | "stats"
   | "clear" | "abort" | "raw" | "guide" | "workflow" | "architecture" | "evidence"
-  | "account" | "billing" | "logout-cloud" | "archive" | "demo" | "update"
+  | "account" | "usage" | "billing" | "logout-cloud" | "archive" | "demo" | "update"
   | "ctg-workspace" | "ctg-open" | "ctg-preview" | "ctg-review" | "ctg-worktree" | "ctg-task";
 
 export interface CarthagentCommand {
@@ -19,10 +19,10 @@ export interface CarthagentCommand {
 
 export const COMMANDS: readonly CarthagentCommand[] = [
   { id: "help", name: "help", aliases: ["ctg-help"], submitSlash: true, description: "List Carthagent commands and native shortcuts" },
-  { id: "resume", name: "resume", aliases: ["sessions"], args: "[id|name]", description: "Resume a local session" },
+  { id: "resume", name: "resume", aliases: ["sessions"], args: "[id|name]", description: "Search and resume native sessions; legacy archives are read-only" },
   { id: "restart", name: "restart", aliases: ["kill"], description: "Recover the selected session by interrupting its active turn" },
-  { id: "theme", name: "theme", args: "[name]", description: "Pick or set a Carthagent-compatible theme" },
-  { id: "model", name: "model", args: "[name]", description: "Search and select a provider model" },
+  { id: "theme", name: "theme", args: "[name]", description: "Pick or set a compatibility theme provisioned before native startup" },
+  { id: "model", name: "model", args: "[name]", description: "Select an exact provider/model or search by a unique name" },
   { id: "thinking", name: "thinking", description: "Choose a thinking variant when the model supports it" },
   { id: "compact", name: "compact", args: "[notes]", description: "Compact the selected session, optionally with notes" },
   { id: "autocompact", name: "autocompact", args: "[on|off]", description: "Check automatic-compaction policy support (currently unavailable in the native API)" },
@@ -38,11 +38,12 @@ export const COMMANDS: readonly CarthagentCommand[] = [
   { id: "architecture", name: "architecture", description: "Open the delivery workspace architecture view" },
   { id: "evidence", name: "evidence", description: "Open observed delivery evidence" },
   { id: "account", name: "account", aliases: ["cloud"], description: "Show Ship account, credits, plan, and sessions" },
+  { id: "usage", name: "usage", description: "Show recent Ship usage from the control plane" },
   { id: "billing", name: "billing", args: "[checkout|portal]", description: "Open Ship checkout or billing portal" },
   { id: "logout-cloud", name: "logout-cloud", args: "[session-id]", description: "Revoke a Ship session or sign out this profile" },
   { id: "archive", name: "archive", args: "[search <query>|read <id>|export <id>]", description: "Browse bounded read-only archived sessions" },
   { id: "demo", name: "demo", description: "Run a scripted, provider-free delivery walkthrough" },
-  { id: "update", name: "update", aliases: ["upgrade"], args: "[check]", description: "Check the latest release or confirm its installation" },
+  { id: "update", name: "update", aliases: ["upgrade"], args: "[check|force]", description: "Install the latest release after confirmation; optionally check only" },
   { id: "ctg-workspace", name: "ctg-workspace", args: "[refresh]", description: "Browse and open local CTG workspace projects, tasks, and sessions" },
   { id: "ctg-open", name: "ctg-open", args: "[search]", description: "Search local CTG sessions and open one in native OpenCode" },
   { id: "ctg-preview", name: "ctg-preview", description: "Preview CTG delivery evidence for the selected session" },

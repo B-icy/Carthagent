@@ -19,6 +19,7 @@ function setup() {
   } };
   const cloud = {
     account: async (input) => { calls.push(['account', input]); return { email: 'fixture@example.test', sessions: [] }; },
+    usage: async (input) => { calls.push(['usage', input]); return { data: [{ alias: 'fixture-model', inputTokens: 12, outputTokens: 8 }] }; },
     checkout: async (input) => { calls.push(['checkout', input]); return { url: 'https://billing.example.test/checkout' }; },
     portal: async (input) => { calls.push(['portal', input]); return { url: 'https://billing.example.test/portal' }; },
     revokeCurrent: async (input) => calls.push(['revokeCurrent', input]),
@@ -33,13 +34,16 @@ test('Ship account and billing RPCs use the active profile credential and inject
   const { calls, handlers } = setup();
   const account = await handlers.shipAccount({}, call);
   assert.equal(account.account.email, 'fixture@example.test');
+  assert.deepEqual((await handlers.shipUsage({ limit: 10 }, call)).usage.data[0].alias, 'fixture-model');
   assert.equal((await handlers.shipBilling({ action: 'checkout' }, call)).url, 'https://billing.example.test/checkout');
   assert.equal((await handlers.shipBilling({ action: 'portal' }, call)).url, 'https://billing.example.test/portal');
-  assert.deepEqual(calls.filter(([name]) => ['account', 'checkout', 'portal'].includes(name)).map(([name, input]) => [name, input.accessToken, input.signal === call.signal]), [
+  assert.deepEqual(calls.filter(([name]) => ['account', 'usage', 'checkout', 'portal'].includes(name)).map(([name, input]) => [name, input.accessToken, input.signal === call.signal]), [
     ['account', 'fixture-token', true],
+    ['usage', 'fixture-token', true],
     ['checkout', 'fixture-token', true],
     ['portal', 'fixture-token', true],
   ]);
+  assert.ok(calls.some(([name, input]) => name === 'usage' && input.limit === 10));
   assert.ok(calls.some(([name, input]) => name === 'checkout' && input.successUrl === 'https://ship.example.test/account'));
 });
 
