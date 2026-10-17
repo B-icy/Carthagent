@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmod, mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, rm, readFile, writeFile, realpath } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -92,7 +92,7 @@ test('shell child verifies owned runtime before passing trusted selectors to fix
   const selectors = result.find(line => line.startsWith('selectors:'));
   assert.equal(selectors?.slice('selectors:'.length), resolve(fixture.owned));
   assert.ok(result.includes(resolve(fixture.manifest)));
-  assert.ok((await readFile(spawnMock.marker, 'utf8')).endsWith('opencode'), 'identity helper checked exact --version after hashing');
+  assert.equal(await realpath(await readFile(spawnMock.marker, 'utf8')), await realpath(fixture.binary), 'identity helper checked the exact owned executable with --version after hashing');
 });
 
 test('wrong expected hash prevents version execution and seeder launch', async t => {
@@ -114,7 +114,7 @@ test('wrong expected hash prevents version execution and seeder launch', async t
 test('binary outside the declared owned root is rejected before version execution', async t => {
   const fixture = await makeOwnedRuntime(t);
   const spawnMock = await writeSpawnMock(fixture.root);
-  const outside = join(fixture.root, 'outside-opencode');
+  const outside = join(fixture.root, `outside-opencode${process.platform === 'win32' ? '.exe' : ''}`);
   await writeFile(outside, await readFile(fixture.binary));
   if (process.platform !== 'win32') await chmod(outside, 0o755);
   const child = spawnSync(testBash(), ['-c', `
