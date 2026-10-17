@@ -1,4 +1,5 @@
 import { Plugin } from '@opencode/plugin';
+import { resolve } from 'node:path';
 import { Carthagent } from './rpc';
 import { registerProviders } from './server/providers';
 import { createDeviceAuthController } from './server/device-auth.ts';
@@ -27,7 +28,7 @@ export async function setupCarthagent(context: Parameters<typeof registerSession
       let configuredRoots;
       try { configuredRoots = process.env.CTG_NATIVE_ARCHIVE_ROOTS ? JSON.parse(process.env.CTG_NATIVE_ARCHIVE_ROOTS) : undefined; }
       catch { throw new Error('Invalid native archive roots from the CTG host'); }
-      const roots = configuredRoots ?? [`${shipAgentDir(process.env).replace(/[\\/]+$/, '')}/sessions`];
+      const roots = configuredRoots ?? [resolve(shipAgentDir(process.env), 'sessions')];
       if (!Array.isArray(roots) || roots.some(root => typeof root !== 'string')) throw new Error('Invalid native archive roots from the CTG host');
       const archiveRegistration = await registerArchive(context, { archiveRoots: roots });
       cleanups.push(() => archiveRegistration.dispose());

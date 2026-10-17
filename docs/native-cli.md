@@ -12,7 +12,7 @@ The caller of `runOpenCodeCli()` supplies these concrete capabilities:
 
 | Capability | Request/behavior |
 | --- | --- |
-| `run({ mode, options, prompt, args })` | Launch native OpenCode interactive or headless (`print`/JSONL) session. Honor `--engine-cli`/`--agent-cli` as an explicit executable override and `--isolate` as extension/skill discovery isolation. |
+| `run({ mode, options, prompt, args })` | Launch native OpenCode interactive or headless (`print`/JSONL) session. Honor `--engine-cli`/`--agent-cli` as an explicit executable override and `--isolate` as extension/skill/prompt discovery isolation using a fresh CTG profile, not a worktree. |
 | `listModels({ query })` | Enumerate models from the native provider catalog, filter the optional query, and print the compatible provider/model/context/token/input/output columns. |
 | `login({ args })` | Uses OpenCode 2 integration list/connect/status/complete/cancel APIs. Defaults to Carthagent Ship when available; optional integration and method arguments select another integration. Key-based methods are not prompted in clear text. |
 | `account({ args })` | Uses the profile-owned Ship RPC and active managed OAuth connection; `--json` emits the account response. |
@@ -35,7 +35,11 @@ success. Native thinking levels are passed as model variants. The adapter reject
 `--max-tools`, `--max-seconds`, `--max-repairs`, `--no-delivery`, and `--no-strict`
 unless the active native plugin advertises the matching session-option, budget,
 and policy enforcement capabilities. They fail closed when that contract is
-missing. `--bash-cap` and `--isolate` remain unsupported and fail closed.
+missing. `--bash-cap` is enforced by the native plugin's shell hooks when the
+active plugin advertises session-option support. `--isolate` uses a fresh CTG
+profile with empty skill, instruction, and command sources, while retaining the
+Carthagent plugin; this disables ambient profile/project discovery without
+creating a worktree.
 `--codegraph-max-files` sets the bounded source-file scan limit for the native
 code navigation index and is resolved per session. `--no-guide` is stored in
 durable `carthagent.options` session metadata and honored by native prompt
@@ -87,8 +91,8 @@ login/account/billing.
   command aliases.
 - `--agent-cli` and `--engine-cli` share the explicit native executable
   override. They must not silently select a legacy Pi executable.
-- `--isolate` continues to describe extension/skill isolation and never implies
-  worktree creation.
+- `--isolate` describes extension/skill/prompt discovery isolation and never
+  implies worktree creation.
 - Help/output and domain exit behavior remain the CLI contract. PI session
   stores are archive-only and are not read or continued by this adapter.
 - Activation is intentionally staged: `CTG_NATIVE=1` is opt-in; changing the
