@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createTask, listTasks, reconcileTasks } from '../lib/opencode/workspace.mjs';
 import { listLegacyArchive, searchLegacyArchive, readLegacyTranscript, exportLegacyTranscript } from '../lib/opencode/archive.mjs';
-import { createReviewSnapshot, startReview, verifyPullRequestHeads } from '../lib/opencode/review.mjs';
+import { startReview, verifyPullRequestHeads } from '../lib/opencode/review.mjs';
 
 function git(cwd, ...args) { return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim(); }
 
