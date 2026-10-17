@@ -23,8 +23,8 @@ override.
 
 - Upstream: `https://github.com/anomalyco/opencode`
 - Tag/revision: `v2.0.32` / `843a6c514e606b436a7fe713422ace0a93ad3d61`
-- CTG patch: `docs/patches/opencode-v2.0.32-session-ui.patch`
-- Patch SHA-256: `36379e0bf4ec0f63929c12b5ac96dfc73df60b124cef9f4adeb36d86287bc92f`
+- CTG patch: `docs/patches/opencode-v2.0.32-session-ui.patch` (composed session/runtime + `/help` + live-theme + glyph-v4)
+- Patch SHA-256: `81e86a4c139e02ebd077e1b635a62ea804ec60b6ae20100893cb6d9f73b06d62`
 - Toolchain: Bun `1.4.2` as pinned by the upstream source
 - Compatibility version: `2.0.32`; detached CTG version/channel:
   `0.0.0-ctg.2.0.32` / `ctg.2.0.32`
@@ -107,51 +107,36 @@ remaining exact-binary integration proofs.
 
 ## Full-TUI glyph compatibility
 
-The pinned full TUI did not provide a public equivalent of CTG's legacy
-`--ascii` / `--glyphs auto|ascii|unicode` contract. The assigned glyph patch is
-being developed separately against the pinned source; it must be composed into
-the final patch and rebuilt before this runtime can claim ASCII compatibility.
-OpenCode's documented `mini.mono` setting applies to Mini mode only and is not
-a substitute for the full workspace TUI.
+The approved glyph-v4 patch is now composed into the final source patch. It adds
+a centralized host-chrome registry to the full TUI while preserving arbitrary
+user text. The glyph author reports independent source approval and 11 focused
+tests/146 assertions passing on the author worktree. This is source evidence,
+not final-binary evidence; the exact composed binary must still be built and
+tested before claiming compatibility.
 
-The implementation contract for the owned-host change is deliberately
-narrow: introduce or use a central registry for **host chrome glyphs** (borders,
-selection/status markers, spinners, and structural tree/connector marks) and
-resolve the mode once for the full TUI. In ASCII mode, map only those registered
-chrome tokens to readable ASCII alternatives with compatible layout; preserve
-theme colors and typography. Never sanitize or transliterate arbitrary rendered
-strings, user messages, filenames, diffs, shell output, or code. Unicode mode
-must remain unchanged. Auto detection and explicit overrides must be specified
-and tested on the actual full TUI, including unknown/legacy terminals; Mini's
-setting and platform guesses alone do not satisfy this contract.
+The source patch centralizes host-chrome glyphs (borders, selection/status
+markers, spinners, and structural tree/connector marks) for the full TUI. It maps
+only registered chrome tokens to readable ASCII alternatives, preserves theme
+colors and typography, and does not sanitize or transliterate arbitrary user
+text, filenames, diffs, shell output, or code. The exact final binary still needs
+the reviewed full-TUI terminal matrix and unknown/legacy-terminal proof.
 
-Any glyph patch changes the source-patch digest and invalidates the current
-binary, manifest, and title evidence; rebuild and revalidate the exact resulting
-artifact before making terminal-compatibility claims.
+Any source-patch change invalidates prior binary, manifest, and title evidence;
+rebuild and revalidate the exact resulting artifact before making
+terminal-compatibility claims.
 
-The normal full-TUI `/help` contract is also not established as CTG-owned.
-Autocomplete currently selects OpenCode Host Help; invoking `/ctg-help` or a
-submitted command with arguments does not prove bare `/help` parity. The exact
-final binary must demonstrate the agreed bare-help UI behavior before that is
-claimed.
+The approved `/help` patch gives bare `/help` deterministic extension-over-native
+dispatch and restores native help when an extension claim is removed. The help
+author reports the parent’s full keymap suite passed 5/5. The exact final binary
+still must demonstrate the agreed bare-help UI behavior before release claims.
 
 ## Recorded artifact and bounded title evidence
 
-The fresh Linux artifact was built from a clean detached worktree of the pinned
-source with the exact patch hash above. It is at
-`/tmp/opencode/ctg-final-runtime-build/resume-build/packages/cli/dist-ctg/cli-linux-x64/bin/opencode`:
-
-- `--version`: `opencode v0.0.0-ctg.2.0.32`
-- SHA-256: `85bb44a65e8c185f4f33d41507d29acc77f2db0cdcb0103a14476021c8e43794`
-- Build recipe: `script/ctg/build-owned-runtime.sh opencode-linux-x64`
-- Source patch hash: the pinned hash above
-- Manifest lock SHA-256: `9d78379cd264584a495440a217b9d2ecab524c9a56f7f8b4b5bed3926daa330d`
-
-This exact-patch executable's headless PTY emitted the VT title-stack save
-(`ESC[22;0t`) and title OSC sequence. The smoke probe terminated with Ctrl-C,
-so no restore sequence was observed; title restoration and physical terminal
-readback remain unproven. Any glyph/help source change requires a new artifact
-and a repeated title test.
+No binary has been built from this final composed patch yet. Earlier Linux
+artifact and PTY title observations used the pre-composition patch and are
+superseded for release acceptance. Build, executable digest, runtime manifest,
+full-TUI glyph/help/theme proofs, and title restore/readback must all be recorded
+against the exact reviewed composed patch before release.
 
 No paid provider traffic or real profile was used. Core compaction and shell
 retention tests passed 16/16, server shell HTTP-provenance passed 1/1, renderer
