@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 import { getEventListeners } from 'node:events';
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { nativeCommandConfig } from '../lib/opencode/compatibility.mjs';
 import { CTG_RUNTIME_LOCK_SHA256, CTG_RUNTIME_PATCH_SHA256, CTG_RUNTIME_SOURCE, CTG_RUNTIME_VERSION, OPENCODE_VERSION, provisionRuntime, readRuntimeReleaseManifest, resolveOpenCode, resolveOwnedOpenCode, resolvePathCommand, runtimeEnvironment, runtimeIdentity, runtimePaths, withFileLock, workspaceEnvironment } from '../lib/opencode/runtime.mjs';
@@ -204,7 +204,7 @@ test('default packaged OpenCode resolves through Node package exports when hoist
       const child = spawn(process.execPath, ['-e', `process.stdout.write('opencode v${OPENCODE_VERSION}')`], options);
       return child;
     };
-    assert.equal(await imported.resolveOpenCode({ spawnImpl }), binary);
+    assert.equal(await imported.resolveOpenCode({ spawnImpl }), await realpath(binary));
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -333,7 +333,7 @@ test('missing runtime release manifest keeps the developer-preview package resol
     const { pathToFileURL } = await import('node:url');
     const imported = await import(`${pathToFileURL(path.join(packageRoot, 'lib/opencode/runtime.mjs')).href}?missing=${Date.now()}`);
     const spawnImpl = (_command, _args, options) => spawn(process.execPath, ['-e', `process.stdout.write('opencode v${OPENCODE_VERSION}')`], options);
-    assert.equal(await imported.resolveOpenCode({ spawnImpl }), binary);
+    assert.equal(await imported.resolveOpenCode({ spawnImpl }), await realpath(binary));
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -423,17 +423,24 @@ test('runtime identity binds compatibility services to the exact executable path
 test('PATH-selected commands resolve to a concrete executable identity', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-path-identity-'));
   const bin = path.join(root, 'bin');
-  const executable = path.join(bin, 'opencode');
-  const script = path.join(root, 'version.cjs');
+  const executable = path.join(bin, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
   try {
     await mkdir(bin, { recursive: true });
-    await writeFile(script, `console.log('opencode v2.0.32')`);
-    await writeFile(executable, `#!/usr/bin/env node\nrequire(${JSON.stringify(script)})\n`, { mode: 0o755 });
-    const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH ?? ''}` };
-    const resolved = await resolveOpenCode({ binary: 'opencode', env });
-    assert.equal(resolved, executable);
+    await writeFile(executable, 'PATH resolution fixture', { mode: 0o755 });
+    const env = { ...process.env };
+    for (const key of Object.keys(env)) if (key.toLowerCase() === 'path') delete env[key];
+    env.PATH = `${bin}${path.delimiter}${process.env.PATH ?? process.env.Path ?? ''}`;
+    const invocations = [];
+    const spawnImpl = (command, args, options) => {
+      invocations.push({ command, args });
+      return spawn(process.execPath, ['-e', `process.stdout.write('opencode v${OPENCODE_VERSION}')`], options);
+    };
+    const resolved = await resolveOpenCode({ binary: 'opencode', env, spawnImpl });
+    const canonicalExecutable = await realpath(executable);
+    assert.equal(resolved, canonicalExecutable);
+    assert.deepEqual(invocations, [{ command: 'opencode', args: ['--version'] }]);
     const identity = await runtimeIdentity('opencode', { binary: 'opencode', env });
-    assert.equal(identity.binaryPath, executable);
+    assert.equal(identity.binaryPath, canonicalExecutable);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
