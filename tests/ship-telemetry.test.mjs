@@ -22,7 +22,7 @@ const tmp = t => {
   return dir;
 };
 
-test('install id persists across runs and is regenerated when the file is corrupt', t => {
+test('install id seed remains authoritative across primary-file corruption and deletion', t => {
   const agentDir = tmp(t);
   const first = shipInstallId({ agentDir });
   assert.match(first, UUID);
@@ -31,8 +31,11 @@ test('install id persists across runs and is regenerated when the file is corrup
   writeFileSync(installIdPath(agentDir), 'garbage-not-a-uuid');
   const regenerated = shipInstallId({ agentDir });
   assert.match(regenerated, UUID);
-  assert.notEqual(regenerated, first);
-  assert.equal(shipInstallId({ agentDir }), regenerated);
+  assert.equal(regenerated, first);
+  writeFileSync(installIdPath(agentDir), 'different-corrupt-content');
+  assert.equal(shipInstallId({ agentDir }), first);
+  rmSync(installIdPath(agentDir));
+  assert.equal(shipInstallId({ agentDir }), first);
 });
 
 test('concurrent first runs and corrupt repairs converge on one install id', async t => {
@@ -57,15 +60,30 @@ test('concurrent first runs and corrupt repairs converge on one install id', asy
         if (code !== 0) reject(new Error(`install-id worker exited ${code}: ${stderr}`));
         else resolve(stdout.trim());
       }));
-      return { ready, result };
+      return { child, ready, result };
     });
-    const deadline = Date.now() + 10_000;
-    while (!children.every(child => existsSync(child.ready))) {
-      assert.ok(Date.now() < deadline, 'all worker processes should reach the start barrier');
-      await new Promise(resolve => setTimeout(resolve, 5));
+    try {
+      const deadline = Date.now() + 10_000;
+      while (!children.every(worker => existsSync(worker.ready))) {
+        assert.ok(Date.now() < deadline, 'all worker processes should reach the start barrier');
+        await new Promise(resolve => setTimeout(resolve, 5));
+      }
+      writeFileSync(gate, 'go');
+      return await Promise.all(children.map(worker => worker.result));
+    } finally {
+      // A barrier timeout must not strand workers in their polling loops and
+      // keep Node's test process alive.
+      for (const worker of children) {
+        if (worker.child.exitCode === null && worker.child.signalCode === null) worker.child.kill('SIGKILL');
+      }
+      await Promise.race([
+        Promise.allSettled(children.map(worker => worker.result)),
+        new Promise(resolve => {
+          const timer = setTimeout(resolve, 2_000);
+          Promise.allSettled(children.map(worker => worker.result)).then(() => clearTimeout(timer));
+        }),
+      ]);
     }
-    writeFileSync(gate, 'go');
-    return Promise.all(children.map(child => child.result));
   };
   // Fresh directory: racing launches adopt a single id.
   const fresh = tmp(t);
@@ -73,6 +91,7 @@ test('concurrent first runs and corrupt repairs converge on one install id', asy
   assert.equal(new Set(ids).size, 1, `fresh IDs diverged: ${ids.join(', ')}`);
   assert.match(ids[0], UUID);
   assert.equal(readFileSync(installIdPath(fresh), 'utf8').trim(), ids[0]);
+  assert.equal(readFileSync(`${installIdPath(fresh)}.seed`, 'utf8').trim(), ids[0]);
   // Corrupt file: racing repairs also converge.
   const corrupt = tmp(t);
   writeFileSync(installIdPath(corrupt), 'garbage');
@@ -83,6 +102,22 @@ test('concurrent first runs and corrupt repairs converge on one install id', asy
   assert.equal(readFileSync(installIdPath(corrupt), 'utf8').trim(), repaired[0]);
   assert.match(repaired[0], UUID);
   assert.equal(readFileSync(lockPath, 'utf8'), 'legacy-stale-lock', 'legacy lock is not stolen or deleted');
+  // Empty/missing-primary contenders also repair to the seed rather than
+  // independently minting identities.
+  rmSync(installIdPath(corrupt));
+  const afterDelete = await startTogether(corrupt, 'deleted');
+  assert.equal(new Set(afterDelete).size, 1);
+  assert.equal(afterDelete[0], repaired[0]);
+});
+
+test('a valid legacy primary id seeds future repairs without identity churn', t => {
+  const agentDir = tmp(t);
+  const legacyId = '11111111-2222-4333-8444-555555555555';
+  writeFileSync(installIdPath(agentDir), `${legacyId}\n`);
+  assert.equal(shipInstallId({ agentDir }), legacyId);
+  assert.equal(readFileSync(`${installIdPath(agentDir)}.seed`, 'utf8').trim(), legacyId);
+  rmSync(installIdPath(agentDir));
+  assert.equal(shipInstallId({ agentDir }), legacyId);
 });
 
 test('provider mode reflects ship, byok, both, or no credentials', t => {
