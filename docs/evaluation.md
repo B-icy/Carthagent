@@ -1,5 +1,13 @@
 # Verification and live Mercury trials
 
+## Runtime migration note (2026-10)
+
+The earlier evidence below was collected with Pi 0.85.1 and its CLI JSONL event protocol. Those runs are preserved as historical records and **must not be pooled, ranked, or treated as directly comparable** with native OpenCode 2 evaluation runs. Native runs record `evidenceSchema`, `runtime: "opencode-2"`, exact OpenCode version, session ID, and `campaignComparability: "not-comparable-to-pi-runtime"`. Freeze v4 rejects the previous Pi-based campaign freeze. Historical reports and raw files are intentionally immutable.
+
+The migrated harness uses the OpenCode 2 HTTP client against a dedicated isolated service. The evaluator starts its own service with a private home; the benchmark requires an explicit `CTG_OPENCODE_URL` or starts its own service, and requires `OPENROUTER_API_KEY` for non-fixture provider runs. Neither path discovers the shared user service or searches `~/.pi` for credentials. Completed runs poll for the exact session's authoritative terminal outcome and use `session.get()` aggregate cost/token usage; missing outcomes or unknown usage fail closed. A native model-request hook enforces turn and cost admission before primary requests. The adapter also accepts an injected client for offline tests.
+
+Offline checks: `node --test tools/test-native-swe.mjs tools/benchmark/runner.test.mjs`. These validate event accounting and bounded runner setup without provider calls. They are harness tests, not model efficacy evidence.
+
 > Context: these trials ran in the development workspace of this package, alongside a voxel-game fixture used as the evaluation task. `scenarios/game/baseline/minecraft.py` in this repository is that fixture: the deliberately defective baseline copied into each trial's isolated work directory. References to "the repository game"/"the improved game" mean an upgraded reference implementation from that workspace, which is not part of this repository; screenshots and raw event streams live in its ignored `artifacts/` and `.harness/` directories.
 
 ## Scope of the evidence

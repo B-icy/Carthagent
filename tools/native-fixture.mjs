@@ -21,7 +21,7 @@ export function streamText(res, text = 'Fixture response complete.') {
   res.end(`${chunk({}, 'stop')}data: [DONE]\n\n`);
 }
 
-export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'), respond = (_body, res) => streamText(res) } = {}) {
+export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'), respond = (_body, res) => streamText(res), env: extraEnv = {} } = {}) {
   const temp = await mkdtemp(join(tmpdir(), 'ctg-native-fixture-'));
   const cwd = join(temp, 'project');
   const config = join(temp, 'config/opencode');
@@ -68,8 +68,9 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
       XDG_CONFIG_HOME: join(temp, 'config'), XDG_DATA_HOME: join(temp, 'data'),
       XDG_CACHE_HOME: join(temp, 'cache'), XDG_STATE_HOME: join(temp, 'state'),
       OPENCODE_DB: join(temp, 'database.sqlite'), OPENCODE_SERVER_PASSWORD: password,
+      ...extraEnv,
     });
-    child = spawn(process.env.CTG_OPENCODE_BIN ?? join(root, 'node_modules/@opencode/cli/bin/opencode.exe'),
+    child = spawn(process.env.CTG_OPENCODE_BIN ?? 'opencode',
       ['serve', '--hostname', '127.0.0.1', '--port', '0'], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
     const baseUrl = await new Promise((done, reject) => {
       const timer = setTimeout(() => reject(Error(`Host startup timeout: ${output}`)), 30_000);
@@ -94,11 +95,11 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
     provider.listen(0, '127.0.0.1');
     await once(provider, 'listening');
     await writeFile(join(config, 'opencode.json'), JSON.stringify({
-      plugins: [resolve(plugin)], update: 'disable', model: 'ctg-fixture/fixture',
+      ...(plugin ? { plugins: [resolve(plugin)] } : {}), update: 'disable', model: 'ctg-fixture/fixture', default_agent: 'build',
       providers: { 'ctg-fixture': {
         package: '@opencode/ai/providers/openai-compatible',
         settings: { baseURL: `http://127.0.0.1:${provider.address().port}/v1`, apiKey: 'offline-fixture' },
-        models: { fixture: { limit: { context: 32000, output: 1024 } } },
+        models: { fixture: { limit: { context: 32000, output: 1024 }, cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 } } },
       } },
     }));
     await start();
@@ -123,13 +124,15 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
         await new Promise(done => setTimeout(done, 20));
       }
     },
-    async active(location = { directory: cwd }) {
+    async active(pluginID = 'carthagent', location = { directory: cwd }) {
+      if (pluginID !== 'carthagent') await client.session.create({ location, model:{providerID:'ctg-fixture',id:'fixture'}, title:'plugin activation probe' }, request());
       const deadline = Date.now() + 15_000;
       while (true) {
         const inventory = await client.plugin.list({ location }, request());
-        const plugin = inventory.data.find(item => item.id === 'carthagent');
+        const plugin = inventory.data.find(item => item.id === pluginID);
         if (plugin?.state.status === 'active') return;
-        if (Date.now() >= deadline) throw Error(`CTG plugin activation timed out: ${JSON.stringify(plugin)}\n${output}`);
+        if (plugin?.state.status === 'error') throw Error(`Native fixture plugin failed: ${JSON.stringify(plugin)}\n${output}`);
+        if (Date.now() >= deadline) throw Error(`Native plugin ${pluginID} activation timed out: ${JSON.stringify(plugin)}\n${output}`);
         await new Promise(done => setTimeout(done, 50));
       }
     },
