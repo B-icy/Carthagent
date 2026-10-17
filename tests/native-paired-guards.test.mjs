@@ -237,7 +237,10 @@ test('native paired manifest preserves input, switch, and rendered workspace tar
   assert.match(manifest.workspaceUiAcceptance, /post-submit PTY route\/data-render/);
   assert.match(manifest.sustainedMemoryAcceptance, /<=128 MiB/);
   assert.match(manifest.sustainedMemoryAcceptance, /<=32 MiB/);
-  assert.match(manifest.sustainedMemoryAcceptance, /exact calculation.*require separate review/);
+  assert.match(manifest.sustainedMemoryAcceptance, /max D<=128 MiB/);
+  assert.match(manifest.sustainedMemoryAcceptance, /<=32 MiB/);
+  assert.match(manifest.sustainedMemoryAcceptance, /parent\/product review.*required before authorization/);
+  assert.match(manifest.sustainedMemoryAcceptance, /not mathematical long-term guarantees/);
 });
 
 test('actual manifest generator emits valid typed JSON for clean and dirty quoted checkout metadata', () => {

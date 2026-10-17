@@ -282,9 +282,11 @@ def workspace_render_completed(screen, before_lines):
                for sentinel in WORKSPACE_RENDER_SENTINELS)
 
 
-def workspace_command_staged(screen):
+def workspace_command_staged(screen, editor_origin):
     rendered = "\n".join(screen.lines())
-    return ("/ctg-workspace" in rendered and
+    row, column = editor_origin
+    staged = "".join(screen.cells[row][column:column + len("/ctg-workspace")])
+    return (staged == "/ctg-workspace" and
             "Carthagent commands" not in rendered and
             "Search commands" not in rendered and
             NATIVE_EDITOR_PLACEHOLDER not in rendered)
@@ -337,14 +339,28 @@ def main():
             parser.error("native plugin.list inventory does not show Carthagent active")
         if observed == "absent" and any(isinstance(item, dict) and isinstance(item.get("id"), str) and item["id"].startswith("carthagent") for item in native_inventory):
             parser.error("baseline native plugin.list inventory contains a Carthagent plugin")
-        if observed == "active" and (fixture.get("pluginHealth", {}).get("hostVersion") != "2.0.32" or
-                                      fixture.get("pluginHealth", {}).get("protocol") != 1 or
-                                      fixture.get("pluginHealth", {}).get("directoryMatches") is not True):
+        runtime_identity = fixture.get("runtimeIdentity")
+        if not isinstance(runtime_identity, dict) or runtime_identity.get("compatibilityVersion") != "2.0.32":
+            parser.error("fixture lacks verified native runtime compatibility identity")
+        if runtime_identity.get("binary") != str(pathlib.Path(binary).resolve()):
+            parser.error("fixture runtime executable identity does not match the measured executable")
+        if runtime_identity.get("binarySha256") and runtime_identity.get("binarySha256") != hashlib.sha256(pathlib.Path(binary).read_bytes()).hexdigest():
+            parser.error("fixture runtime binary hash does not match the measured executable")
+        runtime_version = runtime_identity.get("runtimeVersion")
+        if not isinstance(runtime_version, str) or not runtime_version:
+            parser.error("fixture lacks exact verified native runtime version")
+        if observed == "active" and (fixture.get("pluginHealth", {}).get("hostVersion") != runtime_version or
+                                       fixture.get("pluginHealth", {}).get("protocol") != 1 or
+                                       fixture.get("pluginHealth", {}).get("directoryMatches") is not True):
             parser.error("CTG fixture is missing a successful native health RPC verification")
         if fixture.get("provenance", {}).get("binarySha256") != hashlib.sha256(pathlib.Path(binary).read_bytes()).hexdigest():
             parser.error("fixture binary hash does not match the executable being measured")
-        if fixture.get("provenance", {}).get("binaryVersion") != "2.0.32":
-            parser.error("fixture provenance lacks compatibility version 2.0.32")
+        if fixture.get("provenance", {}).get("binaryVersion") != runtime_identity.get("compatibilityVersion"):
+            parser.error("fixture provenance compatibility version does not match verified runtime identity")
+        if fixture.get("provenance", {}).get("runtimeVersion", runtime_identity.get("runtimeVersion")) != runtime_identity.get("runtimeVersion"):
+            parser.error("fixture provenance runtime version does not match verified runtime identity")
+        if fixture.get("provenance", {}).get("binarySha256") != runtime_identity.get("binarySha256"):
+            parser.error("fixture provenance binary hash does not match verified runtime identity")
         if not os.environ.get("CTG_PERF_SOURCE_COMMIT") or fixture.get("provenance", {}).get("sourceCommit") != os.environ["CTG_PERF_SOURCE_COMMIT"]:
             parser.error("fixture source commit does not match selected immutable execution snapshot")
         if fixture.get("provenance", {}).get("sourceSnapshotSha256") != os.environ.get("CTG_PERF_SOURCE_SNAPSHOT_SHA256"):
@@ -408,6 +424,8 @@ def main():
     signal.signal(signal.SIGTERM, handle_sigterm)
     try:
         result = {"binary": binary, "expectedHostVersion": "2.0.32",
+                  "compatibilityVersion": runtime_identity["compatibilityVersion"] if fixture else "2.0.32",
+                  "runtimeVersion": runtime_identity["runtimeVersion"] if fixture else None,
                   "measurement": "real POSIX PTY; native plugin inventory observed active" if fixture and fixture.get("pluginObservation", {}).get("observed") == "active" else "real POSIX PTY; native plugin inventory observed absent",
                   "startupIncludedInSamples": False, "samples": args.samples,
                   "measurementScope": "terminal interaction through select/read/VT parse and parsed PTY screen evidence; not compositor/GPU presentation; observer overhead is reported and never subtracted",
@@ -418,6 +436,9 @@ def main():
             result["pluginInventory"] = fixture.get("pluginInventory")
             result["pluginHealth"] = fixture.get("pluginHealth")
             result["provenance"] = fixture.get("provenance")
+            result["runtimeIdentity"] = runtime_identity
+            result["runtimeVersion"] = runtime_identity["runtimeVersion"]
+            result["compatibilityVersion"] = runtime_identity["compatibilityVersion"]
             result["sourceProvenance"] = {"commit": os.environ.get("CTG_PERF_SOURCE_COMMIT"),
                                            "snapshotSha256": os.environ.get("CTG_PERF_SOURCE_SNAPSHOT_SHA256"),
                                            "sourceDirectory": os.environ.get("CTG_PERF_SOURCE_DIR")}
@@ -698,7 +719,7 @@ def main():
             terminal.collect_until(lambda _output: terminal.screen.contains("/ctg-workspace"),
                                    5, "submitted workspace command visible before Enter")
             terminal.send(b"\r")
-            terminal.collect_until(lambda _output: workspace_command_staged(terminal.screen),
+            terminal.collect_until(lambda _output: workspace_command_staged(terminal.screen, editor_origin),
                                    5, "selected workspace command after autocomplete dismissal")
             before_workspace = terminal.screen.lines()
             observer_before = terminal.observer_snapshot()

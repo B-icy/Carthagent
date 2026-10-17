@@ -12,6 +12,8 @@ source_root="${CTG_SOURCE_ROOT:-/tmp/opencode/ctg-product-integration}"
 source_commit="${CTG_SOURCE_COMMIT:-}"
 samples="${SAMPLES:-30}"
 output_root="${OUTPUT_DIR:-/tmp/opencode/ctg-native-terminal-paired-$(date -u +%Y%m%dT%H%M%SZ)}"
+owned_root="${CTG_OWNED_OPENCODE_RUNTIME:-$(dirname "$(dirname "$(dirname "$binary")")")}"
+release_manifest="${CTG_TEST_RUNTIME_RELEASE_MANIFEST:-$repo_root/lib/opencode/runtime-release.json}"
 
 if [[ ! -x "$binary" ]]; then
   printf 'Pinned executable is missing or not executable: %s\n' "$binary" >&2
@@ -39,10 +41,16 @@ if ! git -C "$source_root" cat-file -e "$source_commit^{commit}"; then
   printf 'Selected immutable source commit is unavailable: %s\n' "$source_commit" >&2
   exit 2
 fi
+if [[ ! -f "$release_manifest" ]]; then
+  printf 'Trusted CTG runtime release record is required: %s (or set CTG_TEST_RUNTIME_RELEASE_MANIFEST)\n' "$release_manifest" >&2
+  exit 2
+fi
 binary="$(realpath "$binary")"
+owned_root="$(realpath "$owned_root")"
+release_manifest="$(realpath "$release_manifest")"
 binary_node_modules="$(realpath "$source_root/node_modules")"
-if [[ "$binary" != "$binary_node_modules/@opencode/cli/bin/opencode.exe" || ! -d "$binary_node_modules/@opencode/client" ]]; then
-  printf 'Binary must be the executable from the selected source snapshot dependency install. binary=%s deps=%s\n' "$binary" "$binary_node_modules" >&2
+if [[ ! -d "$binary_node_modules/@opencode/client" ]]; then
+  printf 'Selected source snapshot dependency install is missing @opencode/client: %s\n' "$binary_node_modules" >&2
   exit 2
 fi
 source_lock_sha256="$(git -C "$source_root" show "$source_commit:package-lock.json" | sha256sum | awk '{print $1}')"
@@ -137,6 +145,7 @@ mkdir -p "$runner/source/plugins/carthagent/node_modules/@opencode"
 ln -s "$binary_node_modules/@opencode/plugin" "$runner/source/plugins/carthagent/node_modules/@opencode/plugin"
 cp "$repo_root/tools/native-fixture.mjs" "$repo_root/tools/seed-native-switch-fixture.mjs" \
   "$repo_root/tools/native-paired-guards.mjs" "$repo_root/tools/native-paired-manifest.mjs" \
+  "$repo_root/tools/native-runtime-identity.mjs" \
   "$repo_root/tools/native-paired-orchestration.sh" "$repo_root/tools/test-native-terminal-performance.py" \
   "$repo_root/tools/test-native-terminal-readiness.sh" "$runner/source/tools/"
 mkdir -p "$runner/source/docs"
@@ -146,13 +155,28 @@ tar -C "$runner/source" --exclude=node_modules --exclude='*/node_modules' --excl
 source_snapshot_sha256="$(sha256sum "$execution_archive" | awk '{print $1}')"
 binary_sha256="$(sha256sum "$binary" | awk '{print $1}')"
 source_tree="$(git -C "$source_root" rev-parse "$source_commit^{tree}")"
-binary_version="$("$binary" --version | awk '{print $2}' | sed 's/^v//')"
-if [[ "$binary_version" != 2.0.32 ]]; then
-  printf 'Expected owned OpenCode 2.0.32 binary, observed %s\n' "$binary_version" >&2
-  exit 2
-fi
+runtime_identity_json="$(node --input-type=module - "$repo_root/tools/native-runtime-identity.mjs" "$binary" "$owned_root" "$release_manifest" <<'NODE'
+const { loadNativeTestRuntime } = await import(process.argv[2]);
+const { readFile } = await import('node:fs/promises');
+const env = process.env.CTG_TEST_RUNTIME_SHA256
+  ? { ...process.env, CTG_TEST_RUNTIME_SHA256: process.env.CTG_TEST_RUNTIME_SHA256 }
+  : process.env;
+const identity = await loadNativeTestRuntime({
+  binary: process.argv[3], ownedRoot: process.argv[4],
+  expectedManifest: JSON.parse(await readFile(process.argv[5], 'utf8')),
+  env,
+});
+process.stdout.write(JSON.stringify(identity));
+NODE
+)"
+runtime_version="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).runtimeVersion)' "$runtime_identity_json")"
+runtime_source_revision="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).sourceRevision ?? "")' "$runtime_identity_json")"
+runtime_patch_sha256="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).patchSha256 ?? "")' "$runtime_identity_json")"
+runtime_lock_sha256="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).lockSha256 ?? "")' "$runtime_identity_json")"
+binary_sha256="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).binarySha256)' "$runtime_identity_json")"
+binary_version=2.0.32
 source_component_sha256="$(cd "$runner/source" && find lib plugins/carthagent -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}')"
-harness_component_sha256="$(cd "$runner/source" && sha256sum tools/native-fixture.mjs tools/seed-native-switch-fixture.mjs tools/native-paired-guards.mjs tools/native-paired-manifest.mjs tools/native-paired-orchestration.sh tools/test-native-terminal-performance.py tools/test-native-terminal-readiness.sh docs/native-terminal-paired-failure-2026-10-17.md | sha256sum | awk '{print $1}')"
+harness_component_sha256="$(cd "$runner/source" && sha256sum tools/native-fixture.mjs tools/native-runtime-identity.mjs tools/seed-native-switch-fixture.mjs tools/native-paired-guards.mjs tools/native-paired-manifest.mjs tools/native-paired-orchestration.sh tools/test-native-terminal-performance.py tools/test-native-terminal-readiness.sh docs/native-terminal-paired-failure-2026-10-17.md | sha256sum | awk '{print $1}')"
 git -C "$source_root" status --porcelain=v1 > "$work/source-checkout-dirty-status"
 git -C "$repo_root" status --porcelain=v1 > "$work/harness-dirty-status"
 node --input-type=module - "$runner/source/tools/native-paired-guards.mjs" "$binary_node_modules" "$runner/source/package.json" "$runner/source" > "$work/dependency-packages.json" <<'NODE'
@@ -169,6 +193,8 @@ dependency_install_sha256="$(node -e 'process.stdout.write(JSON.parse(process.ar
 dependency_install_realpath="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).realpath)' "$dependency_install_json")"
 
 export CTG_OPENCODE_BIN="$binary"
+export CTG_OWNED_OPENCODE_RUNTIME="$owned_root"
+export CTG_TEST_RUNTIME_RELEASE_MANIFEST="$release_manifest"
 export CTG_PERF_SOURCE_COMMIT="$source_commit"
 export CTG_PERF_SOURCE_DIR="$runner/source"
 export CTG_PERF_SOURCE_SNAPSHOT_SHA256="$source_snapshot_sha256"
@@ -328,14 +354,18 @@ DEPENDENCY_SHA256="$dependency_install_sha256" DEPENDENCY_REALPATH="$dependency_
 DEPENDENCY_PACKAGES_FILE="$work/dependency-packages.json" SOURCE_STATUS_FILE="$work/source-checkout-dirty-status" \
 HARNESS_STATUS_FILE="$work/harness-dirty-status" HARNESS_WORKTREE="$repo_root" \
 HARNESS_COMMIT="$(git -C "$repo_root" rev-parse HEAD)" HARNESS_MANIFEST_SHA256="$harness_component_sha256" \
-BINARY_PATH="$binary" BINARY_VERSION="$binary_version" BINARY_SHA256="$binary_sha256" \
+BINARY_PATH="$binary" BINARY_VERSION="$binary_version" RUNTIME_VERSION="$runtime_version" BINARY_SHA256="$binary_sha256" \
+RUNTIME_SOURCE_REVISION="$runtime_source_revision" RUNTIME_PATCH_SHA256="$runtime_patch_sha256" RUNTIME_LOCK_SHA256="$runtime_lock_sha256" \
 SAMPLES_PER_RUN="$samples" SOURCE_COMPONENT_SHA256="$source_component_sha256" \
 node --input-type=module - <<'NODE' | node "$runner/source/tools/native-paired-manifest.mjs" > "$output_root/manifest.json"
 import { readFileSync } from 'node:fs';
 const read = key => process.env[key];
 const fields = {
   createdAt: new Date().toISOString(),
-  binary: read('BINARY_PATH'), binaryVersion: read('BINARY_VERSION'), binarySha256: read('BINARY_SHA256'),
+  binary: read('BINARY_PATH'), binaryVersion: read('BINARY_VERSION'), compatibilityVersion: read('BINARY_VERSION'),
+  runtimeVersion: read('RUNTIME_VERSION'), binarySha256: read('BINARY_SHA256'),
+  runtimeSourceRevision: read('RUNTIME_SOURCE_REVISION'), runtimePatchSha256: read('RUNTIME_PATCH_SHA256'),
+  runtimeLockSha256: read('RUNTIME_LOCK_SHA256'),
   sourceCheckout: read('SOURCE_ROOT'), sourceCheckoutHead: read('SOURCE_HEAD'),
   sourceCheckoutDirtyStatus: readFileSync(read('SOURCE_STATUS_FILE'), 'utf8'),
   sourceCommit: read('SOURCE_COMMIT'), sourceTree: read('SOURCE_TREE'),

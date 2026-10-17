@@ -53,6 +53,7 @@ try {
   }, host.request());
   const fixture = { temp: host.temp, roots, sessions: fixtures,
     readinessSession: { id: readinessSession.id, directory: roots.alpha },
+    runtimeIdentity: host.runtimeIdentity,
     serverPid: host.serverPid(),
     pluginObservation: host.pluginObservation, pluginInventory: host.pluginInventory,
     pluginHealth: host.pluginHealth, provenance };

@@ -59,14 +59,17 @@ class EditorEchoTests(unittest.TestCase):
 
     def test_workspace_command_is_not_timed_while_completion_or_old_editor_is_visible(self):
         screen = PROBE.Screen(rows=5, cols=80)
-        screen.cells[1][2:16] = list("/ctg-workspace")
+        origin = (1, 2)
+        screen.cells[0][20:34] = list("/ctg-workspace")
         screen.cells[2][2:20] = list("Carthagent commands")
-        self.assertFalse(PROBE.workspace_command_staged(screen))
+        self.assertFalse(PROBE.workspace_command_staged(screen, origin))
         screen.cells[2][2:20] = list("                  ")
         screen.cells[3][2:20] = list(PROBE.NATIVE_EDITOR_PLACEHOLDER)
-        self.assertFalse(PROBE.workspace_command_staged(screen))
+        self.assertFalse(PROBE.workspace_command_staged(screen, origin))
         screen.cells[3][2:20] = list("                  ")
-        self.assertTrue(PROBE.workspace_command_staged(screen))
+        self.assertFalse(PROBE.workspace_command_staged(screen, origin))
+        screen.cells[1][2:16] = list("/ctg-workspace")
+        self.assertTrue(PROBE.workspace_command_staged(screen, origin))
 
 
 if __name__ == "__main__":
