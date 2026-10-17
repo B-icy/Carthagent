@@ -2,7 +2,7 @@
 /** Offline real-host test. Uses a disposable HOME and never discovers the user's service. */
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm, readFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFile, spawn } from 'node:child_process';
 import { createServer } from 'node:http';
@@ -10,13 +10,29 @@ import { once } from 'node:events';
 import { randomBytes } from 'node:crypto';
 import { promisify } from 'node:util';
 import { OpenCode } from '@opencode/client';
-import { resolveOpenCode } from '../lib/opencode/runtime.mjs';
+import { resolveOpenCode, runtimeIdentity as getRuntimeIdentity } from '../lib/opencode/runtime.mjs';
+import { loadNativeTestRuntime, preflightNativeTestRuntimeArtifact } from './native-runtime-identity.mjs';
 import { cancelSession } from '../lib/opencode/service.mjs';
 import { runHeadless } from '../lib/opencode/headless.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const plugin = resolve(process.argv[2] ?? join(root, 'plugins/carthagent'));
-const binary = await resolveOpenCode();
+const runtimeOptions = {};
+if (process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST) {
+  runtimeOptions.runtimeReleaseManifestPath = process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST;
+}
+if (process.env.CTG_TEST_RUNTIME_ARTIFACT_ROOT) {
+  await preflightNativeTestRuntimeArtifact({
+    ownedRoot: process.env.CTG_TEST_RUNTIME_ARTIFACT_ROOT,
+    expectedManifestPath: process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST,
+  });
+  runtimeOptions.acquireOwnedRuntime = async () => process.env.CTG_TEST_RUNTIME_ARTIFACT_ROOT;
+}
+const binary = await resolveOpenCode(runtimeOptions);
+const productionIdentity = await getRuntimeIdentity(binary, runtimeOptions);
+const ownedRoot = productionIdentity.kind === 'ctg-owned' ? dirname(dirname(dirname(binary))) : undefined;
+const expectedManifest = ownedRoot ? JSON.parse(await readFile(process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST ?? join(root, 'lib/opencode/runtime-release.json'), 'utf8')) : undefined;
+const runtimeIdentity = await loadNativeTestRuntime({ binary, ownedRoot, expectedManifest });
 const execFileAsync = promisify(execFile);
 const temp = await mkdtemp(join(tmpdir(), 'ctg-host-smoke-'));
 const password = randomBytes(24).toString('hex');
@@ -167,7 +183,7 @@ try {
   });
   const request = { signal: AbortSignal.timeout(90_000) };
   const info = await client.server.info(request);
-  assert.equal(info.version, '2.0.32');
+  assert.equal(info.version, runtimeIdentity.runtimeVersion);
   const isolationFetch = async (url, init) => {
     const response = await fetch(url, init);
     if (new URL(url).pathname === '/api/config') {
@@ -238,7 +254,8 @@ try {
   const health = await client.rpc.call({
     rpcID: 'carthagent', method: 'health', input: {}, location: { directory: cwd },
   }, request);
-  console.log(JSON.stringify({ version: info.version, plugin: nativePlugin, health }, null, 2));
+  assert.equal(health.output.hostVersion, runtimeIdentity.runtimeVersion);
+  console.log(JSON.stringify({ version: info.version, compatibilityVersion: runtimeIdentity.compatibilityVersion, plugin: nativePlugin, health }, null, 2));
   assert.equal(health.output.directory, cwd);
   assert.equal(health.output.protocol, 1);
   const echo = await client.rpc.call({
@@ -357,7 +374,7 @@ try {
   await assert.rejects(archiveCall('search', { query: '   ' }), (error) => error.type === 'archive_error');
   await assert.rejects(archiveCall('list', { limit: 101 }), (error) => error.type === 'rpc.invalid_input');
   assert.equal(await readFile(join(legacy, 'legacy.jsonl'), 'utf8'), '{"type":"session","id":"legacy-fixture"}\n{"type":"message","message":{"role":"user","content":"fixture needle"}}\nmalformed\n');
-  console.log('Native plugin, archive RPC methods, output schemas, and declared failures passed against OpenCode 2.0.32.');
+  console.log(`Native plugin, archive RPC methods, output schemas, and declared failures passed against OpenCode ${runtimeIdentity.runtimeVersion} (compatibility ${runtimeIdentity.compatibilityVersion}).`);
 } catch (error) {
   console.error(JSON.stringify({ fixtureRequests }));
   console.error(output.replaceAll(password, '[redacted]'));
