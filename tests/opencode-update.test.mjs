@@ -44,6 +44,7 @@ test('force remains bound to the validated version and command', async () => {
   await runNativeUpdate({
     args: ['--force'], io: noopIo, currentVersion: '1.3.0',
     fetchLatestRelease: async () => ({ release }), detectInstallMethod: () => 'npm',
+    platform: 'linux',
     runCommand: async (argv, options) => { calls.push({ argv, options }); return { code: 0, output: '' }; },
   });
   assert.deepEqual(calls[0].argv, ['npm', 'install', '-g', '--install-links=true', release.installSpec]);
@@ -68,14 +69,16 @@ test('clone update refuses dirty changes and preserves the dirty file', () => te
   git(['clone', remote, clone], base);
   git(['config', 'user.email', 'test@example.invalid'], clone);
   git(['config', 'user.name', 'Test'], clone);
-  writeFileSync(join(clone, 'untracked-user-data.txt'), 'user work\n');
+  writeFileSync(join(clone, 'tracked.txt'), 'user modification\n');
+  writeFileSync(join(clone, 'untracked-user-data.txt'), 'user data\n');
   let commands = 0;
   await assert.rejects(runNativeUpdate({
     io: noopIo, root: clone, currentVersion: '1.0.0', fetchLatestRelease: async () => ({ release }),
     detectInstallMethod: () => 'clone', runCommand: async (...args) => { commands++; return (await import('../lib/opencode/update.mjs')).runUpdateCommand(...args); },
   }), /uncommitted changes/);
   assert.equal(commands, 1);
-  assert.equal(readFileSync(join(clone, 'untracked-user-data.txt'), 'utf8'), 'user work\n');
+  assert.equal(readFileSync(join(clone, 'tracked.txt'), 'utf8'), 'user modification\n');
+  assert.equal(readFileSync(join(clone, 'untracked-user-data.txt'), 'utf8'), 'user data\n');
 }));
 
 test('clone update fetches without force and checks out the exact release tag', () => tempDir(async base => {
@@ -179,7 +182,7 @@ test('clone update rejects an origin-missing release tag without checking out a 
     },
   }), /git fetch v1\.2\.0 failed/);
   assert.equal(git(['rev-parse', 'HEAD'], clone), head);
-  assert.equal(calls.some(argv => argv[0] === 'npm'), false);
+  assert.equal(calls.every(argv => argv[0] === 'git'), true);
 }));
 
 test('failed update command stops later steps and includes bounded failure output', async () => {
@@ -208,6 +211,7 @@ test('a successful code with a timed-out global-install retry remains a failure'
   await assert.rejects(runNativeUpdate({
     io: noopIo, currentVersion: '1.0.0', fetchLatestRelease: async () => ({ release }),
     detectInstallMethod: () => 'npm', cleanStaleInstall: () => ['/temporary/stale'],
+    platform: 'linux',
     runCommand: async argv => {
       calls.push(argv);
       if (argv[0] === 'npm' && argv[1] === 'install') return ++attempt === 1
@@ -222,5 +226,17 @@ test('a successful code with a timed-out global-install retry remains a failure'
 test('Windows npm command uses cmd.exe argv without a shell string', () => {
   assert.deepEqual(npmUpdateArgv(['install', '-g', 'github:B-icy/Carthagent#v1.2.0'], 'win32'), [
     'cmd.exe', '/d', '/s', '/c', 'npm', 'install', '-g', 'github:B-icy/Carthagent#v1.2.0',
+  ]);
+});
+
+test('runNativeUpdate passes npm operations through the Windows cmd shim', async () => {
+  const calls = [];
+  await runNativeUpdate({
+    io: noopIo, currentVersion: '1.0.0', fetchLatestRelease: async () => ({ release }),
+    detectInstallMethod: () => 'npm', platform: 'win32',
+    runCommand: async (argv, options) => { calls.push({ argv, options }); return { code: 0, output: '' }; },
+  });
+  assert.deepEqual(calls[0].argv, [
+    'cmd.exe', '/d', '/s', '/c', 'npm', 'install', '-g', '--install-links=true', release.installSpec,
   ]);
 });
