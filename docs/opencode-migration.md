@@ -114,6 +114,10 @@ intentional delay inside the timed interval. The measurement is an Enter-to-pars
 PTY-screen proxy, including terminal read/parse overhead, not a compositor
 presentation timestamp. A controlled, alternating baseline/CTG comparison remains
 pending; this diagnostic neither establishes acceptance nor attributes latency to CTG.
+The prepared ABBA runner at `08d8bf8` remains under changes requested: its CTG
+staging omits required runtime files, it does not verify observed plugin activation
+or baseline absence, artifact identities are missing, and failed conditions do not
+propagate a failing runner exit status. Correct these before the controlled run.
 Short idle observations showed no PTY output; they do not establish long-running
 memory bounds.
 
