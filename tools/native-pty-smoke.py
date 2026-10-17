@@ -54,7 +54,6 @@ def main():
         sent = False
         completion_accepted = False
         submitted = False
-        accepted_output_length = 0
         try:
             while time.monotonic() - started < 30:
                 if child.poll() is not None:
@@ -71,18 +70,10 @@ def main():
                     os.write(master, args.command.encode())
                     sent = True
                 # The completion row is evidence that the TUI plugin has
-                # registered its command. First Enter accepts that row; only
-                # submit a second Enter once the editor still shows our command.
+                # registered its command. Enter submits the highlighted slash
+                # command; inspect only output produced after that submission.
                 if sent and not completion_accepted and args.completion.encode() in output:
-                    # Enter selects and runs the registered slash completion
-                    # when the command remains a palette row. Require a fresh
-                    # terminal render before confirming Enter for execution.
-                    os.write(master, b'\r')
                     completion_accepted = True
-                    accepted_output_length = len(output)
-                if completion_accepted and not submitted and len(output) > accepted_output_length:
-                    if args.command.encode() not in output:
-                        raise RuntimeError('Slash completion was accepted but the editor no longer contains the requested command')
                     os.write(master, b'\r')
                     submitted = True
                     output.clear()
