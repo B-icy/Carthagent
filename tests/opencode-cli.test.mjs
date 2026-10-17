@@ -326,6 +326,84 @@ test('native runtime rejects budgets that the active delivery plugin cannot enfo
   }
 });
 
+test('native run rejects only options without an enforcement contract and persists framing metadata', async t => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-session-options-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const service = { url: 'http://127.0.0.1:1', headers: {} };
+  const sessions = [];
+  const runtime = await createOpenCodeCliRuntime({ cwd, native: {
+    runtime: {}, service: { ensureService: async () => service },
+    headless: { runHeadless: async (_service, _cwd, _prompt, options) => {
+      sessions.push(options.session.metadata);
+      return { session: { id: 'ses_options' }, outcome: 'succeeded', terminal: true, accepted: { id: 'a' }, messages: [
+        { type: 'user', id: 'a' }, { type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'ok' }] }, { type: 'idle', outcome: 'succeeded' },
+      ] };
+    } },
+    clientFactory: async () => ({ session: { get: async () => ({ id: 'ses_options', outcome: 'succeeded' }), context: async () => [
+      { type: 'user', id: 'a' }, { type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'ok' }] }, { type: 'idle', outcome: 'succeeded' },
+    ] } }),
+  } });
+  await assert.rejects(runtime.run({ mode: 'headless', options: { prompt: 'task', maxTools: '2' }, prompt: 'task' }), /not supported until the active native delivery plugin enforces session budgets/);
+  await assert.rejects(runtime.run({ mode: 'headless', options: { prompt: 'task', delivery: false }, prompt: 'task' }), /no-delivery is not supported/);
+  await assert.rejects(runtime.run({ mode: 'headless', options: { prompt: 'task', strict: false }, prompt: 'task' }), /no-strict is not supported/);
+  assert.equal(await runtime.run({ mode: 'headless', options: { prompt: 'task', autoFraming: false }, prompt: 'task' }), 0);
+  assert.deepEqual(sessions[0]['carthagent.options'], { guide: false });
+});
+
+test('native run resolves and persists the enforced codegraph index cap per session', async t => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-codegraph-option-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  let settings;
+  const runtime = await createOpenCodeCliRuntime({ cwd, stdout: { write() {} }, native: {
+    runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) },
+    headless: { runHeadless: async (_service, _cwd, _prompt, options) => {
+      settings = options.session.metadata['carthagent.options'];
+      return { session: { id: 'ses_codegraph' }, outcome: 'succeeded', terminal: true, accepted: { id: 'a' }, messages: [
+        { type: 'user', id: 'a' }, { type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'ok' }] }, { type: 'idle', outcome: 'succeeded' },
+      ] };
+    } },
+    clientFactory: async () => ({ session: { get: async () => ({ id: 'ses_codegraph', outcome: 'succeeded' }), context: async () => [
+      { type: 'user', id: 'a' }, { type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'ok' }] }, { type: 'idle', outcome: 'succeeded' },
+    ] } }),
+  } });
+  assert.equal(await runtime.run({ mode: 'headless', options: { prompt: 'index', codegraphMaxFiles: '300' }, prompt: 'index' }), 0);
+  assert.equal(settings.codegraphMaxFiles, 300);
+});
+
+test('resumed native sessions merge explicit launcher options into their own workspace metadata', async t => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-session-options-resume-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const updates = [];
+  const runtime = await createOpenCodeCliRuntime({ cwd, stdout: { write() {} }, native: {
+    runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) },
+    headless: { runHeadless: async (_service, _cwd, _prompt, options) => {
+      assert.equal(options.sessionID, 'ses_existing');
+      return { session: { id: 'ses_existing' }, outcome: 'succeeded', terminal: true, accepted: { id: 'accepted' }, messages: [
+        { type: 'user', id: 'accepted' }, { type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'done' }] }, { type: 'idle', outcome: 'succeeded' },
+      ] };
+    } },
+    clientFactory: async () => ({ session: {
+      get: async () => ({ id: 'ses_existing', location: { directory: cwd }, metadata: { keep: 'yes', 'carthagent.options': { maxTools: 12, workflow: 'strict' } } }),
+      update: async input => updates.push(input),
+      context: async () => [
+        { type: 'user', id: 'accepted' }, { type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'done' }] }, { type: 'idle', outcome: 'succeeded' },
+      ],
+    } }),
+  } });
+  assert.equal(await runtime.run({ mode: 'headless', options: { prompt: 'continue', session: 'ses_existing', autoFraming: false }, prompt: 'continue' }), 0);
+  assert.equal(updates.length, 1);
+  assert.deepEqual(updates[0].metadata, { keep: 'yes', 'carthagent.options': { maxTools: 12, workflow: 'strict', guide: false } });
+});
+
 test('native login uses OpenCode integration OAuth status and completion lifecycle', async () => {
   const calls = [];
   const service = { url: 'http://127.0.0.1:1', headers: {} };
@@ -505,11 +583,29 @@ test('native named-session logout revokes only that session and leaves the curre
   assert.deepEqual(calls, [['revoke', { session: 'ship-session-2' }]]);
 });
 
-test('native scripted demo launches the legacy-only flow fail-closed without starting OpenCode', async () => {
-  const runtime = await createOpenCodeCliRuntime({ native: {
-    runtime: {}, service: {}, headless: {},
+test('native demo runs a clearly labeled offline fixture without starting OpenCode or touching the project', async t => {
+  const { mkdtempSync, readFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-demo-project-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const calls = [];
+  const output = ioCapture();
+  const runtime = await createOpenCodeCliRuntime({ cwd, io: output.io, native: {
+    runtime: {}, service: { ensureService: async () => { throw new Error('offline demo must not start OpenCode'); } }, headless: {},
+    demoExecute: async (argv, options) => {
+      calls.push({ argv, options, app: readFileSync(join(options.cwd, 'app.mjs'), 'utf8') });
+      return { code: 0, output: '2 tests passed', timedOut: false, cancelled: false };
+    },
   } });
-  await assert.rejects(runtime.command({ command: 'demo', args: [] }), /legacy TUI RPC protocol/);
+  assert.equal(await runtime.command({ command: 'demo', args: [] }), 0);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].argv.at(-1), 'test/app.test.mjs');
+  assert.notEqual(calls[0].options.cwd, cwd);
+  assert.match(calls[0].app, /export function summarize/);
+  assert.match(output.output.stdout.join('\n'), /offline demo/i);
+  assert.match(output.output.stdout.join('\n'), /no provider\/API calls/);
+  assert.match(output.output.stdout.join('\n'), /disposable demo fixture/);
 });
 
 test('native update installs the validated package spec, and fails closed for source clones', async () => {
@@ -556,6 +652,47 @@ test('native update check reports an available release without invoking the inst
   assert.equal(await runtime.command({ command: 'update', args: ['--check'] }), 0);
   assert.match(output.output.stdout[0], /1\.0\.4 is available/);
   assert.deepEqual(calls, []);
+});
+
+test('native updater rejects an independently supplied release ref even with --force', async () => {
+  for (const release of [
+    { version: '1.0.4', tag: 'main', installSpec: 'github:B-icy/Carthagent#main' },
+    { version: '1.0.4', tag: 'v1.0.3', installSpec: 'github:B-icy/Carthagent#v1.0.3' },
+    { version: '1.0.4', tag: 'v1.0.4%2Fmain', installSpec: 'github:B-icy/Carthagent#v1.0.4%2Fmain' },
+  ]) {
+    const installs = [];
+    const runtime = await createOpenCodeCliRuntime({ cwd: '/package/root', native: {
+      runtime: {}, service: {}, headless: {}, packageRoot: '/package/root',
+      updateApi: {
+        fetchLatestRelease: async () => ({ release }),
+        packageVersion: () => '1.0.4',
+        compareVersions: (left, right) => left.localeCompare(right, undefined, { numeric: true }),
+        detectInstallMethod: () => 'npm',
+      },
+      runCommand: async (...args) => { installs.push(args); return { code: 0 }; },
+    } });
+    await assert.rejects(runtime.command({ command: 'update', args: ['--force'] }), /does not identify a valid, version-matched/);
+    assert.deepEqual(installs, []);
+  }
+});
+
+test('native updater force-reinstalls only the canonical validated release tag once', async () => {
+  const installs = [];
+  const runtime = await createOpenCodeCliRuntime({ cwd: '/package/root', native: {
+    runtime: {}, service: {}, headless: {}, packageRoot: '/package/root',
+    updateApi: {
+      fetchLatestRelease: async () => ({ release: { version: '1.0.4', tag: 'v1.0.4', installSpec: 'github:B-icy/Carthagent#v1.0.4' } }),
+      packageVersion: () => '1.0.4',
+      compareVersions: (left, right) => left.localeCompare(right, undefined, { numeric: true }),
+      detectInstallMethod: () => 'npm',
+    },
+    runCommand: async (argv, options) => { installs.push({ argv, options }); return { code: 0, timedOut: false, cancelled: false, output: '' }; },
+  } });
+  assert.equal(await runtime.command({ command: 'update', args: ['--force'] }), 0);
+  assert.deepEqual(installs, [{
+    argv: ['npm', 'install', '-g', '--install-links=true', 'github:B-icy/Carthagent#v1.0.4'],
+    options: { cwd: '/package/root', timeoutSeconds: 600 },
+  }]);
 });
 
 test('concrete headless runtime returns failure for failed native session outcome', async t => {
