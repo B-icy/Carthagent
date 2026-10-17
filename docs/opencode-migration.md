@@ -99,6 +99,8 @@ passing domain fixture alone does not satisfy these gates:
 | `test:native-pty` | Installed production status, workspace, help, and CTG compact precedence passed after plugin readiness and slash-completion confirmation |
 | `test:native-package` | Clean production tarball at integration `2b300c0` passed host, controls, outcomes, product reconnect, runtime, tasks, review, and PTY gates with shared renderer resolution; real native SWE passed its separate evaluation-guard fixture, pending composed CTG delivery coverage |
 | Expanded installed gate at `fdf3aa8` | Host, controls, and outcomes passed; product probe failed because the new delivery RPC output schema uses a `pattern` keyword rejected by the pinned host. Subsequent probes did not run; #160 correction and fresh installed proof are required |
+| `test:native-report` at `d07f4c0` | Production RPC passes real-host output validation, freshness, false-verified rejection, and session ownership after #160's `236e93c` schema fix; active DTO required-field tightening and fresh installed proof remain pending |
+| Composed SWE at `d07f4c0` | Run succeeded and external final test passed, but only one native shell call was recorded: the fixture incorrectly accepted the failing baseline's “tests 1” text as success. This does **not** prove post-edit native verification; #153 must require baseline shell failure → edit → a second successful shell check → final response |
 | `test:native-performance` | Cached workspace RPC: 30 samples, p95 64.8 ms, maximum 181.6 ms; input and session-switch latency require separate terminal measurements |
 
 PR #157 adds a real-terminal measurement harness. Initial input measurements
