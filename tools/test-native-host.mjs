@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /** Offline real-host test. Uses a disposable HOME and never discovers the user's service. */
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawn } from 'node:child_process';
@@ -19,13 +19,16 @@ let output = '';
 try {
   const cwd = join(temp, 'project');
   const config = join(temp, 'config/opencode');
+  const legacy = join(temp, 'home/.carthagent/agent/sessions');
   await Promise.all([
     mkdir(cwd),
     mkdir(config, { recursive: true }),
     mkdir(join(temp, 'home'), { recursive: true }),
     mkdir(join(temp, 'appdata'), { recursive: true }),
     mkdir(join(temp, 'localappdata'), { recursive: true }),
+    mkdir(legacy, { recursive: true }),
   ]);
+  await writeFile(join(legacy, 'legacy.jsonl'), '{"type":"session","id":"legacy-fixture"}\n{"type":"message","message":{"role":"user","content":"fixture needle"}}\nmalformed\n');
   await writeFile(join(config, 'opencode.json'), JSON.stringify({
     plugins: [plugin], update: 'disable',
   }));
@@ -88,7 +91,27 @@ try {
   await assert.rejects(client.rpc.call({
     rpcID: 'carthagent', method: 'health', input: { unexpected: true }, location: { directory: cwd },
   }, request));
-  console.log('Native plugin and validated RPC passed against OpenCode 2.0.32.');
+  const archiveCall = (method, input) => client.rpc.call({
+    rpcID: 'carthagent.archive', method, input, location: { directory: cwd },
+  }, request);
+  const listed = await archiveCall('list', {});
+  assert.equal(listed.output.total, 1);
+  const archiveID = listed.output.items[0].id;
+  assert.match(archiveID, /^[a-f0-9]{64}$/);
+  assert.equal('path' in listed.output.items[0], false);
+  const searched = await archiveCall('search', { query: 'needle' });
+  assert.equal(searched.output.items[0].id, archiveID);
+  const transcript = await archiveCall('read', { id: archiveID });
+  assert.equal(transcript.output.archiveOnly, true);
+  assert.equal(transcript.output.records.length, 2);
+  assert.deepEqual(transcript.output.malformedLines, [{ line: 3 }]);
+  const exported = await archiveCall('export', { id: archiveID, format: 'jsonl' });
+  assert.match(exported.output.content, /legacy-fixture/);
+  await assert.rejects(archiveCall('read', { id: join(temp, 'outside.jsonl') }), (error) => error.type === 'archive_error');
+  await assert.rejects(archiveCall('search', { query: '   ' }), (error) => error.type === 'archive_error');
+  await assert.rejects(archiveCall('list', { limit: 101 }), (error) => error.type === 'rpc.invalid_input');
+  assert.equal(await readFile(join(legacy, 'legacy.jsonl'), 'utf8'), '{"type":"session","id":"legacy-fixture"}\n{"type":"message","message":{"role":"user","content":"fixture needle"}}\nmalformed\n');
+  console.log('Native plugin, archive RPC methods, output schemas, and declared failures passed against OpenCode 2.0.32.');
 } catch (error) {
   console.error(output.replaceAll(password, '[redacted]'));
   throw error;

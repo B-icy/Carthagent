@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createJiti } from 'jiti';
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, isAbsolute } from 'node:path';
 const jiti = createJiti(import.meta.url);
 const { registerArchive } = await jiti.import('../plugins/carthagent/src/server/archive-rpc.ts');
 
@@ -16,7 +16,7 @@ test('archive RPC uses opaque IDs, confines roots, skips symlinks, and never cha
   let methods;
   const dispose = await registerArchive({ rpc: { async register(contract, handlers) { assert.equal(contract.id, 'carthagent.archive'); methods = handlers; return { dispose() {} }; } } }, { archiveRoots: [trusted] });
   t.after(dispose);
-  const call = { signal: new AbortController().signal };
+  const call = { signal: new AbortController().signal, error(_type, message, data) { return Object.assign(new Error(message), data); } };
   const listing = await methods.list({}, call);
   assert.equal(listing.total, 1);
   assert.doesNotMatch(JSON.stringify(listing), /legacy\.jsonl|trusted/);
@@ -30,7 +30,7 @@ test('archive RPC uses opaque IDs, confines roots, skips symlinks, and never cha
   assert.equal(transcript.records.length, 2);
   assert.deepEqual(transcript.malformedLines, [{ line: 3 }]);
   assert.equal((await methods.export({ id, format: 'jsonl' }, call)).content, bytes);
-  await assert.rejects(methods.read({ id: join(outside, 'escape.jsonl') }, call), /ID was not found/);
+  assert.equal((await methods.read({ id: join(outside, 'escape.jsonl') }, call)).code, 'not_found');
   assert.equal(readFileSync(source, 'utf8'), bytes);
 });
 
@@ -40,8 +40,28 @@ test('archive RPC validates host-configured roots and bounds pages and query inp
     await assert.rejects(registerArchive({ rpc: { register() {} } }, { archiveRoots: ['relative-root'] }), /normalized absolute/);
     let methods;
     await registerArchive({ rpc: { async register(_contract, handlers) { methods = handlers; return { dispose() {} }; } } }, { archiveRoots: [root] });
-    const call = { signal: new AbortController().signal };
-    await assert.rejects(methods.list({ limit: 101 }, call), /page limit/);
-    await assert.rejects(methods.search({ query: 'x'.repeat(201) }, call), /1 to 200/);
+    const call = { signal: new AbortController().signal, error(_type, message, data) { return Object.assign(new Error(message), data); } };
+    assert.equal((await methods.list({ limit: 101 }, call)).code, 'invalid_request');
+    assert.equal((await methods.search({ query: 'x'.repeat(201) }, call)).code, 'invalid_request');
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('archive root validation uses platform-native absolute paths', async t => {
+  if (process.platform !== 'win32') { t.skip('drive-root validation is exercised on Windows CI'); return; }
+  const root = mkdtempSync(join(tmpdir(), 'ctg archive windows ')); t.after(() => rmSync(root, { recursive: true, force: true }));
+  assert.equal(isAbsolute(root), true);
+  let methods;
+  await registerArchive({ rpc: { async register(_contract, handlers) { methods = handlers; return { dispose() {} }; } } }, { archiveRoots: [root] });
+  assert.equal((await methods.list({}, { signal: new AbortController().signal })).total, 0);
+});
+
+test('archive refuses oversized transcripts before parsing and honors cancellation', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'ctg archive oversize ')); t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, 'large.jsonl'), Buffer.alloc(4_000_001));
+  let methods;
+  await registerArchive({ rpc: { async register(_contract, handlers) { methods = handlers; return { dispose() {} }; } } }, { archiveRoots: [root] });
+  const call = { signal: new AbortController().signal, error(_type, message, data) { return Object.assign(new Error(message), data); } };
+  assert.equal((await methods.list({}, call)).code, 'limit_exceeded');
+  const canceled = { signal: AbortSignal.abort() };
+  await assert.rejects(methods.list({}, canceled), /abort/i);
 });
