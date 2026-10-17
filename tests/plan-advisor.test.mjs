@@ -44,19 +44,34 @@ test('timeout, malformed/oversized data, missing key and HTTP failures do not gr
   }
 });
 test('real HTTP transport handles streamed responses and aborts delayed bodies', async t => {
+  let resolveSlowResponseClosed;
+  const slowResponseClosed = new Promise(resolve => { resolveSlowResponseClosed = resolve; });
   const server = createServer((req, res) => {
     req.resume();
     res.writeHead(200, { 'content-type': 'application/json' });
-    if (req.url === '/slow') { res.write('{'); return; }
+    if (req.url === '/slow') {
+      res.on('close', resolveSlowResponseClosed);
+      res.write('{');
+      return;
+    }
     const body = JSON.stringify(payload());
     res.write(body.slice(0, 30)); res.end(body.slice(30));
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => { server.closeAllConnections(); server.close(); });
   const url = `http://127.0.0.1:${server.address().port}`;
-  const advisor = path => createJevAdvisor({ apiKey: 'fixture', timeoutMs: 250, fetchImpl: (_url, options) => fetch(url + path, options) });
-  assert.equal((await advisePlan({}, { advisor: advisor('/') })).mode, 'shadow');
-  assert.equal((await advisePlan({}, { advisor: advisor('/slow') })).mode, 'unavailable');
+  const advisor = (path, timeoutMs) => createJevAdvisor({ apiKey: 'fixture', timeoutMs, fetchImpl: (_url, options) => fetch(url + path, options) });
+  // Leave room for local server startup under suite load; keep the intentional
+  // hung-body request independently bounded so it still exercises abort.
+  assert.equal((await advisePlan({}, { advisor: advisor('/', 5000) })).mode, 'shadow');
+  assert.equal((await advisePlan({}, { advisor: advisor('/slow', 250) })).mode, 'unavailable');
+  let closeTimeout;
+  try {
+    await Promise.race([
+      slowResponseClosed,
+      new Promise((_, reject) => { closeTimeout = setTimeout(() => reject(Error('Timed-out response was not closed by abort')), 1000); }),
+    ]);
+  } finally { clearTimeout(closeTimeout); }
 });
 
 test('shadow evaluation reports false negatives, false positives, Brier and unknown costs honestly', async () => {
