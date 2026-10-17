@@ -75,14 +75,45 @@ The runtime resolver validates every manifest contract field, the native
 platform, executable checksum, and exact detached `--version` before launch.
 It does not search PATH or silently fall back when the opt-in is selected.
 
-The CTG workflow in this branch is a proposal, not release evidence: it builds
-on native runners and can attach platform archives to an existing release, but
-it has not been run or approved. There is no signed/attested end-user download
-channel, and no default-selection or normal-install behavior is switched.
-Distribution is therefore not complete until the workflow is reviewed, run
-under the release environment, publishes the patch/recipe and matching
-per-platform runtime artifacts plus checksums/manifest, and the installed
-package opt-in is tested against those published artifacts.
+Release sequencing is deliberately split across two manual workflows. First,
+build and review the immutable five-asset set, package the final trusted runtime
+manifest, tag the exact package commit, create a GitHub draft release, and upload
+the identical reviewed assets. Then run `Accept draft runtime release` for
+that exact tag. The final acceptance workflow must be dispatched from the
+approved `main` branch. Before checking out the release tag or executing any
+tag-sourced verifier, a trusted inline bootstrap reads `package.json` from
+`origin/main`, checks the exact version tag, and verifies that the peeled
+annotated or lightweight tag commit is an ancestor of `origin/main`. The same
+main/tag ancestry and exact-SHA relationship is checked again after acceptance.
+It requires the release to remain a draft with all five assets, runs `npm ci`
+and full `npm run quality`, and runs the current full,
+non-focused installed-package gate with `CTG_REQUIRE_OWNED_RUNTIME=1` and the
+normal default resolver. This existing gate is not, by itself, the final
+installed release acceptance: the final acceptance also requires the owned
+host-controls test (`test-owned-host-controls.mjs`) and the glyph and
+clear/reopen probes from reviewed heads to be composed into the gate. Those
+additional controls/glyph/clear evidence gates remain pending; this workflow
+does not copy or run unreviewed probe drafts. The workflow has only
+`contents: read`: GitHub documents this
+permission for authenticated release-list reads. The metadata checks are GETs
+only. The acceptance step clears `GH_TOKEN` and passes `GITHUB_TOKEN` only as
+`CTG_RUNTIME_GITHUB_TOKEN` for asset reads. It never publishes the GitHub
+release or calls the control plane. It checks the same draft ID and tag target
+again after acceptance. GitHub's draft-visibility rule says draft releases are
+listed only to callers with push access; therefore the workflow run itself must
+confirm that the repository's built-in read token can see this draft. If GitHub
+returns no exact draft, the gate fails closed before acceptance; it does not
+fall back to wider write permission or another credential.
+
+Only after that gate succeeds and the release owner approves should the release
+be published. The existing `Release` workflow is the post-publication gate: it
+requires a published release, performs the full installed acceptance and
+five-asset manifest verification with `CTG_RUNTIME_GITHUB_TOKEN` explicitly
+empty (proving the ordinary anonymous public resolver path), and only then
+publishes the control-plane manifest. Neither workflow creates a release,
+uploads assets, publishes a release, or dispatches another workflow. This
+sequence is proposed automation until reviewed and run against the final
+release artifacts.
 
 When a release is still a GitHub draft, CI may opt in to authenticated asset
 retrieval by setting `CTG_RUNTIME_GITHUB_TOKEN` for the resolver/verifier

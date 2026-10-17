@@ -1,0 +1,133 @@
+name: Accept draft runtime release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing v<package-version> GitHub draft release with the five reviewed runtime assets
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  accept-draft:
+    runs-on: ubuntu-latest
+    outputs:
+      tested_sha: ${{ steps.precheck.outputs.tested_sha }}
+      release_id: ${{ steps.precheck.outputs.release_id }}
+    steps:
+      # This trusted inline bootstrap runs before checkout or any script from
+      # the requested tag. Keep it self-contained and do not replace it with a
+      # verifier shipped in the release commit.
+      - name: Require main dispatch and a release tag descended from origin/main
+        id: trusted-ancestry
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          TRUSTED_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != refs/heads/main ]]; then
+            echo "::error::Dispatch this final draft acceptance workflow from refs/heads/main." >&2
+            exit 1
+          fi
+          trusted_repo="$(mktemp -d)"
+          trap 'rm -rf "$trusted_repo"' EXIT
+          git -C "$trusted_repo" init -q
+          git -C "$trusted_repo" remote add origin "$TRUSTED_REPOSITORY_URL"
+          git -C "$trusted_repo" fetch --no-tags origin \
+            +refs/heads/main:refs/remotes/origin/main
+          trusted_version="$(git -C "$trusted_repo" show origin/main:package.json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).version))')"
+          if [[ "$RELEASE_TAG" != "v${trusted_version}" ]]; then
+            echo "::error::Release tag must be exactly v${trusted_version}." >&2
+            exit 1
+          fi
+          git -C "$trusted_repo" fetch --no-tags origin \
+            "+refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+          tag_sha="$(git -C "$trusted_repo" rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
+          main_sha="$(git -C "$trusted_repo" rev-parse refs/remotes/origin/main^{commit})"
+          if ! git -C "$trusted_repo" merge-base --is-ancestor "$tag_sha" "$main_sha"; then
+            echo "::error::Release tag ${RELEASE_TAG} must point to a commit descended from approved origin/main." >&2
+            exit 1
+          fi
+          echo "sha=${tag_sha}" >> "$GITHUB_OUTPUT"
+          echo "main_sha=${main_sha}" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          # Pin checkout to the commit the trusted inline bootstrap proved is
+          # already in origin/main; never resolve a mutable tag a second time.
+          ref: ${{ steps.trusted-ancestry.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Verify exact draft tag, target, assets, and checkout before acceptance
+        id: precheck
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: node tools/verify-draft-runtime-gate.mjs before "$RELEASE_TAG"
+      - name: Install dependencies
+        run: npm ci
+      - name: Run full repository quality gate
+        run: npm run quality
+      - name: Recheck the exact draft immediately before installed acceptance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          EXPECTED_SHA: ${{ steps.precheck.outputs.tested_sha }}
+          EXPECTED_RELEASE_ID: ${{ steps.precheck.outputs.release_id }}
+        run: node tools/verify-draft-runtime-gate.mjs recheck "$RELEASE_TAG"
+      - name: Run the current full non-focused installed-package gate through the default resolver
+        env:
+          CTG_REQUIRE_OWNED_RUNTIME: '1'
+          GH_TOKEN: ''
+          CTG_RUNTIME_GITHUB_TOKEN: ${{ github.token }}
+        run: npm run test:native-package
+      - name: Verify the release remains the same draft at the tested commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          EXPECTED_SHA: ${{ steps.precheck.outputs.tested_sha }}
+          EXPECTED_RELEASE_ID: ${{ steps.precheck.outputs.release_id }}
+        run: node tools/verify-draft-runtime-gate.mjs after "$RELEASE_TAG"
+      - name: Reverify release tag ancestry against approved main after acceptance
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          EXPECTED_SHA: ${{ steps.trusted-ancestry.outputs.sha }}
+          TRUSTED_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != refs/heads/main ]]; then
+            echo "::error::Final draft acceptance must be dispatched from refs/heads/main." >&2
+            exit 1
+          fi
+          trusted_repo="$(mktemp -d)"
+          trap 'rm -rf "$trusted_repo"' EXIT
+          git -C "$trusted_repo" init -q
+          git -C "$trusted_repo" remote add origin "$TRUSTED_REPOSITORY_URL"
+          git -C "$trusted_repo" fetch --no-tags origin \
+            +refs/heads/main:refs/remotes/origin/main
+          trusted_version="$(git -C "$trusted_repo" show origin/main:package.json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).version))')"
+          if [[ "$RELEASE_TAG" != "v${trusted_version}" ]]; then
+            echo "::error::Release tag must remain exactly v${trusted_version}." >&2
+            exit 1
+          fi
+          git -C "$trusted_repo" fetch --no-tags origin \
+            "+refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+          tag_sha="$(git -C "$trusted_repo" rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
+          main_sha="$(git -C "$trusted_repo" rev-parse refs/remotes/origin/main^{commit})"
+          if [[ "$tag_sha" != "$EXPECTED_SHA" ]]; then
+            echo "::error::Release tag moved during acceptance: expected ${EXPECTED_SHA}, found ${tag_sha}." >&2
+            exit 1
+          fi
+          if ! git -C "$trusted_repo" merge-base --is-ancestor "$tag_sha" "$main_sha"; then
+            echo "::error::Release tag ${RELEASE_TAG} is no longer an ancestor of approved origin/main." >&2
+            exit 1
+          fi
