@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, writeFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { aggregateConditionExit, assertCompletePluginSource, assertDependencyPackageIdentity, assertPluginCondition, assertPluginImportDependencies, assertSnapshotProvenance, verifySnapshotIdentity } from '../tools/native-paired-guards.mjs';
 
@@ -96,7 +96,9 @@ test('baseline absence rejects plugin-provided namespaces, not only exact id', (
 
 test('paired provenance requires the immutable source snapshot and pinned binary identity', () => {
   const valid = { binarySha256: 'a'.repeat(64), binaryVersion: '2.0.32', sourceCommit: 'f'.repeat(40),
-    sourceTree: 'e'.repeat(40), sourceDirty: 'false', sourceSnapshotSha256: 'b'.repeat(64),
+    sourceTree: 'e'.repeat(40), sourceDirty: false, sourceSnapshotSha256: 'b'.repeat(64),
+    sourceCheckoutDirtyStatus: '', sourceCheckoutStatusSha256: createHash('sha256').update('').digest('hex'),
+    sourceCheckoutDirty: false, harnessDirtyStatus: '', harnessDirty: false,
     packageLockSha256: 'c'.repeat(64), installedPackageLockSha256: 'c'.repeat(64), dependencyNodeModulesRealpath: '/pinned/node_modules',
     sourceComponentSha256: 'd'.repeat(64), harnessComponentSha256: 'e'.repeat(64),
     sourceArchiveSha256: 'f'.repeat(64),
@@ -110,6 +112,43 @@ test('paired provenance requires the immutable source snapshot and pinned binary
   assert.throws(() => verifySnapshotIdentity(valid, { ...valid, sourceSnapshotSha256: 'd'.repeat(64) }, { verifyArtifactFiles: false }), /Snapshot identity mismatch for sourceSnapshotSha256/);
   assert.throws(() => assertSnapshotProvenance({ ...valid, sourceSnapshotSha256: undefined }), /Missing provenance field/);
   assert.throws(() => assertSnapshotProvenance({ ...valid, binaryVersion: 'latest' }), /provenance is invalid/);
+  assert.throws(() => assertSnapshotProvenance({ ...valid, sourceDirty: 'false' }), /Checkout dirty-state provenance is invalid/);
+  assert.throws(() => assertSnapshotProvenance({ ...valid, sourceDirty: true }), /Source snapshot must be created from a clean immutable commit/);
+});
+
+test('actual manifest generator emits valid typed JSON for clean and dirty quoted checkout metadata', () => {
+  const dirtyStatus = ' M "quoted path\\name"\n?? file with newline\ninside\n';
+  const fields = {
+    createdAt: '2026-10-17T00:00:00.000Z', binary: '/pinned/opencode', binaryVersion: '2.0.32', binarySha256: 'a'.repeat(64),
+    sourceCheckout: '/tmp/source "checkout"\nline', sourceCheckoutHead: '1'.repeat(40), sourceCheckoutDirtyStatus: '',
+    sourceCheckoutStatusSha256: 'b'.repeat(64), sourceCommit: '2'.repeat(40), sourceTree: '3'.repeat(40),
+    sourceSnapshotTar: '/tmp/source.tar', sourceArchiveSha256: 'c'.repeat(64), executionSnapshotTar: '/tmp/execution.tar',
+    executionSnapshotSha256: 'd'.repeat(64), sourceSnapshotSha256: 'd'.repeat(64), packageLockSha256: 'e'.repeat(64),
+    installedPackageLockSha256: 'e'.repeat(64), dependencyNodeModulesRealpath: '/pinned/node_modules',
+    dependencyInstallSha256: 'f'.repeat(64), dependencyInstallRealpath: '/pinned/node_modules',
+    dependencyPackages: Object.fromEntries(['@opencode/cli', '@opencode/client', '@opencode/plugin'].map(name =>
+      [name, { version: '2.0.32', realpath: `/pinned/node_modules/${name}`, packageJsonSha256: 'a'.repeat(64), treeSha256: 'b'.repeat(64) }])),
+    harnessWorktree: '/tmp/harness', harnessCommit: '4'.repeat(40), harnessDirtyStatus: dirtyStatus,
+    harnessSourceManifestSha256: '5'.repeat(64), samplesPerRun: 30, sourceComponentSha256: '6'.repeat(64),
+    harnessComponentSha256: '7'.repeat(64),
+  };
+  const generator = join(dirname(new URL(import.meta.url).pathname), '../tools/native-paired-manifest.mjs');
+  for (const checkoutStatus of ['', dirtyStatus]) {
+    const input = { ...fields, sourceCheckoutDirtyStatus: checkoutStatus };
+    const generated = spawnSync(process.execPath, [generator], { input: JSON.stringify(input), encoding: 'utf8' });
+    assert.equal(generated.status, 0, generated.stderr);
+    const manifest = JSON.parse(generated.stdout);
+    assert.equal(manifest.sourceCheckoutDirtyStatus, checkoutStatus);
+    assert.equal(manifest.sourceCheckoutDirty, checkoutStatus.length > 0);
+    assert.equal(manifest.sourceCheckout, fields.sourceCheckout);
+    assert.equal(manifest.sourceCheckoutHead, fields.sourceCheckoutHead);
+    assert.equal(manifest.harnessDirtyStatus, dirtyStatus);
+    assert.equal(manifest.harnessDirty, true);
+    assert.equal(manifest.sourceDirty, false);
+    assert.equal(manifest.sourceCheckoutStatusSha256, createHash('sha256').update(checkoutStatus).digest('hex'));
+    assert.throws(() => assertSnapshotProvenance({ ...manifest, sourceCheckoutDirty: !manifest.sourceCheckoutDirty }), /Checkout dirty-state provenance is invalid/);
+    assert.equal(assertSnapshotProvenance(manifest), true);
+  }
 });
 
 test('artifact identity is tied to the archived selected git commit, not its mutable checkout', async () => {
@@ -155,7 +194,9 @@ test('artifact identity is tied to the archived selected git commit, not its mut
       assert.equal(assertCompletePluginSource(archived).sourceRoot, archived);
       const provenance = {
         binarySha256: 'a'.repeat(64), binaryVersion: '2.0.32', sourceCommit: commit, sourceTree: tree,
-        sourceDirty: 'false', sourceSnapshotSha256: snapshotHash,
+        sourceDirty: false, sourceSnapshotSha256: snapshotHash,
+        sourceCheckoutDirty: false, sourceCheckoutDirtyStatus: '',
+        sourceCheckoutStatusSha256: createHash('sha256').update('').digest('hex'), harnessDirty: false, harnessDirtyStatus: '',
         sourceArchiveSha256: snapshotHash,
         executionSnapshotTar: archive, executionSnapshotSha256: snapshotHash,
         sourceSnapshotTar: archive, binary: '/offline/opencode',

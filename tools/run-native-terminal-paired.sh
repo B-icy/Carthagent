@@ -26,7 +26,6 @@ if [[ ! "$source_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 source_root="$(cd "$source_root" && pwd)"
 source_head="$(git -C "$source_root" rev-parse HEAD)"
-source_dirty="$(git -C "$source_root" status --porcelain=v1)"
 if ! git -C "$source_root" cat-file -e "$source_commit^{commit}"; then
   printf 'Selected immutable source commit is unavailable: %s\n' "$source_commit" >&2
   exit 2
@@ -62,53 +61,19 @@ fi
 chmod 700 "$output_root"
 set -e
 
-work="$(mktemp -d /tmp/ctg-native-paired.XXXXXX)"
-runner="$work/runner"
-mkdir -p "$runner/source"
-source_archive="$output_root/source-$source_commit.tar"
-git -C "$source_root" archive --format=tar "$source_commit" > "$source_archive"
-source_archive_sha256="$(sha256sum "$source_archive" | awk '{print $1}')"
-tar -xf "$source_archive" -C "$runner/source"
-ln -s "$binary_node_modules" "$runner/source/node_modules"
-mkdir -p "$runner/source/plugins/carthagent/node_modules/@opencode"
-ln -s "$binary_node_modules/@opencode/plugin" "$runner/source/plugins/carthagent/node_modules/@opencode/plugin"
-cp "$repo_root/tools/native-fixture.mjs" "$repo_root/tools/seed-native-switch-fixture.mjs" \
-  "$repo_root/tools/native-paired-guards.mjs" "$repo_root/tools/test-native-terminal-performance.py" "$runner/source/tools/"
-execution_archive="$output_root/execution-snapshot.tar"
-tar -C "$runner/source" --exclude=node_modules --exclude='*/node_modules' --exclude='**/node_modules' -cf "$execution_archive" .
-source_snapshot_sha256="$(sha256sum "$execution_archive" | awk '{print $1}')"
-binary_sha256="$(sha256sum "$binary" | awk '{print $1}')"
-source_tree="$(git -C "$source_root" rev-parse "$source_commit^{tree}")"
-binary_version="$("$binary" --version | awk '{print $2}' | sed 's/^v//')"
-if [[ "$binary_version" != 2.0.32 ]]; then
-  printf 'Expected owned OpenCode 2.0.32 binary, observed %s\n' "$binary_version" >&2
-  exit 2
-fi
-source_component_sha256="$(cd "$runner/source" && find lib plugins/carthagent -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}')"
-harness_component_sha256="$(cd "$runner/source" && sha256sum tools/native-fixture.mjs tools/seed-native-switch-fixture.mjs tools/native-paired-guards.mjs tools/test-native-terminal-performance.py | sha256sum | awk '{print $1}')"
-node --input-type=module - "$runner/source/tools/native-paired-guards.mjs" "$binary_node_modules" "$runner/source/package.json" "$runner/source" > "$work/dependency-packages.json" <<'NODE'
-const { hashDependencyPackages } = await import(process.argv[2]);
-process.stdout.write(JSON.stringify(hashDependencyPackages(process.argv[3], process.argv[4], process.argv[5])));
-NODE
-dependency_packages_json="$(cat "$work/dependency-packages.json")"
-dependency_install_json="$(node --input-type=module - "$runner/source/tools/native-paired-guards.mjs" "$binary_node_modules" <<'NODE'
-const { hashDependencyInstall } = await import(process.argv[2]);
-process.stdout.write(JSON.stringify(hashDependencyInstall(process.argv[3])));
-NODE
-)"
-dependency_install_sha256="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).treeSha256)' "$dependency_install_json")"
+work=''
+statuses=''
 active_fixture=''
 active_pid=''
 active_pid_label=''
 active_run_pid=''
-statuses="$work/condition-status.tsv"
 interrupted=0
 cleanup() {
   if [[ -n "$active_run_pid" ]]; then
     if [[ -n "$active_pid" ]]; then
       printf 'Interrupted condition %s; retaining artifacts and marking failed.\n' "$active_pid" >> "$output_root/interrupt.log"
       interrupted=1
-      printf 'interrupted\t1\n' >> "$statuses"
+      if [[ -n "$statuses" ]]; then printf 'interrupted\t1\n' >> "$statuses"; fi
     fi
     kill -TERM "$active_run_pid" 2>/dev/null || true
     kill -TERM -- "-$active_run_pid" 2>/dev/null || true
@@ -126,7 +91,7 @@ cleanup() {
   if [[ -n "$active_pid" ]]; then
     label_for_failure="${active_pid_label:-unknown}"
     printf '%s\t1\t%s\n' "$label_for_failure" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$output_root/order.log"
-    printf '%s\t1\n' "$label_for_failure" >> "$statuses"
+    if [[ -n "$statuses" ]]; then printf '%s\t1\n' "$label_for_failure" >> "$statuses"; fi
     interrupted=1
     kill -TERM -- "-$active_pid" 2>/dev/null || kill -TERM "$active_pid" 2>/dev/null || true
     for _ in $(seq 1 50); do
@@ -142,13 +107,54 @@ cleanup() {
     temp_path="$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")).temp)' "$active_fixture")"
     if [[ "$temp_path" == /tmp/ctg-native-fixture-* && "$temp_path" != *..* ]]; then rm -rf -- "$temp_path"; fi
   fi
-  rm -rf "$work"
+  if [[ -n "$work" ]]; then rm -rf -- "$work"; fi
 }
 on_int() { interrupted=1; exit 130; }
 on_term() { interrupted=1; exit 143; }
 trap cleanup EXIT
 trap on_int INT
 trap on_term TERM
+
+work="$(mktemp -d /tmp/ctg-native-paired.XXXXXX)"
+statuses="$work/condition-status.tsv"
+runner="$work/runner"
+mkdir -p "$runner/source"
+source_archive="$output_root/source-$source_commit.tar"
+git -C "$source_root" archive --format=tar "$source_commit" > "$source_archive"
+source_archive_sha256="$(sha256sum "$source_archive" | awk '{print $1}')"
+tar -xf "$source_archive" -C "$runner/source"
+ln -s "$binary_node_modules" "$runner/source/node_modules"
+mkdir -p "$runner/source/plugins/carthagent/node_modules/@opencode"
+ln -s "$binary_node_modules/@opencode/plugin" "$runner/source/plugins/carthagent/node_modules/@opencode/plugin"
+cp "$repo_root/tools/native-fixture.mjs" "$repo_root/tools/seed-native-switch-fixture.mjs" \
+  "$repo_root/tools/native-paired-guards.mjs" "$repo_root/tools/native-paired-manifest.mjs" \
+  "$repo_root/tools/test-native-terminal-performance.py" "$runner/source/tools/"
+execution_archive="$output_root/execution-snapshot.tar"
+tar -C "$runner/source" --exclude=node_modules --exclude='*/node_modules' --exclude='**/node_modules' -cf "$execution_archive" .
+source_snapshot_sha256="$(sha256sum "$execution_archive" | awk '{print $1}')"
+binary_sha256="$(sha256sum "$binary" | awk '{print $1}')"
+source_tree="$(git -C "$source_root" rev-parse "$source_commit^{tree}")"
+binary_version="$("$binary" --version | awk '{print $2}' | sed 's/^v//')"
+if [[ "$binary_version" != 2.0.32 ]]; then
+  printf 'Expected owned OpenCode 2.0.32 binary, observed %s\n' "$binary_version" >&2
+  exit 2
+fi
+source_component_sha256="$(cd "$runner/source" && find lib plugins/carthagent -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}')"
+harness_component_sha256="$(cd "$runner/source" && sha256sum tools/native-fixture.mjs tools/seed-native-switch-fixture.mjs tools/native-paired-guards.mjs tools/native-paired-manifest.mjs tools/test-native-terminal-performance.py | sha256sum | awk '{print $1}')"
+git -C "$source_root" status --porcelain=v1 > "$work/source-checkout-dirty-status"
+git -C "$repo_root" status --porcelain=v1 > "$work/harness-dirty-status"
+node --input-type=module - "$runner/source/tools/native-paired-guards.mjs" "$binary_node_modules" "$runner/source/package.json" "$runner/source" > "$work/dependency-packages.json" <<'NODE'
+const { hashDependencyPackages } = await import(process.argv[2]);
+process.stdout.write(JSON.stringify(hashDependencyPackages(process.argv[3], process.argv[4], process.argv[5])));
+NODE
+dependency_packages_json="$(cat "$work/dependency-packages.json")"
+dependency_install_json="$(node --input-type=module - "$runner/source/tools/native-paired-guards.mjs" "$binary_node_modules" <<'NODE'
+const { hashDependencyInstall } = await import(process.argv[2]);
+process.stdout.write(JSON.stringify(hashDependencyInstall(process.argv[3])));
+NODE
+)"
+dependency_install_sha256="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).treeSha256)' "$dependency_install_json")"
+dependency_install_realpath="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).realpath)' "$dependency_install_json")"
 
 export CTG_OPENCODE_BIN="$binary"
 export CTG_PERF_SOURCE_COMMIT="$source_commit"
@@ -301,50 +307,40 @@ run_condition() {
   return 0
 }
 
-cat >"$output_root/manifest.json" <<EOF
-{
-  "createdAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "binary": "$binary",
-  "binaryVersion": "$binary_version",
-  "binarySha256": "$binary_sha256",
-  "expectedHostVersion": "2.0.32",
-  "sourceCheckout": "$source_root",
-  "sourceCheckoutHead": "$source_head",
-  "sourceCheckoutDirty": "$([[ -n "$source_dirty" ]] && printf true || printf false)",
-  "sourceCheckoutDirtyStatus": "$(node -e 'process.stdout.write(JSON.stringify(process.argv[1]))' "$source_dirty")",
-  "sourceCheckoutStatusSha256": "$(printf '%s' "$source_dirty" | sha256sum | awk '{print $1}')",
-  "sourceCommit": "$source_commit",
-  "sourceTree": "$source_tree",
-  "sourceDirty": "false",
-  "sourceSnapshotTar": "$source_archive",
-  "sourceArchiveSha256": "$source_archive_sha256",
-  "executionSnapshotTar": "$execution_archive",
-  "executionSnapshotSha256": "$source_snapshot_sha256",
-  "sourceSnapshotSha256": "$source_snapshot_sha256",
-  "packageLockSha256": "$source_lock_sha256",
-  "installedPackageLockSha256": "$installed_lock_sha256",
-  "dependencyNodeModulesRealpath": "$binary_node_modules",
-  "dependencyInstallSha256": "$dependency_install_sha256",
-  "dependencyInstallRealpath": "$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).realpath)' "$dependency_install_json")",
-  "dependencyPackages": $dependency_packages_json,
-  "harnessWorktree": "$repo_root",
-  "harnessCommit": "$(git -C "$repo_root" rev-parse HEAD)",
-  "harnessDirty": "$(if [[ -n "$(git -C "$repo_root" status --porcelain=v1)" ]]; then printf true; else printf false; fi)",
-  "harnessSourceManifestSha256": "$harness_component_sha256",
-  "order": ["baseline-1", "ctg-1", "ctg-2", "baseline-2"],
-  "samplesPerRun": $samples,
-  "warmup": "one input key excluded; both switch destinations visited before measured alternating switches",
-  "terminal": "36 rows x 120 columns",
-  "thresholds": {"inputP95Ms": 50, "switchP95Ms": 150},
-  "measurementScope": "keypress or Enter through select/read/VT parsing to parsed PTY screen evidence; not compositor/GPU presentation; no observer-overhead subtraction",
-  "hostSampling": "one-second load-average and MemAvailable observations throughout each run's switch/input window",
-  "pairedConditions": "one condition server at a time; fresh disposable profiles/databases with equivalent same-project session titles/prompts/markers; same pinned binary and 36x120 PTY; CTG loaded from complete selected source archive",
-  "pluginRequirement": "the raw native plugin.list inventory must show carthagent active plus health RPC for CTG; no carthagent id or namespace for baseline; state is observed, never inferred from the mode flag",
-  "sourceComponentSha256": "$source_component_sha256",
-  "harnessComponentSha256": "$harness_component_sha256",
-  "acceptance": "diagnostic until operator confirms controlled window and independent review; thresholds unchanged"
-}
-EOF
+SOURCE_ROOT="$source_root" SOURCE_HEAD="$source_head" SOURCE_COMMIT="$source_commit" \
+SOURCE_TREE="$source_tree" SOURCE_ARCHIVE="$source_archive" SOURCE_ARCHIVE_SHA256="$source_archive_sha256" \
+EXECUTION_ARCHIVE="$execution_archive" EXECUTION_SHA256="$source_snapshot_sha256" \
+SOURCE_SNAPSHOT_SHA256="$source_snapshot_sha256" SOURCE_LOCK_SHA256="$source_lock_sha256" \
+INSTALLED_LOCK_SHA256="$installed_lock_sha256" DEPENDENCY_ROOT="$binary_node_modules" \
+DEPENDENCY_SHA256="$dependency_install_sha256" DEPENDENCY_REALPATH="$dependency_install_realpath" \
+DEPENDENCY_PACKAGES_FILE="$work/dependency-packages.json" SOURCE_STATUS_FILE="$work/source-checkout-dirty-status" \
+HARNESS_STATUS_FILE="$work/harness-dirty-status" HARNESS_WORKTREE="$repo_root" \
+HARNESS_COMMIT="$(git -C "$repo_root" rev-parse HEAD)" HARNESS_MANIFEST_SHA256="$harness_component_sha256" \
+BINARY_PATH="$binary" BINARY_VERSION="$binary_version" BINARY_SHA256="$binary_sha256" \
+SAMPLES_PER_RUN="$samples" SOURCE_COMPONENT_SHA256="$source_component_sha256" \
+node --input-type=module - <<'NODE' | node "$runner/source/tools/native-paired-manifest.mjs" > "$output_root/manifest.json"
+import { readFileSync } from 'node:fs';
+const read = key => process.env[key];
+const fields = {
+  createdAt: new Date().toISOString(),
+  binary: read('BINARY_PATH'), binaryVersion: read('BINARY_VERSION'), binarySha256: read('BINARY_SHA256'),
+  sourceCheckout: read('SOURCE_ROOT'), sourceCheckoutHead: read('SOURCE_HEAD'),
+  sourceCheckoutDirtyStatus: readFileSync(read('SOURCE_STATUS_FILE'), 'utf8'),
+  sourceCommit: read('SOURCE_COMMIT'), sourceTree: read('SOURCE_TREE'),
+  sourceSnapshotTar: read('SOURCE_ARCHIVE'), sourceArchiveSha256: read('SOURCE_ARCHIVE_SHA256'),
+  executionSnapshotTar: read('EXECUTION_ARCHIVE'), executionSnapshotSha256: read('EXECUTION_SHA256'),
+  sourceSnapshotSha256: read('SOURCE_SNAPSHOT_SHA256'), packageLockSha256: read('SOURCE_LOCK_SHA256'),
+  installedPackageLockSha256: read('INSTALLED_LOCK_SHA256'),
+  dependencyNodeModulesRealpath: read('DEPENDENCY_ROOT'), dependencyInstallSha256: read('DEPENDENCY_SHA256'),
+  dependencyInstallRealpath: read('DEPENDENCY_REALPATH'),
+  dependencyPackages: JSON.parse(readFileSync(read('DEPENDENCY_PACKAGES_FILE'), 'utf8')),
+  harnessWorktree: read('HARNESS_WORKTREE'), harnessCommit: read('HARNESS_COMMIT'),
+  harnessDirtyStatus: readFileSync(read('HARNESS_STATUS_FILE'), 'utf8'),
+  harnessSourceManifestSha256: read('HARNESS_MANIFEST_SHA256'), samplesPerRun: Number(read('SAMPLES_PER_RUN')),
+  sourceComponentSha256: read('SOURCE_COMPONENT_SHA256'), harnessComponentSha256: read('HARNESS_MANIFEST_SHA256'),
+};
+process.stdout.write(JSON.stringify(fields));
+NODE
 
 node --input-type=module - "$output_root/manifest.json" "$runner/source/tools/native-paired-guards.mjs" <<'NODE'
 import { readFileSync } from 'node:fs';
