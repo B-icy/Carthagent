@@ -25,10 +25,10 @@ export function childEnv(config, gateway, log) {
   const home = isolatedHome(config);
   return safeEnv({ CTG_OPENCODE_HOME: home, CTG_OPENCODE_URL: process.env.CTG_OPENCODE_URL || '', BENCH_GATEWAY: gateway, BENCH_ADVISOR_LOG: log, BENCH_GUARD_LOG: join(dirname(config),'guard.jsonl') }, home);
 }
-async function waitForService(url, { timeoutMs = 30000, signal } = {}) {
+async function waitForService(url, { timeoutMs = 30000, signal, headers = {} } = {}) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline && !signal?.aborted) {
-    try { const response = await fetch(`${url}/api/info`, { signal: AbortSignal.timeout(1000) }); if (response.ok) return; } catch {}
+    try { const response = await fetch(`${url}/api/info`, { headers, signal: AbortSignal.timeout(1000) }); if (response.ok) return; } catch {}
     await new Promise(resolve => setTimeout(resolve, 150));
   }
   throw Error('Isolated OpenCode 2 service readiness timeout');
@@ -48,9 +48,10 @@ async function startNativeService({ workspace, config, mode, arm, smoke, toolLim
   const provider = arm === 'plain' ? 'benchmark-fixture' : 'benchmark';
   const model = arm === 'plain' ? 'fixture' : MODEL;
   const plugins = [join(REPO,'lib/opencode/evaluation-budget-plugin'), ...(arm === 'plain' ? [] : [join(REPO,'tools/benchmark/native-plugin')])];
+  if (smoke && arm !== 'plain') plugins.push({ package:join(REPO,'plugins/carthagent'), options:{deliveryOptions:{workflow:'standard'}} });
   const configJson = {
     '$schema':'https://opencode.ai/config.json', update:'disable', model:`${provider}/${model}`,
-    plugins:plugins.filter((_,index)=>mode!=='smoke' || index===0),
+    plugins,
     providers:{[provider]:{
       package:'@opencode/ai/providers/openai-compatible',
       settings:{baseURL:`${gateway}/v1`,apiKey:apiKey || 'fixture-no-key'},
@@ -72,7 +73,7 @@ async function startNativeService({ workspace, config, mode, arm, smoke, toolLim
     const deadline=Date.now()+15000;
     while(Date.now()<deadline){
       const loaded=await listPlugins(service,request).catch(()=>null);
-      const expected = ['ctg.evaluation-budget', ...(arm === 'plain' ? [] : ['ctg.benchmark'])];
+       const expected = ['ctg.evaluation-budget', ...(plugins.includes(join(REPO,'tools/benchmark/native-plugin')) ? ['ctg.benchmark'] : []), ...(plugins.some(plugin => typeof plugin === 'object' && plugin.package === join(REPO,'plugins/carthagent')) ? ['carthagent'] : [])];
       const active = expected.every(id=>loaded?.some(plugin=>plugin.id===id&&plugin.state?.status==='active'));
       const failure=loaded?.find(plugin=>expected.includes(plugin.id)&&plugin.state?.status==='failed');
       if(active) break;
@@ -98,7 +99,11 @@ export async function runCandidate(task, arm, { smoke = false, key, root = ROOT,
   mkdirSync(root, { recursive: true }); mkdirSync(run); mkdirSync(workspace); mkdirSync(config);
   if (!Number.isInteger(toolLimit) || toolLimit < 1 || toolLimit > 120) throw Error('Invalid tool limit');
   const toolsReceipt = provisionTools(config);
-  const gateway = await startGateway({ key: apiKey || 'fixture-only-no-upstream', limit: smoke ? 0.08 : 2.79, allowJev: arm === 'jev', receiptPath: join(run, 'gateway.jsonl'), fetchImpl, account: campaignAccount(campaignPath, smoke ? 'smoke' : 'candidate', run) });
+  // Scripted offline smoke transcripts may need many zero-cost turns. Give only
+  // that injected fixture enough reservation headroom; production smoke remains
+  // under its normal $0.08 gateway ceiling and native session cost ceiling.
+  const gatewayLimit = smoke ? (fetchImpl ? 3.1 : 0.08) : 2.79;
+  const gateway = await startGateway({ key: apiKey || 'fixture-only-no-upstream', limit:gatewayLimit, allowJev: arm === 'jev', receiptPath: join(run, 'gateway.jsonl'), fetchImpl, account: campaignAccount(campaignPath, smoke ? 'smoke' : 'candidate', run) });
   let fixtureService, nativeService;
   try {
     const env = childEnv(config, gateway.url, join(run,'advisor.jsonl'));
@@ -112,13 +117,13 @@ export async function runCandidate(task, arm, { smoke = false, key, root = ROOT,
     else if (!process.env.CTG_OPENCODE_URL) nativeService = await startNativeService({workspace,config,mode:arm,arm,smoke,toolLimit,gateway:gateway.url,apiKey,serviceManager});
     env.CTG_OPENCODE_URL = process.env.CTG_OPENCODE_URL || nativeService?.endpoint || fixtureService?.url;
     env.CTG_OPENCODE_AUTHORIZATION = nativeService ? nativeService.auth.authorization : '';
-    const args = { task, arm, smoke, runtime: ENGINE_RUNTIME, openCodeService: nativeService ? 'dedicated-isolated-service' : process.env.CTG_OPENCODE_URL ? 'explicit-isolated-endpoint' : 'injected-fixture', toolsReceipt, harnessCommit: spawnSync('git',['rev-parse','HEAD'],{cwd:REPO,encoding:'utf8'}).stdout.trim(), ceilings: { seconds: smoke ? 180 : 900, tools:toolLimit, usd:smoke ? .08 : 2.79 }, startedAt:new Date().toISOString() };
+    const args = { task, arm, smoke, runtime: ENGINE_RUNTIME, openCodeService: nativeService ? 'dedicated-isolated-service' : process.env.CTG_OPENCODE_URL ? 'explicit-isolated-endpoint' : 'injected-fixture', toolsReceipt, harnessCommit: spawnSync('git',['rev-parse','HEAD'],{cwd:REPO,encoding:'utf8'}).stdout.trim(), ceilings: { seconds: smoke ? 180 : 900, tools:toolLimit, usd:gatewayLimit }, startedAt:new Date().toISOString() };
     writeFileSync(join(run,'invocation.json'), JSON.stringify(args,null,2));
     let stopReason = null; const events = [], started = Date.now();
     const controller = new AbortController();
     const timer = setTimeout(() => { stopReason = 'wall-time'; controller.abort(); }, (smoke ? 180 : 900) * 1000);
     let result;
-    try { await waitForService(env.CTG_OPENCODE_URL,{signal:controller.signal}); result = await nativeRunner({ directory: workspace, prompt, systemPrompt: arm === 'plain' ? '' : `Use the Carthagent delivery workflow. Required checks: ${JSON.stringify({ toolLimit })}.`, provider:arm === 'plain' ? 'benchmark-fixture' : 'benchmark', model:arm === 'plain' ? 'fixture' : MODEL, timeoutSeconds: smoke ? 180 : 900, maxTurns: toolLimit, maxCost: smoke ? .08 : 2.79, signal: controller.signal, baseUrl: env.CTG_OPENCODE_URL, headers:nativeService?.auth || {}, onEvent: event => { events.push(event); appendFileSync(join(run,'events.jsonl'),JSON.stringify(event)+'\n'); } }); }
+    try { await waitForService(env.CTG_OPENCODE_URL,{signal:controller.signal,headers:nativeService?.auth || {}}); result = await nativeRunner({ directory: workspace, prompt, systemPrompt: arm === 'plain' ? '' : `Use the Carthagent delivery workflow. Required checks: ${JSON.stringify({ toolLimit })}.`, provider:arm === 'plain' ? 'benchmark-fixture' : 'benchmark', model:arm === 'plain' ? 'fixture' : MODEL, timeoutSeconds: smoke ? 180 : 900, maxTurns: toolLimit, maxCost: smoke ? .08 : 2.79, signal: controller.signal, baseUrl: env.CTG_OPENCODE_URL, headers:nativeService?.auth || {}, onEvent: event => { events.push(event); appendFileSync(join(run,'events.jsonl'),JSON.stringify(event)+'\n'); } }); }
     catch (error) { result = { exitCode:1, errors:[error.message], turns:0, productiveTurns:0, tools:{} }; }
     finally { clearTimeout(timer); }
     if (result.outcome !== 'succeeded') {
