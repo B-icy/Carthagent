@@ -60,6 +60,13 @@ Detached subprocesses, uninterruptible synchronous code, and requests already
 billed by a provider cannot be undone. Time limits are not hard OS process
 termination deadlines. No paid-provider cancellation guarantee is implied.
 
+The bundled engine's headless print-mode finalizer also destroys its captured
+Undici dispatcher, but only if that dispatcher is still the process-global
+dispatcher. This releases sockets left open by aborted provider requests without
+destroying a dispatcher that another runtime installed later. After refreshing the
+vendored engine, run `node tools/patch-print-shutdown.mjs`; the patcher fails
+closed if the expected print-mode anchors have changed.
+
 Native Windows/macOS/Linux CI runs the regression suite on Node 22 and 24;
 WSL is validated separately locally. This does not establish every terminal,
 OS version, browser or processor architecture as tested.
