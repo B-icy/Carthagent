@@ -6,7 +6,6 @@ import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { createHash, randomBytes } from 'node:crypto';
-import { OpenCode } from '@opencode/client';
 import { assertCompletePluginSource, assertPluginCondition, resolveFixtureSourceRoot, verifySnapshotIdentity } from './native-paired-guards.mjs';
 import { loadNativeTestRuntime, NATIVE_TEST_COMPATIBILITY_VERSION } from './native-runtime-identity.mjs';
 
@@ -23,46 +22,78 @@ export function streamText(res, text = 'Fixture response complete.') {
   res.end(`${chunk({}, 'stop')}data: [DONE]\n\n`);
 }
 
+export async function resolveFixtureRuntime({ productRuntime, options = {}, env = process.env, packageRoot = root, testRuntimeLoader = loadNativeTestRuntime } = {}) {
+  const ownedRoot = env.CTG_OWNED_OPENCODE_RUNTIME;
+  const trustedManifestPath = env.CTG_TEST_RUNTIME_RELEASE_MANIFEST ?? join(packageRoot, 'lib/opencode/runtime-release.json');
+
+  // A developer-selected staging directory is checked by bytes and trusted
+  // release metadata before the product resolver can execute --version.
+  if (ownedRoot) {
+    const expectedManifest = JSON.parse(await readFile(trustedManifestPath, 'utf8'));
+    const executableName = process.platform === 'win32' ? 'opencode.exe' : 'opencode';
+    const explicitBinary = env.CTG_OPENCODE_BIN ?? join(resolve(ownedRoot), `cli-${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch}`, 'bin', executableName);
+    await testRuntimeLoader({ binary: explicitBinary, ownedRoot, expectedManifest, env });
+  }
+
+  if (typeof productRuntime?.resolveOpenCode === 'function' && typeof productRuntime?.runtimeIdentity === 'function') {
+    const binary = await productRuntime.resolveOpenCode(options);
+    const selected = await productRuntime.runtimeIdentity(binary, options);
+    const selectedRoot = ownedRoot ?? inferOwnedRoot(binary);
+    if (selected.kind === 'ctg-owned' && !selectedRoot) {
+      throw new Error('Product selected an owned runtime without exposing its owned artifact root to the test identity verifier');
+    }
+    if (selected.kind === 'upstream-compatible' && (selected.version !== NATIVE_TEST_COMPATIBILITY_VERSION || env.CTG_TEST_RUNTIME_SHA256)) {
+      throw new Error('Upstream-compatible native test runtime must be exactly 2.0.32 and cannot use CTG_TEST_RUNTIME_SHA256');
+    }
+    const expectedManifest = selectedRoot ? JSON.parse(await readFile(trustedManifestPath, 'utf8')) : undefined;
+    const verified = await testRuntimeLoader({ binary, ownedRoot: selectedRoot, expectedManifest, env });
+    const productIdentity = {
+      binary: selected.binaryPath,
+      binarySha256: selected.binarySha256,
+      runtimeVersion: selected.version,
+      sourceRevision: selected.sourceRevision,
+      patchSha256: selected.patchSha256,
+      lockSha256: selected.lockSha256,
+    };
+    for (const [key, actual] of Object.entries(productIdentity)) {
+      const expected = key === 'sourceRevision' ? verified.sourceRevision
+        : key === 'patchSha256' ? verified.patchSha256
+          : key === 'lockSha256' ? verified.lockSha256 : verified[key];
+      if (expected !== undefined && actual !== expected) {
+        throw new Error(`Product runtime identity ${key} disagrees with trusted native-test identity: ${actual} != ${expected}`);
+      }
+    }
+    return { binary, runtimeIdentity: Object.freeze({
+      ...verified,
+      kind: selected.kind,
+      compatibilityVersion: NATIVE_TEST_COMPATIBILITY_VERSION,
+      runtimeVersion: selected.version,
+      binarySha256: verified.binarySha256 ?? selected.binarySha256 ?? createHash('sha256').update(await readFile(binary)).digest('hex'),
+      ...(selected.capabilities ? { capabilities: selected.capabilities } : {}),
+    }) };
+  }
+
+  const binary = env.CTG_OPENCODE_BIN ?? (ownedRoot
+    ? join(resolve(ownedRoot), `cli-${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch}`, 'bin', process.platform === 'win32' ? 'opencode.exe' : 'opencode')
+    : join(packageRoot, 'node_modules/@opencode/cli/bin/opencode.exe'));
+  const expectedManifest = ownedRoot ? JSON.parse(await readFile(trustedManifestPath, 'utf8')) : undefined;
+  const identity = await testRuntimeLoader({ binary, ownedRoot, expectedManifest, env });
+  return { binary: identity.binary, runtimeIdentity: Object.freeze({
+    ...identity,
+    compatibilityVersion: identity.compatibilityVersion,
+    runtimeVersion: identity.runtimeVersion,
+    kind: ownedRoot ? 'ctg-owned' : 'upstream-compatible',
+  }) };
+}
+
 export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'), pluginOptions, plugins: additionalPlugins = [], pluginExpected = plugin ? 'active' : 'absent', verifyInventory = false, provenance, respond = (_body, res) => streamText(res), env: extraEnv = {}, preserveTemp = false } = {}) {
+  const { OpenCode } = await import('@opencode/client');
   const pluginEntries = [
     ...(plugin ? [pluginOptions ? { package: resolve(plugin), options: pluginOptions } : resolve(plugin)] : []),
     ...additionalPlugins.map(entry => typeof entry === 'string' ? resolve(entry) : { ...entry, package: resolve(entry.package) }),
   ];
-  const runtimeOptions = process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST
-    ? { runtimeReleaseManifestPath: process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST }
-    : {};
-  let runtimeIdentity;
-  let runtimeBinary;
   const productRuntime = await import('../lib/opencode/runtime.mjs');
-  if (typeof productRuntime.resolveOpenCode === 'function' && typeof productRuntime.runtimeIdentity === 'function') {
-    runtimeBinary = await productRuntime.resolveOpenCode(runtimeOptions);
-    const selected = await productRuntime.runtimeIdentity(runtimeBinary, runtimeOptions);
-    runtimeIdentity = Object.freeze({
-      ...selected,
-      binary: selected.binaryPath,
-      compatibilityVersion: NATIVE_TEST_COMPATIBILITY_VERSION,
-      runtimeVersion: selected.version,
-      binarySha256: selected.binarySha256,
-    });
-  } else {
-    const explicitOwnedRoot = process.env.CTG_OWNED_OPENCODE_RUNTIME;
-    const configuredBinary = process.env.CTG_OPENCODE_BIN ?? (explicitOwnedRoot
-      ? join(resolve(explicitOwnedRoot), `cli-${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch}`, 'bin', process.platform === 'win32' ? 'opencode.exe' : 'opencode')
-      : join(root, 'node_modules/@opencode/cli/bin/opencode.exe'));
-    const configuredOwnedRoot = explicitOwnedRoot ?? inferOwnedRoot(configuredBinary);
-    const releaseManifestPath = process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST ?? join(root, 'lib/opencode/runtime-release.json');
-    const expectedManifest = configuredOwnedRoot ? JSON.parse(await readFile(releaseManifestPath, 'utf8')) : undefined;
-    const loaded = await loadNativeTestRuntime({
-      binary: configuredBinary,
-      ...(configuredOwnedRoot ? { ownedRoot: configuredOwnedRoot, expectedManifest } : {}),
-    });
-    runtimeBinary = loaded.binary;
-    runtimeIdentity = Object.freeze({
-      ...loaded,
-      binary: loaded.binary,
-      binarySha256: loaded.binarySha256 ?? createHash('sha256').update(await readFile(loaded.binary)).digest('hex'),
-    });
-  }
+  const { binary: runtimeBinary, runtimeIdentity } = await resolveFixtureRuntime({ productRuntime });
   const temp = await mkdtemp(join(tmpdir(), 'ctg-native-fixture-'));
   const cwd = join(temp, 'project');
   const pluginProbeCwd = verifyInventory ? join(temp, 'project-alpha') : cwd;
