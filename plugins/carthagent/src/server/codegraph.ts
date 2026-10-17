@@ -3,6 +3,7 @@ import { boundedCodeNavResult } from "../../../../lib/codegraph-query.mjs"
 import { resolve } from "node:path"
 import type { Context } from "@opencode/plugin/promise/plugin"
 import type { Tool } from "@opencode/schema/tool"
+import { effectiveSessionOptions } from "../../../../lib/opencode/session-options.mjs"
 
 type CodeNavInput = { op: string; name?: string; path?: string; container?: string; limit?: number; offset?: number }
 
@@ -28,13 +29,15 @@ export async function registerCodegraph(ctx: Context, options: { maxFiles?: numb
         const input = rawInput as CodeNavInput
         const session = await ctx.session.get({ sessionID: toolContext.sessionID })
         const root = resolve(session.location.directory, session.subpath || ".")
-        let index = indexes.get(root)
+        const configuredMaxFiles = (effectiveSessionOptions(session, { ...ctx.options, ...(options.maxFiles !== undefined ? { codegraphMaxFiles: options.maxFiles } : {}) }) as Record<string, unknown>).codegraphMaxFiles
+        const maxFiles = typeof configuredMaxFiles === "number" ? configuredMaxFiles : 8000
+        if (!Number.isSafeInteger(maxFiles) || maxFiles < 1) throw Error("codegraph maxFiles must be a positive safe integer")
+        const cacheKey = `${root}\0${maxFiles}`
+        let index = indexes.get(cacheKey)
         if (!index) {
-          const maxFiles = options.maxFiles ?? 8000
-          if (!Number.isSafeInteger(maxFiles) || maxFiles < 1) throw Error("codegraph maxFiles must be a positive safe integer")
           index = createCodeIndex(root, { maxFiles })
-          index.catch(() => indexes.delete(root))
-          indexes.set(root, index)
+          index.catch(() => indexes.delete(cacheKey))
+          indexes.set(cacheKey, index)
         }
         const current = await index
         await current.refresh()

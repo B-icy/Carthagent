@@ -30,7 +30,7 @@ export async function setupCarthagent(
       cleanups.push(await registerSessionControls(context));
       cleanups.push(await registerWorkspaceRpc(context, context.options));
       cleanups.push(await registerPullRequests(context));
-      if (options.delivery !== false) cleanups.push(await registerNativeDelivery(context, options.deliveryOptions));
+      if (options.delivery !== false) cleanups.push(await registerNativeDelivery(context, { ...sessionOptionDefaults(context.options), ...options.deliveryOptions }));
       let configuredRoots;
       try { configuredRoots = process.env.CTG_NATIVE_ARCHIVE_ROOTS ? JSON.parse(process.env.CTG_NATIVE_ARCHIVE_ROOTS) : undefined; }
       catch { throw new Error('Invalid native archive roots from the CTG host'); }
@@ -44,6 +44,7 @@ export async function setupCarthagent(
           protocol: 1,
           hostVersion: context.app.version,
           directory: context.location.directory,
+          capabilities: options.delivery === false ? [] : ['delivery.session-options.v1', 'delivery.budgets.v1', 'delivery.policy-overrides.v1'],
         }),
         echo: async (input) => ({ text: (input as { text: string }).text }),
         authStart: async (_input, call) => {
@@ -75,3 +76,8 @@ export async function setupCarthagent(
 }
 
 export default Plugin.define({ id: 'carthagent', setup: setupCarthagent });
+
+function sessionOptionDefaults(options: Record<string, unknown>) {
+  const allowed = ['maxTools', 'maxSeconds', 'maxRepairs', 'codegraphMaxFiles', 'bashCap', 'workflow', 'validators', 'context', 'strict', 'delivery', 'protectExisting', 'rewriteCap', 'toolOutputCap'];
+  return Object.fromEntries(allowed.filter(key => options[key] !== undefined).map(key => [key, options[key]]));
+}

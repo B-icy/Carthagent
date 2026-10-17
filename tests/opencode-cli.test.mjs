@@ -316,13 +316,14 @@ test('headless continuation selects the newest session within the exact workspac
   assert.equal(selected, 'newest-workspace-session');
 });
 
-test('native runtime rejects budgets that the active delivery plugin cannot enforce', async () => {
+test('native runtime fails closed when the active plugin does not advertise delivery budget enforcement', async () => {
   const runtime = await createOpenCodeCliRuntime({ cwd: process.cwd(), native: {
-    runtime: {}, service: { ensureService: async () => { throw new Error('must not start service'); } },
-    headless: {},
+    runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) },
+    headless: {}, rpcDefinitions: { Carthagent: {} },
+    clientFactory: async () => ({ rpc: () => ({ health: async () => ({ capabilities: [] }) }) }),
   } });
   for (const [key, value] of [['maxTools', '2'], ['maxSeconds', '20'], ['maxRepairs', '1']]) {
-    await assert.rejects(runtime.run({ mode: 'headless', options: { prompt: 'task', [key]: value }, prompt: 'task' }), /not supported until the active native delivery plugin enforces session budgets/);
+    await assert.rejects(runtime.run({ mode: 'headless', options: { prompt: 'task', [key]: value }, prompt: 'task' }), /does not advertise required enforcement capabilities/);
   }
 });
 
@@ -336,19 +337,20 @@ test('native run rejects only options without an enforcement contract and persis
   const sessions = [];
   const runtime = await createOpenCodeCliRuntime({ cwd, native: {
     runtime: {}, service: { ensureService: async () => service },
+    rpcDefinitions: { Carthagent: {}, SessionControls: {} },
     headless: { runHeadless: async (_service, _cwd, _prompt, options) => {
       sessions.push(options.session.metadata);
       return { session: { id: 'ses_options' }, outcome: 'succeeded', terminal: true, accepted: { id: 'a' }, messages: [
         { type: 'user', id: 'a' }, { type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'ok' }] }, { type: 'idle', outcome: 'succeeded' },
       ] };
     } },
-    clientFactory: async () => ({ session: { get: async () => ({ id: 'ses_options', outcome: 'succeeded' }), context: async () => [
+    clientFactory: async () => ({ rpc: () => ({ health: async () => ({ capabilities: ['delivery.session-options.v1'] }) }), session: { get: async () => ({ id: 'ses_options', outcome: 'succeeded' }), context: async () => [
       { type: 'user', id: 'a' }, { type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'ok' }] }, { type: 'idle', outcome: 'succeeded' },
     ] } }),
   } });
-  await assert.rejects(runtime.run({ mode: 'headless', options: { prompt: 'task', maxTools: '2' }, prompt: 'task' }), /not supported until the active native delivery plugin enforces session budgets/);
-  await assert.rejects(runtime.run({ mode: 'headless', options: { prompt: 'task', delivery: false }, prompt: 'task' }), /no-delivery is not supported/);
-  await assert.rejects(runtime.run({ mode: 'headless', options: { prompt: 'task', strict: false }, prompt: 'task' }), /no-strict is not supported/);
+  await assert.rejects(runtime.run({ mode: 'headless', options: { prompt: 'task', maxTools: '2' }, prompt: 'task' }), /does not advertise required enforcement capabilities/);
+  await assert.rejects(runtime.run({ mode: 'headless', options: { prompt: 'task', delivery: false }, prompt: 'task' }), /does not advertise required enforcement capabilities/);
+  await assert.rejects(runtime.run({ mode: 'headless', options: { prompt: 'task', strict: false }, prompt: 'task' }), /does not advertise required enforcement capabilities/);
   assert.equal(await runtime.run({ mode: 'headless', options: { prompt: 'task', autoFraming: false }, prompt: 'task' }), 0);
   assert.deepEqual(sessions[0]['carthagent.options'], { guide: false });
 });
@@ -362,18 +364,40 @@ test('native run resolves and persists the enforced codegraph index cap per sess
   let settings;
   const runtime = await createOpenCodeCliRuntime({ cwd, stdout: { write() {} }, native: {
     runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) },
+    rpcDefinitions: { Carthagent: {}, SessionControls: {} },
     headless: { runHeadless: async (_service, _cwd, _prompt, options) => {
       settings = options.session.metadata['carthagent.options'];
       return { session: { id: 'ses_codegraph' }, outcome: 'succeeded', terminal: true, accepted: { id: 'a' }, messages: [
         { type: 'user', id: 'a' }, { type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'ok' }] }, { type: 'idle', outcome: 'succeeded' },
       ] };
     } },
-    clientFactory: async () => ({ session: { get: async () => ({ id: 'ses_codegraph', outcome: 'succeeded' }), context: async () => [
+    clientFactory: async () => ({ rpc: () => ({ health: async () => ({ capabilities: ['delivery.session-options.v1'] }) }), session: { get: async () => ({ id: 'ses_codegraph', outcome: 'succeeded' }), context: async () => [
       { type: 'user', id: 'a' }, { type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'ok' }] }, { type: 'idle', outcome: 'succeeded' },
     ] } }),
   } });
   assert.equal(await runtime.run({ mode: 'headless', options: { prompt: 'index', codegraphMaxFiles: '300' }, prompt: 'index' }), 0);
   assert.equal(settings.codegraphMaxFiles, 300);
+});
+
+test('interactive native session persists an explicit no-guide setting before launching the TUI', async t => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-interactive-no-guide-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const calls = [];
+  const runtime = await createOpenCodeCliRuntime({ cwd, stdout: { write() {} }, native: {
+    runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }), launchTui: (_service, _cwd, options) => { calls.push(['launch', options.sessionID]); return { once(event, callback) { if (event === 'exit') queueMicrotask(() => callback(0)); return this; }, kill() {} }; } },
+    rpcDefinitions: { Carthagent: {}, SessionControls: {} },
+    headless: { createSession: async (_service, _cwd, { body }) => { calls.push(['create', body.metadata['carthagent.options']]); return { id: 'ses_no_guide' }; } },
+    clientFactory: async () => ({ rpc: () => ({ health: async () => ({ capabilities: ['delivery.session-options.v1'] }), framing: async input => { calls.push(['framing', input.sessionID, input.enabled]); return { enabled: input.enabled }; } }) }),
+  } });
+  assert.equal(await runtime.run({ mode: 'interactive', options: { autoFraming: false }, prompt: '' }), 0);
+  assert.deepEqual(calls, [
+    ['create', { guide: false }],
+    ['framing', 'ses_no_guide', false],
+    ['launch', 'ses_no_guide'],
+  ]);
 });
 
 test('resumed native sessions merge explicit launcher options into their own workspace metadata', async t => {
@@ -383,15 +407,17 @@ test('resumed native sessions merge explicit launcher options into their own wor
   const cwd = mkdtempSync(join(tmpdir(), 'ctg-session-options-resume-'));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
   const updates = [];
+  const framingOverrides = [];
   const runtime = await createOpenCodeCliRuntime({ cwd, stdout: { write() {} }, native: {
     runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) },
+    rpcDefinitions: { Carthagent: {}, SessionControls: {} },
     headless: { runHeadless: async (_service, _cwd, _prompt, options) => {
       assert.equal(options.sessionID, 'ses_existing');
       return { session: { id: 'ses_existing' }, outcome: 'succeeded', terminal: true, accepted: { id: 'accepted' }, messages: [
         { type: 'user', id: 'accepted' }, { type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'done' }] }, { type: 'idle', outcome: 'succeeded' },
       ] };
     } },
-    clientFactory: async () => ({ session: {
+    clientFactory: async () => ({ rpc: () => ({ health: async () => ({ capabilities: ['delivery.session-options.v1'] }), framing: async input => { framingOverrides.push(input); return { enabled: input.enabled }; } }), session: {
       get: async () => ({ id: 'ses_existing', location: { directory: cwd }, metadata: { keep: 'yes', 'carthagent.options': { maxTools: 12, workflow: 'strict' } } }),
       update: async input => updates.push(input),
       context: async () => [
@@ -402,6 +428,7 @@ test('resumed native sessions merge explicit launcher options into their own wor
   assert.equal(await runtime.run({ mode: 'headless', options: { prompt: 'continue', session: 'ses_existing', autoFraming: false }, prompt: 'continue' }), 0);
   assert.equal(updates.length, 1);
   assert.deepEqual(updates[0].metadata, { keep: 'yes', 'carthagent.options': { maxTools: 12, workflow: 'strict', guide: false } });
+  assert.deepEqual(framingOverrides, [{ sessionID: 'ses_existing', enabled: false }]);
 });
 
 test('native login uses OpenCode integration OAuth status and completion lifecycle', async () => {

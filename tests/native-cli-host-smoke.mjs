@@ -178,11 +178,25 @@ try {
   assert.notEqual(sessionIDs.at(-1), foreign.id, 'continue must not select a session from another workspace');
   assert.equal(sessionIDs.at(-1), sessionIDs[0], 'continue must select the newest existing session in this workspace');
 
+  const guideSeed = capture();
+  const guideSeedRuntime = await createOpenCodeCliRuntime({ cwd, native, stdout: guideSeed.stdout, io: guideSeed.io });
+  const guideSeedCode = await runOpenCodeCli({ argv: ['-p', '--guide', '--model', 'ctg-fixture/fixture', 'Smoke establish persisted guide'], runtime: guideSeedRuntime, io: guideSeed.io, stdoutIsTTY: false });
+  assert.equal(guideSeedCode, 0, `guided seed run failed: ${guideSeed.lines.join('\n')}\n${hostOutput}`);
+  const guideSessionID = sessionIDs.at(-1);
+  const noGuide = capture();
+  const noGuideRuntime = await createOpenCodeCliRuntime({ cwd, native, stdout: noGuide.stdout, io: noGuide.io });
+  const noGuideCode = await runOpenCodeCli({ argv: ['-p', '--no-guide', '--session', guideSessionID, '--model', 'ctg-fixture/fixture', 'Smoke explicit no-guide overrides persisted guide'], runtime: noGuideRuntime, io: noGuide.io, stdoutIsTTY: false });
+  assert.equal(noGuideCode, 0, `resumed no-guide run failed: ${noGuide.lines.join('\n')}\n${hostOutput}`);
+  const noGuideRequest = [...requests].reverse().find(body => body.messages?.some(message => message.role === 'user' && String(message.content).includes('Smoke explicit no-guide overrides persisted guide')));
+  assert.ok(noGuideRequest, 'resumed no-guide prompt reached the offline fixture provider');
+  const noGuideUser = noGuideRequest.messages.find(message => message.role === 'user' && String(message.content).includes('Smoke explicit no-guide overrides persisted guide'));
+  assert.equal(noGuideUser.content, 'Smoke explicit no-guide overrides persisted guide', 'explicit --no-guide must prevent persisted framing from rewriting resumed prompts');
+
   const budget = capture();
   const budgetRuntime = await createOpenCodeCliRuntime({ cwd, native, stdout: budget.stdout, io: budget.io });
   const budgetCode = await runOpenCodeCli({ argv: ['-p', '--max-tools', '2', '--no-guide', 'Must reject unenforced budget'], runtime: budgetRuntime, io: budget.io, stdoutIsTTY: false });
   assert.equal(budgetCode, 1);
-  assert.match(budget.lines.join('\n'), /active native delivery plugin enforces session budgets/);
+  assert.match(budget.lines.join('\n'), /does not advertise required enforcement capabilities/);
 
   const json = capture();
   const jsonRuntime = await createOpenCodeCliRuntime({ cwd, native, stdout: json.stdout, io: json.io });

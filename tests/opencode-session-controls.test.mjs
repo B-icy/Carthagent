@@ -94,6 +94,21 @@ test('persisted per-session launcher settings control framing without affecting 
   assert.notEqual(event.prompt.text, 'Implement a parser');
 });
 
+test('explicit framing RPC override wins over persisted launch guide setting for only that session', async () => {
+  const f = fixture({}, {
+    a: { metadata: { 'carthagent.options': { guide: true } } },
+    b: { metadata: { 'carthagent.options': { guide: true } } },
+  });
+  await registerSessionControls(f.ctx);
+  await f.handlers.framing({ sessionID: 'a', enabled: false }, call());
+  const a = { sessionID: 'a', prompt: { text: 'Implement a parser' } };
+  const b = { sessionID: 'b', prompt: { text: 'Implement a parser' } };
+  await f.hooks.prompt(a);
+  await f.hooks.prompt(b);
+  assert.equal(a.prompt.text, 'Implement a parser');
+  assert.notEqual(b.prompt.text, 'Implement a parser');
+});
+
 test('queued controls recheck ownership after a session moves', async () => {
   const f = fixture();
   let releaseWrite;

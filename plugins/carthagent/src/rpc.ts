@@ -7,12 +7,13 @@ export const Carthagent = Rpc.define({
     health: {
       input: { type: 'object', additionalProperties: false },
       output: {
-        type: 'object',
-        properties: {
-          protocol: { type: 'integer', const: 1 },
-          hostVersion: { type: 'string' },
-          directory: { type: 'string' },
-        },
+          type: 'object',
+          properties: {
+            protocol: { type: 'integer', const: 1 },
+            hostVersion: { type: 'string' },
+            directory: { type: 'string' },
+            capabilities: { type: 'array', items: { type: 'string', enum: ['delivery.session-options.v1', 'delivery.budgets.v1', 'delivery.policy-overrides.v1'] }, uniqueItems: true },
+          },
         required: ['protocol', 'hostVersion', 'directory'],
         additionalProperties: false,
       },
