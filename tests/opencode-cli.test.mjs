@@ -460,25 +460,47 @@ test('native login uses OpenCode integration OAuth status and completion lifecyc
 
 test('native login cancellation maps to 130 and attempts to cancel the pending host flow', async () => {
   const calls = [];
-  const runtime = await createOpenCodeCliRuntime({ cwd: '/project', io: ioCapture().io, stdin: { isTTY: true }, stdout: { isTTY: true }, native: {
+  const lines = [];
+  let statusReady;
+  const ready = new Promise(resolve => { statusReady = resolve; });
+  const runtime = await createOpenCodeCliRuntime({ cwd: '/project', io: { log: text => lines.push(text), error: text => lines.push(text) }, stdin: { isTTY: true }, stdout: { isTTY: true }, native: {
     runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) }, headless: {},
     clientFactory: async () => ({ integration: {
       list: async () => ({ data: [{ id: 'provider', name: 'Provider', methods: [{ id: 'device', type: 'oauth', label: 'Device' }] }] }),
       oauth: {
         connect: async () => ({ data: { attemptID: 'attempt-cancel', url: 'https://auth.example', instructions: 'Approve', mode: 'auto', time: { expires: Date.now() + 60_000 } } }),
         status: async (_input, { signal }) => new Promise((_resolve, reject) => {
-          signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+          const onAbort = () => reject(signal.reason);
+          signal.addEventListener('abort', onAbort, { once: true });
+          calls.push('status-listener-ready');
+          statusReady();
         }),
         cancel: async input => { calls.push(input.attemptID); },
       },
     } }),
   } });
-  const timer = setTimeout(() => process.emit('SIGINT'), 40);
-  timer.unref?.();
-  try {
-    assert.equal(await runOpenCodeCli({ argv: ['login'], runtime, io: ioCapture().io, stdoutIsTTY: true }), 130);
-  } finally { clearTimeout(timer); }
-  assert.deepEqual(calls, ['attempt-cancel']);
+  const running = runOpenCodeCli({ argv: ['login'], runtime, io: { log: text => lines.push(text), error: text => lines.push(text) }, stdoutIsTTY: true });
+  await ready;
+  process.emit('SIGINT');
+  assert.equal(await running, 130, lines.join('\n'));
+  assert.deepEqual(calls, ['status-listener-ready', 'attempt-cancel']);
+});
+
+test('native login honors an already-delivered SIGINT without starting an authentication RPC', async () => {
+  const calls = [];
+  const runtime = await createOpenCodeCliRuntime({ cwd: '/project', io: ioCapture().io, stdin: { isTTY: true }, stdout: { isTTY: true }, native: {
+    runtime: {}, service: { ensureService: async () => { process.emit('SIGINT'); return { url: 'http://127.0.0.1:1', headers: {} }; } }, headless: {},
+    clientFactory: async () => ({ integration: {
+      list: async () => ({ data: [{ id: 'provider', name: 'Provider', methods: [{ id: 'device', type: 'oauth', label: 'Device' }] }] }),
+      oauth: {
+        connect: async () => { calls.push('connect'); throw new Error('must not connect'); },
+        status: async () => { calls.push('status'); },
+        cancel: async () => { calls.push('cancel'); },
+      },
+    } }),
+  } });
+  assert.equal(await runOpenCodeCli({ argv: ['login'], runtime, io: ioCapture().io, stdoutIsTTY: true }), 130);
+  assert.deepEqual(calls, []);
 });
 
 test('native key login rejects before prompting; secret OAuth form input is masked and hidden fields retain defaults', async () => {
