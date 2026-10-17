@@ -28,8 +28,7 @@ try {
   const own = await client.session.get({sessionID:result.sessionID},request());
   assert.equal(result.cost,own.cost,'use exact session aggregate cost');
   assert.equal(result.tokens,own.tokens.input+own.tokens.output+own.tokens.reasoning+own.tokens.cache.read+own.tokens.cache.write,'use exact session aggregate tokens');
-  const projectStats = await client.session.stats({location},request());
-  assert.ok(projectStats.cost > result.cost,'project stats include unrelated usage and must not be used');
+  assert.notEqual(result.sessionID,unrelated.id,'the evaluator uses only its own newly-created session');
   const failed = await runNativeEvaluation({client,directory,prompt:'CTG_FIXTURE_FAILURE',provider:model.providerID,model:model.id,timeoutSeconds:30,maxTurns:4,maxCost:1});
   assert.equal(failed.exitCode,1,JSON.stringify(failed));
   assert.equal(failed.outcome,'failed',JSON.stringify(failed));
@@ -37,6 +36,11 @@ try {
   assert.equal(failed.turns,1,JSON.stringify(failed));
   assert.equal(failed.productiveTurns,0,JSON.stringify(failed));
   assert.ok(failed.providerErrors >= 1,JSON.stringify(failed));
-  assert.equal(host.requests.length,3);
+  assert.equal(host.requests.length,2);
+  const mismatched = await runNativeEvaluation({client,directory,prompt:'This must fail the budget handshake.',provider:model.providerID,model:model.id,timeoutSeconds:30,maxTurns:5,maxCost:1});
+  assert.equal(mismatched.exitCode,1,JSON.stringify(mismatched));
+  assert.equal(mismatched.outcome,'failed',JSON.stringify(mismatched));
+  assert.ok(mismatched.errors.some(error=>/budget handshake/i.test(error)),JSON.stringify(mismatched));
+  assert.equal(host.requests.length,2,'mismatched turn limit must be rejected before provider admission');
   console.log(JSON.stringify({host:'2.0.32',outcome:result.outcome,failureOutcome:failed.outcome,turns:result.turns,cost:result.cost,isolatedFromConcurrentSession:true}));
 } finally { await host.close(); }
