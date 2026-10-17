@@ -84,6 +84,20 @@ under the release environment, publishes the patch/recipe and matching
 per-platform runtime artifacts plus checksums/manifest, and the installed
 package opt-in is tested against those published artifacts.
 
+When a release is still a GitHub draft, CI may opt in to authenticated asset
+retrieval by setting `CTG_RUNTIME_GITHUB_TOKEN` for the resolver/verifier
+process. This transport is optional: without it, installed products use the
+normal anonymous public release-download URL. With it, the token is used only
+for read-only `GET` requests to the fixed `api.github.com/repos/B-icy/Carthagent`
+release and asset APIs. The transport requires one exact `v<packaged-version>`
+release and one exact expected asset name; it does not fall back to public
+downloads if the requested draft release or asset is absent or ambiguous.
+GitHub asset redirects are followed without forwarding the credential. The
+token is removed from runtime and workspace child environments, and the
+existing packaged runtime-release manifest remains the sole source of archive,
+executable, and provenance trust pins. The normal no-token installed-package
+acceptance remains required after publication.
+
 ## Full-TUI glyph compatibility
 
 The pinned full TUI did not provide a public equivalent of CTG's legacy
