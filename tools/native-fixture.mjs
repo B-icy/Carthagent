@@ -21,7 +21,7 @@ export function streamText(res, text = 'Fixture response complete.') {
   res.end(`${chunk({}, 'stop')}data: [DONE]\n\n`);
 }
 
-export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'), respond = (_body, res) => streamText(res) } = {}) {
+export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'), pluginOptions, respond = (_body, res) => streamText(res) } = {}) {
   const temp = await mkdtemp(join(tmpdir(), 'ctg-native-fixture-'));
   const cwd = join(temp, 'project');
   const config = join(temp, 'config/opencode');
@@ -96,7 +96,7 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
     provider.listen(0, '127.0.0.1');
     await once(provider, 'listening');
     await writeFile(join(config, 'opencode.json'), JSON.stringify({
-      plugins: [resolve(plugin)], update: 'disable', model: 'ctg-fixture/fixture',
+      plugins: [pluginOptions ? { package: resolve(plugin), options: pluginOptions } : resolve(plugin)], update: 'disable', model: 'ctg-fixture/fixture',
       providers: { 'ctg-fixture': {
         package: '@opencode/ai/providers/openai-compatible',
         settings: { baseURL: `http://127.0.0.1:${provider.address().port}/v1`, apiKey: 'offline-fixture' },

@@ -15,7 +15,7 @@ export default Plugin.define({
     };
     try {
       cleanups.push(await registerSessionControls(context));
-      cleanups.push(await registerWorkspaceRpc(context, {}));
+      cleanups.push(await registerWorkspaceRpc(context, context.options));
       cleanups.push(await registerArchive(context, context.options));
       const registration = await context.rpc.register(Carthagent, {
         health: async () => ({
