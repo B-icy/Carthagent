@@ -3,6 +3,8 @@ import { Plugin } from "@opencode/plugin/tui";
 import { Show } from "solid-js";
 import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { framePrompt } from "../../../lib/tui/framing.mjs";
+import { carthagentConfigPath, loadCarthagentConfig, resolveReviewMode, saveCarthagentConfig } from "../../../lib/review.mjs";
 import { COMMANDS, NATIVE_COMMAND_COLLISIONS } from "./ui/commands.js";
 import { Workspace, rpcEventOptions, sessionControls, workspaceClient } from "./ui/client.js";
 import { cliConfigPath, readCliConfig, writeNativeTheme } from "./ui/host-state.js";
@@ -13,10 +15,6 @@ const THEMES = ["carthage", "opencode", "tokyonight", "nebula", "ember", "forest
 export default Plugin.define({
   id: "carthagent.tui",
   setup(context) {
-    const fallbackReviewDefaults = { mode: "ask" as "ask" | "yes" | "no" };
-    const reviewStore = context.storage?.store?.("review-default", { initial: fallbackReviewDefaults });
-    const reviewDefaults = reviewStore?.[0] ?? fallbackReviewDefaults;
-    const saveReviewDefaults = reviewStore?.[1] ?? (async (mutate: (draft: typeof fallbackReviewDefaults) => void) => mutate(fallbackReviewDefaults));
     const unregister = context.ui.router.register({ name: "carthagent", render: ({ data }) => <WorkspacePage view={String(data?.view ?? "workspace")} refreshKey={String(data?.refresh ?? "")} sessionID={typeof data?.sessionID === "string" ? data.sessionID : undefined} /> });
     const cleanups = [unregister];
     const lifecycle = new AbortController();
@@ -32,7 +30,7 @@ export default Plugin.define({
       mode: "global",
       priority: 20,
       commands: [
-        ...COMMANDS.filter((item) => item.id !== "help" && !NATIVE_COMMAND_COLLISIONS.includes(item.name as typeof NATIVE_COMMAND_COLLISIONS[number]))
+        ...COMMANDS.filter((item) => !NATIVE_COMMAND_COLLISIONS.includes(item.name as typeof NATIVE_COMMAND_COLLISIONS[number]))
         .map((item) => ({
           id: `carthagent.${item.id}`,
           title: `/${item.name}${item.args ? ` ${item.args}` : ""}`,
@@ -83,7 +81,7 @@ export default Plugin.define({
         }
         case "restart":
           if (!sessionID) { toast("/restart requires an open session; it interrupts only the selected session and never restarts the shared service.", "warning"); return; }
-          await context.client.session.interrupt({ sessionID });
+          await context.client.session.interrupt({ sessionID, resume: false });
           toast("Selected session interrupted; its transcript is preserved.", "success");
           return;
         case "theme": {
@@ -134,14 +132,14 @@ export default Plugin.define({
           return;
         case "review": {
           if (!sessionID) { toast("/review requires an open session.", "warning"); return; }
-          if (arg && !["ask", "yes", "no", "status"].includes(arg.toLowerCase())) { toast("Usage: /review [ask|yes|no|status]. Bare /review starts a fresh review prompt.", "warning"); return; }
+          if (arg && !["ask", "yes", "no", "status"].includes(arg.toLowerCase())) { toast("Usage: /review [ask|yes|no|status]. ask/yes/no sets the Carthagent automatic-review default; bare /review always starts an independent reviewer.", "warning"); return; }
           if (arg && ["ask", "yes", "no"].includes(arg.toLowerCase())) {
             const mode = arg.toLowerCase() as "ask" | "yes" | "no";
-            await saveReviewDefaults((draft) => { draft.mode = mode; });
-            toast(`Fresh-review default saved locally: ${mode}.`, "success");
+            const config = saveCarthagentConfig({ review: mode });
+            toast(`Automatic fresh-review default saved to ${carthagentConfigPath()}: ${resolveReviewMode(undefined, config)}. Bare /review remains available regardless of this default.`, "success");
             return;
           }
-          if (arg.toLowerCase() === "status") { toast(`Fresh-review default: ${reviewDefaults.mode} (stored in this OpenCode profile).`, "info"); return; }
+          if (arg.toLowerCase() === "status") { toast(`Automatic fresh-review default: ${resolveReviewMode(undefined, loadCarthagentConfig())} (Carthagent profile: ${carthagentConfigPath()}). Bare /review always starts an independent reviewer.`, "info"); return; }
           {
             const api = workspaceClient(context, location);
             const result = await api.startReview({ sessionID }, AbortSignal.timeout(5 * 60_000));
@@ -192,7 +190,7 @@ export default Plugin.define({
           return;
         case "abort":
           if (!sessionID) { toast("/abort requires an open session.", "warning"); return; }
-          await context.client.session.interrupt({ sessionID });
+          await context.client.session.interrupt({ sessionID, resume: false });
           return;
         case "raw":
           if (!sessionID || !arg) { toast("Usage: /raw <prompt> (inside a session).", "warning"); return; }
@@ -205,7 +203,7 @@ export default Plugin.define({
             toast(`Carthagent framing ${result.enabled ? "enabled" : "disabled"} for this session.`, "success");
             return;
           }
-          await context.client.session.prompt({ sessionID, text: `Use the Carthagent phased delivery workflow. Plan requirements, implement, run checks, and report evidence.\n\nTask: ${arg}`, metadata: { "ctg.framed": true } });
+          await context.client.session.prompt({ sessionID, text: framePrompt(arg) });
           return;
         case "workflow": case "architecture": case "evidence":
           context.ui.router.navigate({ type: "plugin", name: "carthagent", data: { view: id, ...(sessionID ? { sessionID } : {}) } });

@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 test("Carthagent command manifest resolves visible CTG commands", () => {
+  assert.equal(resolveCommand("/ctg-help")?.id, "help");
   assert.equal(resolveCommand("/review")?.id, "review");
   assert.equal(resolveCommand("/review-mode")?.id, "review");
   for (const name of ["workflow", "architecture", "evidence"]) assert.equal(resolveCommand(name)?.hidden, undefined);
@@ -19,6 +20,7 @@ test("Carthagent command manifest resolves visible CTG commands", () => {
 
 test("manifest prevents collisions with native OpenCode slash commands", () => {
   for (const name of NATIVE_COMMAND_COLLISIONS) assert.equal(COMMANDS.some((item) => item.name === name || item.aliases?.includes(name)), false, name);
+  assert.deepEqual(COMMANDS.filter((item) => ["model", "compact", "abort", "resume"].includes(item.name)).map((item) => item.name), ["model", "compact", "abort", "resume"]);
 });
 
 test("Carthage theme validates against the OpenCode V2 theme schema and resolver", async () => {
