@@ -61,3 +61,29 @@ test('native evaluation consumes actual OpenCode event shapes and fails closed o
     assert.equal(readFileSync(join(root, 'src/value.mjs'), 'utf8'), 'export const value = 42;\n');
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test('native evaluation bounds a nonresponsive interrupt cleanup and reports interruption unknown', async () => {
+  const controller = new AbortController();
+  const api = {
+    server: { info: async () => ({ version: '2.0.32' }) },
+    session: {
+      create: async () => ({ id: 'hung-session' }),
+      prompt: (_input, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once:true })),
+      interrupt: () => new Promise(() => {}),
+      get: async () => ({ cost: 0, tokens: { input:0, output:0, reasoning:0, cache:{read:0,write:0} } }),
+    },
+    event: { subscribe: async function* ({ signal }) {
+      await new Promise(resolve => signal.addEventListener('abort', resolve, { once:true }));
+    } },
+  };
+  const abortTimer = setTimeout(() => controller.abort(Error('test cancellation')), 50);
+  const started = Date.now();
+  try {
+    const result = await runNativeEvaluation({ client:api, directory:'/tmp', prompt:'hang', model:'fixture', provider:'local', signal:controller.signal, timeoutSeconds:5, maxTurns:2, maxCost:1 });
+    assert.equal(result.exitCode,1);
+    assert.equal(result.outcome,null);
+    assert.equal(result.interruptionStatus,'unknown');
+    assert.equal(result.budgetReason,'cancelled');
+    assert.ok(Date.now()-started < 3000, 'a never-resolving interrupt must not hold evaluation cleanup');
+  } finally { clearTimeout(abortTimer); }
+});
