@@ -103,6 +103,36 @@ test('plugin import containment rejects traversal and cross-drive targets', asyn
   }
 });
 
+test('plugin import containment resolves symlinks and permits only canonical in-root targets', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'native-paired-import-symlinks-'));
+  try {
+    const sourceRoot = join(root, 'snapshot');
+    const entry = join(sourceRoot, 'plugins/carthagent/src/index.ts');
+    const inRootTarget = join(sourceRoot, 'shared');
+    const inRootLink = join(dirname(entry), 'inside-link');
+    const outsideTarget = join(root, 'outside');
+    const outsideLink = join(dirname(entry), 'outside-link');
+    await mkdir(dirname(entry), { recursive: true });
+    await Promise.all([mkdir(inRootTarget), mkdir(outsideTarget)]);
+    await writeFile(join(inRootTarget, 'rpc.ts'), 'export const rpc = {};\n');
+    await writeFile(join(outsideTarget, 'rpc.ts'), 'export const outside = true;\n');
+    await symlink(inRootTarget, inRootLink, process.platform === 'win32' ? 'junction' : 'dir');
+    await writeFile(entry, "import { Plugin } from '@opencode/plugin';\nimport { rpc } from './inside-link/rpc';\nexport { rpc, Plugin };\n");
+    assert.deepEqual(assertPluginImportDependencies(entry), { sourceImports: ['./inside-link/rpc'], workspaceImports: ['@opencode/plugin'] });
+
+    await symlink(outsideTarget, outsideLink, process.platform === 'win32' ? 'junction' : 'dir');
+    await writeFile(entry, "import { Plugin } from '@opencode/plugin';\nimport { outside } from './outside-link/rpc';\nexport { outside, Plugin };\n");
+    assert.throws(() => assertPluginImportDependencies(entry), /missing from immutable tree.*outside-link/);
+
+    const danglingLink = join(dirname(entry), 'dangling-link');
+    await symlink(join(root, 'missing-target'), danglingLink, process.platform === 'win32' ? 'junction' : 'dir');
+    await writeFile(entry, "import { Plugin } from '@opencode/plugin';\nimport { missing } from './dangling-link/rpc';\nexport { missing, Plugin };\n");
+    assert.throws(() => assertPluginImportDependencies(entry), /missing from immutable tree.*dangling-link/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('paired baseline condition requires Carthagent to be absent', () => {
   assert.deepEqual(assertPluginCondition([{ id: 'other', state: { status: 'active' } }], false),
     { expected: 'absent', observed: 'absent', pluginId: 'carthagent' });
