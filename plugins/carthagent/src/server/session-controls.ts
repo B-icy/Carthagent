@@ -1,6 +1,7 @@
 import type { Context } from '@opencode/plugin/promise/plugin';
 import { framePrompt, shouldFrame, unframe } from '../../../../lib/tui/framing.mjs';
 import { SessionControls } from '../session-rpc';
+import { effectiveSessionOptions } from '../../../../lib/opencode/session-options.mjs';
 
 /** Admission framing is session-scoped; raw bypasses framing, never delivery policy. */
 export async function registerSessionControls(ctx: Context) {
@@ -16,20 +17,19 @@ export async function registerSessionControls(ctx: Context) {
   const key = (sessionID: string) => `controls/${sessionID}`;
   const settings = async (sessionID: string) => {
     const value = await ctx.storage.get(key(sessionID));
-    return { framing: value && typeof value === 'object' && 'framing' in value ? value.framing !== false : ctx.options.guide !== false };
-  };
-  const owns = async (sessionID: string, signal?: AbortSignal) => {
-    const session = await ctx.session.get({ sessionID }, { signal });
-    if (session.location.directory !== ctx.location.directory) throw new Error('Session belongs to another workspace location');
-    return session;
+    if (value && typeof value === 'object' && 'framing' in value) return { framing: value.framing !== false };
+    const session = await ctx.session.get({ sessionID });
+    return { framing: effectiveSessionOptions(session, ctx.options).guide };
   };
   try {
     const prompt = await ctx.session.hook('prompt', async (event) => {
+      const session = await ctx.session.get({ sessionID: event.sessionID });
+      const options = effectiveSessionOptions(session, ctx.options);
       const saved = await settings(event.sessionID);
       if (event.metadata?.['ctg.raw'] === true || event.metadata?.['ctg.framed'] === true) return;
       if (!shouldFrame(event.prompt.text, {
         enabled: saved.framing,
-        delivery: ctx.options.delivery !== false,
+        delivery: options.delivery,
       }) || unframe(event.prompt.text) !== null) return;
       const original = event.prompt.text;
       const framed = framePrompt(original);
@@ -45,9 +45,10 @@ export async function registerSessionControls(ctx: Context) {
     const registration = await ctx.rpc.register(SessionControls, {
       framing: async (input, call) => {
         const { sessionID, enabled } = input as { sessionID: string; enabled?: boolean };
-        await owns(sessionID, call.signal);
         return exclusive(sessionID, async () => {
           call.signal.throwIfAborted();
+          const session = await ctx.session.get({ sessionID }, { signal: call.signal });
+          if (session.location.directory !== ctx.location.directory) return call.error('wrong_workspace', 'Session belongs to another workspace location', { sessionID });
           const saved = await settings(sessionID);
           const next = enabled ?? !saved.framing;
           await ctx.storage.set(key(sessionID), { ...saved, framing: next });
@@ -56,9 +57,10 @@ export async function registerSessionControls(ctx: Context) {
       },
       compact: async (input, call) => {
         const { sessionID, notes } = input as { sessionID: string; notes?: string };
-        await owns(sessionID, call.signal);
         return exclusive(sessionID, async () => {
           call.signal.throwIfAborted();
+          const session = await ctx.session.get({ sessionID }, { signal: call.signal });
+          if (session.location.directory !== ctx.location.directory) return call.error('wrong_workspace', 'Session belongs to another workspace location', { sessionID });
           // The native compact API has no notes field. Queue a durable control
           // message before it so notes survive disconnect and cannot leak to a
           // different session through a process-global one-shot hook.

@@ -136,6 +136,11 @@ app.use(['/api/design', '/api/plan/set', '/api/plan/revise', '/api/checks/run', 
   catch (error) { release?.(); return res.status(409).json({ error: error.message }); }
   let done = false;
   const finish = () => { if (!done) { done = true; release(); } };
+  // Mutations are persisted before handlers serialize their response. Release
+  // at that boundary rather than waiting for the socket's `finish` event: a
+  // client that has received the response must not race the still-held lease.
+  const json = res.json.bind(res);
+  res.json = body => { finish(); return json(body); };
   // Do not release on socket close: a disconnected request may still run checks.
   res.once('finish', finish);
   res.locals.releaseWorkspace = finish;
