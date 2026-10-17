@@ -6,6 +6,7 @@ This measures the interactive terminal (including CTG plugin work), not RPC.
 Startup and initial warm-up are excluded from latency samples.
 """
 import argparse
+import datetime
 import fcntl
 import json
 import os
@@ -32,10 +33,29 @@ def percentile95(values):
     return ordered[(len(ordered) * 95 + 99) // 100 - 1]
 
 
+def host_conditions():
+    result = {"capturedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              "cpuCount": os.cpu_count()}
+    try:
+        result["loadAverage1m5m15m"] = [round(value, 2) for value in os.getloadavg()]
+    except (AttributeError, OSError, ValueError):
+        result["loadAverage1m5m15m"] = None
+    try:
+        values = {line.split(":", 1)[0]: int(line.split()[1])
+                  for line in pathlib.Path("/proc/meminfo").read_text().splitlines()
+                  if ":" in line and line.split()[1].isdigit()}
+        result["hostMemoryMb"] = {key: round(values[key] / 1024, 1)
+                                  for key in ("MemTotal", "MemAvailable") if key in values}
+    except OSError:
+        result["hostMemoryMb"] = None
+    return result
+
+
 class Terminal:
     def __init__(self, master, child):
         self.master, self.child = master, child
         self.transcript = bytearray()
+        self.screen = Screen()
 
     def drain(self, timeout=0.05):
         if self.child.poll() is not None:
@@ -47,6 +67,7 @@ class Terminal:
         except OSError:
             return b""
         self.transcript.extend(chunk)
+        self.screen.feed(chunk)
         # Reply to terminal capability probes in a headless PTY.
         if b"\x1b[6n" in chunk:
             os.write(self.master, b"\x1b[1;1R")
@@ -66,6 +87,122 @@ class Terminal:
 
     def send(self, data):
         os.write(self.master, data)
+
+
+class Screen:
+    """Small deterministic VT screen model for rendered-cell assertions."""
+    def __init__(self, rows=36, cols=120):
+        self.rows, self.cols = rows, cols
+        self.cells = [[" "] * cols for _ in range(rows)]
+        self.row = self.col = 0
+        self.state = "text"
+        self.sequence = ""
+        self.pending = b""
+
+    def _put(self, char):
+        if char == "\n":
+            self.row = min(self.rows - 1, self.row + 1)
+        elif char == "\r":
+            self.col = 0
+        elif char == "\b":
+            self.col = max(0, self.col - 1)
+        elif char == "\t":
+            self.col = min(self.cols - 1, (self.col // 8 + 1) * 8)
+        elif char >= " " and char != "\x7f":
+            if self.col >= self.cols:
+                self.col = 0
+                self.row = min(self.rows - 1, self.row + 1)
+            self.cells[self.row][self.col] = char
+            self.col += 1
+
+    def _csi(self, final):
+        raw = self.sequence[2:-1]
+        params = [int(part) if part.isdigit() else 0 for part in raw.split(";")]
+        n = params[0] or 1
+        if final in "Hf":
+            self.row = max(0, min(self.rows - 1, (params[0] or 1) - 1))
+            self.col = max(0, min(self.cols - 1, (params[1] if len(params) > 1 and params[1] else 1) - 1))
+        elif final == "A": self.row = max(0, self.row - n)
+        elif final == "B": self.row = min(self.rows - 1, self.row + n)
+        elif final == "C": self.col = min(self.cols - 1, self.col + n)
+        elif final == "D": self.col = max(0, self.col - n)
+        elif final == "G": self.col = max(0, min(self.cols - 1, n - 1))
+        elif final == "d": self.row = max(0, min(self.rows - 1, n - 1))
+        elif final == "K":
+            mode = params[0] if params else 0
+            start = 0 if mode == 1 else self.col
+            end = self.col + 1 if mode == 1 else self.cols if mode == 2 else self.cols
+            for col in range(start, end): self.cells[self.row][col] = " "
+        elif final == "J":
+            mode = params[0] if params else 0
+            if mode == 2 or mode == 3:
+                self.cells = [[" "] * self.cols for _ in range(self.rows)]
+            elif mode == 0:
+                for col in range(self.col, self.cols): self.cells[self.row][col] = " "
+                for row in range(self.row + 1, self.rows): self.cells[row] = [" "] * self.cols
+        elif final == "X":
+            for col in range(self.col, min(self.cols, self.col + n)): self.cells[self.row][col] = " "
+        elif final == "s":
+            self.saved = (self.row, self.col)
+        elif final == "u" and hasattr(self, "saved"):
+            self.row, self.col = self.saved
+
+    def feed(self, data):
+        decoded = self.pending + data
+        text = decoded.decode("utf-8", errors="replace")
+        self.pending = b""
+        # Retain an incomplete trailing UTF-8 sequence for the next PTY chunk.
+        encoded = text.encode("utf-8")
+        if encoded != decoded:
+            for length in range(1, min(4, len(decoded)) + 1):
+                try:
+                    text = decoded[:-length].decode("utf-8")
+                    self.pending = decoded[-length:]
+                    break
+                except UnicodeDecodeError:
+                    continue
+        for char in text:
+            if self.state == "esc":
+                if char == "[": self.state, self.sequence = "csi", "\x1b["
+                elif char == "]": self.state = "osc"
+                elif char == "7": self.state = "text"
+                else: self.state = "text"
+            elif self.state == "osc":
+                if char == "\x07": self.state = "text"
+                elif char == "\x1b": self.state = "osc-esc"
+            elif self.state == "osc-esc":
+                self.state = "text" if char == "\\" else "osc"
+            elif self.state == "csi":
+                self.sequence += char
+                if "@" <= char <= "~":
+                    self._csi(char)
+                    self.state, self.sequence = "text", ""
+            elif char == "\x1b": self.state = "esc"
+            else: self._put(char)
+
+    def lines(self):
+        return ["".join(row).rstrip() for row in self.cells]
+
+    def contains(self, text):
+        return any(text in line for line in self.lines())
+
+    def dump(self):
+        return "\n".join(self.lines())
+
+
+def locate_text(screen, text):
+    for row, line in enumerate(screen.lines()):
+        col = line.find(text)
+        if col >= 0:
+            return row, col
+    return None
+
+
+def editor_contains_typed_cell(screen, marker, before, row, editor_col):
+    # The native placeholder's starting cell is the input origin. Restrict the
+    # assertion to that exact cell; other changes on the editor row do not count.
+    return (screen.cells[row][editor_col] == marker and
+            before[row][editor_col] != marker)
 
 
 def main():
@@ -106,6 +243,7 @@ def main():
         "XDG_STATE_HOME": str(root / "state"), "XDG_CACHE_HOME": str(root / "cache"),
         "OPENCODE_DB": str(root / "database.sqlite"), "OPENCODE_CONFIG_PROJECT_DISABLE": "true",
     })
+    fixture = None
     master, slave = pty.openpty()
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 36, 120, 0, 0))
     child = subprocess.Popen([binary, "--standalone"], cwd=root / "project", env=env,
@@ -114,26 +252,30 @@ def main():
     terminal = Terminal(master, child)
     result = {"binary": binary, "expectedHostVersion": "2.0.32",
               "measurement": "real POSIX PTY; CTG plugin disabled baseline" if args.no_plugin else "real POSIX PTY; CTG plugin enabled",
-              "startupIncludedInSamples": False, "samples": args.samples}
+              "startupIncludedInSamples": False, "samples": args.samples,
+              "hostConditions": host_conditions()}
     try:
         # Wait on actual TUI readiness; never charge fixed sleeps to an input latency.
         terminal.collect_until(lambda b: b"Ask anything" in b and b"2.0.32" in b, 90, "native 2.0.32 editor")
         # Allow the first genuine frame/plugin setup to settle, outside all sample clocks.
         terminal.drain(0.5)
+        editor_anchor = locate_text(terminal.screen, "Ask anything")
+        if editor_anchor is None:
+            raise RuntimeError("native editor placeholder was not present in parsed screen")
+        editor_row, editor_col = editor_anchor
+        editor_origin = (editor_row, editor_col)
         input_ms = []
         for index in range(args.samples):
             marker = chr(ord("a") + index % 26)
             # A literal printable key is sent. Completion means its text was emitted
             # back by the TUI renderer in a post-key terminal frame, not merely read.
-            before = len(terminal.transcript)
+            before = [row[:] for row in terminal.screen.cells]
             started = time.perf_counter_ns()
             terminal.send(marker.encode())
-            response = bytearray()
             deadline = time.monotonic() + 2
             while time.monotonic() < deadline:
-                response.extend(terminal.drain(0.01))
-                plain = ANSI.sub(b"", bytes(response))
-                if marker.encode() in plain:
+                terminal.drain(0.01)
+                if editor_contains_typed_cell(terminal.screen, marker, before, *editor_origin):
                     input_ms.append((time.perf_counter_ns() - started) / 1_000_000)
                     break
             else:
@@ -142,35 +284,17 @@ def main():
             terminal.drain(0.02)
 
         switch_ms = []
-        switch_note = "not measured: requires two durable sessions from separate root contexts"
-        # A real keybinding enters the native selector; measure until return to the
-        # editor after Enter. We refuse to call this a session-switch sample unless
-        # a second session is visible and selected (checked from selector rendering).
-        terminal.send(b"/resume\r")
-        selector = bytearray()
-        selector_deadline = time.monotonic() + 8
-        while time.monotonic() < selector_deadline:
-            selector.extend(terminal.drain(0.05))
-            plain = ANSI.sub(b"", bytes(selector)).lower()
-            if b"no sessions" in plain or b"1/1" in plain:
-                break
-            if b"session" in plain and (b"sort" in plain or b"scope" in plain):
-                break
-        selector_plain = ANSI.sub(b"", bytes(selector)).lower()
-        if b"session" in selector_plain and b"no sessions" not in selector_plain:
-            switch_note = "selector opened; true warm switch not scored without verifiable second-root fixture"
-            # Selector invocation is not counted as a switch. Escape safely to editor.
-            terminal.send(b"\x1b")
-            terminal.drain(0.2)
-        else:
-            terminal.send(b"\x1b")
-            terminal.drain(0.2)
+        switch_note = "not measured: native session selection remains unverified"
         result["input"] = {"samples": len(input_ms), "p95Ms": round(percentile95(input_ms), 3),
                            "maxMs": round(max(input_ms), 3), "targetMs": TARGET_INPUT_MS,
                            "targetMet": percentile95(input_ms) <= TARGET_INPUT_MS,
-                           "basis": "keypress write to matching rendered PTY echo observed"}
-        result["warmSessionSwitch"] = {"samples": len(switch_ms), "p95Ms": None,
-                                       "targetMs": TARGET_SWITCH_MS, "targetMet": None, "note": switch_note}
+                             "basis": "keypress write to changed cell at native editor placeholder origin"}
+        result["warmSessionSwitch"] = {"samples": len(switch_ms), "p95Ms": round(percentile95(switch_ms), 3) if switch_ms else None,
+                                       "maxMs": round(max(switch_ms), 3) if switch_ms else None,
+                                       "targetMs": TARGET_SWITCH_MS,
+                                       "targetMet": percentile95(switch_ms) <= TARGET_SWITCH_MS if switch_ms else None,
+                                       "note": switch_note,
+                                       **({"sequenceMs": [round(value, 3) for value in switch_ms]} if switch_ms else {})}
         # Bounded idle observation; report all bytes and RSS trend. Native status
         # clocks may legitimately redraw, so byte activity alone is not a failure.
         def process_tree_rss_kb():
@@ -215,6 +339,7 @@ def main():
                            "rssGrowthBudgetMet": growth_mb <= args.memory_growth_limit_mb if growth_mb is not None else None,
                            "rssScope": "native process plus descendants where /proc is available",
                            "interpretation": "PTY bytes are observational only; native status redraws are not assumed plugin defects"}
+        result["hostConditionsAtRunEnd"] = host_conditions()
         result["overallTargetsMet"] = bool(result["input"]["targetMet"] and
                                            result["warmSessionSwitch"]["targetMet"] is True and
                                            result["idle"]["rssGrowthBudgetMet"] is True)
