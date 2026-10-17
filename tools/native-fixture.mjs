@@ -8,6 +8,7 @@ import { once } from 'node:events';
 import { createHash, randomBytes } from 'node:crypto';
 import { OpenCode } from '@opencode/client';
 import { assertCompletePluginSource, assertPluginCondition, resolveFixtureSourceRoot, verifySnapshotIdentity } from './native-paired-guards.mjs';
+import { loadNativeTestRuntime, NATIVE_TEST_COMPATIBILITY_VERSION } from './native-runtime-identity.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 
@@ -22,7 +23,46 @@ export function streamText(res, text = 'Fixture response complete.') {
   res.end(`${chunk({}, 'stop')}data: [DONE]\n\n`);
 }
 
-export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'), pluginOptions, pluginExpected = plugin ? 'active' : 'absent', verifyInventory = false, provenance, respond = (_body, res) => streamText(res), env: extraEnv = {}, preserveTemp = false } = {}) {
+export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'), pluginOptions, plugins: additionalPlugins = [], pluginExpected = plugin ? 'active' : 'absent', verifyInventory = false, provenance, respond = (_body, res) => streamText(res), env: extraEnv = {}, preserveTemp = false } = {}) {
+  const pluginEntries = [
+    ...(plugin ? [pluginOptions ? { package: resolve(plugin), options: pluginOptions } : resolve(plugin)] : []),
+    ...additionalPlugins.map(entry => typeof entry === 'string' ? resolve(entry) : { ...entry, package: resolve(entry.package) }),
+  ];
+  const runtimeOptions = process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST
+    ? { runtimeReleaseManifestPath: process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST }
+    : {};
+  let runtimeIdentity;
+  let runtimeBinary;
+  const productRuntime = await import('../lib/opencode/runtime.mjs');
+  if (typeof productRuntime.resolveOpenCode === 'function' && typeof productRuntime.runtimeIdentity === 'function') {
+    runtimeBinary = await productRuntime.resolveOpenCode(runtimeOptions);
+    const selected = await productRuntime.runtimeIdentity(runtimeBinary, runtimeOptions);
+    runtimeIdentity = Object.freeze({
+      ...selected,
+      binary: selected.binaryPath,
+      compatibilityVersion: NATIVE_TEST_COMPATIBILITY_VERSION,
+      runtimeVersion: selected.version,
+      binarySha256: selected.binarySha256,
+    });
+  } else {
+    const explicitOwnedRoot = process.env.CTG_OWNED_OPENCODE_RUNTIME;
+    const configuredBinary = process.env.CTG_OPENCODE_BIN ?? (explicitOwnedRoot
+      ? join(resolve(explicitOwnedRoot), `cli-${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch}`, 'bin', process.platform === 'win32' ? 'opencode.exe' : 'opencode')
+      : join(root, 'node_modules/@opencode/cli/bin/opencode.exe'));
+    const configuredOwnedRoot = explicitOwnedRoot ?? inferOwnedRoot(configuredBinary);
+    const releaseManifestPath = process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST ?? join(root, 'lib/opencode/runtime-release.json');
+    const expectedManifest = configuredOwnedRoot ? JSON.parse(await readFile(releaseManifestPath, 'utf8')) : undefined;
+    const loaded = await loadNativeTestRuntime({
+      binary: configuredBinary,
+      ...(configuredOwnedRoot ? { ownedRoot: configuredOwnedRoot, expectedManifest } : {}),
+    });
+    runtimeBinary = loaded.binary;
+    runtimeIdentity = Object.freeze({
+      ...loaded,
+      binary: loaded.binary,
+      binarySha256: loaded.binarySha256 ?? createHash('sha256').update(await readFile(loaded.binary)).digest('hex'),
+    });
+  }
   const temp = await mkdtemp(join(tmpdir(), 'ctg-native-fixture-'));
   const cwd = join(temp, 'project');
   const pluginProbeCwd = verifyInventory ? join(temp, 'project-alpha') : cwd;
@@ -95,9 +135,9 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
     if (verifyInventory) {
       env.NODE_PATH = join(root, 'node_modules');
     }
-    const binary = process.env.CTG_OPENCODE_BIN ?? join(root, 'node_modules/@opencode/cli/bin/opencode.exe');
     childDetached = !verifyInventory;
-    child = spawn(binary, ['serve', '--hostname', '127.0.0.1', '--port', '0'],
+    child = spawn(runtimeBinary, ['serve', '--hostname', '127.0.0.1', '--port', '0',
+      ...(extraEnv.CTG_NATIVE_DEBUG === '1' ? ['--print-logs', '--log-level', 'debug'] : [])],
       { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], detached: childDetached });
     baseUrl = await new Promise((done, reject) => {
       const timer = setTimeout(() => reject(Error(`Host startup timeout: ${output}`)), 30_000);
@@ -117,7 +157,9 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
     });
     client = OpenCode.make({ baseUrl, headers: { authorization: `Basic ${Buffer.from(`opencode:${password}`).toString('base64')}` } });
     const version = (await client.server.info(request())).version;
-    if (version !== '2.0.32') throw Error(`Expected pinned host 2.0.32, got ${version}`);
+    if (version !== runtimeIdentity.runtimeVersion) {
+      throw Error(`Native fixture runtime identity mismatch: expected ${runtimeIdentity.runtimeVersion}, got ${version}`);
+    }
     const location = { directory: pluginProbeCwd };
     if (verifyInventory) {
       await client.session.create({ location, model: { providerID: 'ctg-fixture', id: 'fixture' }, title: 'native plugin activation probe' }, request());
@@ -144,7 +186,7 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
       if (!pluginObservation) throw new Error('Timed out waiting for native plugin inventory condition');
       if (pluginExpected === 'active') {
         const probe = await client.rpc.call({ rpcID: 'carthagent', method: 'health', input: {}, location }, request());
-        if (probe.output?.hostVersion !== '2.0.32' || probe.output?.protocol !== 1) {
+        if (probe.output?.hostVersion !== runtimeIdentity.runtimeVersion || probe.output?.protocol !== 1) {
           throw Error(`Native Carthagent health probe failed: ${JSON.stringify(probe.output)}`);
         }
         pluginHealth = { protocol: probe.output.protocol, hostVersion: probe.output.hostVersion, directoryMatches: probe.output.directory === pluginProbeCwd };
@@ -153,7 +195,7 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
       if (provenance) {
         const { assertDependencyPackageIdentity, hashDependencyInstall, hashDependencyPackages } = await import('./native-paired-guards.mjs');
         verifySnapshotIdentity(provenance, provenance, { verifyArtifactFiles: false });
-        const binary = process.env.CTG_OPENCODE_BIN ?? join(root, 'node_modules/@opencode/cli/bin/opencode.exe');
+        const binary = runtimeIdentity.binary;
         if (provenance.binarySha256 !== createHash('sha256').update(await readFile(binary)).digest('hex')) {
           throw new Error('Native fixture binary hash does not match selected executable');
         }
@@ -175,7 +217,7 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
     provider.listen(0, '127.0.0.1');
     await once(provider, 'listening');
     await writeFile(join(config, 'opencode.json'), JSON.stringify({
-      plugins: plugin ? [pluginOptions ? { package: resolve(plugin), options: pluginOptions } : resolve(plugin)] : [],
+      plugins: pluginEntries,
       update: 'disable', model: 'ctg-fixture/fixture',
       providers: { 'ctg-fixture': {
         package: '@opencode/ai/providers/openai-compatible',
@@ -191,7 +233,7 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
   return {
     temp, cwd, baseUrl, password, requests, providerErrors, hostErrors, request, start, stop, close,
     serverPid: () => child?.pid ?? null,
-    pluginObservation, pluginInventory, pluginHealth, provenance,
+    pluginObservation, pluginInventory, pluginHealth, provenance, runtimeIdentity,
     model: { providerID: 'ctg-fixture', id: 'fixture' },
     location: { directory: cwd },
     get client() { return client; },
@@ -221,4 +263,10 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
       }
     },
   };
+}
+
+function inferOwnedRoot(binary) {
+  const resolved = resolve(binary);
+  const match = resolved.match(/^(.*)[\\/]cli-[a-z]+-[a-z0-9]+[\\/]bin[\\/]opencode(?:\.exe)?$/i);
+  return match?.[1];
 }

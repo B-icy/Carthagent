@@ -60,16 +60,23 @@ For bounded memory release evidence, the parent has proposed—not inherited fro
 the original compatibility document—this explicit 30-minute offline comparison
 gate: baseline and CTG each have a 5-minute warmup, followed by 25 minutes of
 1-second RSS observations; record TUI process-tree RSS and owned-server
-process-tree RSS independently and combined. The parent-proposed gates are (1)
-CTG incremental retained RSS growth over baseline at most 128 MiB, and (2) CTG
-median RSS growth in the final measured 5-minute block relative to the first
-measured 5-minute block at most 32 MiB. Preserve both raw condition traces.
-Before execution, parent/product review must specify whether gate (1) compares
-growth from each condition's first measured block, the elapsed-time alignment,
-and the exact process-tree aggregation; missing samples must fail rather than be
-interpolated or dropped. These are proposed engineering release gates, not proof
-of a mathematical long-term bound. Review must approve the workload and
-calculation before execution. The bounded workload must
+process-tree RSS independently and combined. Proposed, reviewable calculations
+use combined TUI+owned-server RSS, with each condition run serially under the
+same disposable loopback streaming/reconnect workload: warm each condition for
+5 minutes, then collect 1-second samples for exactly 25 minutes. Align samples
+by elapsed time from the first measured sample; a missing sample or unmatched
+elapsed-time point fails (no interpolation or dropping). Let `B0` and `C0` be
+the medians of the first measured 5-minute blocks for baseline and CTG. For
+each aligned sample define baseline-adjusted excess growth
+`D(t) = (CTG(t) - C0) - (baseline(t) - B0)`. The proposed retained-growth gate
+is `max(D(t)) <= 128 MiB` over all 25 measured minutes. The proposed observable
+plateau gate is `median(D(t), final 5-minute block) - median(D(t), first measured
+5-minute block) <= 32 MiB`. Preserve raw TUI/server/combined series, timestamps,
+host conditions, workload request/reconnect/error counts, and cleanup evidence.
+These finite-window release criteria are engineering observations, not
+mathematical long-term memory guarantees. Parent/product review must approve the
+formula, workload, and failure policy before execution; this is plan review
+only, not authorization to run the workload. The bounded workload must
 exercise only disposable loopback streaming and reconnects; capture stream
 request counts, reconnect attempts/results, timeouts/exceptions, missing RSS
 samples, host load/memory, exact durations and cleanup status. Any failure,
@@ -131,6 +138,18 @@ the lockfile and pinned CLI hash remained unchanged), so further CTG attempts
 were stopped. The upstream-binary check verifies the harness fix only; it does
 not establish final shipping-runtime identity or acceptance. Preserve the exact
 baseline result and CTG fail-closed outcome; do not call the latter a pass.
+
+Native fixtures now carry the shared runtime identity record separately from
+the compatibility version: compatibility remains exactly `2.0.32`, while the
+runtime version is matched exactly against both `server.info.version` and the
+CTG health RPC. Owned-runtime selection must use the product resolver/identity
+API with the same options object, or the approved shared native-test identity
+loader where that API is not present in the selected source snapshot. Owned
+bytes require the trusted release record (`lib/opencode/runtime-release.json`
+or the explicit developer path `CTG_TEST_RUNTIME_RELEASE_MANIFEST`); an
+adjacent self-declared `ctg-runtime.json` is checked as provenance, never used
+as the trust source. `CTG_TEST_RUNTIME_SHA256` is only an explicit developer
+hash override. No owned final-runtime readiness result is claimed yet.
 
 The runner stopped with aggregate status 1 as designed. A malformed timestamp
 format in the preliminary window-recording command occurred before the runner

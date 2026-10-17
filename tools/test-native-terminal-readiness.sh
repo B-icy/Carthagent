@@ -48,7 +48,8 @@ mkdir -p "$source_root"
 tar -xf "$execution_snapshot" -C "$source_root"
 deps="$(realpath "$source_checkout/node_modules")"
 cp "$harness_worktree/tools/native-fixture.mjs" "$harness_worktree/tools/seed-native-switch-fixture.mjs" \
-  "$harness_worktree/tools/native-paired-guards.mjs" "$harness_worktree/tools/test-native-terminal-performance.py" \
+  "$harness_worktree/tools/native-paired-guards.mjs" "$harness_worktree/tools/native-runtime-identity.mjs" \
+  "$harness_worktree/tools/test-native-terminal-performance.py" \
   "$source_root/tools/"
 ln -s "$deps" "$source_root/node_modules"
 mkdir -p "$source_root/plugins/carthagent/node_modules/@opencode"
