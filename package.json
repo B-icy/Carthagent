@@ -79,9 +79,13 @@
     "@opencode/cli": "2.0.32",
     "@opencode/client": "2.0.32",
     "@opencode/plugin": "2.0.32",
+    "@opencode/theme": "2.0.32",
+    "@opentui/core": "0.5.17",
+    "@opentui/solid": "0.5.17",
     "express": "^5.2.1",
     "jiti": "^2.7.0",
     "jsdom": "^30.0.1",
+    "solid-js": "1.9.12",
     "tree-sitter-wasms": "^0.1.13",
     "web-tree-sitter": "^0.22.6"
   },
