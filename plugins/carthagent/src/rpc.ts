@@ -17,6 +17,20 @@ export const Carthagent = Rpc.define({
         additionalProperties: false,
       },
     },
+    echo: {
+      input: {
+        type: 'object',
+        properties: { text: { type: 'string' } },
+        required: ['text'],
+        additionalProperties: false,
+      },
+      output: {
+        type: 'object',
+        properties: { text: { type: 'string' } },
+        required: ['text'],
+        additionalProperties: false,
+      },
+    },
     authStart: {
       input: { type: 'object', additionalProperties: false },
       output: {
