@@ -19,6 +19,7 @@ import signal
 import struct
 import subprocess
 import tempfile
+import threading
 import termios
 import time
 
@@ -51,24 +52,73 @@ def host_conditions():
     return result
 
 
+def utc_now():
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+class HostSampler:
+    """Capture host load and available memory across the timed measurement window."""
+    def __init__(self, interval):
+        self.interval = interval
+        self.started_ns = None
+        self.samples = []
+        self._stop = threading.Event()
+        self._thread = None
+
+    def start(self):
+        self.started_ns = time.monotonic_ns()
+        self._sample()
+        self._thread = threading.Thread(target=self._run, name="native-perf-host-sampler", daemon=True)
+        self._thread.start()
+
+    def _sample(self):
+        sample = host_conditions()
+        sample["elapsedNs"] = time.monotonic_ns() - self.started_ns
+        self.samples.append(sample)
+
+    def _run(self):
+        while not self._stop.wait(self.interval):
+            self._sample()
+
+    def stop(self):
+        self._stop.set()
+        if self._thread:
+            self._thread.join()
+        self._sample()
+        return self.samples
+
+
 class Terminal:
     def __init__(self, master, child):
         self.master, self.child = master, child
         self.transcript = bytearray()
         self.screen = Screen()
+        self.pollCount = 0
+        self.pollWaitNs = 0
+        self.readNs = 0
+        self.screenFeedNs = 0
+        self.detectionNs = 0
 
     def drain(self, timeout=0.05):
         if self.child.poll() is not None:
             tail = ANSI.sub(b"", bytes(self.transcript)).decode(errors="replace")[-2000:]
             raise RuntimeError(f"native TUI exited with {self.child.returncode}; screen={self.screen.dump()[-1200:]}; output={tail}")
-        if not select.select([self.master], [], [], timeout)[0]:
+        poll_started = time.perf_counter_ns()
+        ready = select.select([self.master], [], [], timeout)[0]
+        self.pollCount += 1
+        self.pollWaitNs += time.perf_counter_ns() - poll_started
+        if not ready:
             return b""
         try:
+            read_started = time.perf_counter_ns()
             chunk = os.read(self.master, 65536)
+            self.readNs += time.perf_counter_ns() - read_started
         except OSError:
             return b""
         self.transcript.extend(chunk)
+        feed_started = time.perf_counter_ns()
         self.screen.feed(chunk)
+        self.screenFeedNs += time.perf_counter_ns() - feed_started
         # Reply to terminal capability probes in a headless PTY.
         if b"\x1b[6n" in chunk:
             os.write(self.master, b"\x1b[1;1R")
@@ -76,18 +126,30 @@ class Terminal:
             os.write(self.master, b"\x1b[?1;2c")
         return chunk
 
-    def collect_until(self, predicate, timeout, description):
+    def collect_until(self, predicate, timeout, description, poll_interval=0.05):
         deadline = time.monotonic() + timeout
         seen = bytearray()
         while time.monotonic() < deadline:
-            seen.extend(self.drain(min(0.05, deadline - time.monotonic())))
-            if predicate(bytes(seen)):
+            seen.extend(self.drain(min(poll_interval, deadline - time.monotonic())))
+            predicate_started = time.perf_counter_ns()
+            matched = predicate(bytes(seen))
+            self.detectionNs += time.perf_counter_ns() - predicate_started
+            if matched:
                 return bytes(seen)
         plain = ANSI.sub(b"", bytes(seen)).decode(errors="replace")
         raise TimeoutError(f"Timed out waiting for {description}; parsed screen: {self.screen.dump()[-1800:]}; output tail: {plain[-1500:]}")
 
     def send(self, data):
         os.write(self.master, data)
+
+    def observer_snapshot(self):
+        return {"pollCount": self.pollCount, "pollWaitNs": self.pollWaitNs,
+                "readNs": self.readNs, "screenFeedNs": self.screenFeedNs,
+                "detectionNs": self.detectionNs}
+
+    def observer_delta(self, before):
+        after = self.observer_snapshot()
+        return {key: after[key] - before[key] for key in after}
 
 
 class Screen:
@@ -214,6 +276,8 @@ def main():
     parser.add_argument("--no-plugin", action="store_true",
                         help="measure the native baseline without registering the CTG plugin")
     parser.add_argument("--samples", type=int, default=SAMPLES)
+    parser.add_argument("--host-sample-interval", type=float, default=1.0,
+                        help="seconds between load/memory observations during measured samples")
     parser.add_argument("--idle-seconds", type=float, default=10,
                         help="bounded idle observation window (default: 10s; max: 300s)")
     parser.add_argument("--idle-byte-limit", type=int, default=65536,
@@ -230,8 +294,8 @@ def main():
         parser.error("at least 30 samples are required")
     if not 1 <= args.idle_seconds <= 300:
         parser.error("idle window must be between 1 and 300 seconds")
-    if args.switch_fixture and args.no_plugin:
-        parser.error("native Open Sessions switching requires the composed plugin and its isolated keybinding profile")
+    if not 0.1 <= args.host_sample_interval <= 30:
+        parser.error("host sample interval must be between 0.1 and 30 seconds")
     binary = str(pathlib.Path(args.binary).resolve())
     fixture = json.loads(pathlib.Path(args.switch_fixture).read_text()) if args.switch_fixture else None
     owns_root = fixture is None
@@ -274,8 +338,9 @@ def main():
     os.close(slave)
     terminal = Terminal(master, child)
     result = {"binary": binary, "expectedHostVersion": "2.0.32",
-              "measurement": "real POSIX PTY; CTG plugin disabled baseline" if args.no_plugin else "real POSIX PTY; CTG plugin enabled",
+              "measurement": "real POSIX PTY; CTG plugin disabled baseline" if args.no_plugin or (fixture and not fixture.get("pluginEnabled", True)) else "real POSIX PTY; CTG plugin enabled",
               "startupIncludedInSamples": False, "samples": args.samples,
+              "measurementScope": "terminal interaction through select/read/VT parse and parsed PTY screen evidence; not compositor/GPU presentation; observer overhead is reported and never subtracted",
               "hostConditions": host_conditions()}
     if fixture:
         result["switchFixture"] = str(pathlib.Path(args.switch_fixture).resolve())
@@ -288,8 +353,13 @@ def main():
         # Allow the first genuine frame/plugin setup to settle, outside all sample clocks.
         terminal.drain(0.5)
         switch_ms = []
+        switch_observations = []
+        input_observations = []
+        input_warmup_observation = None
+        sampler = HostSampler(args.host_sample_interval)
         switch_note = "not measured: provide --switch-fixture with two preloaded native sessions"
         if fixture:
+            sampler.start()
             def select_native_session(session, timed):
                 title = session["title"]
                 if terminal.screen.contains(session["marker"]):
@@ -307,63 +377,209 @@ def main():
                                        10, f"native session row {title}")
                 if terminal.screen.contains(session["marker"]):
                     raise RuntimeError(f"Destination marker {session['marker']} visible before selection")
+                observer_before = terminal.observer_snapshot()
+                started_at = utc_now()
                 started = time.perf_counter_ns()
+                started_monotonic_ns = time.monotonic_ns()
                 terminal.send(b"\r")
-                terminal.collect_until(lambda _output: terminal.screen.contains(session["marker"]), 10,
-                                       f"unique rendered destination marker {session['marker']}")
-                return (time.perf_counter_ns() - started) / 1_000_000 if timed else None
+                try:
+                    terminal.collect_until(lambda _output: terminal.screen.contains(session["marker"]), 10,
+                                           f"unique rendered destination marker {session['marker']}", poll_interval=0.001)
+                except Exception as error:
+                    failed_ns = time.perf_counter_ns()
+                    failed_monotonic_ns = time.monotonic_ns()
+                    if timed:
+                        switch_observations.append({"sample": len(switch_observations) + 1,
+                                                    "sessionId": session["id"], "marker": session["marker"],
+                                                    "status": "failed", "startedAt": started_at,
+                                                    "failedAt": utc_now(),
+                                                    "startedMonotonicNs": started_monotonic_ns,
+                                                    "failedMonotonicNs": failed_monotonic_ns,
+                                                    "elapsedToFailureNs": failed_ns - started,
+                                                    "failure": f"{type(error).__name__}: {error}",
+                                                    "destinationMarkerVerified": terminal.screen.contains(session["marker"]),
+                                                    "observerWork": terminal.observer_delta(observer_before),
+                                                    "timingScope": "Enter write through select/read/VT parse and parsed PTY marker observation; not compositor presentation"})
+                    raise
+                completed_ns = time.perf_counter_ns()
+                completed_monotonic_ns = time.monotonic_ns()
+                completed_at = utc_now()
+                elapsed_ns = completed_ns - started
+                if timed:
+                    switch_observations.append({"sessionId": session["id"], "marker": session["marker"],
+                                                "startedAt": started_at, "completedAt": completed_at,
+                                                "startedMonotonicNs": started_monotonic_ns,
+                                                "completedMonotonicNs": completed_monotonic_ns,
+                                                "elapsedNs": elapsed_ns, "elapsedMs": elapsed_ns / 1_000_000,
+                                                "destinationMarkerVerified": terminal.screen.contains(session["marker"]),
+                                                "observerWork": terminal.observer_delta(observer_before),
+                                                "timingScope": "Enter write through select/read/VT parse and parsed PTY marker observation; not compositor presentation"})
+                    return elapsed_ns / 1_000_000
+                return None
 
             # Visit both targets before the measured 30 alternations so their
             # session files and destination render state have been loaded.
             select_native_session(fixture["sessions"]["bravo"], False)
             select_native_session(fixture["sessions"]["alpha"], False)
-            for index in range(SAMPLES):
+            for index in range(args.samples):
                 destination = fixture["sessions"]["bravo" if index % 2 == 0 else "alpha"]
-                switch_ms.append(select_native_session(destination, True))
-            switch_note = "30 alternating native Open Sessions menu selections; Enter-to-unique-assistant-history-marker render; both destinations explicitly prewarmed"
-        editor_anchor = None if fixture else locate_text(terminal.screen, "Ask anything")
+                try:
+                    switch_ms.append(select_native_session(destination, True))
+                except Exception as error:
+                    if not any(sample.get("sample") == index + 1 for sample in switch_observations):
+                        switch_observations.append({"sample": index + 1, "sessionId": destination["id"],
+                                                    "marker": destination["marker"], "status": "failed",
+                                                    "failure": f"{type(error).__name__}: {error}",
+                                                    "failedAt": utc_now(),
+                                                    "timingScope": "Enter write through select/read/VT parse and parsed PTY marker observation; not compositor presentation"})
+                    switch_ms.append(None)
+                    try:
+                        terminal.send(b"\x1b")
+                        terminal.drain(0.1)
+                    except Exception:
+                        pass
+            switch_note = f"{args.samples} alternating native Open Sessions menu selections; Enter-to-unique-assistant-history-marker render; both destinations explicitly prewarmed"
+        editor_anchor = locate_text(terminal.screen, "Ask anything")
         editor_origin = None
-        if fixture:
-            # Switch-fixture mode is strictly switch-only; the separate
-            # controlled input probe owns the editor-origin detector.
-            input_ms = []
-        elif editor_anchor is None:
+        if editor_anchor is None:
             raise RuntimeError("native editor placeholder was not present in parsed screen")
         else:
             editor_row, editor_col = editor_anchor
             editor_origin = (editor_row, editor_col)
-        if editor_origin is None:
-            input_ms = []
-        else:
-            editor_origin = (editor_row, editor_col)
-            input_ms = []
-            for index in range(args.samples):
-                marker = chr(ord("a") + index % 26)
-                before = [row[:] for row in terminal.screen.cells]
-                started = time.perf_counter_ns()
-                terminal.send(marker.encode())
-                deadline = time.monotonic() + 2
-                while time.monotonic() < deadline:
-                    terminal.drain(0.01)
-                    if editor_contains_typed_cell(terminal.screen, marker, before, *editor_origin):
-                        input_ms.append((time.perf_counter_ns() - started) / 1_000_000)
-                        break
-                else:
-                    raise TimeoutError(f"No terminal echo observed for key sample {index + 1}")
-                terminal.send(b"\x7f")
-                terminal.drain(0.02)
+        editor_empty_cell = terminal.screen.cells[editor_origin[0]][editor_origin[1]]
+        input_ms = []
 
-        result["input"] = {"samples": len(input_ms), "p95Ms": round(percentile95(input_ms), 3) if input_ms else None,
-                           "maxMs": round(max(input_ms), 3) if input_ms else None, "targetMs": TARGET_INPUT_MS,
-                           "targetMet": percentile95(input_ms) <= TARGET_INPUT_MS if input_ms else None,
-                           **({"note": "not measured in switch-fixture mode; run controlled paired input probe separately"} if not input_ms else {}),
-                             "basis": "keypress write to changed cell at native editor placeholder origin"}
-        result["warmSessionSwitch"] = {"samples": len(switch_ms), "p95Ms": round(percentile95(switch_ms), 3) if switch_ms else None,
-                                       "maxMs": round(max(switch_ms), 3) if switch_ms else None,
+        def send_and_verify_input(marker, sample_index, timed):
+            before = [row[:] for row in terminal.screen.cells]
+            observer_before = terminal.observer_snapshot()
+            started_at = utc_now()
+            started = time.perf_counter_ns()
+            started_monotonic_ns = time.monotonic_ns()
+            terminal.send(marker.encode())
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                try:
+                    terminal.drain(0.001)
+                except Exception as error:
+                    if timed:
+                        input_observations.append({"sample": sample_index, "key": marker, "status": "failed",
+                                                   "startedAt": started_at, "failedAt": utc_now(),
+                                                   "startedMonotonicNs": started_monotonic_ns,
+                                                   "failedMonotonicNs": time.monotonic_ns(),
+                                                   "failure": f"{type(error).__name__}: {error}"})
+                    raise
+                detect_started = time.perf_counter_ns()
+                detected = editor_contains_typed_cell(terminal.screen, marker, before, *editor_origin)
+                terminal.detectionNs += time.perf_counter_ns() - detect_started
+                if detected:
+                    completed_ns = time.perf_counter_ns()
+                    completed_monotonic_ns = time.monotonic_ns()
+                    completed_at = utc_now()
+                    elapsed_ns = completed_ns - started
+                    observation = {"sample": sample_index, "key": marker, "status": "passed",
+                                   "startedAt": started_at, "completedAt": completed_at,
+                                   "startedMonotonicNs": started_monotonic_ns,
+                                   "completedMonotonicNs": completed_monotonic_ns,
+                                   "elapsedNs": elapsed_ns, "elapsedMs": elapsed_ns / 1_000_000,
+                                   "editorInputOrigin": {"row": editor_origin[0], "column": editor_origin[1]},
+                                   "beforeCell": before[editor_origin[0]][editor_origin[1]],
+                                   "afterCell": terminal.screen.cells[editor_origin[0]][editor_origin[1]],
+                                   "changedCellAtInputOrigin": True,
+                                   "observerWork": terminal.observer_delta(observer_before),
+                                   "timingScope": "keypress write through select/read/VT parse and changed-cell observation; not compositor presentation"}
+                    if timed:
+                        input_ms.append(elapsed_ns / 1_000_000)
+                        input_observations.append(observation)
+                    else:
+                        nonlocal input_warmup_observation
+                        input_warmup_observation = observation
+                    terminal.send(b"\x7f")
+                    terminal.collect_until(
+                        lambda _output: terminal.screen.cells[editor_origin[0]][editor_origin[1]] == editor_empty_cell,
+                        1, "editor restored to empty placeholder after backspace", poll_interval=0.001)
+                    return True
+            if timed:
+                input_observations.append({"sample": sample_index, "key": marker, "status": "failed",
+                                           "startedAt": started_at, "failedAt": utc_now(),
+                                           "startedMonotonicNs": started_monotonic_ns,
+                                           "failedMonotonicNs": time.monotonic_ns(),
+                                           "failure": "TimeoutError: no changed cell at parsed editor input origin within 2 seconds",
+                                           "editorInputOrigin": {"row": editor_origin[0], "column": editor_origin[1]},
+                                           "beforeCell": before[editor_origin[0]][editor_origin[1]],
+                                           "afterCell": terminal.screen.cells[editor_origin[0]][editor_origin[1]],
+                                           "observerWork": terminal.observer_delta(observer_before)})
+            else:
+                input_warmup_observation = {"sample": 0, "key": marker, "status": "failed",
+                                            "startedAt": started_at, "failedAt": utc_now(),
+                                            "startedMonotonicNs": started_monotonic_ns,
+                                            "failedMonotonicNs": time.monotonic_ns(),
+                                            "failure": "TimeoutError: warmup key not observed at parsed editor input origin",
+                                            "editorInputOrigin": {"row": editor_origin[0], "column": editor_origin[1]},
+                                            "beforeCell": before[editor_origin[0]][editor_origin[1]],
+                                            "afterCell": terminal.screen.cells[editor_origin[0]][editor_origin[1]],
+                                            "observerWork": terminal.observer_delta(observer_before)}
+                # Attempt to restore the input field after an undetected echo;
+                # this cleanup is outside any successful sample clock.
+                terminal.send(b"\x7f")
+                terminal.collect_until(
+                    lambda _output: terminal.screen.cells[editor_origin[0]][editor_origin[1]] == editor_empty_cell,
+                    1, "editor restored to empty placeholder after failed key", poll_interval=0.001)
+            return False
+
+        # Warm the editor/input path once; only the following N key echoes count.
+        input_warmup_passed = send_and_verify_input("z", 0, False)
+        for index in range(args.samples):
+            try:
+                send_and_verify_input(chr(ord("a") + index % 26), index + 1, True)
+            except Exception as error:
+                if not any(item.get("sample") == index + 1 and item.get("status") == "failed"
+                           for item in input_observations):
+                    input_observations.append({"sample": index + 1, "status": "failed",
+                                               "failedAt": utc_now(), "failure": f"{type(error).__name__}: {error}"})
+                input_ms.append(None)
+        if not input_warmup_passed:
+            result_warmup_failure = "warmup key not verified at editor input origin"
+        else:
+            result_warmup_failure = None
+        if fixture:
+            host_samples = sampler.stop()
+        else:
+            host_samples = []
+
+        successful_input_ms = [value for value in input_ms if value is not None]
+        successful_switch_ms = [value for value in switch_ms if value is not None]
+        input_failed_samples = sum(item.get("status") == "failed" for item in input_observations)
+        result["input"] = {"samples": args.samples, "successfulSamples": len(successful_input_ms),
+                           "failedSamples": input_failed_samples,
+                           "p95Ms": round(percentile95(successful_input_ms), 3) if successful_input_ms else None,
+                           "maxMs": round(max(successful_input_ms), 3) if successful_input_ms else None, "targetMs": TARGET_INPUT_MS,
+                           "targetMet": (result_warmup_failure is None and len(successful_input_ms) == args.samples and input_failed_samples == 0 and
+                                         percentile95(successful_input_ms) <= TARGET_INPUT_MS),
+                           "basis": "keypress write to changed cell at native editor placeholder origin",
+                           "warmupSamplesExcluded": 1,
+                           "warmupPassed": result_warmup_failure is None,
+                           "warmupFailure": result_warmup_failure,
+                           "warmupObservation": input_warmup_observation,
+                           "editorInputOrigin": {"row": editor_origin[0], "column": editor_origin[1]},
+                           "finalScreen": terminal.screen.lines(),
+                           "finalEditorCell": terminal.screen.cells[editor_origin[0]][editor_origin[1]],
+                           "finalEditorCellExpected": editor_empty_cell,
+                           "finalEditorPlaceholderVerified": (locate_text(terminal.screen, "Ask anything") == editor_origin and
+                                                              terminal.screen.cells[editor_origin[0]][editor_origin[1]] == editor_empty_cell),
+                           "rawSamples": input_observations}
+        switch_failed_samples = sum(item.get("status") == "failed" for item in switch_observations)
+        result["warmSessionSwitch"] = {"samples": args.samples if fixture else 0, "successfulSamples": len(successful_switch_ms),
+                                       "failedSamples": switch_failed_samples,
+                                       "p95Ms": round(percentile95(successful_switch_ms), 3) if successful_switch_ms else None,
+                                       "maxMs": round(max(successful_switch_ms), 3) if successful_switch_ms else None,
                                        "targetMs": TARGET_SWITCH_MS,
-                                       "targetMet": percentile95(switch_ms) <= TARGET_SWITCH_MS if switch_ms else None,
+                                       "targetMet": percentile95(successful_switch_ms) <= TARGET_SWITCH_MS if len(successful_switch_ms) == args.samples and switch_failed_samples == 0 else False,
                                         "note": switch_note,
-                                        **({"sequenceMs": [round(value, 3) for value in switch_ms]} if switch_ms else {})}
+                                          "sequenceMs": [round(value, 3) if value is not None else None for value in switch_ms],
+                                         "rawSamples": switch_observations}
+        if fixture:
+            result["hostConditionsDuringMeasurement"] = host_samples
+        result["observerTotals"] = terminal.observer_snapshot()
         # Bounded idle observation; report all bytes and RSS trend. Native status
         # clocks may legitimately redraw, so byte activity alone is not a failure.
         def process_tree_rss_kb():
@@ -410,8 +626,9 @@ def main():
                            "interpretation": "PTY bytes are observational only; native status redraws are not assumed plugin defects"}
         result["hostConditionsAtRunEnd"] = host_conditions()
         result["overallTargetsMet"] = bool(result["input"]["targetMet"] and
-                                           result["warmSessionSwitch"]["targetMet"] is True and
-                                           result["idle"]["rssGrowthBudgetMet"] is True)
+                                            result["warmSessionSwitch"]["targetMet"] is True and
+                                            result["input"]["finalEditorPlaceholderVerified"] and
+                                            result["idle"]["rssGrowthBudgetMet"] is True)
         text = json.dumps(result, indent=2)
         print(text)
         if args.report:
