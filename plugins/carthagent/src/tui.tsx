@@ -7,7 +7,9 @@ import { framePrompt } from "../../../lib/tui/framing.mjs";
 import { carthagentConfigPath, loadCarthagentConfig, resolveReviewMode, saveCarthagentConfig } from "../../../lib/review.mjs";
 import { COMMANDS, NATIVE_COMMAND_COLLISIONS } from "./ui/commands.js";
 import { Workspace, rpcEventOptions, sessionControls, workspaceClient, shipClient, archiveClient, cloudAccountText, cloudUsageText, archiveItemText } from "./ui/client.js";
-import { cliConfigDirectory, cliConfigPath, readCliConfig, writeNativeTheme } from "./ui/host-state.js";
+import { cliConfigDirectory } from "./ui/host-state.js";
+import { setNativeTheme, type NativeThemeControl, type NativeThemeMode } from "./ui/native-theme.js";
+import { selectModelWithVariant } from "./ui/model-selection.mjs";
 import { WorkspacePage } from "./ui/workspace.js";
 
 const THEMES = ["carthage", "opencode", "tokyonight", "nebula", "ember", "forest", "mono", "obsidian", "midnight", "solarized-dark", "nord", "contrast-dark", "okabe-dark", "paper", "daylight", "solarized-light", "contrast-light", "okabe-light", "solarized", "okabe", "contrast", "system"];
@@ -71,6 +73,15 @@ export default Plugin.define({
           const pageSize = 100;
           let cursor: string | undefined;
           const sessions: Array<{ id: string; title?: string; parentID?: string; time: { updated: number } }> = [];
+          if (query) {
+            try {
+              const exact = await context.client.session.get({ sessionID: arg });
+              if (exact && !exact.parentID && exact.location.directory === location.directory) {
+                context.ui.router.navigate({ type: "session", sessionID: exact.id });
+                return;
+              }
+            } catch { /* fall through to title search; unknown IDs are ordinary search terms */ }
+          }
           do {
             const page = await context.client.session.list({ limit: pageSize, order: "desc", directory: location.directory, ...(cursor ? { cursor } : {}), ...(query ? { search: arg } : {}) });
             sessions.push(...page.data.filter((session) => !session.parentID));
@@ -102,21 +113,74 @@ export default Plugin.define({
           return;
         case "theme": {
           const theme = arg.toLowerCase();
-          const cliPath = cliConfigPath();
-          const currentConfig = await readCliConfig(cliPath);
-          const currentTheme = typeof currentConfig.theme === "string" ? currentConfig.theme : currentConfig.theme?.name;
-          if (theme) {
-            if (!THEMES.includes(theme)) { toast(`Unknown theme “${theme}”. Available compatibility names: ${THEMES.join(", ")}.`, "warning"); return; }
+          const themeControl = (context.ui as typeof context.ui & { theme?: NativeThemeControl }).theme;
+          const current = themeControl?.current();
+          const currentTheme = current?.name;
+          if (arg === "current") {
+            if (!current) { toast("Live theme inspection is unavailable in this OpenCode host.", "warning"); return; }
+            toast(`Current theme: ${current.name} (${current.mode}).`, "info");
+            return;
+          }
+          const selectTheme = (name: string, mode?: NativeThemeMode) => {
+            const result = setNativeTheme(themeControl, name, mode);
+            if (result.status === "unsupported") {
+              toast("Live theme selection is unavailable in this OpenCode host. No theme was changed; use a host with the native theme API to preview or select compatibility themes.", "warning");
+              return;
+            }
+            if (result.status === "rejected") {
+              toast(`The OpenCode host rejected theme “${name}”. No theme change was applied.`, "warning");
+              return;
+            }
+            if (result.status === "mismatch") {
+              toast(`The OpenCode host accepted but did not resolve theme “${name}”; current theme remains “${result.current.name}” (${result.current.mode}).`, "warning");
+              return;
+            }
+            toast(`Theme changed to “${result.current.name}” (${result.current.mode}).`, "success");
+          };
+          const requested = theme.match(/^([a-z0-9-]+)(?:\s+(dark|light))?$/);
+          const requestedName = requested?.[1] ?? theme;
+          const requestedMode = requested?.[2] as NativeThemeMode | undefined;
+          if (theme.startsWith("preview ")) {
+            const previewName = theme.slice("preview ".length).trim();
+            if (!THEMES.includes(previewName)) { toast(`Unknown theme “${previewName}”. Available compatibility names: ${THEMES.join(", ")}.`, "warning"); return; }
+            try {
+              const { buildNativeThemePreview } = await import("./ui/theme-preview.mjs");
+              const preview = buildNativeThemePreview(previewName, current?.mode ?? "dark");
+              await context.ui.dialog.alert({
+                title: `Theme preview · ${preview.name} (${preview.mode})`,
+                message: `Active theme remains ${current?.name ?? "unchanged"} (${current?.mode ?? "unknown"}).\n\nBackground: ${preview.background}\nText: ${preview.text}\nAccent: ${preview.accent}\n\nSample: ${preview.sample}`,
+              });
+            } catch (error) {
+              toast(`Theme “${previewName}” could not be previewed: ${error instanceof Error ? error.message : String(error)}`, "warning");
+            }
+            return;
+          }
+          if (arg === "preview") {
+            const selected = await context.ui.dialog.select({ title: "Preview OpenCode theme", options: THEMES.map((name) => ({ title: name, value: name, description: name === "carthage" ? "Carthagent purple field, gold accent" : "Preview without changing the active theme" })) });
+            if (!selected) return;
+            try {
+              const { buildNativeThemePreview } = await import("./ui/theme-preview.mjs");
+              const preview = buildNativeThemePreview(selected, current?.mode ?? "dark");
+              await context.ui.dialog.alert({
+                title: `Theme preview · ${preview.name} (${preview.mode})`,
+                message: `Active theme remains ${current?.name ?? "unchanged"} (${current?.mode ?? "unknown"}).\n\nBackground: ${preview.background}\nText: ${preview.text}\nAccent: ${preview.accent}\n\nSample: ${preview.sample}`,
+              });
+            } catch (error) {
+              toast(`Theme “${selected}” could not be previewed: ${error instanceof Error ? error.message : String(error)}`, "warning");
+            }
+            return;
+          }
+          if (arg) {
+            if (!requested || !THEMES.includes(requestedName)) { toast(`Unknown theme selection “${arg}”. Use /theme <name> [dark|light]. Available: ${THEMES.join(", ")}.`, "warning"); return; }
             // Compatibility themes are provisioned by the native launcher
             // before OpenCode scans this profile. Refuse to claim selection if
             // a raw host launch skipped that startup contract.
-            if (!OPENCODE_BUILTIN_THEMES.has(theme)) {
+            if (!OPENCODE_BUILTIN_THEMES.has(requestedName)) {
               const { readFile } = await import("node:fs/promises");
-              try { await readFile(resolve(cliConfigDirectory(), "themes", `${theme}.json`), "utf8"); }
-              catch { toast(`Theme “${theme}” is not installed in this OpenCode profile. Restart through the Carthagent native launcher to provision compatibility themes, then retry.`, "warning"); return; }
+              try { await readFile(resolve(cliConfigDirectory(), "themes", `${requestedName}.json`), "utf8"); }
+              catch { toast(`Theme “${requestedName}” is not installed in this OpenCode profile. Start through the Carthagent native launcher to provision compatibility themes, then retry.`, "warning"); return; }
             }
-            await writeNativeTheme(cliConfigPath(), theme);
-            toast(`Theme “${theme}” saved to native OpenCode cli.json. Restart the native CLI to apply it.`, "success");
+            selectTheme(requestedName, requestedMode);
             return;
           }
           const selected = await context.ui.dialog.select({ title: "OpenCode themes", current: currentTheme, options: THEMES.map((name) => ({ title: name, value: name, description: name === "carthage" ? "Carthagent purple field, gold accent" : "OpenCode theme" })) });
@@ -124,42 +188,52 @@ export default Plugin.define({
             if (!OPENCODE_BUILTIN_THEMES.has(selected)) {
               const { readFile } = await import("node:fs/promises");
               try { await readFile(resolve(cliConfigDirectory(), "themes", `${selected}.json`), "utf8"); }
-              catch { toast(`Theme “${selected}” is not installed in this OpenCode profile. Restart through the Carthagent native launcher to provision compatibility themes, then retry.`, "warning"); return; }
+              catch { toast(`Theme “${selected}” is not installed in this OpenCode profile. Start through the Carthagent native launcher to provision compatibility themes, then retry.`, "warning"); return; }
             }
-            await writeNativeTheme(cliPath, selected);
-            toast(`Theme “${selected}” saved to native OpenCode cli.json. Restart the native CLI to apply it.`, "success");
+            selectTheme(selected);
           }
           return;
         }
         case "model": {
           await context.data.location.model.sync(location);
           const models = context.data.location.model.list(location) ?? [];
-          const query = arg.toLowerCase();
+          const [query = "", requestedVariant] = arg.toLowerCase().split(/\s+/);
           const normalized = query.includes("/") ? query : undefined;
           const options = models.filter((model) => !query || `${model.providerID}/${model.modelID} ${model.name}`.toLowerCase().includes(query))
-            .map((model) => ({ title: `${model.providerID}/${model.modelID}`, value: model, description: model.name }));
+            .map((model) => ({ title: `${model.providerID}/${model.modelID}`, value: model, description: `${model.name}${model.variants.length ? ` · variants: ${model.variants.map((variant) => variant.id).join(", ")}` : ""}` }));
+          const selectModel = async (model: (typeof models)[number], variant = requestedVariant, promptForVariant = false) => {
+            if (!sessionID) { toast("Open or create a session before selecting its model.", "warning"); return; }
+            const outcome = await selectModelWithVariant({
+              model,
+              variant,
+              promptForVariant,
+              chooseVariant: async (item) => context.ui.dialog.select({ title: `Select ${item.providerID}/${item.modelID} variant`, options: [{ title: "Default", value: "" }, ...item.variants.map((entry) => ({ title: entry.id, value: entry.id }))] }),
+              switchModel: (selection) => context.client.session.switchModel({ sessionID, model: selection }),
+            });
+            if (outcome.status === "cancelled") return;
+            if (outcome.status === "invalid") {
+              toast(`Variant “${outcome.variant}” is unavailable for ${model.providerID}/${model.modelID}. Available: ${model.variants.map((item) => item.id).join(", ") || "none"}.`, "warning");
+              return;
+            }
+            toast(`Selected ${model.providerID}/${model.modelID}${outcome.variant ? ` (${outcome.variant})` : ""}.`, "success");
+          };
           if (arg && normalized) {
             const exact = options.filter((option) => `${option.value.providerID}/${option.value.modelID}`.toLowerCase() === normalized);
             if (exact.length === 1) {
-              if (!sessionID) { toast("Open or create a session before selecting its model.", "warning"); return; }
-              await context.client.session.switchModel({ sessionID, model: { providerID: exact[0].value.providerID, id: exact[0].value.id } });
-              toast(`Selected ${exact[0].value.providerID}/${exact[0].value.modelID}.`, "success");
+              await selectModel(exact[0].value);
               return;
             }
             toast(exact.length ? `Model “${arg}” is ambiguous; specify provider/model.` : `No enabled model exactly matches “${arg}”.`, "warning");
             return;
           }
           if (arg && options.length === 1) {
-            if (!sessionID) { toast("Open or create a session before selecting its model.", "warning"); return; }
-            await context.client.session.switchModel({ sessionID, model: { providerID: options[0].value.providerID, id: options[0].value.id } });
-            toast(`Selected ${options[0].value.providerID}/${options[0].value.modelID}.`, "success");
+            await selectModel(options[0].value);
             return;
           }
           if (arg && options.length === 0) { toast(`No provider model matches “${arg}”.`, "warning"); return; }
           const selected = await context.ui.dialog.select({ title: "Select provider model", placeholder: "Search provider/model…", options });
           if (selected && sessionID) {
-            await context.client.session.switchModel({ sessionID, model: { providerID: selected.providerID, id: selected.id } });
-            toast(`Selected ${selected.providerID}/${selected.modelID}.`, "success");
+            await selectModel(selected, undefined, true);
           } else if (selected) toast("Open or create a session before selecting its model.", "warning");
           return;
         }
