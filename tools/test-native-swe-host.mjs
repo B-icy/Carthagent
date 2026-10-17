@@ -162,7 +162,10 @@ try {
     provider: model.providerID, model: model.id, timeoutSeconds: 180, maxTurns: 30, maxCost: 1,
   });
   assert.equal(result.runtime, 'opencode-2');
-  assert.equal(result.opencodeVersion, '2.0.32');
+  const hostInfo = await client.server.info(request());
+  assert.equal(result.compatibilityVersion, '2.0.32');
+  assert.equal(result.runtimeVersion, hostInfo.version, 'evaluator reports the actual connected server version');
+  assert.equal(result.opencodeVersion, hostInfo.version, 'legacy version field retains actual-server semantics');
   assert.equal(result.exitCode, 0, JSON.stringify(result));
   assert.equal(result.outcome, 'succeeded');
   assert.equal(prePlanTools.includes('shell'), false, 'native host withholds shell before a valid standard plan');
@@ -273,7 +276,7 @@ try {
   assert.match(String(staleFinishResult.content), /pendingChecks/, 'source mutation must invalidate declared check evidence');
   assert.doesNotMatch(String(staleFinishResult.content), /"status"\s*:\s*"verified"/);
   console.log(JSON.stringify({
-    host: '2.0.32', outcome: result.outcome, productiveTurns: result.productiveTurns,
+    host: { compatibilityVersion: result.compatibilityVersion, runtimeVersion: result.runtimeVersion }, outcome: result.outcome, productiveTurns: result.productiveTurns,
     tools: result.tools, cost: result.cost, baseline: 'native shell failed', nativePostEditCheck: 'native shell passed', finalTest: 'passed',
     realOpenCodeHost: true, loopbackProvider: true, composedProductionDelivery: true,
     policyEvidence: {
