@@ -10,7 +10,7 @@ import { runNativeEvaluation } from '../lib/opencode/evaluation.mjs';
 let runResult;
 const host = await nativeFixture({
   plugin: join(import.meta.dirname, '../lib/opencode/evaluation-budget-plugin'),
-  plugins: process.argv[2] ? [process.argv[2]] : [join(import.meta.dirname, '../plugins/carthagent')],
+  plugins: process.argv[2] ? [process.argv[2]] : [{ package: join(import.meta.dirname, '../plugins/carthagent'), options: { reviewModel: { providerID: 'ctg-fixture', id: 'fixture' } } }],
   env: {
     CTG_EVALUATION_MAX_TURNS: '30', CTG_EVALUATION_MAX_COST: '1',
     CTG_SESSION_OPTIONS: JSON.stringify({ maxTools:60, maxSeconds:180, maxRepairs:20 }),
@@ -172,11 +172,17 @@ try {
   const finishResult = timeline.find(item => item.kind === 'result' && item.id === finishCall.id);
   assert.match(finishResult?.output ?? '', /\\"status\\"\s*:\s*\\"verified\\"/, 'production delivery gate must accept the completed declared check and review receipt');
   assert.ok(timeline.some(item => item.kind === 'call' && item.name === 'execute' && /not independent review|independent review was not configured/i.test(String(item.arguments.code ?? ''))), 'fixture must accurately disclose model-authored review limitation');
+  const review = spawnSync(process.execPath, [join(import.meta.dirname, 'test-native-review.mjs'), join(import.meta.dirname, '../plugins/carthagent')], {
+    cwd: join(import.meta.dirname, '..'), encoding: 'utf8', timeout: 180_000,
+    env: { ...process.env, CTG_OPENCODE_BIN: process.env.CTG_OPENCODE_BIN ?? join(import.meta.dirname, '../node_modules/@opencode/cli/bin/opencode.exe') },
+  });
+  assert.equal(review.status, 0, `${review.stdout}\n${review.stderr}`);
+  assert.match(review.stdout, /"independentReview":"passed"/);
   console.log(JSON.stringify({
     host: '2.0.32', outcome: result.outcome, productiveTurns: result.productiveTurns,
     tools: result.tools, cost: result.cost, baseline: 'native shell failed', nativePostEditCheck: 'native shell passed', finalTest: 'passed',
     realOpenCodeHost: true, loopbackProvider: true, composedProductionDelivery: true,
-    review: 'model-authored; not independent assurance', deliveryPolicyEnforcement: false,
+    review: 'separate real-host read-only root-session proof passed (distinct fixture/source); reviewer fixture verdict proves receipt plumbing only, not review quality', deliveryPolicyEnforcement: false,
   }));
 } finally {
   if (runResult?.exitCode) {
