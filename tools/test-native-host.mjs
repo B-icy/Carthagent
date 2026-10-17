@@ -22,6 +22,7 @@ const temp = await mkdtemp(join(tmpdir(), 'ctg-host-smoke-'));
 const password = randomBytes(24).toString('hex');
 const providerKey = `sentinel-${randomBytes(24).toString('hex')}`;
 let child;
+let childClosed = false;
 let output = '';
 let fixtureRequests = 0;
 const fixture = createServer(async (req, res) => {
@@ -147,6 +148,7 @@ try {
   child = spawn(binary, [
     'serve', '--hostname', '127.0.0.1', '--port', '0', '--print-logs', '--log-level', 'debug',
   ], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  child.once('close', () => { childClosed = true; });
   const endpoint = await new Promise((resolveEndpoint, reject) => {
     const timer = setTimeout(() => reject(new Error(`Host startup timed out: ${output}`)), 30_000);
     const collect = (chunk) => {
@@ -362,7 +364,7 @@ try {
   throw error;
 } finally {
   if (child) {
-    const closed = child.closed ? Promise.resolve() : once(child, 'close');
+    const closed = childClosed ? Promise.resolve() : once(child, 'close');
     if (child.exitCode === null && child.signalCode === null) {
       if (process.platform === 'win32') {
         // This PID is the exact host process spawned above; /T is needed to
@@ -371,12 +373,12 @@ try {
       } else {
         child.kill('SIGTERM');
         const timer = setTimeout(() => {
-          if (!child.closed && child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+          if (!childClosed && child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
         }, 5_000);
         await closed;
         clearTimeout(timer);
       }
-      if (!child.closed) await closed;
+      if (!childClosed) await closed;
     } else {
       await closed;
     }
