@@ -54,9 +54,9 @@ jobs:
             echo "::error::Release tag ${RELEASE_TAG} resolves to ${tag_sha}, not tested commit ${EXPECTED_SHA}." >&2
             exit 1
           fi
-      # Sequence: pass packed-package acceptance, create the GitHub release,
-      # dispatch the owned-runtime workflow to attach its assets, then dispatch
-      # this workflow to publish the control-plane manifest.
+      # Sequence: build the immutable runtime-asset manifest, pass packed-package
+      # acceptance, create the GitHub release, dispatch the owned-runtime workflow
+      # to attach assets, then dispatch this workflow to publish the manifest.
       - name: Require the completed GitHub release and runtime assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -68,16 +68,12 @@ jobs:
             echo "::error::Publish the GitHub release with its runtime assets before publishing the control-plane manifest." >&2
             exit 1
           fi
-          for asset in \
-            opencode-linux-x64.tar.gz \
-            opencode-darwin-arm64.tar.gz \
-            opencode-darwin-x64.tar.gz \
-            opencode-windows-x64.tar.gz; do
-            if ! jq -e --arg name "$asset" '.assets | any(.name == $name)' <<<"$release" >/dev/null; then
-              echo "::error::Missing runtime asset ${asset}; complete the owned-runtime publish workflow before publishing the control-plane manifest." >&2
-              exit 1
-            fi
-          done
+          mkdir -p runtime-assets
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir runtime-assets --pattern 'opencode-*.tar.gz'
+      - name: Verify runtime archives against the packaged immutable manifest
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: node tools/verify-owned-runtime-release.mjs "${RELEASE_TAG#v}" lib/opencode/runtime-release.json runtime-assets
       - name: Publish the CLI release manifest to the control plane
         env:
           CARTHAGENT_CLI_RELEASE_TOKEN: ${{ secrets.CARTHAGENT_CLI_RELEASE_TOKEN }}
