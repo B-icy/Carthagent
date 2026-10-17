@@ -1,0 +1,43 @@
+import { strict as assert } from "node:assert";
+import { test } from "node:test";
+import { COMMANDS, matchCommand, NATIVE_COMMAND_COLLISIONS, resolveCommand } from "../src/ui/commands.js";
+import { readFile } from "node:fs/promises";
+import { parseThemeDocument } from "@opencode/theme/tui";
+import { cliConfigPath, readCliConfig, writeNativeTheme } from "../src/ui/host-state.js";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+test("Carthagent command manifest resolves visible CTG commands", () => {
+  assert.equal(resolveCommand("/review")?.id, "review");
+  assert.equal(resolveCommand("/review-mode")?.id, "review");
+  for (const name of ["workflow", "architecture", "evidence"]) assert.equal(resolveCommand(name)?.hidden, undefined);
+  for (const name of ["model", "compact", "autocompact", "abort", "clear"]) assert.equal(resolveCommand(name)?.id, name);
+  assert.deepEqual(matchCommand("/arch").map((item) => item.name), ["architecture"]);
+  assert.deepEqual(matchCommand("/rev status"), []);
+});
+
+test("manifest prevents collisions with native OpenCode slash commands", () => {
+  for (const name of NATIVE_COMMAND_COLLISIONS) assert.equal(COMMANDS.some((item) => item.name === name || item.aliases?.includes(name)), false, name);
+});
+
+test("Carthage theme validates against the OpenCode V2 theme schema and resolver", async () => {
+  const raw = JSON.parse(await readFile(new URL("../themes/carthage.json", import.meta.url), "utf8"));
+  const resolved = parseThemeDocument(raw, "carthage");
+  assert.ok(resolved.dark?.hue.yellow);
+  assert.equal(resolved.base.categorical?.length, 5);
+});
+
+test("native CLI theme write preserves unrelated cli.json settings", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ctg-cli-config-"));
+  const path = join(directory, "cli.json");
+  try {
+    await writeFile(path, JSON.stringify({ theme: { name: "opencode", mode: "dark" }, session: { thinking: "show" }, custom: true }));
+    await writeNativeTheme(path, "carthage");
+    const config = await readCliConfig(path);
+    assert.deepEqual(config.theme, { name: "carthage", mode: "dark" });
+    assert.deepEqual(config.session, { thinking: "show" });
+    assert.equal(config.custom, true);
+    assert.equal(cliConfigPath({ XDG_CONFIG_HOME: "/tmp/profile" }, "/home/test"), "/tmp/profile/opencode/cli.json");
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
