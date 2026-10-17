@@ -138,6 +138,7 @@ jobs:
             sed "s|  |  $directory/|" "$directory/$target-SHA256SUMS.txt" >> "$combined"
           done
           test "$(awk '{print $2}' "$combined" | sort -u | wc -l | tr -d ' ')" = 10
+          test "$(awk '{print $1}' "$combined" | wc -l | tr -d ' ')" = 10
           awk '{print $1 "  " $2}' "$combined" | sha256sum -c -
           test "$(find runtime-assets -type f -name '*.tar.gz' | wc -l | tr -d ' ')" = 10
           test "$(wc -l < runtime-release-SHA256SUMS.txt | tr -d ' ')" = 10
