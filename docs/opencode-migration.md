@@ -66,17 +66,18 @@ integration check before its PR merges. In-progress does not mean shipped.
 
 | Workstream | State | Acceptance |
 | --- | --- | --- |
-| Baseline/build contracts | In progress | Existing checks recorded; new TS/TSX included in checks |
+| Baseline/build contracts | Merged #137 | Existing checks recorded; TS/TSX included in checks |
 | Runtime/isolation | In progress | CTG and normal OpenCode coexist; authenticated persistent service |
-| Native plugin host | In progress | Installed package loads server and TUI entrypoints |
+| Native plugin host | Bootstrap merged #137; integration in progress | Installed package loads server and TUI entrypoints |
+| Session framing/controls | Merged #144, #145, #147, #148 | Per-session defaults, raw bypass, compaction notes, declared ownership errors, restart recovery |
 | Providers/auth/telemetry | In progress | Concurrent requests/refreshes maintain credential and session identity |
 | Delivery/policy/budgets | In progress | Native execution preserves evidence, validators and recovery |
 | Native theme/commands/panels | In progress | CTG commands work; host owns input/rendering; semantic themes |
 | Workspace/worktrees | In progress | Independent worktrees and durable task/session mappings |
 | Review | In progress | Fresh-context findings bound to source and PR head; bounded admission |
 | Legacy archive | In progress | Read-only searchable transcripts; no implicit continuation |
-| CLI/headless/dashboard | Pending | Output/exit/locking behavior verified against native runtime |
-| Packaging/upgrade | Pending | Fresh installation and migration tested from packaged artifact |
+| CLI/headless/dashboard | CLI/headless in progress; dashboard lease fix merged #142 | Output/exit/locking behavior verified against native runtime |
+| Packaging/upgrade | #143/#149 reviewed; telemetry race blocks merge | Fresh installation and migration tested from packaged artifact |
 | Terminal/performance | Pending | PTY, interaction, streaming and reconnect evidence |
 | Default switch/retirement | Pending | No supported default execution path depends on Pi |
 
