@@ -8,6 +8,7 @@ import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { withoutRuntimeGithubToken } from './runtime-token-env.mjs';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const temp = await mkdtemp(join(tmpdir(), 'ctg-native-package-'));
@@ -26,7 +27,7 @@ const run = (command, args, options = {}) => {
 // OpenCode data location under this invocation's temporary directory.
 const env = { ...process.env };
 for (const key of Object.keys(env)) {
-  if (/^(?:CTG_OPENCODE_|CTG_OWNED_OPENCODE_RUNTIME$|CTG_RUNTIME_|CTG_TEST_|OPENCODE_|CARTHAGENT_(?:AGENT_DIR|CODING_AGENT_DIR|CONFIG|CLI)|PI_CODING_AGENT_DIR$)/i.test(key)) delete env[key];
+  if (/^(?:CTG_OPENCODE_|CTG_OWNED_OPENCODE_RUNTIME$|CTG_RUNTIME_(?!GITHUB_TOKEN$)|CTG_TEST_|OPENCODE_|CARTHAGENT_(?:AGENT_DIR|CODING_AGENT_DIR|CONFIG|CLI)|PI_CODING_AGENT_DIR$)/i.test(key)) delete env[key];
 }
 const isolatedHome = join(temp, 'runtime-home');
 Object.assign(env, {
@@ -48,7 +49,8 @@ Object.assign(env, {
 
 try {
   await mkdir(isolatedHome, { recursive: true });
-  const packed = JSON.parse(run('npm', ['pack', '--json', '--pack-destination', temp], { env }));
+  const npmEnv = withoutRuntimeGithubToken(env);
+  const packed = JSON.parse(run('npm', ['pack', '--json', '--pack-destination', temp], { env: npmEnv }));
   const tarball = join(temp, packed[0].filename);
   const paths = packed[0].files.map((file) => file.path);
   assert.ok(paths.includes('plugins/carthagent/index.ts'), 'pack must include plugin server entrypoint');
@@ -58,7 +60,7 @@ try {
 
   const install = join(temp, 'install');
   await mkdir(install);
-  run('npm', ['install', '--prefix', install, '--omit=dev', '--no-audit', '--no-fund', tarball], { env });
+  run('npm', ['install', '--prefix', install, '--omit=dev', '--no-audit', '--no-fund', tarball], { env: npmEnv });
   const manifest = JSON.parse(await readFile(join(install, 'node_modules/carthagent/package.json'), 'utf8'));
   const installed = join(install, 'node_modules/carthagent');
   const installedPlugin = join(installed, 'plugins/carthagent');
@@ -188,6 +190,9 @@ try {
       // Parser/WASM behavior must resolve from the packed installation too.
       const args = test.endsWith('.test.mjs') ? ['--test', probePath] : [probePath, installedPlugin];
       run(process.execPath, args, {
+        // Trusted acceptance probes may resolve the default runtime on a cache
+        // miss. runtimeEnvironment/workspaceEnvironment remove this transport
+        // credential before launching OpenCode or workspace child processes.
         cwd: install, env: { ...env, CTG_NATIVE_SCENARIO: scenario ?? '' },
       });
     } catch (error) {
