@@ -86,10 +86,9 @@ try {
   await Promise.all([
     mkdir(cwd),
     mkdir(config, { recursive: true }),
-    mkdir(join(temp, 'home'), { recursive: true }),
+    mkdir(legacy, { recursive: true }),
     mkdir(join(temp, 'appdata'), { recursive: true }),
     mkdir(join(temp, 'localappdata'), { recursive: true }),
-    mkdir(legacy, { recursive: true }),
     mkdir(homeConfig, { recursive: true }),
   ]);
   await writeFile(join(legacy, 'legacy.jsonl'), '{"type":"session","id":"legacy-fixture"}\n{"type":"message","message":{"role":"user","content":"fixture needle"}}\nmalformed\n');
