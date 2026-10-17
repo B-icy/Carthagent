@@ -140,6 +140,7 @@ export interface WorkspaceDelivery {
   runId?: string;
   revision?: number;
   fingerprint?: string;
+  truncation?: Record<string, { returned: number; total: number }>;
   plan?: {
     goal: string;
     verification: string;

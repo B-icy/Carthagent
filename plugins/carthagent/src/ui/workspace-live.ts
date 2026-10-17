@@ -23,3 +23,35 @@ export function onWorkspaceUpdated(events: WorkspaceUpdatedEvents, directory: ()
     if (event.location?.directory === directory()) invalidate();
   }, options);
 }
+
+export function deliveryReadiness(delivery: {
+  completion?: string;
+  gate?: string;
+  freshness?: string;
+  truncation?: Record<string, { returned: number; total: number }>;
+} | undefined) {
+  if (!delivery) return { complete: false, status: "not loaded" };
+  const truncation = delivery.truncation;
+  const capped = truncation ? Object.entries(truncation).filter(([, value]) => value.returned !== value.total) : [["coverage metadata unavailable", { returned: 0, total: 1 }] as const];
+  const complete = delivery.completion === "ready" && delivery.gate === "open" && delivery.freshness === "current" && capped.length === 0;
+  const totals = capped.map(([name, value]) => `${name} ${value.returned}/${value.total}`);
+  return {
+    complete,
+    status: `${delivery.completion ?? "unknown"} · gate ${delivery.gate ?? "unknown"} · ${delivery.freshness ?? "freshness unknown"}${totals.length ? ` · truncated: ${totals.join(", ")}` : ""}`,
+  };
+}
+
+export function renderDeliveryReadiness(delivery: Parameters<typeof deliveryReadiness>[0]) {
+  const readiness = deliveryReadiness(delivery);
+  const sections = delivery?.truncation
+    ? Object.entries(delivery.truncation).map(([name, value]) => `${name}: ${value.returned} of ${value.total} returned`)
+    : ["Coverage metadata unavailable: completeness cannot be confirmed"];
+  const receipts = (delivery && "evidence" in delivery && Array.isArray(delivery.evidence) ? delivery.evidence : [])
+    .map((item) => `Receipt ${item.id}: ${item.status}`);
+  return {
+    label: `Readiness: ${readiness.complete ? "ready" : "incomplete"} · ${readiness.status}`,
+    gate: delivery?.gate === "open" && readiness.complete ? "open" : "locked",
+    sections,
+    receipts,
+  };
+}

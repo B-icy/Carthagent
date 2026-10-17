@@ -83,7 +83,9 @@ def main():
         sent = False
         sent_at = None
         submitted = False
-        confirmed = False
+        confirmation_complete = False
+        confirmation_at = None
+        enter_count = 0
         after_index = 0
         after_typed_at = None
         try:
@@ -106,15 +108,31 @@ def main():
                     os.write(master, args.command.encode())
                     sent = True
                 if sent and not submitted and after_index == 0 and time.monotonic() - sent_at > 1:
+                    # Typed slash text has usually populated autocomplete now.
+                    # Discard that frame before accepting the completion so it
+                    # cannot satisfy the post-command assertion.
                     output.clear()
                     os.write(master, b'\r')
+                    enter_count += 1
                     submitted = True
-                if submitted and (args.confirm or args.second_enter) and not confirmed and time.monotonic() - sent_at > 2:
+                confirmation_prompt = re.search(rb'(?i)(?:are you sure|confirm\?|\[y/n\]|\(y/n\)|press enter to confirm)', output)
+                if submitted and (args.confirm or args.second_enter) and not confirmation_complete and confirmation_prompt and time.monotonic() - sent_at > 0.5:
+                    # Some commands open an explicit confirmation dialog. Do
+                    # not blindly press Enter again: the initial Enter submits
+                    # the selected slash command, and a second Enter can invoke
+                    # an unrelated native TUI action.
+                    output.clear()
                     os.write(master, b'\r')
-                    confirmed = True
+                    enter_count += 1
+                    confirmation_at = None
+                    confirmation_complete = True
                     if args.second_enter:
-                        submitted = False
                         sent_at = time.monotonic()
+                if submitted and (args.confirm or args.second_enter) and not confirmation_complete and not confirmation_prompt and time.monotonic() - sent_at > 2.5:
+                    # Let the submitted command's UI render fully before the
+                    # assertion; commands without a confirmation dialog need
+                    # no extra Enter.
+                    confirmation_complete = True
                 after_commands = args.after_command or []
                 after_expects = args.after_expect or []
                 if len(after_commands) != len(after_expects):
@@ -147,7 +165,9 @@ def main():
                     submitted = True
                     sent_at = time.monotonic()
                     output.clear()
-                if submitted and expected_output.encode() in output:
+                command_submitted = submitted and (confirmation_complete or not (args.confirm or args.second_enter))
+                result_output = command_submitted and expected_output.encode() in output
+                if result_output:
                     if b'runtime unavailable' in output or b'No matching commands' in output:
                         raise RuntimeError('Command was unavailable or its RPC failed')
                     if args.expect_color and args.command.startswith('/theme ') and after_index == len(after_commands):
@@ -162,6 +182,7 @@ def main():
                             print(f'Expected rendered foreground color {ansi!r} was not observed; recent raw PTY bytes: {output[-12000:]!r}')
                             raise AssertionError('Rendered accent color did not match the selected native theme')
                     print(json.dumps({'command': args.command, 'observed': expected_output,
+                                      'postSubmission': True, 'enterCount': enter_count,
                                       'theme': 'carthage' if args.expect_color else None,
                                       'ansiColor': args.expect_color,
                                       'elapsedMs': round((time.monotonic() - started) * 1000),
