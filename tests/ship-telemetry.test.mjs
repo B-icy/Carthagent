@@ -40,17 +40,23 @@ test('install id seed remains authoritative across primary-file corruption and d
 
 test('concurrent first runs and corrupt repairs converge on one install id', async t => {
   const lib = new URL('../lib/ship-telemetry.mjs', import.meta.url).href;
-  const startTogether = async (agentDir, label, count = 6) => {
+  const startTogether = async (agentDir, label, count = 6, { noHardlinks = false } = {}) => {
     const gate = join(agentDir, `${label}.start`);
     const children = Array.from({ length: count }, (_, index) => {
       const ready = join(agentDir, `${label}.${index}.ready`);
+      const unsupportedHardlinks = noHardlinks ? `import fs from 'node:fs';
+        import { syncBuiltinESMExports } from 'node:module';
+        fs.linkSync = () => { const error = new Error('hard links unsupported in test'); error.code = 'ENOTSUP'; throw error; };
+        syncBuiltinESMExports();` : '';
+      const minted = `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`;
       const code = `import { existsSync, writeFileSync } from 'node:fs';
-        import { shipInstallId } from '${lib}';
+        ${unsupportedHardlinks}
         const ready = ${JSON.stringify(ready)};
         while (true) { try { writeFileSync(ready, 'ready', { flag: 'wx' }); break; } catch { if (existsSync(ready)) break; } }
         const gate = ${JSON.stringify(gate)};
         while (!existsSync(gate)) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
-        console.log(shipInstallId({ agentDir: ${JSON.stringify(agentDir)} }));`;
+        const { shipInstallId } = await import('${lib}');
+        console.log(shipInstallId({ agentDir: ${JSON.stringify(agentDir)}, id: () => '${minted}' }));`;
       const child = spawn(process.execPath, ['--input-type=module', '-e', code], { stdio: ['ignore', 'pipe', 'pipe'] });
       let stdout = '';
       let stderr = '';
@@ -108,6 +114,13 @@ test('concurrent first runs and corrupt repairs converge on one install id', asy
   const afterDelete = await startTogether(corrupt, 'deleted');
   assert.equal(new Set(afterDelete).size, 1);
   assert.equal(afterDelete[0], repaired[0]);
+  // When immutable hard-link publication is unsupported, workers must not
+  // expose their process-local minted candidates.
+  const noLinks = tmp(t);
+  const unsupported = await startTogether(noLinks, 'no-hardlinks', 6, { noHardlinks: true });
+  assert.equal(new Set(unsupported).size, 1, `unsupported-link IDs diverged: ${unsupported.join(', ')}`);
+  assert.notEqual(unsupported[0], '00000000-0000-4000-8000-000000000001');
+  assert.equal(shipInstallId({ agentDir: noLinks }), unsupported[0]);
 });
 
 test('a valid legacy primary id seeds future repairs without identity churn', t => {
