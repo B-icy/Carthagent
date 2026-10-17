@@ -47,7 +47,17 @@ try {
   assert.equal((await rpc('review')).status, 'approved', 'Review receipt survives service restart');
   await writeFile(join(host.cwd, 'fixture.txt'), 'changed source\n');
   assert.equal((await rpc('review')).status, 'stale', 'Any source change invalidates approval');
-  console.log(JSON.stringify({ host: '2.0.32', independentReview: 'passed', persistedReceipt: 'passed', staleInvalidation: 'passed' }));
+  assert.equal((await rpc('startReview')).status, 'approved');
+  await writeFile(join(host.cwd, 'fixture.txt'), 'third source revision\n');
+  assert.equal((await rpc('startReview')).status, 'approved');
+  await host.stop();
+  await host.start();
+  await host.active();
+  await writeFile(join(host.cwd, 'fixture.txt'), 'fourth source revision\n');
+  const admissions = reviewRequests;
+  await assert.rejects(rpc('startReview'), error => error.type === 'reviewFailed' && /round limit/i.test(error.message));
+  assert.equal(reviewRequests, admissions, 'Restart and changed source must not bypass the three-review admission limit');
+  console.log(JSON.stringify({ host: '2.0.32', independentReview: 'passed', persistedReceipt: 'passed', staleInvalidation: 'passed', persistentAdmissionLimit: 'passed' }));
 } catch (error) {
   console.error(host.output);
   const reviews = join(host.cwd, '.harness/reviews');
