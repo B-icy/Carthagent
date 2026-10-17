@@ -81,9 +81,15 @@ manifest, tag the exact package commit, create a GitHub draft release, and uploa
 the identical reviewed assets. Then run `Accept draft runtime release` for
 that exact tag. It verifies the remote annotated or lightweight tag resolves to
 the checked-out commit, requires the release to remain a draft with all five
-assets, runs `npm ci` and full `npm run quality`, and performs the complete
-installed-package acceptance with `CTG_REQUIRE_OWNED_RUNTIME=1` and the normal
-default resolver. The workflow has only `contents: read`: GitHub documents this
+assets, runs `npm ci` and full `npm run quality`, and runs the current full,
+non-focused installed-package gate with `CTG_REQUIRE_OWNED_RUNTIME=1` and the
+normal default resolver. This existing gate is not, by itself, the final
+installed release acceptance: the final acceptance also requires the owned
+host-controls test (`test-owned-host-controls.mjs`) and the glyph and
+clear/reopen probes from reviewed heads to be composed into the gate. Those
+additional controls/glyph/clear evidence gates remain pending; this workflow
+does not copy or run unreviewed probe drafts. The workflow has only
+`contents: read`: GitHub documents this
 permission for authenticated release-list reads. The metadata checks are GETs
 only. The acceptance step clears `GH_TOKEN` and passes `GITHUB_TOKEN` only as
 `CTG_RUNTIME_GITHUB_TOKEN` for asset reads. It never publishes the GitHub

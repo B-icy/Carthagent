@@ -46,7 +46,7 @@ jobs:
           EXPECTED_SHA: ${{ steps.precheck.outputs.tested_sha }}
           EXPECTED_RELEASE_ID: ${{ steps.precheck.outputs.release_id }}
         run: node tools/verify-draft-runtime-gate.mjs recheck "$RELEASE_TAG"
-      - name: Accept the complete installed package through the default resolver
+      - name: Run the current full non-focused installed-package gate through the default resolver
         env:
           CTG_REQUIRE_OWNED_RUNTIME: '1'
           GH_TOKEN: ''
