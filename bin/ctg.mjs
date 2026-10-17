@@ -29,11 +29,13 @@ import { acceptanceReviewerPrompt } from '../lib/acceptance-review.mjs';
 // Ensure Carthagent operates completely isolated in its own agent directory (~/.carthagent/agent)
 // so it NEVER touches, reads, or piggybacks on any existing ~/.pi/agent installation.
 const defaultAgentDir = process.env.CARTHAGENT_AGENT_DIR || process.env.CARTHAGENT_CODING_AGENT_DIR || join(os.homedir(), '.carthagent', 'agent');
-if (!process.env.CARTHAGENT_CODING_AGENT_DIR && !process.env.CARTHAGENT_AGENT_DIR) {
-  process.env.CARTHAGENT_CODING_AGENT_DIR = defaultAgentDir;
-}
-if (!process.env.PI_CODING_AGENT_DIR) {
-  process.env.PI_CODING_AGENT_DIR = process.env.CARTHAGENT_CODING_AGENT_DIR || defaultAgentDir;
+if (process.env.CTG_NATIVE !== '1') {
+  if (!process.env.CARTHAGENT_CODING_AGENT_DIR && !process.env.CARTHAGENT_AGENT_DIR) {
+    process.env.CARTHAGENT_CODING_AGENT_DIR = defaultAgentDir;
+  }
+  if (!process.env.PI_CODING_AGENT_DIR) {
+    process.env.PI_CODING_AGENT_DIR = process.env.CARTHAGENT_CODING_AGENT_DIR || defaultAgentDir;
+  }
 }
 
 const __filename = fileURLToPath(import.meta.url);
@@ -642,8 +644,24 @@ function handleEval() {
   child.on('exit', (code) => process.exit(code || 0));
 }
 
-// Router
-switch (command) {
+// Staged native route. Parent integration flips this default only after native
+// runtime/provider/review/package gates pass; opt-in users can exercise it now.
+if (process.env.CTG_NATIVE === '1') {
+  if (!process.env.CTG_NODE_EXECUTABLE && process.versions?.node) process.env.CTG_NODE_EXECUTABLE = process.execPath;
+  import('../lib/opencode/cli-runtime.mjs')
+    .then(({ createOpenCodeCliRuntime }) => createOpenCodeCliRuntime())
+    .then(runtime => import('../lib/opencode/cli.mjs').then(({ runOpenCodeCli }) => runOpenCodeCli({
+      argv,
+      runtime,
+      version,
+      stdoutIsTTY: Boolean(process.stdout.isTTY),
+    })))
+    .then(code => { process.exitCode = Number.isInteger(code) ? code : 0; })
+    .catch(error => {
+      console.error(error.message);
+      process.exitCode = Number.isInteger(error.exitCode) ? error.exitCode : 1;
+    });
+} else switch (command) {
   case 'tui':
   case 'ui':
   case 'interactive':
