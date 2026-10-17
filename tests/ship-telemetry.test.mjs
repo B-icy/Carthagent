@@ -124,9 +124,12 @@ test('a valid legacy primary remains canonical when an existing seed is malforme
   const agentDir = tmp(t);
   const legacyId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
   writeFileSync(installIdPath(agentDir), `${legacyId}\n`);
-  writeFileSync(`${installIdPath(agentDir)}.seed`, 'not-a-uuid\n');
+  const seed = `${installIdPath(agentDir)}.seed`;
+  writeFileSync(seed, 'not-a-uuid\n');
+  writeFileSync(`${seed}.repair-lock`, 'abandoned-owner');
   assert.equal(shipInstallId({ agentDir }), legacyId);
-  assert.equal(readFileSync(`${installIdPath(agentDir)}.seed`, 'utf8').trim(), legacyId);
+  assert.equal(readFileSync(`${seed}.recovery`, 'utf8').trim(), legacyId);
+  assert.equal(readFileSync(seed, 'utf8').trim(), 'not-a-uuid');
   rmSync(installIdPath(agentDir));
   assert.equal(shipInstallId({ agentDir }), legacyId);
   assert.equal(readFileSync(installIdPath(agentDir), 'utf8').trim(), legacyId);
@@ -176,9 +179,22 @@ test('concurrent malformed-seed repair preserves a valid legacy primary', async 
     }
   })();
   assert.deepEqual(new Set(repaired), new Set([legacyId]));
-  assert.equal(readFileSync(`${installIdPath(agentDir)}.seed`, 'utf8').trim(), legacyId);
+  assert.equal(readFileSync(`${installIdPath(agentDir)}.seed.recovery`, 'utf8').trim(), legacyId);
   rmSync(installIdPath(agentDir));
   assert.equal(shipInstallId({ agentDir }), legacyId);
+});
+
+test('when all identity copies are corrupt, deterministic recovery stays stable', t => {
+  const agentDir = tmp(t);
+  const path = installIdPath(agentDir);
+  writeFileSync(path, 'bad-primary');
+  writeFileSync(`${path}.seed`, 'bad-seed');
+  writeFileSync(`${path}.seed.recovery`, 'bad-recovery');
+  const id = shipInstallId({ agentDir });
+  assert.match(id, UUID);
+  assert.equal(shipInstallId({ agentDir }), id);
+  rmSync(path);
+  assert.equal(shipInstallId({ agentDir }), id);
 });
 
 test('provider mode reflects ship, byok, both, or no credentials', t => {
