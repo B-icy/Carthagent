@@ -6,10 +6,9 @@ import { resolve } from "node:path";
 import { framePrompt } from "../../../lib/tui/framing.mjs";
 import { carthagentConfigPath, loadCarthagentConfig, resolveReviewMode, saveCarthagentConfig } from "../../../lib/review.mjs";
 import { COMMANDS, NATIVE_COMMAND_COLLISIONS } from "./ui/commands.js";
-import { Workspace, rpcEventOptions, sessionControls, workspaceClient } from "./ui/client.js";
+import { Workspace, rpcEventOptions, sessionControls, workspaceClient, shipClient, archiveClient, cloudAccountText, cloudUsageText, archiveItemText } from "./ui/client.js";
 import { cliConfigDirectory, cliConfigPath, readCliConfig, writeNativeTheme } from "./ui/host-state.js";
 import { WorkspacePage } from "./ui/workspace.js";
-import { provisionNativeThemes } from "./ui/theme-provision.mjs";
 
 const THEMES = ["carthage", "opencode", "tokyonight", "nebula", "ember", "forest", "mono", "obsidian", "midnight", "solarized-dark", "nord", "contrast-dark", "okabe-dark", "paper", "daylight", "solarized-light", "contrast-light", "okabe-light", "solarized", "okabe", "contrast", "system"];
 const OPENCODE_BUILTIN_THEMES = new Set(["opencode", "tokyonight"]);
@@ -41,7 +40,7 @@ export default Plugin.define({
           description: item.description,
           group: "Carthagent",
           palette: true as const,
-          slash: { name: item.name, ...(item.aliases ? { aliases: item.aliases } : {}), ...(item.args ? { arguments: true as const } : {}) },
+          slash: { name: item.name, ...(item.aliases ? { aliases: item.aliases } : {}), ...(item.args || item.submitSlash ? { arguments: true as const } : {}) },
           run: (input?: string) => {
             const report = (error: unknown) => context.ui.toast.show({ message: error instanceof Error ? error.message : String(error), variant: "error" });
             if (item.id === "restart" || item.id === "abort") {
@@ -68,11 +67,24 @@ export default Plugin.define({
           await context.ui.dialog.alert({ title: "Carthagent commands", message: COMMANDS.map((command) => `/${command.name}${command.args ? ` ${command.args}` : ""}${command.aliases?.length ? ` (${command.aliases.map((alias) => `/${alias}`).join(", ")})` : ""} — ${command.description}`).join("\n") + "\n\nCtrl+R sessions · Ctrl+T settings · Ctrl+N new session are native OpenCode actions." });
           return;
         case "resume": {
-          const sessions = context.data.session.list().filter((session) => !session.parentID);
-          const match = arg ? sessions.find((session) => session.id === arg || session.id.startsWith(arg.toLowerCase()) || (session.title ?? "").toLowerCase().includes(arg.toLowerCase())) : undefined;
+          const query = arg.toLowerCase();
+          const pageSize = 100;
+          let cursor: string | undefined;
+          const sessions: Array<{ id: string; title?: string; parentID?: string; time: { updated: number } }> = [];
+          do {
+            const page = await context.client.session.list({ limit: pageSize, order: "desc", directory: location.directory, ...(cursor ? { cursor } : {}), ...(query ? { search: arg } : {}) });
+            sessions.push(...page.data.filter((session) => !session.parentID));
+            cursor = page.cursor.next ?? undefined;
+          } while (cursor);
+          const match = query ? sessions.find((session) => session.id === arg || session.id.startsWith(query) || (session.title ?? "").toLowerCase().includes(query)) : undefined;
           if (match) { context.ui.router.navigate({ type: "session", sessionID: match.id }); return; }
-          if (arg) { toast(`No local session matches “${arg}”.`, "warning"); return; }
-          const selected = await context.ui.dialog.select({ title: "Resume local session", options: sessions.map((s) => ({ title: s.title ?? s.id, value: s.id, description: s.id })) });
+          if (query) {
+            const archived = await archiveClient(context, location).search({ query: arg, limit: 1 }) as { total: number };
+            if (archived.total > 0) { toast(`“${arg}” matched ${archived.total} legacy archive result(s); archives are read-only and cannot be resumed. Use /archive search ${arg}.`, "warning"); return; }
+            toast(`No native session matches “${arg}” in ${context.ui.format.path(location.directory)}.`, "warning");
+            return;
+          }
+          const selected = await context.ui.dialog.select({ title: `Resume native session · ${sessions.length} loaded`, options: sessions.map((session) => ({ title: session.title ?? session.id, value: session.id, description: `${new Date(session.time.updated).toLocaleString()} · ${session.id}` })) });
           if (selected) context.ui.router.navigate({ type: "session", sessionID: selected });
           return;
         }
@@ -95,24 +107,27 @@ export default Plugin.define({
           const currentTheme = typeof currentConfig.theme === "string" ? currentConfig.theme : currentConfig.theme?.name;
           if (theme) {
             if (!THEMES.includes(theme)) { toast(`Unknown theme “${theme}”. Available compatibility names: ${THEMES.join(", ")}.`, "warning"); return; }
-            const provisioned: { directory?: string; installed: string[] } = OPENCODE_BUILTIN_THEMES.has(theme) ? { installed: [] } : await provisionNativeThemes(cliConfigDirectory(), [theme]);
-            if (provisioned.installed.length) {
-              toast(`Installed native theme “${theme}” in ${provisioned.directory ?? cliConfigDirectory()}. OpenCode discovers new theme files at startup; restart the TUI, then run /theme ${theme} again to select it.`, "warning");
-              return;
+            // Compatibility themes are provisioned by the native launcher
+            // before OpenCode scans this profile. Refuse to claim selection if
+            // a raw host launch skipped that startup contract.
+            if (!OPENCODE_BUILTIN_THEMES.has(theme)) {
+              const { readFile } = await import("node:fs/promises");
+              try { await readFile(resolve(cliConfigDirectory(), "themes", `${theme}.json`), "utf8"); }
+              catch { toast(`Theme “${theme}” is not installed in this OpenCode profile. Restart through the Carthagent native launcher to provision compatibility themes, then retry.`, "warning"); return; }
             }
             await writeNativeTheme(cliConfigPath(), theme);
-            toast(`Theme “${theme}” saved to native OpenCode cli.json. OpenCode reloads valid theme selections while the TUI is running.`, "success");
+            toast(`Theme “${theme}” saved to native OpenCode cli.json. Restart the native CLI to apply it.`, "success");
             return;
           }
           const selected = await context.ui.dialog.select({ title: "OpenCode themes", current: currentTheme, options: THEMES.map((name) => ({ title: name, value: name, description: name === "carthage" ? "Carthagent purple field, gold accent" : "OpenCode theme" })) });
           if (selected) {
-            const provisioned: { directory?: string; installed: string[] } = OPENCODE_BUILTIN_THEMES.has(selected) ? { installed: [] } : await provisionNativeThemes(cliConfigDirectory(), [selected]);
-            if (provisioned.installed.length) {
-              toast(`Installed native theme “${selected}” in ${provisioned.directory ?? cliConfigDirectory()}. OpenCode discovers new theme files at startup; restart the TUI, then select it again.`, "warning");
-              return;
+            if (!OPENCODE_BUILTIN_THEMES.has(selected)) {
+              const { readFile } = await import("node:fs/promises");
+              try { await readFile(resolve(cliConfigDirectory(), "themes", `${selected}.json`), "utf8"); }
+              catch { toast(`Theme “${selected}” is not installed in this OpenCode profile. Restart through the Carthagent native launcher to provision compatibility themes, then retry.`, "warning"); return; }
             }
             await writeNativeTheme(cliPath, selected);
-            toast(`Theme “${selected}” saved to native OpenCode cli.json. OpenCode reloads valid theme selections while the TUI is running.`, "success");
+            toast(`Theme “${selected}” saved to native OpenCode cli.json. Restart the native CLI to apply it.`, "success");
           }
           return;
         }
@@ -120,8 +135,27 @@ export default Plugin.define({
           await context.data.location.model.sync(location);
           const models = context.data.location.model.list(location) ?? [];
           const query = arg.toLowerCase();
+          const normalized = query.includes("/") ? query : undefined;
           const options = models.filter((model) => !query || `${model.providerID}/${model.modelID} ${model.name}`.toLowerCase().includes(query))
             .map((model) => ({ title: `${model.providerID}/${model.modelID}`, value: model, description: model.name }));
+          if (arg && normalized) {
+            const exact = options.filter((option) => `${option.value.providerID}/${option.value.modelID}`.toLowerCase() === normalized);
+            if (exact.length === 1) {
+              if (!sessionID) { toast("Open or create a session before selecting its model.", "warning"); return; }
+              await context.client.session.switchModel({ sessionID, model: { providerID: exact[0].value.providerID, id: exact[0].value.id } });
+              toast(`Selected ${exact[0].value.providerID}/${exact[0].value.modelID}.`, "success");
+              return;
+            }
+            toast(exact.length ? `Model “${arg}” is ambiguous; specify provider/model.` : `No enabled model exactly matches “${arg}”.`, "warning");
+            return;
+          }
+          if (arg && options.length === 1) {
+            if (!sessionID) { toast("Open or create a session before selecting its model.", "warning"); return; }
+            await context.client.session.switchModel({ sessionID, model: { providerID: options[0].value.providerID, id: options[0].value.id } });
+            toast(`Selected ${options[0].value.providerID}/${options[0].value.modelID}.`, "success");
+            return;
+          }
+          if (arg && options.length === 0) { toast(`No provider model matches “${arg}”.`, "warning"); return; }
           const selected = await context.ui.dialog.select({ title: "Select provider model", placeholder: "Search provider/model…", options });
           if (selected && sessionID) {
             await context.client.session.switchModel({ sessionID, model: { providerID: selected.providerID, id: selected.id } });
@@ -232,6 +266,122 @@ export default Plugin.define({
           const hasCost = hasMessageCost || Number.isFinite(cachedCost) && cachedCost > 0;
           const hasTokens = assistants.some((message) => message.tokens !== undefined);
           await context.ui.dialog.alert({ title: "Session stats", message: `${session?.title ?? sessionID}\nMessages: ${messages.length} (${assistants.length} assistant)\nInput tokens: ${hasTokens ? totals.input : "not reported"}\nOutput tokens: ${hasTokens ? totals.output : "not reported"}\nReasoning tokens: ${hasTokens ? totals.reasoning : "not reported"}\nCache read/write: ${hasTokens ? `${totals.cacheRead} / ${totals.cacheWrite}` : "not reported"}\nCost: ${hasCost ? `$${totals.cost.toFixed(4)}` : "not reported"}` });
+          return;
+        }
+        case "account": {
+          const result = await shipClient(context, location).account() as { account: Record<string, unknown> };
+          await context.ui.dialog.alert({ title: "Carthagent Ship account", message: cloudAccountText(result.account) });
+          return;
+        }
+        case "usage": {
+          const [accountResult, usageResult] = await Promise.all([
+            shipClient(context, location).account() as Promise<{ account: Record<string, unknown> }>,
+            shipClient(context, location).usage({ limit: 50 }) as Promise<{ usage: Record<string, unknown> }>,
+          ]);
+          await context.ui.dialog.alert({ title: "Carthagent Ship usage", message: cloudUsageText(usageResult.usage, accountResult.account) });
+          return;
+        }
+        case "billing": {
+          const action = arg.toLowerCase() || "checkout";
+          if (!["checkout", "portal"].includes(action)) { toast("Usage: /billing [checkout|portal].", "warning"); return; }
+          const { url } = await shipClient(context, location).billing({ action: action as "checkout" | "portal" }) as { url: string };
+          const { openBrowser } = await import("../../../lib/cloud/client.mjs");
+          const opened = await openBrowser(url).catch(() => false);
+          await context.ui.dialog.alert({ title: action === "portal" ? "Ship billing portal" : "Ship checkout", message: `${opened ? "Opened in your browser." : "Open this URL in your browser:"}\n${url}` });
+          return;
+        }
+        case "logout-cloud": {
+          const session = arg || undefined;
+          const confirmed = await context.ui.dialog.confirm({ title: session ? "Revoke Ship session" : "Sign out of Carthagent Ship", message: session ? `Revoke Ship session ${session}?` : "Revoke the active Ship session and remove its OpenCode connection?" });
+          if (confirmed !== true) return;
+          await shipClient(context, location).logout(session ? { session } : {});
+          toast(session ? `Revoked Ship session ${session}.` : "Revoked and removed the active Carthagent Ship connection.", "success");
+          return;
+        }
+        case "archive": {
+          const [operation, ...rest] = arg.split(/\s+/).filter(Boolean);
+          const archive = archiveClient(context, location);
+          if (operation && !["list", "search", "read", "export"].includes(operation)) { toast("Usage: /archive [list|search <query>|read <id>|export <id>].", "warning"); return; }
+          if (operation === "search" && !rest.length) { toast("Usage: /archive search <query>.", "warning"); return; }
+          if (operation === "read" || operation === "export") {
+            const id = rest[0];
+            if (!id) { toast(`Usage: /archive ${operation} <id>.`, "warning"); return; }
+            if (operation === "read") {
+              const result = await archive.read({ id }) as { records: unknown[] };
+              const content = result.records.map((record: unknown) => JSON.stringify(record)).join("\n") || "Archive is empty.";
+              const pageSize = 24000;
+              for (let offset = 0; offset < content.length; offset += pageSize) {
+                const end = Math.min(offset + pageSize, content.length);
+                await context.ui.dialog.alert({ title: `Archived session ${id} · characters ${offset + 1}–${end} of ${content.length}`, message: content.slice(offset, end) });
+                if (end < content.length && await context.ui.dialog.confirm({ title: "Continue archived session?", message: `Show characters ${end + 1}–${Math.min(end + pageSize, content.length)} of ${content.length}?`, label: { confirm: "Continue", cancel: "Stop reading" } }) !== true) break;
+              }
+            } else {
+              const result = await archive.export({ id, format: "jsonl" }) as { content: string };
+              const path = resolve(location.directory, `${id.replace(/[^a-zA-Z0-9._-]/g, "_")}.jsonl`);
+              await writeFile(path, result.content, { encoding: "utf8", flag: "wx" });
+              toast(`Complete archive export (${Buffer.byteLength(result.content, "utf8")} bytes) saved to ${context.ui.format.path(path)}.`, "success");
+            }
+            return;
+          }
+          const query = operation === "search" ? rest.join(" ") : undefined;
+          let offset = 0;
+          const pageSize = 50;
+          while (true) {
+            const result = (query
+              ? await archive.search({ query, offset, limit: pageSize })
+              : await archive.list({ offset, limit: pageSize })) as { total: number; offset: number; limit: number; items: Array<Record<string, unknown>> };
+            const returned = result.items.length;
+            const first = returned ? result.offset + 1 : 0;
+            const last = result.offset + returned;
+            await context.ui.dialog.alert({
+              title: `${query ? "Archive search" : "Archived sessions"} · ${first}–${last} of ${result.total}`,
+              message: `${returned} item(s) returned on this page${result.total > returned ? `; ${result.total} total matches` : ""}.\n\n${result.items.map(archiveItemText).join("\n\n") || (query ? "No archived sessions matched." : "No archived sessions found.")}`,
+            });
+            if (!returned || last >= result.total) break;
+            const next = await context.ui.dialog.confirm({ title: "More archived sessions?", message: `Showing ${last} of ${result.total}. Load the next page?`, label: { confirm: "Next page", cancel: "Done" } });
+            if (next !== true) break;
+            offset += returned;
+          }
+          return;
+        }
+        case "demo": {
+          const { runOfflineDemo } = await import("../../../lib/opencode/demo.mjs");
+          const lines: string[] = [];
+          const demoIo = Object.assign(Object.create(console), {
+            log: (...values: unknown[]) => { lines.push(values.map(String).join(" ")); },
+            error: (...values: unknown[]) => { lines.push(values.map(String).join(" ")); },
+          }) as Console;
+          let exitCode: number;
+          try { exitCode = await runOfflineDemo({ io: demoIo, signal: lifecycle.signal }); }
+          catch (error) {
+            if (lifecycle.signal.aborted) return;
+            throw error;
+          }
+          await context.ui.dialog.alert({ title: exitCode === 130 ? "Carthagent offline demo · cancelled" : exitCode === 0 ? "Carthagent offline demo · fixture passed" : "Carthagent offline demo · fixture failed", message: `${lines.join("\n")}\n\nActual fixture exit status: ${exitCode}\nThis disposable fixture is not evidence about the current workspace.` });
+          return;
+        }
+        case "update": {
+          const option = arg.toLowerCase();
+          if (option && !["check", "force"].includes(option)) { toast("Usage: /update [check|force].", "warning"); return; }
+          const checkOnly = option === "check";
+          if (!checkOnly) {
+            const confirmed = await context.ui.dialog.confirm({ title: "Install Carthagent update?", message: "Check the validated latest release, then install it globally if newer. This changes the installed package and requires restarting the native CLI. Continue?", label: { confirm: "Check and install", cancel: "Cancel" } });
+            if (confirmed !== true) { toast("Update cancelled; no release check or install was performed."); return; }
+          }
+          const { createOpenCodeCliRuntime } = await import("../../../lib/opencode/cli-runtime.mjs");
+          const lines: string[] = [];
+          const updaterIo = Object.assign(Object.create(console), {
+            log: (...values: unknown[]) => { lines.push(values.map(String).join(" ")); },
+            error: (...values: unknown[]) => { lines.push(values.map(String).join(" ")); },
+          }) as Console;
+          const runtime = await createOpenCodeCliRuntime({ cwd: location.directory, io: updaterIo });
+          try {
+            const exitCode = await runtime.command({ command: "update", args: [ ...(checkOnly ? ["--check"] : []), ...(option === "force" ? ["--force"] : []) ] });
+            const message = `${lines.join("\n") || (exitCode === 0 ? "Update command completed without status output." : "Update command returned no output.")}\n\nExit status: ${exitCode}${!checkOnly && exitCode === 0 ? "\nRestart the native CLI to load the installed package." : ""}`;
+            await context.ui.dialog.alert({ title: checkOnly ? "Carthagent update check" : exitCode === 0 ? "Carthagent update complete" : "Carthagent update failed", message });
+          } catch (error) {
+            await context.ui.dialog.alert({ title: "Carthagent update failed", message: `${lines.join("\n")}\n\n${error instanceof Error ? error.message : String(error)}\n\nNo success is reported.` });
+          }
           return;
         }
         case "clear":
