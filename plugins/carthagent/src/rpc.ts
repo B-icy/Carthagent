@@ -18,6 +18,25 @@ export const Carthagent = Rpc.define({
         additionalProperties: false,
       },
     },
+    budgetStatus: {
+      input: {
+        type: 'object', properties: { sessionID: { type: 'string', minLength: 1 } },
+        required: ['sessionID'], additionalProperties: false,
+      },
+      output: {
+        type: 'object', properties: {
+          tools: { type: 'integer', minimum: 0 },
+          maxTools: { type: 'integer', minimum: 0 },
+          seconds: { type: 'integer', minimum: 0 },
+          maxSeconds: { type: 'integer', minimum: 0 },
+          repairs: { type: 'integer', minimum: 0 },
+          maxRepairs: { type: 'integer', minimum: 0 },
+          stopped: { type: ['string', 'null'], enum: ['elapsed-time', 'tool-calls', 'repair-rounds', null] },
+        },
+        required: ['tools', 'maxTools', 'seconds', 'maxSeconds', 'repairs', 'maxRepairs', 'stopped'],
+        additionalProperties: false,
+      },
+    },
     echo: {
       input: {
         type: 'object',

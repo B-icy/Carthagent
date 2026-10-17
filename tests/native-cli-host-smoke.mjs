@@ -12,6 +12,9 @@ import { existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { runOpenCodeCli } from '../lib/opencode/cli.mjs';
 import { createOpenCodeCliRuntime } from '../lib/opencode/cli-runtime.mjs';
+import { createJiti } from 'jiti';
+
+const { Carthagent } = await createJiti(import.meta.url).import('../plugins/carthagent/src/rpc.ts');
 
 const packageRoot = resolve(import.meta.dirname, '..');
 const runtimeRoot = process.env.CTG_NATIVE_RUNTIME_ROOT || packageRoot;
@@ -35,6 +38,7 @@ const configPath = join(profileRoot, 'config/opencode/opencode.json');
 const requests = [];
 const sessionIDs = [];
 const nativeEventsCaptured = [];
+let budgetProviderTurns = 0;
 const provider = createServer((req, res) => {
   void (async () => {
     let raw = '';
@@ -42,21 +46,28 @@ const provider = createServer((req, res) => {
     const body = JSON.parse(raw || '{}');
     requests.push(body);
     const lastUser = [...(body.messages || [])].reverse().find(message => message.role === 'user');
-    const responseText = `CLI fixture response for ${lastUser?.content ?? 'unknown prompt'}`;
-    const needsTool = lastUser?.content?.includes('Smoke JSON') && !body.messages.some(message => message.role === 'tool');
-    const fails = lastUser?.content?.includes('Smoke provider failure');
+    const userText = typeof lastUser?.content === 'string' ? lastUser.content : JSON.stringify(lastUser?.content ?? 'unknown prompt');
+    const responseText = `CLI fixture response for ${userText}`;
+    const budgetPrompt = userText.includes('Smoke budget enforcement');
+    const needsBudgetRead = budgetPrompt && budgetProviderTurns++ === 0;
+    const needsBudgetWrite = budgetPrompt && !needsBudgetRead && budgetProviderTurns === 2;
+    const needsTool = (userText.includes('Smoke JSON') && !body.messages.some(message => message.role === 'tool')) || needsBudgetRead || needsBudgetWrite;
+    const fails = userText.includes('Smoke provider failure');
     const chunk = (delta, finish_reason = null) => `data: ${JSON.stringify({
       id: 'ctg-cli-smoke', object: 'chat.completion.chunk', created: 1, model: 'fixture',
       choices: [{ index: 0, delta, finish_reason }],
     })}\n\n`;
-    if (fails || lastUser?.content?.includes('Smoke provider failure after success')) {
+    if (fails || userText.includes('Smoke provider failure after success')) {
       res.writeHead(503, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ error: { message: lastUser?.content?.includes('after success') ? 'fixture provider unavailable after success' : 'fixture provider unavailable', type: 'server_error' } }));
+      res.end(JSON.stringify({ error: { message: userText.includes('after success') ? 'fixture provider unavailable after success' : 'fixture provider unavailable', type: 'server_error' } }));
       return;
     }
     res.writeHead(200, { 'content-type': 'text/event-stream' });
     if (needsTool) {
-      res.end(`${chunk({ role: 'assistant', tool_calls: [{ index: 0, id: 'fixture-tool-call', type: 'function', function: { name: 'read', arguments: JSON.stringify({ path: join(cwd, 'tool-fixture.txt') }) } }] })}${chunk({}, 'tool_calls')}data: [DONE]\n\n`);
+      const toolCall = needsBudgetWrite
+        ? { index: 0, id: 'fixture-budget-second-shell', type: 'function', function: { name: 'bash', arguments: JSON.stringify({ command: `touch "${join(cwd, 'budget-side-effect.txt')}"` }) } }
+        : { index: 0, id: needsBudgetRead ? 'fixture-budget-read' : 'fixture-tool-call', type: 'function', function: { name: 'read', arguments: JSON.stringify({ path: join(cwd, 'tool-fixture.txt') }) } };
+      res.end(`${chunk({ role: 'assistant', tool_calls: [toolCall] })}${chunk({}, 'tool_calls')}data: [DONE]\n\n`);
     } else {
       res.write(chunk({ role: 'assistant', content: responseText }));
       res.end(`${chunk({}, 'stop')}data: [DONE]\n\n`);
@@ -148,6 +159,7 @@ try {
   };
   const print = capture();
   const printRuntime = await createOpenCodeCliRuntime({ cwd, native, stdout: print.stdout, io: print.io });
+  if (process.env.CTG_NATIVE_SMOKE_BUDGET_ONLY !== '1') {
   const printCode = await runOpenCodeCli({ argv: ['-p', '--no-guide', '--model', 'ctg-fixture/fixture', 'Smoke print'], runtime: printRuntime, io: print.io, stdoutIsTTY: false });
   assert.equal(printCode, 0, `print run failed: ${print.lines.join('\n')}\n${hostOutput}`);
   assert.match(print.lines.join('\n'), /CLI fixture response for Smoke print/);
@@ -165,11 +177,15 @@ try {
   assert.equal(failureAfterSuccessCode, 1, `failed turn must not inherit previous success: ${failureAfterSuccess.lines.join('\n')}`);
   assert.doesNotMatch(failureAfterSuccess.lines.join('\n'), /CLI fixture response for Smoke (print|second turn)/);
   const admittedRequests = requests.length;
+  }
 
-  const foreignDir = join(temp, 'foreign');
-  await mkdir(foreignDir);
   const { OpenCode } = await import('@opencode/client');
   const fixtureClient = OpenCode.make({ baseUrl: service.url, headers: service.headers });
+  if (process.env.CTG_NATIVE_SMOKE_BUDGET_ONLY !== '1') {
+  const foreignDir = join(temp, 'foreign');
+  await mkdir(foreignDir);
+  const capabilities = await fixtureClient.rpc(Carthagent).health({}, { location: { directory: cwd } });
+  assert.ok(capabilities.capabilities.includes('delivery.budgets.v1'), JSON.stringify(capabilities));
   const foreign = await fixtureClient.session.create({ location: { directory: foreignDir }, title: 'Foreign workspace session', model: { providerID: 'ctg-fixture', id: 'fixture' } });
   const continued = capture();
   const continueRuntime = await createOpenCodeCliRuntime({ cwd, native, stdout: continued.stdout, io: continued.io });
@@ -177,7 +193,9 @@ try {
   assert.equal(continueCode, 0, `continue run failed: ${continued.lines.join('\n')}\n${hostOutput}`);
   assert.notEqual(sessionIDs.at(-1), foreign.id, 'continue must not select a session from another workspace');
   assert.equal(sessionIDs.at(-1), sessionIDs[0], 'continue must select the newest existing session in this workspace');
+  }
 
+  if (process.env.CTG_NATIVE_SMOKE_BUDGET_ONLY !== '1') {
   const guideSeed = capture();
   const guideSeedRuntime = await createOpenCodeCliRuntime({ cwd, native, stdout: guideSeed.stdout, io: guideSeed.io });
   const guideSeedCode = await runOpenCodeCli({ argv: ['-p', '--guide', '--model', 'ctg-fixture/fixture', 'Smoke establish persisted guide'], runtime: guideSeedRuntime, io: guideSeed.io, stdoutIsTTY: false });
@@ -191,13 +209,33 @@ try {
   assert.ok(noGuideRequest, 'resumed no-guide prompt reached the offline fixture provider');
   const noGuideUser = noGuideRequest.messages.find(message => message.role === 'user' && String(message.content).includes('Smoke explicit no-guide overrides persisted guide'));
   assert.equal(noGuideUser.content, 'Smoke explicit no-guide overrides persisted guide', 'explicit --no-guide must prevent persisted framing from rewriting resumed prompts');
+  }
 
   const budget = capture();
   const budgetRuntime = await createOpenCodeCliRuntime({ cwd, native, stdout: budget.stdout, io: budget.io });
-  const budgetCode = await runOpenCodeCli({ argv: ['-p', '--max-tools', '2', '--no-guide', 'Must reject unenforced budget'], runtime: budgetRuntime, io: budget.io, stdoutIsTTY: false });
-  assert.equal(budgetCode, 1);
-  assert.match(budget.lines.join('\n'), /does not advertise required enforcement capabilities/);
+  const requestsBeforeBudget = requests.length;
+  const budgetCode = await runOpenCodeCli({ argv: ['-p', '--json', '--no-delivery', '--max-tools', '1', '--no-guide', '--model', 'ctg-fixture/fixture', 'Smoke budget enforcement'], runtime: budgetRuntime, io: budget.io, stdoutIsTTY: false });
+  assert.equal(budgetCode, 1, `budget run should terminate as interrupted: ${budget.lines.join('\n')}\n${JSON.stringify(requests.slice(requestsBeforeBudget))}\n${JSON.stringify(nativeEventsCaptured.slice(-40))}`);
+  const budgetSessionID = sessionIDs.at(-1);
+  assert.ok(budgetSessionID, 'the enforced budget run created a native session');
+  const budgetRequests = requests.slice(requestsBeforeBudget).filter(body => {
+    const lastUser = [...(body.messages || [])].reverse().find(message => message.role === 'user');
+    return String(lastUser?.content || '').includes('Smoke budget enforcement');
+  });
+  assert.equal(budgetRequests.length, 2, `provider received the initial tool request and one continuation; actual=${budgetRequests.length}`);
+  assert.equal(budgetProviderTurns, 2, 'fixture provider received no further request after the over-budget tool call');
+  assert.equal(existsSync(join(cwd, 'budget-side-effect.txt')), false, 'over-budget shell side effect never occurred');
+  const budgetEvents = budget.lines.filter(line => line.startsWith('{')).map(line => JSON.parse(line));
+  assert.ok(budgetEvents.some(event => event.type === 'tool_execution_start' && event.sessionID === budgetSessionID && event.toolName === 'read'), JSON.stringify(budgetEvents));
+  assert.ok(budgetEvents.some(event => event.type === 'message' && event.sessionID === budgetSessionID && event.message.type === 'idle' && event.message.outcome === 'interrupted'), JSON.stringify(budgetEvents));
+  assert.ok(nativeEventsCaptured.some(event => event.type === 'session.execution.interrupted' && event.data?.sessionID === budgetSessionID), 'budget rejection interrupted the active native session');
+  assert.ok(nativeEventsCaptured.some(event => event.type === 'session.execution.interrupted' && event.data?.sessionID === budgetSessionID), 'the over-budget tool interrupted the native session');
+  const budgetStatus = await fixtureClient.rpc(Carthagent).budgetStatus({ sessionID: budgetSessionID }, { location: { directory: cwd } });
+  assert.deepEqual({ tools: budgetStatus.tools, maxTools: budgetStatus.maxTools, stopped: budgetStatus.stopped }, { tools: 1, maxTools: 1, stopped: 'tool-calls' });
 
+  if (process.env.CTG_NATIVE_SMOKE_BUDGET_ONLY === '1') {
+    console.log(JSON.stringify({ binary, host: '2.0.32', budgetEnforcement: 'passed', providerTurns: budgetProviderTurns, budgetStatus: { tools: budgetStatus.tools, maxTools: budgetStatus.maxTools, stopped: budgetStatus.stopped }, overBudgetSideEffect: existsSync(join(cwd, 'budget-side-effect.txt')) }));
+  } else {
   const json = capture();
   const jsonRuntime = await createOpenCodeCliRuntime({ cwd, native, stdout: json.stdout, io: json.io });
   const jsonCode = await runOpenCodeCli({ argv: ['--json', '--no-guide', '--model', 'ctg-fixture/fixture', 'Smoke JSON'], runtime: jsonRuntime, io: json.io, stdoutIsTTY: false });
@@ -226,8 +264,9 @@ try {
   assert.equal(failedAfterSuccessCode, 1, `JSON failure after success should fail: ${failedAfterSuccess.lines.join('\n')}`);
   const failedAfterSuccessEvents = failedAfterSuccess.lines.filter(line => line.startsWith('{')).map(line => JSON.parse(line));
   assert.ok(!failedAfterSuccessEvents.some(event => JSON.stringify(event).includes('CLI fixture response for Smoke print') || JSON.stringify(event).includes('CLI fixture response for Smoke second turn')), JSON.stringify(failedAfterSuccessEvents));
-  assert.ok(failedAfterSuccessEvents.some(event => event.type === 'message' && event.message.type === 'idle' && event.message.outcome === 'failed'), JSON.stringify(failedAfterSuccessEvents));
-  console.log(JSON.stringify({ binary, host: '2.0.32', providerRequests: requests.length, admittedRequests, print: 'passed', repeatedTurn: 'passed', providerFailureAfterSuccess: 'passed', jsonProviderFailureAfterSuccess: 'passed', continueWorkspaceIsolation: 'passed', jsonToolEvents: 'passed', jsonProviderFailure: 'passed', profile: 'disposable fixture; existing service injected' }));
+  assert.ok(failedAfterSuccessEvents.some(event => event.type === 'message' && event.message.type === 'idle' && event.message.outcome === 'failed'), JSON.stringify({ output: failedAfterSuccess.lines, native: nativeEventsCaptured.filter(event => event.data?.sessionID === sessionIDs[0]).slice(-30), requests: requests.slice(-4) }));
+  console.log(JSON.stringify({ binary, host: '2.0.32', providerRequests: requests.length, admittedRequests, print: 'passed', repeatedTurn: 'passed', providerFailureAfterSuccess: 'passed', jsonProviderFailureAfterSuccess: 'passed', continueWorkspaceIsolation: 'passed', jsonToolEvents: 'passed', budgetEnforcement: 'passed', jsonProviderFailure: 'passed', profile: 'disposable fixture; existing service injected' }));
+  }
 } catch (error) {
   console.error(hostOutput);
   throw error;
