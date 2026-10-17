@@ -45,9 +45,9 @@ npm install -g --install-links=true github:B-icy/Carthagent#vX.Y.Z
 ctg
 ```
 
-Replace `vX.Y.Z` with a version that has actually been published. npm 11 requires `--install-links=true` for this GitHub global install. To persist that setting, run `npm config set install-links true --location=user`. To install a checked-out source tree for development, use `git clone https://github.com/B-icy/Carthagent`, then `npm ci && npm install -g .`; this is not a published-release installation.
+Replace `vX.Y.Z` with a version that has actually been published. npm 11 requires `--install-links=true` for this GitHub global install. To persist that setting, run `npm config set install-links true --location=user`. The native preview is currently documented and exercised from a source checkout; a fresh npm-installed native runtime is **not** yet accepted. See the [native upgrade guide](docs/native-upgrade.md) for current checkout instructions and the runtime resolver limitation. If you are using the currently-default regular CLI, see [legacy CLI install, provider, account, and console instructions](docs/legacy-cli.md).
 
-`ctg update --check` checks for a published release without installing; `ctg update` installs the validated exact `v<version>` release tag using the existing install method. Source-clone updates fail closed if the clone is dirty. Do not treat this documentation change as a release: version selection, publishing, and tagging happen separately after product acceptance. See [native upgrade guidance](docs/native-upgrade.md) and the [UNRELEASED draft notes](docs/release-notes-native-draft.md).
+`ctg update --check` checks for a published release without installing. The regular CLI is still the default, and its updater can update a clean source clone. The native updater differs: it refuses to check out a release into any active source clone, including a clean one; it installs package releases only from an npm installation. Preserve local changes and use the manual exact-tag checkout procedure in the [native upgrade guide](docs/native-upgrade.md) when updating a development checkout. Do not treat this documentation change as a release: version selection, publishing, and tagging happen separately after product acceptance. See the [UNRELEASED draft notes](docs/release-notes-native-draft.md).
 
 ## Regular CLI
 
