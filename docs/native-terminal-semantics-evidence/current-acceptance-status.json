@@ -25,7 +25,7 @@
     "narrowLayout": {
       "status": "PASS",
       "evidence": ["final-binary-full-incomplete-85bb44a.json", "final-binary-layout-85bb44a.json"],
-      "note": "Exact supplied binary rendered fixture response and composer in the actual 40x12 PTY; host remained alive, picker absent, and modeled rows fit width."
+      "note": "Exact supplied binary rendered fixture response and composer in the actual 40x12 PTY; an additional interactive pass typed unique input, backspaced one character, opened the recent-sessions menu, navigated, cancelled with Escape, and verified the edited input returned in the composer. See final-binary-layout-interactive-85bb44a.json."
     },
     "selectionClipboard": {
       "status": "PASS_CONTROLLED_HOST_MODEL",
@@ -43,7 +43,17 @@
       "note": "Exact supplied binary: ordered 22;0 save / 23;0 restore, seeded modeled title restored, PTY drained to EOF, normal exit code 0, no forced termination."
     }
   },
+  "modelPickerNavigationAndEscapeUnchangedModel": {
+    "status": "INCOMPLETE",
+    "evidence": "final-binary-model-picker-unchanged-model-incomplete-85bb44a.json",
+    "note": "The actual Select model dialog was visible, but this attempt did not prove option navigation followed by Escape dismissal or unchanged model after a valid post-cancel prompt. No model-picker acceptance claim."
+  },
+  "recentSessionsMenuEscapeAndComposerRestoration": {
+    "status": "PASS",
+    "evidence": ["final-binary-full-incomplete-85bb44a.json", "final-binary-layout-interactive-85bb44a.json"],
+    "note": "Distinct from model-picker acceptance; the recent-sessions menu was opened, navigated, and cancelled, restoring the composer."
+  },
   "physicalOSClipboardVerified": false,
   "paidProviderTraffic": false,
-  "runCaveat": "Results are bounded across separate runs. Full run had an incomplete native selection gesture; focused run established the selection clipboard model round trip. Standalone picker-only run did not recognize the menu, while corrected full run did. No physical clipboard claim is made."
+  "runCaveat": "Results are bounded across separate runs. Full run had an incomplete native selection gesture; focused run established the selection clipboard model round trip. Ctrl+O recent-sessions menu cancellation is not model-picker acceptance. Model-picker navigation/Escape/unchanged-state remains incomplete. The standalone picker-only run did not recognize the recent menu, while corrected full and interactive narrow-layout runs did. No physical clipboard claim is made."
 }

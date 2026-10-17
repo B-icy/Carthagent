@@ -15,6 +15,8 @@ does and does not establish.
 | `final-binary-focused-85bb44a.json` | Focused native passes | Exact selected-substring and `/copy` payload/readbacks in the modeled OSC 52 host, exact prompt transport, and title restoration against the supplied final binary. This is not physical clipboard proof. |
 | `final-binary-full-incomplete-85bb44a.json` | Incomplete | Full run on the supplied binary passed picker Escape, 40x12 layout, 18,047-byte Unicode paste, `/copy`, and title restoration, but its selection attempt did not produce an OSC 52 update. The focused rerun did. |
 | `final-binary-layout-85bb44a.json` | Layout pass | Independent 40x12 render pass; selection and copy were intentionally not exercised in this lane. |
+| `final-binary-layout-interactive-85bb44a.json` | Interactive narrow-layout pass | At 40x12, typed unique input, backspaced one character, opened and navigated the recent-sessions menu, cancelled with Escape, and verified the edited composer input returned. Not a model-picker test. |
+| `final-binary-model-picker-unchanged-model-incomplete-85bb44a.json` | Incomplete / fail | The actual model picker was visible, but the harness did not establish navigation followed by Escape dismissal and unchanged state. Later request model names alone are not accepted as picker-state evidence. |
 | `final-binary-picker-cancel-incomplete-85bb44a.json` | Incomplete | Standalone picker run did not identify a picker screen. The corrected full run did observe and pass Escape dismissal. |
 | `current-acceptance-status.json` | Bounded multi-run acceptance | Summarizes only checks observed on the exact supplied binary; physical OS clipboard remains unverified. |
 

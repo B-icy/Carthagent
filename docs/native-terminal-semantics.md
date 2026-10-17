@@ -69,7 +69,13 @@ copy/readback, and title restoration. These clipboard results are controlled
 OSC 52 host-model results, not physical OS clipboard verification. Results are
 bounded across runs and the full suite remains incomplete as one invocation;
 see `docs/native-terminal-semantics-evidence/` for exact harness hashes and
-per-run caveats. No physical clipboard claim is made.
+per-run caveats. An additional 40x12 interactive run typed unique input,
+backspaced one character, opened and navigated the recent-sessions menu, then
+cancelled with Escape and verified the edited composer returned. This does not
+establish model-picker behavior: navigating the actual model picker, cancelling
+without selection, and checking authoritative unchanged model state remains
+incomplete. Recent-sessions cancellation and model-picker cancellation are
+separate checks. No physical clipboard claim is made.
 
 The existing `tests/tui-copy-paste.test.mjs` covers parser logic and selection
 string calculation only; it is not a substitute for this native probe.
