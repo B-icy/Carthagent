@@ -7,9 +7,10 @@ import { nativeFixture, streamText } from './native-fixture.mjs';
 const plugin = process.argv[2];
 if (!plugin) throw new Error('Usage: seed-native-switch-fixture.mjs /absolute/path/to/plugins/carthagent');
 const keepServer = process.argv.includes('--serve');
+const noPlugin = process.argv.includes('--no-plugin');
 const readyFile = process.argv.find(value => value.startsWith('--ready-file='))?.slice('--ready-file='.length);
 const host = await nativeFixture({
-  plugin,
+  plugin: noPlugin ? null : plugin,
   preserveTemp: true,
   respond(body, response) {
     const serialized = JSON.stringify(body);
@@ -40,7 +41,7 @@ try {
     }
     fixtures[name] = { id: session.id, title, marker, directory: roots[name] };
   }
-  const fixture = { temp: host.temp, roots, sessions: fixtures };
+  const fixture = { temp: host.temp, roots, sessions: fixtures, pluginEnabled: !noPlugin };
   fixture.baseUrl = host.baseUrl;
   fixture.password = host.password;
   const agentDir = join(host.temp, 'home/.carthagent/agent');

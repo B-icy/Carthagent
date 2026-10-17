@@ -13,7 +13,10 @@ The first-render/plugin warmup happens before the input clock starts. Each of
 new matching cell at the native editor placeholder's input origin in a parsed
 VT screen. Arbitrary transcript/status text and other editor-row cells are not
 accepted as an echo. This is a PTY key-to-render proxy, not a compositor/GPU
-presentation timestamp. Input p95 target: 50 ms.
+presentation timestamp. It includes the harness's PTY `select`/read, screen
+parsing, and evidence-detection path. Per-sample polling and VT-feed work are
+recorded as observer instrumentation; they are not subtracted or treated as a
+compositor estimate. Input p95 target: 50 ms.
 
 The JSON artifact includes run-start load average, CPU count, and host memory
 availability so a loaded host is visible alongside latency samples. These
@@ -36,7 +39,10 @@ opens the actual native Open Sessions menu (`open.menu`, bound to Ctrl+O in the
 isolated profile), and times Enter acceptance to the selected session's unique
 persisted assistant-history marker. It visits both histories before 30
 alternating samples to warm them. It excludes menu-open/search time and does
-not use RPC timing. Sessions must be in the same project because this build's
+not use RPC timing. Timing is Enter write through PTY polling/read, VT parsing,
+and parsed destination-marker observation—not compositor/GPU presentation.
+Per-sample observer polling and parse work are reported, never subtracted.
+Sessions must be in the same project because this build's
 Open Sessions picker scopes session rows to the active project. Switch mode is
 diagnostic-only; input p95 is not measured in that mode.
 
@@ -61,7 +67,8 @@ average 14.25/14.70/17.17; 4,130 MiB available memory; end load
 host window, not a controlled baseline. Idle observation was 1 second, 121 PTY
 bytes, and 7.11 MiB process-tree RSS range. A controlled paired plugin/baseline
 run remains pending. A separate native switch-only run successfully recorded
-30 alternating same-project session changes. It measured **1,025.493 ms p95**
+30 alternating same-project session changes. This is a diagnostic observation,
+not acceptance evidence. It measured **1,025.493 ms p95**
 (1,391.240 ms max), missing the unchanged 150 ms target. The host was loaded:
 8 CPUs; load 16.57/15.64/15.22 at start and 15.79/15.62/15.23 at end, with
 3,914 MiB available memory at start and 4,467 MiB at end. The switch result is
@@ -73,3 +80,64 @@ completed under lower, though still non-idle, load: **573.526 ms p95**
 available memory was 5,587 MiB at start and 5,199 MiB at end. Both runs miss
 the 150 ms target; neither is a controlled acceptance measurement. Host load
 and available memory are captured at start and end in JSON.
+
+## Controlled paired assessment (run only in a scheduled quiet window)
+
+Do not start while CI, builds, UI lint, native evaluations, or other material
+workloads are active. The parent/operator must confirm the quiet window first.
+The exact pinned executable used by the runbook is
+`/tmp/opencode/ctg-product-integration/node_modules/@opencode/cli/bin/opencode.exe`;
+the script refuses to fall back to `~/.opencode` or a system `opencode`.
+
+From this worktree, the scheduled run is (replace the window ID with a short
+operator-chosen label):
+
+```bash
+WINDOW_ID=2026-10-17-evening # choose a unique scheduled-window label
+export CTG_OPENCODE_BIN=/tmp/opencode/ctg-product-integration/node_modules/@opencode/cli/bin/opencode.exe
+export SAMPLES=30
+export OUTPUT_DIR="/tmp/opencode/ctg-native-terminal-paired-${WINDOW_ID}"
+bash tools/run-native-terminal-paired.sh
+```
+
+Requirements are Bash, Node.js, Python 3 with POSIX `pty`, and `@opencode/client`
+in the pinned integration install. The runner stages the fixture helper and
+plugin under `/tmp`, linking only that disposable staging tree to the pinned
+dependencies; it does not write `node_modules` into the worktree or either
+parent checkout. Its private output directory is mode 0700 because fixture
+metadata contains temporary loopback credentials. The script creates
+independent disposable baseline and composed-production-CTG
+profiles/databases with equivalent same-project fixture sessions, a loopback-
+only provider, unique persisted assistant markers, and a 36x120 PTY. It runs
+ABBA (`baseline-1`, `ctg-1`, `ctg-2`, `baseline-2`); each run visits both
+destinations before its measured alternating selections. Each condition gets
+at least 30 switch and 30 input samples, plus one excluded input warmup. It
+records per-sample UTC and monotonic start/end times, verifies the changed
+input cell and its restoration to the native empty-editor placeholder after
+each backspace, verifies each unique destination marker, records select/poll,
+PTY read, VT-feed and predicate-detection observer counters, and retains
+failures. A failed sample stays in the artifact and prevents that condition's
+target from being marked met. One-second load-average and `MemAvailable`
+observations run through each sample window (including the two session warmups
+and input warmup). Reports and seeder logs are retained under `OUTPUT_DIR`;
+disposable profiles and local servers are cleaned up on exit.
+
+The harness leaves the thresholds unchanged (50 ms input p95, 150 ms switch
+p95). These are terminal-to-parsed-PTY-screen proxies, not compositor timing;
+do not subtract observer measurements or claim such a correction. A short RSS
+range remains a short-window observation, not a memory bound. Preserve the
+existing **573.526 ms p95** switch observation as a loaded-host diagnostic;
+the paired run, too, is diagnostic unless the operator confirms the controlled
+window and independent review accepts the evidence. Deliberate fixed waits are
+outside sample clocks: up to 500 ms initial frame drain, a 50 ms maximum PTY
+poll quantum while preparing the picker, 1 ms maximum poll quantum while
+awaiting rendered evidence, event-driven wait for the editor to return to the
+empty placeholder after backspace, and the separate 10-second post-sample idle
+observation. No fixed sleep is inside a switch or key-to-screen interval; PTY
+read/poll/parser overhead is inside and reported. Do not subtract that observer
+work.
+
+Estimated wall time once scheduled: roughly **4–8 minutes** for fixture seeding
+and four ABBA passes (typically 35–60 seconds of timed switching/input per
+pass, plus startup, session seeding, and idle observation). Allow **up to 10
+minutes**; abort rather than overlap a newly started material workload.
