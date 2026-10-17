@@ -6,7 +6,7 @@ import { getEventListeners } from 'node:events';
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { nativeCommandConfig } from '../lib/opencode/compatibility.mjs';
-import { CTG_RUNTIME_LOCK_SHA256, CTG_RUNTIME_PATCH_SHA256, CTG_RUNTIME_SOURCE, CTG_RUNTIME_VERSION, OPENCODE_VERSION, provisionRuntime, resolveOpenCode, resolveOwnedOpenCode, runtimeEnvironment, runtimeIdentity, runtimePaths, withFileLock, workspaceEnvironment } from '../lib/opencode/runtime.mjs';
+import { CTG_RUNTIME_LOCK_SHA256, CTG_RUNTIME_PATCH_SHA256, CTG_RUNTIME_SOURCE, CTG_RUNTIME_VERSION, OPENCODE_VERSION, provisionRuntime, resolveOpenCode, resolveOwnedOpenCode, resolvePathCommand, runtimeEnvironment, runtimeIdentity, runtimePaths, withFileLock, workspaceEnvironment } from '../lib/opencode/runtime.mjs';
 import { cancelSession, createSession, ensureService, getSession, launchTui, promptSession, serviceRequest, sessionMessages, setSessionEnvironment, stopService } from '../lib/opencode/service.mjs';
 import { runHeadless } from '../lib/opencode/headless.mjs';
 
@@ -303,6 +303,17 @@ test('PATH-selected commands resolve to a concrete executable identity', async (
     assert.equal(resolved, executable);
     const identity = await runtimeIdentity('opencode', { binary: 'opencode', env });
     assert.equal(identity.binaryPath, executable);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('Windows PATH lookup does not append PATHEXT to an already suffixed executable', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-win-path-'));
+  const bin = path.join(root, 'bin');
+  try {
+    await mkdir(bin);
+    const executable = path.join(bin, 'foo.exe');
+    await writeFile(executable, 'fixture');
+    assert.equal(resolvePathCommand('foo.exe', { PATH: bin, PATHEXT: '.COM;.EXE;.CMD' }, 'win32'), executable);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
