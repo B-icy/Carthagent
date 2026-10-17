@@ -7,10 +7,18 @@ import { ensureService, stopService } from '../lib/opencode/service.mjs';
 import { runHeadless } from '../lib/opencode/headless.mjs';
 import { nativeFixture, streamText } from './native-fixture.mjs';
 
+let stallStarted;
+const stalled = new Promise(resolve => { stallStarted = resolve; });
 const host = await nativeFixture({
   plugin: process.argv[2],
   respond(body, res) {
     const text = JSON.stringify([...body.messages].reverse().find(message => message.role === 'user'));
+    if (text.includes('WRAPPER_STALL')) {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.flushHeaders();
+      stallStarted();
+      return;
+    }
     if (text.includes('WRAPPER_TOOL') && !body.messages.some(message => message.role === 'tool')) {
       assert.ok(body.tools.some(tool => tool.function?.name === 'read'), 'Native host must advertise the requested read tool');
       const chunk = (delta, finish_reason = null) => `data: ${JSON.stringify({
@@ -59,6 +67,25 @@ try {
     `Provider failure must not return a previous successful assistant: ${JSON.stringify(failure)}`);
   const recovered = await runHeadless(service, host.cwd, 'WRAPPER_SECOND', { ...common, sessionID: first.session.id });
   assert.equal(recovered.result?.text, 'SECOND_TURN');
+  const cancel = new AbortController();
+  const interrupted = runHeadless(service, host.cwd, 'WRAPPER_STALL', { ...common, sessionID: first.session.id, signal: cancel.signal });
+  let admissionTimer;
+  try {
+    await Promise.race([stalled, new Promise((_, reject) => {
+      admissionTimer = setTimeout(() => reject(Error('Wrapper cancellation fixture did not reach provider')), 10_000);
+    })]);
+    const neighbor = await runHeadless(service, host.cwd, 'WRAPPER_SECOND', common);
+    assert.equal(neighbor.result?.text, 'SECOND_TURN', 'A stalled session must not block its neighbor');
+  } finally {
+    clearTimeout(admissionTimer);
+    cancel.abort(Error('Offline wrapper cancellation'));
+  }
+  const cancelled = await interrupted;
+  assert.equal(cancelled.reason, 'aborted');
+  assert.equal(cancelled.outcome, 'interrupted');
+  assert.notEqual(cancelled.result?.text, 'SECOND_TURN', 'An interrupted resumed turn must not reuse a prior answer');
+  const afterCancel = await runHeadless(service, host.cwd, 'WRAPPER_SECOND', { ...common, sessionID: first.session.id });
+  assert.equal(afterCancel.result?.text, 'SECOND_TURN');
   let unroutable;
   try {
     unroutable = await runHeadless(service, host.cwd, 'UNAVAILABLE_MODEL', {
@@ -68,7 +95,7 @@ try {
   assert.ok(unroutable.error || unroutable.outcome === 'failed' || unroutable.session?.outcome === 'failed',
     `A failure without an assistant must expose a failed terminal outcome: ${JSON.stringify(unroutable)}`);
   assert.equal(await stopService(options), true);
-  console.log(JSON.stringify({ host: '2.0.32', serviceReuse: 'passed', repeatedTurns: 'passed', finalAnswerAfterTool: 'passed', successMetadata: 'passed', failure: 'passed', recovery: 'passed' }));
+  console.log(JSON.stringify({ host: '2.0.32', serviceReuse: 'passed', repeatedTurns: 'passed', finalAnswerAfterTool: 'passed', successMetadata: 'passed', failure: 'passed', recovery: 'passed', cancellation: 'passed', neighboringSession: 'passed' }));
 } finally {
   try { await stopService(options); }
   finally { await host.close(); }
