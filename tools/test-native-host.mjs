@@ -21,8 +21,39 @@ const binary = await resolveOpenCode();
 const execFileAsync = promisify(execFile);
 const temp = await mkdtemp(join(tmpdir(), 'ctg-host-smoke-'));
 const password = randomBytes(24).toString('hex');
+const providerKey = `sentinel-${randomBytes(24).toString('hex')}`;
 let child;
+let childClosed = false;
 let output = '';
+let deviceAuthorizationBody;
+const gatewayAuth = [];
+const gatewayServer = createServer((request, response) => {
+  gatewayAuth.push({ authorization: request.headers.authorization, url: request.url });
+  response.writeHead(200, { 'content-type': 'application/json' });
+  response.end(JSON.stringify(request.url?.endsWith('/models')
+    ? { data: [{ id: 'sentinel-model' }] }
+    : { id: 'chatcmpl-sentinel', object: 'chat.completion', choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } }));
+});
+await new Promise((resolveListen, reject) => gatewayServer.listen(0, '127.0.0.1', resolveListen).once('error', reject));
+const gatewayAddress = gatewayServer.address();
+const authServer = createServer((request, response) => {
+  let body = '';
+  request.setEncoding('utf8').on('data', (chunk) => { body += chunk; });
+  request.on('end', () => {
+  if (request.url === '/v1/device/authorizations') {
+    deviceAuthorizationBody = JSON.parse(body);
+    response.writeHead(201, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ deviceCode: 'offline-device-code', userCode: 'OFFLINE', verificationUri: 'http://127.0.0.1/verify', expiresIn: 120, interval: 1 }));
+  } else if (request.url === '/v1/device/token') {
+    response.writeHead(400, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ error: 'authorization_pending' }));
+  } else {
+    response.writeHead(404).end();
+  }
+  });
+});
+await new Promise((resolveListen, reject) => authServer.listen(0, '127.0.0.1', resolveListen).once('error', reject));
+const authAddress = authServer.address();
 let fixtureRequests = 0;
 const fixture = createServer(async (req, res) => {
   fixtureRequests += 1;
@@ -103,10 +134,14 @@ try {
     OPENCODE_CONFIG_PROJECT_DISABLE: 'true',
     OPENCODE_DB: join(temp, 'database.sqlite'),
     OPENCODE_SERVER_PASSWORD: password,
+    CARTHAGENT_CLOUD_URL: `http://127.0.0.1:${authAddress.port}`,
+    EXPLABS_API_KEY: providerKey,
+    EXP_GATEWAY_URL: `http://127.0.0.1:${gatewayAddress.port}`,
   });
   child = spawn(binary, [
     'serve', '--hostname', '127.0.0.1', '--port', '0', '--print-logs', '--log-level', 'debug',
   ], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  child.once('close', () => { childClosed = true; });
   const endpoint = await new Promise((resolveEndpoint, reject) => {
     const timer = setTimeout(() => reject(new Error(`Host startup timed out: ${output}`)), 30_000);
     const collect = (chunk) => {
@@ -159,15 +194,56 @@ try {
   } while (Date.now() < deadline);
   const nativePlugin = plugins.data.find((entry) => entry.id === 'carthagent');
   const archivePlugin = plugins.data.find((entry) => entry.id === 'ctg-archive-fixture');
-  assert.ok(nativePlugin, 'Carthagent plugin must become visible');
+  assert.ok(nativePlugin, `Carthagent plugin must become visible: ${JSON.stringify(plugins.data)}`);
   assert.equal(nativePlugin.state.status, 'active');
   assert.equal(archivePlugin?.state.status, 'active', 'archive registration fixture must become visible');
+  const providers = await client.provider.list({ location: { directory: cwd } }, request);
+  assert.ok(providers.data.some((provider) => provider.id === 'experiential-labs'),
+    'plugin setup must register the Ship provider with the real host');
+  const integrations = await client.integration.list({ location: { directory: cwd } }, request);
+  const ship = integrations.data.find(({ id }) => id === 'experiential-labs');
+  assert.ok(ship, 'the native provider catalog must supply a real Ship integration record');
+  assert.ok(ship.methods.some(({ type, id }) => type === 'oauth' && id === 'carthagent-device'),
+    'plugin integration transform must register the Ship device-OAuth method');
+  assert.ok(ship.methods.some(({ type }) => type === 'key'),
+    'plugin integration transform must register the Ship API-key method');
+  assert.ok(ship.methods.some(({ type, names }) => type === 'env' && names?.includes('EXPLABS_API_KEY')),
+    'the native integration catalog resolves BYOK from the named environment credential');
+  const models = await client.model.list({ location: { directory: cwd } }, request);
+  const serializedInventory = JSON.stringify({ providers: providers.data, models: models.data, integrations: integrations.data });
+  assert.equal(serializedInventory.includes(providerKey), false, 'provider and integration inventories must not expose the environment secret');
+  assert.equal(output.includes(providerKey), false, 'OpenCode/plugin logs must not expose the environment secret');
+  assert.ok(models.data.some(model => model.providerID === 'experiential-labs' && model.id === 'sentinel-model'),
+    'environment-backed Ship model must be available through native model inventory');
+  const inferenceSession = await client.session.create({
+    location: { directory: cwd },
+    title: 'CTG BYOK auth fixture',
+    model: { id: 'sentinel-model', providerID: 'experiential-labs' },
+  }, request);
+  await client.session.prompt({ sessionID: inferenceSession.id, text: 'Reply with ok.' }, request);
+  const inferenceDeadline = Date.now() + 10_000;
+  while (!gatewayAuth.some(({ authorization, url }) => authorization === `Bearer ${providerKey}` && url.endsWith('/chat/completions')) && Date.now() < inferenceDeadline) {
+    await new Promise(done => setTimeout(done, 50));
+  }
+  assert.ok(gatewayAuth.some(({ authorization, url }) => authorization === `Bearer ${providerKey}` && url.endsWith('/chat/completions')),
+    'the native-resolved key must authenticate an actual provider inference request');
+  console.log(JSON.stringify({ providers: providers.data.map((provider) => provider.id), shipMethods: ship.methods.map(({ id, type, names }) => ({ id, type, names })) }));
   const health = await client.rpc.call({
     rpcID: 'carthagent', method: 'health', input: {}, location: { directory: cwd },
   }, request);
   console.log(JSON.stringify({ version: info.version, plugin: nativePlugin, health }, null, 2));
   assert.equal(health.output.directory, cwd);
   assert.equal(health.output.protocol, 1);
+  const auth = await client.rpc.call({
+    rpcID: 'carthagent', method: 'authStart', input: {}, location: { directory: cwd },
+  }, request);
+  assert.equal(auth.output.userCode, 'OFFLINE');
+  assert.match(auth.output.flowId, /^[0-9a-f-]{36}$/);
+  assert.match(deviceAuthorizationBody.installId, /^[0-9a-f-]{36}$/);
+  assert.equal((await client.rpc.call({
+    rpcID: 'carthagent', method: 'authCancel', input: { flowId: auth.output.flowId }, location: { directory: cwd },
+  }, request)).output.cancelled, true);
+  console.log('Device authorization start/cancel RPC passed against offline OpenCode host.');
   const echo = await client.rpc.call({
     rpcID: 'carthagent', method: 'echo', input: { text: 'native RPC fixture' }, location: { directory: cwd },
   }, request);
@@ -281,7 +357,7 @@ try {
   throw error;
 } finally {
   if (child) {
-    const closed = child.closed ? Promise.resolve() : once(child, 'close');
+    const closed = childClosed ? Promise.resolve() : once(child, 'close').then(() => { childClosed = true; });
     if (child.exitCode === null && child.signalCode === null) {
       if (process.platform === 'win32') {
         // This PID is the exact host process spawned above; /T is needed to
@@ -290,16 +366,20 @@ try {
       } else {
         child.kill('SIGTERM');
         const timer = setTimeout(() => {
-          if (!child.closed && child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+          if (!childClosed && child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
         }, 5_000);
         await closed;
         clearTimeout(timer);
       }
-      if (!child.closed) await closed;
+      if (!childClosed) await closed;
     } else {
       await closed;
     }
   }
-  await new Promise((resolveClose) => fixture.close(resolveClose));
+  await Promise.all([
+    new Promise((resolveClose) => authServer.close(resolveClose)),
+    new Promise((resolveClose) => gatewayServer.close(resolveClose)),
+    new Promise((resolveClose) => fixture.close(resolveClose)),
+  ]);
   await rm(temp, { recursive: true, force: true, maxRetries: 12, retryDelay: 250 });
 }
