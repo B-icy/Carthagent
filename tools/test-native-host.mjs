@@ -13,9 +13,20 @@ const root = resolve(import.meta.dirname, '..');
 const plugin = resolve(process.argv[2] ?? join(root, 'plugins/carthagent'));
 const temp = await mkdtemp('/tmp/opencode/ctg-host-smoke-');
 const password = randomBytes(24).toString('hex');
+const providerKey = `sentinel-${randomBytes(24).toString('hex')}`;
 let child;
 let output = '';
 let deviceAuthorizationBody;
+const gatewayAuth = [];
+const gatewayServer = createServer((request, response) => {
+  gatewayAuth.push({ authorization: request.headers.authorization, url: request.url });
+  response.writeHead(200, { 'content-type': 'application/json' });
+  response.end(JSON.stringify(request.url?.endsWith('/models')
+    ? { data: [{ id: 'sentinel-model' }] }
+    : { id: 'chatcmpl-sentinel', object: 'chat.completion', choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } }));
+});
+await new Promise((resolveListen, reject) => gatewayServer.listen(0, '127.0.0.1', resolveListen).once('error', reject));
+const gatewayAddress = gatewayServer.address();
 const authServer = createServer((request, response) => {
   let body = '';
   request.setEncoding('utf8').on('data', (chunk) => { body += chunk; });
@@ -51,6 +62,8 @@ try {
     OPENCODE_DB: join(temp, 'database.sqlite'),
     OPENCODE_SERVER_PASSWORD: password,
     CARTHAGENT_CLOUD_URL: `http://127.0.0.1:${authAddress.port}`,
+    EXPLABS_API_KEY: providerKey,
+    EXP_GATEWAY_URL: `http://127.0.0.1:${gatewayAddress.port}`,
   };
   child = spawn(process.env.CTG_OPENCODE_BIN ?? 'opencode', [
     'serve', '--hostname', '127.0.0.1', '--port', '0', '--print-logs', '--log-level', 'debug',
@@ -85,7 +98,7 @@ try {
     await new Promise((done) => setTimeout(done, 200));
   } while (Date.now() < deadline);
   const nativePlugin = plugins.data.find((entry) => entry.id === 'carthagent');
-  assert.ok(nativePlugin, 'Carthagent plugin must become visible');
+  assert.ok(nativePlugin, `Carthagent plugin must become visible: ${JSON.stringify(plugins.data)}`);
   assert.equal(nativePlugin.state.status, 'active');
   const providers = await client.provider.list({ location: { directory: cwd } }, request);
   assert.ok(providers.data.some((provider) => provider.id === 'experiential-labs'),
@@ -97,7 +110,27 @@ try {
     'plugin integration transform must register the Ship device-OAuth method');
   assert.ok(ship.methods.some(({ type }) => type === 'key'),
     'plugin integration transform must register the Ship API-key method');
-  console.log(JSON.stringify({ providers: providers.data.map((provider) => provider.id), shipMethods: ship.methods }));
+  assert.ok(ship.methods.some(({ type, names }) => type === 'env' && names?.includes('EXPLABS_API_KEY')),
+    'the native integration catalog resolves BYOK from the named environment credential');
+  const models = await client.model.list({ location: { directory: cwd } }, request);
+  const serializedInventory = JSON.stringify({ providers: providers.data, models: models.data, integrations: integrations.data });
+  assert.equal(serializedInventory.includes(providerKey), false, 'provider and integration inventories must not expose the environment secret');
+  assert.equal(output.includes(providerKey), false, 'OpenCode/plugin logs must not expose the environment secret');
+  assert.ok(models.data.some(model => model.providerID === 'experiential-labs' && model.id === 'sentinel-model'),
+    'environment-backed Ship model must be available through native model inventory');
+  const inferenceSession = await client.session.create({
+    location: { directory: cwd },
+    title: 'CTG BYOK auth fixture',
+    model: { id: 'sentinel-model', providerID: 'experiential-labs' },
+  }, request);
+  await client.session.prompt({ sessionID: inferenceSession.id, text: 'Reply with ok.' }, request);
+  const inferenceDeadline = Date.now() + 10_000;
+  while (!gatewayAuth.some(({ authorization, url }) => authorization === `Bearer ${providerKey}` && url.endsWith('/chat/completions')) && Date.now() < inferenceDeadline) {
+    await new Promise(done => setTimeout(done, 50));
+  }
+  assert.ok(gatewayAuth.some(({ authorization, url }) => authorization === `Bearer ${providerKey}` && url.endsWith('/chat/completions')),
+    'the native-resolved key must authenticate an actual provider inference request');
+  console.log(JSON.stringify({ providers: providers.data.map((provider) => provider.id), shipMethods: ship.methods.map(({ id, type, names }) => ({ id, type, names })) }));
   const health = await client.rpc.call({
     rpcID: 'carthagent', method: 'health', input: {}, location: { directory: cwd },
   }, request);
@@ -131,4 +164,5 @@ try {
   }
   await rm(temp, { recursive: true, force: true });
   await new Promise((resolveClose) => authServer.close(resolveClose));
+  await new Promise((resolveClose) => gatewayServer.close(resolveClose));
 }

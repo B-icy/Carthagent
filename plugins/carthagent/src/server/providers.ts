@@ -25,7 +25,7 @@ import {
 import { catalogModels } from '../../../../lib/providers/model-catalog.mjs';
 import { shipAgentDir } from '../../../../lib/ship-auth.mjs';
 import { createHash } from 'node:crypto';
-import { legacyOAuthForOpenCode, refreshSingleFlight } from '../../../../lib/opencode/credentials.mjs';
+import { legacyOAuthForOpenCode, nativeCredentialFile, refreshNativeCredential, refreshSingleFlight } from '../../../../lib/opencode/credentials.mjs';
 import { createDeviceAuthController } from './device-auth.ts';
 import { createSessionIdentity, isManagedShipCredential, shipTelemetryHeaders } from './telemetry.ts';
 
@@ -104,7 +104,7 @@ function mapCompatibility(compat: Record<string, unknown>): NonNullable<Model.In
   return Object.fromEntries(keys.flatMap(key => key in compat ? [[key, compat[key]]] : [])) as NonNullable<Model.Info['compatibility']>;
 }
 
-function oauthMethod({ env, fetchImpl, sleep, now, openBrowserImpl, agentDir, startDeviceFlow }: {
+function oauthMethod({ env, fetchImpl, sleep, now, openBrowserImpl, agentDir, startDeviceFlow, rereadCredential, credentialFile }: {
   env: NodeJS.ProcessEnv;
   fetchImpl: typeof fetch;
   sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
@@ -112,6 +112,8 @@ function oauthMethod({ env, fetchImpl, sleep, now, openBrowserImpl, agentDir, st
   openBrowserImpl: typeof openBrowser;
   agentDir: string;
   startDeviceFlow: () => Promise<{ authorization: { userCode: string; verificationUri: string; verificationUriComplete?: string; expiresIn: number; interval: number; deviceCode: string }; callback: Promise<Credential.OAuth> }>;
+  rereadCredential: () => Promise<Credential.OAuth | undefined>;
+  credentialFile: string;
 }) {
   const client = new CloudClient({ baseUrl: cloudControlUrl(env), fetchImpl, sleep: ms => sleep(ms) });
   return {
@@ -145,9 +147,14 @@ function oauthMethod({ env, fetchImpl, sleep, now, openBrowserImpl, agentDir, st
     },
     refresh: (credential: Credential.OAuth) => refreshSingleFlight(
       `${credential.methodID}:${credential.refresh}`,
-      async () => ({ type: 'oauth' as const, methodID: IntegrationSchema.MethodID.make(OAUTH_METHOD),
-        ...oauthCredentials(await client.refresh({ refreshToken: credential.refresh }), now()),
-        ...(credential.metadata ? { metadata: credential.metadata } : {}) }),
+      () => refreshNativeCredential({
+        credential,
+        credentialFile,
+        reread: rereadCredential,
+        refresh: async (current: Credential.OAuth) => ({ type: 'oauth' as const, methodID: IntegrationSchema.MethodID.make(OAUTH_METHOD),
+          ...oauthCredentials(await client.refresh({ refreshToken: current.refresh }), now()),
+          ...(current.metadata ? { metadata: current.metadata } : {}) }),
+      }),
     ),
     label: () => 'Carthagent Ship',
   };
@@ -156,6 +163,7 @@ function oauthMethod({ env, fetchImpl, sleep, now, openBrowserImpl, agentDir, st
 function integrationDefinitions(editor: Parameters<Context['integration']['transform']>[0] extends (editor: infer E) => void ? E : never, options: Parameters<typeof oauthMethod>[0]) {
   editor.method.update(oauthMethod(options));
   editor.method.update({ integrationID: IntegrationSchema.ID.make(SHIP_INTEGRATION_ID), method: { type: 'key', label: 'Use an Experiential API key' } });
+  editor.method.update({ integrationID: IntegrationSchema.ID.make(SHIP_INTEGRATION_ID), method: { type: 'env', names: [EXPERIENTIAL_API_KEY_ENV] } });
 }
 
 function asModelInfo(providerID: string, model: { id: string }, baseURL: string) {
@@ -190,6 +198,7 @@ interface ProviderRegistrationOptions {
   now?: () => number;
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
   agentDir?: string;
+  credentialFile?: string;
   openBrowser?: typeof openBrowser;
   telemetryIdentity?: ReturnType<typeof createSessionIdentity>;
   sessionIdentity?: (event: SessionModelRequest) => string;
@@ -206,13 +215,32 @@ export async function registerProviders(ctx: Context, options: ProviderRegistrat
   const agentDir = options.agentDir ?? shipAgentDir(env);
   const openBrowserImpl = options.openBrowser ?? openBrowser;
   const deviceAuth = options.deviceAuth ?? createDeviceAuthController({ env, fetchImpl, agentDir, now, sleep });
+  const rereadCredential = async (): Promise<Credential.OAuth | undefined> => {
+    const active = await ctx.integration.connection.active(SHIP_INTEGRATION_ID);
+    if (!active) return undefined;
+    const value = await ctx.integration.connection.resolve(active);
+    return value?.type === 'oauth' && value.methodID === OAUTH_METHOD ? value : undefined;
+  };
   const requestIdentity = options.sessionIdentity;
   const identity = options.telemetryIdentity ?? createSessionIdentity();
   const requestSecret = options.requestSecret ?? `${ctx.location?.project?.id || ctx.location?.directory || 'ctg'}:request-v1`;
   const registrations: Array<{ dispose: () => Promise<void> }> = [];
+  const controller = new AbortController();
+  let eventTask: Promise<void> | undefined;
+  const disposeRegistrations = async () => {
+    const failures: unknown[] = [];
+    for (const registration of registrations.splice(0).reverse()) {
+      try { await registration.dispose?.(); }
+      catch (error) { failures.push(error); }
+    }
+    return failures;
+  };
+  try {
   const integration = await ctx.integration.transform(editor => {
     integrationDefinitions(editor, {
     env, fetchImpl, sleep, now, openBrowserImpl, agentDir, startDeviceFlow: deviceAuth.start,
+    rereadCredential,
+    credentialFile: options.credentialFile ?? nativeCredentialFile(env),
     });
   });
   registrations.push(integration);
@@ -224,7 +252,7 @@ export async function registerProviders(ctx: Context, options: ProviderRegistrat
   const providerRegistration = await ctx.provider.transform(editor => {
     editor.add({ info: providerInfo(EXPERIENTIAL_PROVIDER_ID, EXPERIENTIAL_PROVIDER_NAME,
       '@opencode/ai/providers/openai-compatible', SHIP_INTEGRATION_ID,
-      { baseURL, apiKey: env[EXPERIENTIAL_API_KEY_ENV] || '' }), models: shipModels });
+      { baseURL, apiKey: `$${EXPERIENTIAL_API_KEY_ENV}` }), models: shipModels });
     // Subscription IDs already exist in the native catalog. Overlay only the
     // definitions and retain catalog cost/capability metadata.
     for (const [providerID, baseURL] of [
@@ -347,14 +375,13 @@ export async function registerProviders(ctx: Context, options: ProviderRegistrat
       await ctx.provider.reload();
     }
   };
-  const controller = new AbortController();
   void refresh(controller.signal).catch(() => {});
   const onConnection = async (event: { type: string }) => {
     if (event.type === 'integration.updated' || event.type === 'credential.updated' || event.type === 'credential.switched') {
       void refresh(controller.signal).catch(() => {});
     }
   };
-  const eventTask = (async () => {
+  eventTask = (async () => {
     try { for await (const event of ctx.event.subscribe({ signal: controller.signal })) await onConnection(event); }
     catch { /* abort/disconnect ends the watcher */ }
   })();
@@ -363,10 +390,23 @@ export async function registerProviders(ctx: Context, options: ProviderRegistrat
     if (disposed) return;
     disposed = true;
     controller.abort();
-    await eventTask;
-    await deviceAuth.cleanup();
-    for (const registration of registrations.reverse()) await registration.dispose?.();
+    const failures: unknown[] = [];
+    try { await eventTask; } catch (error) { failures.push(error); }
+    try { await deviceAuth.cleanup(); } catch (error) { failures.push(error); }
+    failures.push(...await disposeRegistrations());
+    if (failures.length) throw new AggregateError(failures, 'Carthagent provider cleanup did not complete cleanly.');
   };
+  } catch (error) {
+    controller.abort();
+    const failures: unknown[] = [];
+    if (eventTask) {
+      try { await eventTask; } catch (cleanupError) { failures.push(cleanupError); }
+    }
+    try { await deviceAuth.cleanup(); } catch (cleanupError) { failures.push(cleanupError); }
+    failures.push(...await disposeRegistrations());
+    if (failures.length) throw new AggregateError([error, ...failures], 'Carthagent provider registration failed and rollback was incomplete.', { cause: error });
+    throw error;
+  }
 }
 
 export const providerConstants = Object.freeze({
