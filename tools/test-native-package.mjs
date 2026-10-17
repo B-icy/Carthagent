@@ -106,8 +106,13 @@ try {
     const binary = await runtime.resolveOpenCode(options);
     const identity = await runtime.runtimeIdentity(binary, options);
     const expectedManifest = JSON.parse(await (await import('node:fs/promises')).readFile(process.argv[3], 'utf8').catch(error => error.code === 'ENOENT' ? 'null' : Promise.reject(error)));
-    const { fileURLToPath } = await import('node:url');
-    const ownedRoot = identity.kind === 'ctg-owned' ? fileURLToPath(new URL('../../../', pathToFileURL(binary))) : undefined;
+    const { dirname, resolve } = await import('node:path');
+    const ownedRoot = identity.kind === 'ctg-owned' ? resolve(dirname(dirname(dirname(binary)))) : undefined;
+    if (identity.kind === 'ctg-owned') {
+      const executableName = process.platform === 'win32' ? 'opencode.exe' : 'opencode';
+      const expectedBinary = resolve(ownedRoot, 'cli-' + identity.platform, 'bin', executableName);
+      if (binary !== expectedBinary) throw new Error('Selected owned runtime executable is outside its canonical artifact layout: expected ' + expectedBinary + ', got ' + binary);
+    }
     const verified = await loadNativeTestRuntime({ binary, ownedRoot, expectedManifest });
     console.log(JSON.stringify({ binary, ownedRoot: ownedRoot ?? null, identity, verified }));
   `, join(installed, 'lib/opencode/runtime.mjs'), join(installed, 'tools/native-runtime-identity.mjs'), releaseManifestPath], { cwd: install, env }).trim());
