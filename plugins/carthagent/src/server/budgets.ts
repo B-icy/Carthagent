@@ -3,7 +3,7 @@ import { budgetLimits, newBudget, budgetReason, budgetSnapshot } from "../../../
 export type Budget = ReturnType<typeof newBudget>
 
 export function readBudgetLimits(options: Record<string, unknown>) {
-  return budgetLimits((name) => options[name] ?? "0")
+  return budgetLimits((name: string) => options[name] ?? "0")
 }
 
 export function budgetForSession(saved: Budget | undefined, limits: ReturnType<typeof budgetLimits>) {

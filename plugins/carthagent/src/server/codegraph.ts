@@ -19,7 +19,7 @@ export async function registerCodegraph(ctx: any, options: { maxFiles?: number }
     editor.namespace?.({ name: "carthagent", description: "Carthagent code navigation" })
     editor.add({
       name: "code_nav", description: "Read-only structural graph for JS/TS/Python/Rust. Use definition/symbols/outline to locate code and callers/importers before changing APIs. Calls are name-based candidates, not resolved bindings. Results include coverage, total and nextOffset; page or filter incomplete answers.",
-      input: schema, options: { codemode: true },
+      input: schema, options: { namespace: "carthagent", codemode: true, permission: "carthagent_code_nav" },
       execute: async (input: any, toolContext: any) => {
         const session = await ctx.session.get({ sessionID: toolContext.sessionID })
         const root = resolve(session.location.directory, session.subpath || ".")

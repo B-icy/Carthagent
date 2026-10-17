@@ -14,6 +14,7 @@ import { formatGuidance, loadGuidanceProfiles, routeGuidance } from "../../../..
 import { saveReport, reconcileReport } from "../../../../lib/reports.mjs"
 import { lockWorkspace, selectReport, assertActiveReport, activeReportPath } from "../../../../lib/workspace.mjs"
 import { enforceToolPolicy, policyDescription } from "./policy.ts"
+import { effectiveSessionOptions } from "../../../../lib/opencode/session-options.mjs"
 
 type SessionState = { state: any; discovery: any; nudges: number; touched: boolean; budget: any; required: any[]; configError?: string; extraGuidance?: string; initialFiles: string[]; lastPrompt?: string; guidance?: string; writeCounts?: Record<string, number>; outcome?: string; cwd?: string }
 type DeliveryOptions = Record<string, unknown>
@@ -46,14 +47,13 @@ export async function registerDelivery(ctx: any, options: DeliveryOptions = {}) 
   const profiles = loadGuidanceProfiles()
   let disposed = false
   const limitOptions: Record<string, string> = { "delivery-max-tools": "maxTools", "delivery-max-seconds": "maxSeconds", "delivery-max-repairs": "maxRepairs" }
-  const limits = budgetLimits((name) => options[limitOptions[name]] ?? options[name] ?? "0")
-  const workflowOption = options.workflow === "standard" ? "standard" : "strict"
-
+  const sessionOptions = (session: any): Record<string, any> => effectiveSessionOptions(session, { ...ctx.options, ...options })
   async function scope(sessionID: string) {
     if (!sessionID) throw Error("OpenCode sessionID is required")
     const session = await ctx.session.get({ sessionID })
     const cwd = session.location?.directory
     if (typeof cwd !== "string" || !cwd) throw Error(`OpenCode session ${sessionID} has no worktree location`)
+    const opts = sessionOptions(session)
     const saved = await ctx.storage.get(sessionKey(sessionID)) as SessionState | undefined
     const data: SessionState = saved ? structuredClone(saved) : { state: null, discovery: newDiscovery(), nudges: 0, touched: false, budget: null, required: [], initialFiles: [] }
     data.cwd = cwd
@@ -63,6 +63,7 @@ export async function registerDelivery(ctx: any, options: DeliveryOptions = {}) 
       const dir = runDirectory(cwd, sessionID, data.state.runId)
       data.state = reconcileReport(join(dir, "report.json"), data.state)
     }
+    const limits = budgetLimits((name: string) => opts[limitOptions[name]] ?? opts[name] ?? "0")
     if (!data.budget) data.budget = newBudget(limits)
     if (data.budget.limits.seconds && !budgetTimers.has(sessionID) && !data.budget.stopped) {
       const remaining = Math.max(1, data.budget.startedAt + data.budget.limits.seconds * 1000 - Date.now())
@@ -79,16 +80,16 @@ export async function registerDelivery(ctx: any, options: DeliveryOptions = {}) 
       timer.unref?.(); budgetTimers.set(sessionID, timer)
     }
     if (!data.required.length) {
-      const explicit = typeof options.validators === "string" ? options.validators : undefined
+      const explicit = typeof opts.validators === "string" ? opts.validators : undefined
       const projectManifest = join(cwd, ".carthagent", "delivery.json")
       const manifest = explicit ? resolve(cwd, explicit) : existsSync(projectManifest) ? projectManifest : undefined
       try { if (manifest) data.required = loadRequiredChecks(manifest, cwd) }
       catch (error) { data.configError = `Invalid required validators: ${error}` }
-      if (typeof options.context === "string") {
-        try { data.extraGuidance = readFileSync(resolve(cwd, options.context), "utf8") }
+      if (typeof opts.context === "string") {
+        try { data.extraGuidance = readFileSync(resolve(cwd, opts.context), "utf8") }
         catch (error) { data.configError = `Invalid delivery context: ${error}` }
       }
-      if (options.protectExisting) data.initialFiles = readdirSync(cwd, { withFileTypes: true }).filter((e: any) => e.isFile()).map((e: any) => resolve(cwd, e.name))
+      if (opts.protectExisting) data.initialFiles = readdirSync(cwd, { withFileTypes: true }).filter((e: any) => e.isFile()).map((e: any) => resolve(cwd, e.name))
     }
     if (data.state && data.required.length) {
       for (const check of data.required) {
@@ -97,7 +98,7 @@ export async function registerDelivery(ctx: any, options: DeliveryOptions = {}) 
       }
       data.state.plan = bindRequiredChecks(data.state.plan, data.required)
     }
-    return { session, cwd, data }
+    return { session, cwd, data, options: opts }
   }
   function runDirectory(cwd: string, sessionID: string, runId: string) { return join(cwd, ".harness", sessionID, runId) }
   async function persist(cwd: string, sessionID: string, data: SessionState) {
@@ -129,25 +130,27 @@ export async function registerDelivery(ctx: any, options: DeliveryOptions = {}) 
       } finally { release() }
     })
   }
-  const add = (editor: any, name: string, description: string, input: any, execute: (input: any, toolContext: any) => Promise<any>) => editor.add({ name, description, input, execute })
+  const add = (editor: any, name: string, description: string, input: any, execute: (input: any, toolContext: any) => Promise<any>) => editor.add({
+    name, description, input, execute, options: { namespace: "carthagent", codemode: true },
+  })
 
   registrations.push(await ctx.tool.transform((editor: any) => {
     editor.namespace?.({ name: "carthagent", description: "Evidence-driven CTG delivery workflow tools" })
-    add(editor, "delivery_plan", "Create the durable acceptance contract and plan.d2. Informational asks may use verification none/advisory; product changes require fresh checks.", planSchema, async (input, tool) => operate(tool.sessionID, async ({ cwd, data }) => {
+    add(editor, "delivery_plan", "Create the durable acceptance contract and plan.d2. Informational asks may use verification none/advisory; product changes require fresh checks.", planSchema, async (input, tool) => operate(tool.sessionID, async ({ cwd, data, options: opts }) => {
       if (data.configError) throw Error(data.configError)
       const plan = validatePlan(bindRequiredChecks({ ...input, verification: input.verification ?? "required" }, data.required), cwd)
       validateRevision(data.state, plan)
       if (data.state && !["verified", "blocked"].includes(data.state.status)) data.state = revisePlan(data.state, plan, { cwd, hash: fingerprint(cwd, ["."]), reason: "Active plan replaced via delivery_plan" })
-      else data.state = { version: 1, workflowMode: workflowOption, reviewRequired: workflowOption === "standard", runId: randomUUID(), revision: (data.state?.revision || 0) + 1, plan, evidence: {}, status: "implementing", createdAt: new Date().toISOString(), stepStatus: {} }
+      else data.state = { version: 1, workflowMode: opts.workflow === "strict" ? "strict" : "standard", reviewRequired: opts.workflow !== "strict", runId: randomUUID(), revision: (data.state?.revision || 0) + 1, plan, evidence: {}, status: "implementing", createdAt: new Date().toISOString(), stepStatus: {} }
       data.discovery = newDiscovery(); const dir = runDirectory(cwd, tool.sessionID, data.state.runId)
       mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, "plan.d2"), planD2WithProgress(data.state.plan, data.state.stepStatus))
       await persist(cwd, tool.sessionID, data)
-      return text({ plan: join(dir, "plan.d2"), report: join(dir, "report.json"), next: workflowOption === "standard" ? "Contract accepted; implement, verify all checks, review and finish." : "No code or commands yet. Validate, inspect, adversarially review, then approve the design." })
+      return text({ plan: join(dir, "plan.d2"), report: join(dir, "report.json"), next: data.state.workflowMode === "standard" ? "Contract accepted; implement, verify all checks, review and finish." : "No code or commands yet. Validate, inspect, adversarially review, then approve the design." })
     }, true))
     add(editor, "delivery_probe", "Bounded pre-plan version probe only; other APIs can be inspected with read.", O({ kind: { type: "string", enum: ["node-version", "npm-version"] } }), async (input, tool) => {
       const { cwd } = await scope(tool.sessionID)
       const argv = input.kind === "node-version" ? [process.execPath, "--version"] : [process.platform === "win32" ? "npm.cmd" : "npm", "--version"]
-      return text({ ...(await runCommand(argv, { cwd, signal: tool.signal, timeoutSeconds: 10 })), evidence: false })
+      return text({ ...(await runCommand(argv, { cwd, signal: tool.signal, timeoutSeconds: 10 } as any)), evidence: false })
     })
     add(editor, "delivery_revise", "Revise the current task with a reason and partial patch. Existing obligations and verification history cannot be removed.", O({ reason: short, patch: { type: "object", additionalProperties: true } }), async (input, tool) => operate(tool.sessionID, async ({ cwd, data }) => {
       if (!data.state) throw Error("Call delivery_plan first")
@@ -198,7 +201,7 @@ export async function registerDelivery(ctx: any, options: DeliveryOptions = {}) 
         const identity = evidenceIdentity(data.state, check); data.state.status = "verifying"; data.state.verificationStarted = true; delete data.state.evidence[check.id]
         const before = fingerprint(cwd, ["."]); await persist(cwd, tool.sessionID, data)
         const dir = runDirectory(cwd, tool.sessionID, data.state.runId)
-        const result = await runCommand(check.argv, { cwd, timeoutSeconds: check.timeoutSeconds, signal: tool.signal, logPath: join(dir, `${check.id}-${randomUUID()}.log`) })
+        const result = await runCommand(check.argv, { cwd, timeoutSeconds: check.timeoutSeconds, signal: tool.signal, logPath: join(dir, `${check.id}-${randomUUID()}.log`) } as any)
         const after = fingerprint(cwd, ["."]); const passed = result.code === 0 && !result.timedOut && !result.cancelled && !result.outputLimit && before === after
         data.state.evidence[check.id] = { passed, ...identity, executedRevision: data.state.revision, fingerprint: after, code: result.code, timedOut: result.timedOut, cancelled: result.cancelled, logPath: result.logPath, durationMs: result.durationMs, changedDuringCheck: before !== after, outputTail: result.output.slice(-1200) }
         results.push({ id: check.id, advisory: verification !== "required", ...data.state.evidence[check.id], outputTail: result.output })
@@ -234,12 +237,15 @@ export async function registerDelivery(ctx: any, options: DeliveryOptions = {}) 
   }))
 
   registrations.push(await ctx.tool.hook("execute.before", async (event: any) => {
-    const { cwd, data } = await scope(event.sessionID)
+    const { cwd, data, options: opts } = await scope(event.sessionID)
     const reason = budgetReason(data.budget, "tool")
     if (reason) throw Error(`Delivery budget exhausted: ${reason}. Explicit delivery-budget-reset required.`)
-    data.budget.tools++
+    // The native shell tool's execution hook is followed by shell.create.before;
+    // its budget charge belongs to the latter so one model tool call is charged once.
+    const nativeShell = ["bash", "shell", "powershell"].includes(event.tool)
+    if (!nativeShell) data.budget.tools++
     const input = event.input && typeof event.input === "object" ? event.input as Record<string, any> : {}
-    if (requiresImplementationTool(event.tool)) {
+    if (event.tool !== "execute" && requiresImplementationTool(event.tool)) {
       if (!data.state) throw Error(`Implementation locked: call delivery_plan first (tool ${event.tool}).`)
       const release = lockWorkspace(cwd)
       try {
@@ -255,17 +261,17 @@ export async function registerDelivery(ctx: any, options: DeliveryOptions = {}) 
       if ([cwdPath, name].some(prefix => path === prefix || path.startsWith(`${prefix}/`))) throw Error("Path recreates working directory inside itself; use a workspace-relative product path.")
       if (event.tool === "write" && data.initialFiles.includes(resolve(cwd, input.path))) throw Error(`Preserve existing ${input.path}; use focused edits.`)
     }
-    const cap = Number(options.bashCap) || 0
-    if (event.tool === "bash" || event.tool === "shell" || event.tool === "powershell") {
+    const cap = Number(opts.bashCap) || 0
+    if (nativeShell) {
       const command = String(input.command ?? "")
       if (/\b(?:pkill|killall)\b|\bkill\s+(?:-\S+\s+)*(?:-1|0)(?:\s|$)/i.test(command)) throw Error("Broad process termination is prohibited; terminate only a captured child PID.")
       if (cap > 0 && (typeof input.timeout !== "number" || input.timeout > cap)) input.timeout = cap
     }
-    if (event.tool === "write" && options.rewriteCap && Number(options.rewriteCap) > 0) {
+    if (["write", "edit", "patch"].includes(event.tool) && opts.rewriteCap && Number(opts.rewriteCap) > 0) {
       data.writeCounts ||= {}
       const path = String(input.path || "")
       const count = data.writeCounts[path] || 0
-      if (count >= Number(options.rewriteCap)) throw Error(`Full-file rewrite limit reached for ${path}; preserve behavior and use focused edits.`)
+      if (count >= Number(opts.rewriteCap)) throw Error(`Full-file rewrite limit reached for ${path}; preserve behavior and use focused edits.`)
       data.writeCounts[path] = count + 1
     }
     await ctx.storage.set(sessionKey(event.sessionID), data)
@@ -280,7 +286,8 @@ export async function registerDelivery(ctx: any, options: DeliveryOptions = {}) 
       const dir = runDirectory(cwd, event.sessionID, data.state.runId)
       if (existsSync(join(dir, "report.json"))) data.state = reconcileReport(join(dir, "report.json"), data.state)
     }
-    const outputCap = Math.max(0, Number(options.toolOutputCap) || 0)
+    const { options: opts } = await scope(event.sessionID)
+    const outputCap = Math.max(0, Number(opts.toolOutputCap) || 0)
     if (!failed && outputCap > 0 && event.result?.content) {
       event.result.content = event.result.content.map((item: any) => {
         if (item.type !== "text" || item.text.length <= outputCap) return item
@@ -304,7 +311,7 @@ export async function registerDelivery(ctx: any, options: DeliveryOptions = {}) 
     const entries = await ctx.storage.scan({ prefix: `session/${sessionID}`, limit: 10 })
     const candidate = entries.entries.find((entry: any) => entry.key === sessionKey(sessionID) && entry.value?.cwd === event.cwd)
     if (!candidate) throw Error("Shell execution locked: the active report has no matching OpenCode session state.")
-    const { cwd, data } = await scope(sessionID)
+    const { cwd, data, options: opts } = await scope(sessionID)
     const reason = budgetReason(data.budget, "tool")
     if (reason) throw Error(`Delivery budget exhausted: ${reason}. Explicit delivery-budget-reset required.`)
     if (!data.state) throw Error("Shell execution locked: call delivery_plan first.")
@@ -314,7 +321,7 @@ export async function registerDelivery(ctx: any, options: DeliveryOptions = {}) 
       assertActiveReport(cwd, join(dir, "report.json"))
       data.state = reconcileReport(join(dir, "report.json"), data.state)
       enforceToolPolicy("shell", data.state, cwd)
-      const cap = Number(options.bashCap) || 0
+      const cap = Number(opts.bashCap) || 0
       if (cap > 0 && event.timeout > cap) event.timeout = cap
       if (/\b(?:pkill|killall)\b|\bkill\s+(?:-\S+\s+)*(?:-1|0)(?:\s|$)/i.test(event.command)) throw Error("Broad process termination is prohibited; terminate only a captured child PID.")
       data.budget.tools++
@@ -339,13 +346,13 @@ export async function registerDelivery(ctx: any, options: DeliveryOptions = {}) 
     }
     const dir = runDirectory(cwd, event.sessionID, data.state.runId)
     const recovery = deliveryRecovery(data.state, { report: join(dir, "report.json"), planningStatus: planningStatus(data.state, fingerprint(cwd, ["."])) })
-    const checkpoint = recoveryMessages([], recovery).map(message => message.content).join("\n")
+    const checkpoint = recoveryMessages([], recovery).map((message: any) => message.content).join("\n")
     event.system.push({ type: "text", text: `${data.guidance || DELIVERY_INVARIANTS}\n\nCurrent delivery recovery record (not authorization; recompute freshness before checks/finish):\n${checkpoint}\n\n${deliveryPhaseGuidance(data.state)}` })
   }))
 
   registrations.push(await ctx.session.hook("prompt", async (event: any) => {
-    const { cwd, data } = await scope(event.sessionID)
-    const workflow = data.state && !["verified", "blocked"].includes(data.state.status) ? data.state.workflowMode : workflowOption
+    const { cwd, data, options: opts } = await scope(event.sessionID)
+    const workflow = data.state && !["verified", "blocked"].includes(data.state.status) ? data.state.workflowMode : opts.workflow
     const routed = routeGuidance(event.prompt.text, { cwd, profiles })
     let guidance = DELIVERY_INVARIANTS + "\n" + deliveryPhaseGuidance(data.state) + "\n" + policyDescription(workflow)
     if (workflow === "standard") guidance += "\nA valid required plan allows implementation; final evidence and review stay mandatory."
@@ -368,7 +375,7 @@ export async function registerDelivery(ctx: any, options: DeliveryOptions = {}) 
       await ctx.session.prompt({ sessionID, delivery: "steer", metadata: { carthagentBudget: true }, text: `Delivery budget status: ${JSON.stringify(budgetSnapshot(data.budget))}` })
     } })
     editor.add({ name: "delivery-budget-reset", description: "Explicitly authorize a fresh budget for this session", execute: async ({ sessionID }: any) => {
-      const { data } = await scope(sessionID); clearTimeout(budgetTimers.get(sessionID)); budgetTimers.delete(sessionID); data.budget = newBudget(limits); await ctx.storage.set(sessionKey(sessionID), data)
+      const { data, options: opts } = await scope(sessionID); clearTimeout(budgetTimers.get(sessionID)); budgetTimers.delete(sessionID); data.budget = newBudget(budgetLimits((name: string) => opts[limitOptions[name]] ?? opts[name] ?? "0")); await ctx.storage.set(sessionKey(sessionID), data)
       await ctx.session.prompt({ sessionID, delivery: "steer", metadata: { carthagentBudget: true }, text: `Delivery budget explicitly reset: ${JSON.stringify(budgetSnapshot(data.budget))}` })
     } })
   }))
@@ -442,5 +449,7 @@ export async function registerDelivery(ctx: any, options: DeliveryOptions = {}) 
 }
 
 function requiresImplementationTool(name: string) {
-  return !["read", "ls", "find", "grep", "code_nav", "delivery_probe", "delivery_plan", "delivery_revise", "delivery_design", "delivery_status", "delivery_finish", "delivery-budget-status", "delivery-budget-reset"].includes(name)
+  // V2 exposes namespaced tools as `namespace_name` in model context and hooks.
+  const toolName = name.startsWith("carthagent_") ? name.slice("carthagent_".length) : name
+  return !["read", "ls", "find", "grep", "execute", "code_nav", "delivery_probe", "delivery_plan", "delivery_revise", "delivery_design", "delivery_status", "delivery_finish", "delivery-budget-status", "delivery-budget-reset"].includes(toolName)
 }
