@@ -23,6 +23,9 @@ def main():
     parser.add_argument('--plugin', default=str(pathlib.Path(__file__).resolve().parents[1] / 'plugins/carthagent'))
     parser.add_argument('--command', default='/ctg-status')
     parser.add_argument('--expect', default='OpenCode 2.0.32')
+    parser.add_argument('--capture', help='Save the full raw PTY transcript for diagnosis')
+    parser.add_argument('--ready', help='Wait for this plugin-rendered marker before typing')
+    parser.add_argument('--confirm', action='store_true', help='Press Enter again to execute a selected slash completion')
     args = parser.parse_args()
     if not args.binary:
         parser.error('OpenCode binary is required')
@@ -47,29 +50,38 @@ def main():
                                  stdin=slave, stdout=slave, stderr=slave, start_new_session=True)
         os.close(slave)
         output = bytearray()
+        transcript = bytearray()
         started = time.monotonic()
         sent = False
+        sent_at = None
         submitted = False
+        confirmed = False
         try:
-            while time.monotonic() - started < 30:
+            while time.monotonic() - started < 60:
                 if child.poll() is not None:
                     raise RuntimeError(f'Native TUI exited early: {child.returncode}')
                 if select.select([master], [], [], 0.1)[0]:
                     chunk = os.read(master, 65536)
                     output.extend(chunk)
+                    transcript.extend(chunk)
                     # Terminal capability requests need replies on a headless PTY.
                     if b'\x1b[6n' in chunk:
                         os.write(master, b'\x1b[1;1R')
                     if b'\x1b[c' in chunk:
                         os.write(master, b'\x1b[?1;2c')
-                if not sent and time.monotonic() - started > 8:
+                ready = args.ready.encode() in transcript if args.ready else time.monotonic() - started > 8
+                if not sent and ready:
                     output.clear()
                     os.write(master, args.command.encode())
                     sent = True
-                if sent and not submitted and time.monotonic() - started > 12:
+                    sent_at = time.monotonic()
+                if sent and not submitted and time.monotonic() - sent_at > 1:
                     output.clear()
                     os.write(master, b'\r')
                     submitted = True
+                if submitted and args.confirm and not confirmed and time.monotonic() - sent_at > 2:
+                    os.write(master, b'\r')
+                    confirmed = True
                 if submitted and args.expect.encode() in output:
                     if b'runtime unavailable' in output or b'No matching commands' in output:
                         raise RuntimeError('Command was unavailable or its RPC failed')
@@ -84,6 +96,8 @@ def main():
                 print('\n'.join(lines[-30:]))
             raise RuntimeError(f'Expected {args.expect!r} not rendered: {plain[-8000:].decode(errors="replace")}')
         finally:
+            if args.capture:
+                pathlib.Path(args.capture).write_bytes(transcript)
             if child.poll() is None:
                 os.killpg(child.pid, signal.SIGTERM)
                 try:
