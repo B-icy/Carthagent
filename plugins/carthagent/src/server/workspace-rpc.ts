@@ -8,7 +8,14 @@ import { createTask, listTasks } from '../../../../lib/opencode/workspace.mjs';
 import { assertActiveReport, activeReportPath } from '../../../../lib/workspace.mjs';
 import { Workspace, type WorkspaceSnapshot } from '../workspace-rpc';
 
-function taskStatus(record: Record<string, any>, session?: any, running?: boolean) {
+type TaskRecord = { id: string; task: string; sessionID: string; worktree: string; status: string; branch?: string };
+type OperationRecord = { id: string; task: string; sessionID?: string; worktree?: string; status: string; branch?: string };
+type TaskState = { tasks: TaskRecord[]; operations: OperationRecord[] };
+type NativeSession = Awaited<ReturnType<Context['session']['get']>>;
+type DeliveryCheck = { id: string } & Record<string, unknown>;
+type DeliveryState = { runId: string; revision: number; status?: string; plan: { checks?: DeliveryCheck[] } & Record<string, unknown>; evidence?: Record<string, unknown> };
+
+function taskStatus(session?: NativeSession, running = false) {
   if (!session) return 'unavailable';
   if (running) return 'running';
   if (session.outcome === 'failed' || session.outcome === 'interrupted') return session.outcome;
@@ -19,11 +26,11 @@ function taskStatus(record: Record<string, any>, session?: any, running?: boolea
 function reportFor(directory: string) {
   const path = activeReportPath(directory);
   if (!path || !existsSync(path)) return { status: 'unavailable' };
-  const state = JSON.parse(readFileSync(path, 'utf8'));
+  const state = JSON.parse(readFileSync(path, 'utf8')) as DeliveryState;
   if (!state || typeof state !== 'object' || !state.plan || !state.runId || !Number.isInteger(state.revision)) return { status: 'invalid' };
   assertActiveReport(directory, path);
   const current = fingerprint(directory, ['.']);
-  const stale = (state.plan.checks ?? []).some((check: any) => !evidenceFresh(check, state.evidence?.[check.id], current, state));
+  const stale = (state.plan.checks ?? []).some(check => !evidenceFresh(check, state.evidence?.[check.id], current, state));
   return { status: stale ? 'stale' : state.status ?? 'active', runId: state.runId, revision: state.revision, fingerprint: current };
 }
 
@@ -38,7 +45,7 @@ export async function registerWorkspaceRpc(ctx: Context, options: {
   let disposed = false;
   const events = new AbortController();
   const running = new Set<string>();
-  const records = () => listTasks({ canonical: root, includeOperations: true }) as { tasks: Array<Record<string, any>>; operations: Array<Record<string, any>> };
+  const records = () => listTasks({ canonical: root, includeOperations: true }) as TaskState;
   const owns = async (sessionID: string, signal?: AbortSignal) => {
     signal?.throwIfAborted();
     const session = await ctx.session.get({ sessionID }, { signal });
@@ -46,7 +53,7 @@ export async function registerWorkspaceRpc(ctx: Context, options: {
     const task = taskState.tasks.find(record => record.sessionID === sessionID);
     const directory = resolve(session.location.directory);
     const operation = taskState.operations.find(record => record.sessionID === sessionID);
-    const ownedTask = task ?? operation;
+    const ownedTask = task ?? (operation?.worktree ? operation as TaskRecord : undefined);
     if (session.projectID !== projectID || directory !== root && directory !== locationDirectory && (!ownedTask || resolve(ownedTask.worktree) !== directory)) throw new Error('Session belongs to another workspace location');
     return session;
   };
@@ -63,16 +70,16 @@ export async function registerWorkspaceRpc(ctx: Context, options: {
       }
     }));
     const byID = new Map(sessions.filter(item => item.session).map(item => [item.id, item.session!]));
-    const tasks = taskState.tasks.map(record => {
+    const tasks: WorkspaceSnapshot['tasks'] = taskState.tasks.map(record => {
       const session = byID.get(record.sessionID);
       return {
-        id: record.id, projectID, title: record.task, status: taskStatus(record, session, running.has(record.sessionID)),
+        id: record.id, projectID, title: record.task, status: taskStatus(session, running.has(record.sessionID)),
         ...(!session || session.outcome === 'failed' || session.outcome === 'interrupted' ? { attention: true } : {}),
         directory: record.worktree, branch: record.branch,
       };
     });
     for (const op of taskState.operations) if (op.status !== 'complete' && op.status !== 'reconciled') {
-      tasks.push({ id: op.id, projectID, title: op.task, status: op.status, attention: op.status === 'recovery-required', directory: op.worktree, branch: op.branch });
+      tasks.push({ id: op.id, projectID, title: op.task, status: op.status, attention: op.status === 'recovery-required', ...(op.worktree ? { directory: op.worktree } : {}), ...(op.branch ? { branch: op.branch } : {}) });
     }
     return {
       projects: [{ id: projectID, directory: root, name: basename(root) }], tasks,
@@ -124,12 +131,12 @@ export async function registerWorkspaceRpc(ctx: Context, options: {
       if (directory !== resolve(expectedDirectory)) throw new Error('Delivery report is not owned by this session');
       const reportRelative = relative(directory, path).split(sep);
       if (reportRelative.length < 3 || reportRelative[0] !== '.harness' || reportRelative[1] !== session.id) throw new Error('Active delivery report belongs to another session');
-      const state = JSON.parse(readFileSync(path, 'utf8'));
+      const state = JSON.parse(readFileSync(path, 'utf8')) as DeliveryState;
       if (!state || !state.plan || !state.runId || !Number.isInteger(state.revision)) return { status: 'invalid' };
       assertActiveReport(directory, path);
       const current = fingerprint(directory, ['.']);
       const evidence = state.evidence ?? {};
-      const stale = (state.plan.checks ?? []).some((check: any) => !evidenceFresh(check, evidence[check.id], current, state));
+      const stale = (state.plan.checks ?? []).some(check => !evidenceFresh(check, evidence[check.id], current, state));
       return { status: stale ? 'stale' : state.status ?? 'active', plan: state.plan, evidence };
     },
     review: async (value, call) => {
@@ -162,8 +169,27 @@ export async function registerWorkspaceRpc(ctx: Context, options: {
         if (disposed) return;
         const detail = event as { type: string; location?: { directory: string }; data?: { sessionID?: string; status?: { type?: string } } };
         const sessionID = detail.data?.sessionID;
-        const relevantDirectories = new Set([locationDirectory, ...records().tasks.map(task => resolve(task.worktree)), ...records().operations.map(operation => operation.worktree && resolve(operation.worktree)).filter(Boolean)]);
-        if (!detail.location?.directory || !relevantDirectories.has(resolve(detail.location.directory))) continue;
+        let sessionDirectory: string | undefined;
+        if (sessionID) {
+          try {
+            const session = await owns(sessionID);
+            sessionDirectory = resolve(session.location.directory);
+          } catch {
+            const taskState = records();
+            const task = taskState.tasks.find(record => record.sessionID === sessionID);
+            const operation = taskState.operations.find(record => record.sessionID === sessionID);
+            const recordedDirectory = task?.worktree ?? operation?.worktree;
+            const eventDirectory = detail.location?.directory && resolve(detail.location.directory);
+            if (recordedDirectory && detail.type === 'session.deleted') sessionDirectory = resolve(recordedDirectory);
+            else if (eventDirectory && [root, locationDirectory, ...taskState.tasks.map(record => resolve(record.worktree)), ...taskState.operations.map(record => record.worktree ? resolve(record.worktree) : undefined).filter((directory): directory is string => Boolean(directory))].includes(eventDirectory)) sessionDirectory = eventDirectory;
+            else continue;
+          }
+        }
+        const taskDirectories = [...records().tasks.map(task => resolve(task.worktree)), ...records().operations.map(operation => operation.worktree && resolve(operation.worktree)).filter((directory): directory is string => Boolean(directory))];
+        const relevantDirectories = new Set([root, locationDirectory, ...taskDirectories]);
+        if (sessionDirectory && !relevantDirectories.has(sessionDirectory)) continue;
+        if (!sessionID && detail.location?.directory && !relevantDirectories.has(resolve(detail.location.directory))) continue;
+        if (!sessionID && !detail.location?.directory) continue;
         if (detail.type.startsWith('session.execution.') && sessionID) {
           if (detail.type === 'session.execution.started') running.add(sessionID);
           else if (['session.execution.succeeded', 'session.execution.failed', 'session.execution.interrupted'].includes(detail.type)) running.delete(sessionID);

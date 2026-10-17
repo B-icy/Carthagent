@@ -68,7 +68,7 @@ test('native workspace RPC snapshots journaled sessions, enforces location owner
   const controller = new AbortController(); controller.abort(new Error('cancelled'));
   await assert.rejects(registered.snapshot({}, { signal: controller.signal }), /cancelled/);
   await new Promise(resolve => setTimeout(resolve, 20));
-  events.push({ type: 'session.status', location: { directory: taskDir }, data: { sessionID: 'task-session', status: { type: 'busy' } } });
+  events.push({ id: 'event-1', created: Date.now(), type: 'session.execution.started', data: { sessionID: 'task-session' }, durable: { aggregateID: 'task-session', seq: 2, version: 1 } });
   const deadline = Date.now() + 1000;
   while (!emitted.length && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
   assert.equal(emitted[0]?.name, 'updated');
