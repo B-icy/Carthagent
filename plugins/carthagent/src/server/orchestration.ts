@@ -34,7 +34,7 @@ export function registerOrchestration(ctx: PluginContext, options: Orchestration
       ])
       return reconcileTasks({
         canonical, projectID,
-        sessionIDs: sessions.map((session: { id: string }) => session.id),
+        sessionIDs: sessions.map(session => session.id),
         worktreeDirectories: worktrees.map((worktree: { directory: string }) => worktree.directory),
       })
     },
