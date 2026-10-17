@@ -1,16 +1,19 @@
 import type { Context } from '@opencode/plugin/promise/plugin';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
-import { basename, resolve } from 'node:path';
+import { basename, relative, resolve, sep } from 'node:path';
 import { evidenceFresh, fingerprint } from '../../../../lib/delivery.mjs';
 import { localReviewSnapshot, startReview } from '../../../../lib/opencode/review.mjs';
 import { createTask, listTasks } from '../../../../lib/opencode/workspace.mjs';
 import { assertActiveReport, activeReportPath } from '../../../../lib/workspace.mjs';
 import { Workspace, type WorkspaceSnapshot } from '../workspace-rpc';
 
-function taskStatus(record: Record<string, any>, session?: any) {
-  if (session?.outcome === 'failed' || session?.outcome === 'interrupted') return session.outcome;
-  return record.status ?? 'active';
+function taskStatus(record: Record<string, any>, session?: any, running?: boolean) {
+  if (!session) return 'unavailable';
+  if (running) return 'running';
+  if (session.outcome === 'failed' || session.outcome === 'interrupted') return session.outcome;
+  // A successful model turn does not complete the durable logical delivery task.
+  return 'unknown';
 }
 
 function reportFor(directory: string) {
@@ -26,13 +29,15 @@ function reportFor(directory: string) {
 
 /** Register real native workspace operations. Durable task records identify sessions which
  * must be verified through the location-scoped native API; the TUI adds its full native list. */
-export function registerWorkspaceRpc(ctx: Context, options: {
+export async function registerWorkspaceRpc(ctx: Context, options: {
   notify?: (summary: WorkspaceSnapshot) => void;
 }) {
-  const root = resolve(ctx.location.directory);
+  const root = resolve(ctx.location.project.canonical);
+  const locationDirectory = resolve(ctx.location.directory);
   const projectID = ctx.location.project.id;
   let disposed = false;
   const events = new AbortController();
+  const running = new Set<string>();
   const records = () => listTasks({ canonical: root, includeOperations: true }) as { tasks: Array<Record<string, any>>; operations: Array<Record<string, any>> };
   const owns = async (sessionID: string, signal?: AbortSignal) => {
     signal?.throwIfAborted();
@@ -42,7 +47,7 @@ export function registerWorkspaceRpc(ctx: Context, options: {
     const directory = resolve(session.location.directory);
     const operation = taskState.operations.find(record => record.sessionID === sessionID);
     const ownedTask = task ?? operation;
-    if (directory !== root && (!ownedTask || resolve(ownedTask.worktree) !== directory)) throw new Error('Session belongs to another workspace location');
+    if (session.projectID !== projectID || directory !== root && directory !== locationDirectory && (!ownedTask || resolve(ownedTask.worktree) !== directory)) throw new Error('Session belongs to another workspace location');
     return session;
   };
 
@@ -52,17 +57,17 @@ export function registerWorkspaceRpc(ctx: Context, options: {
     const ids = [...new Set([...taskState.tasks.map(record => record.sessionID), ...taskState.operations.map(record => record.sessionID)].filter((id): id is string => typeof id === 'string'))];
     signal?.throwIfAborted();
     const sessions = await Promise.all(ids.map(async id => {
-      try { return await owns(id, signal); } catch (error) {
+      try { return { id, session: await owns(id, signal), status: 'verified' as const }; } catch (error) {
         if (signal?.aborted) throw error;
-        return null;
+        return { id, session: null, status: 'unavailable' as const };
       }
     }));
-    const byID = new Map(sessions.filter(Boolean).map(session => [session!.id, session!]));
+    const byID = new Map(sessions.filter(item => item.session).map(item => [item.id, item.session!]));
     const tasks = taskState.tasks.map(record => {
       const session = byID.get(record.sessionID);
       return {
-        id: record.id, projectID, title: record.task, status: taskStatus(record, session),
-        ...(record.status === 'active' ? { attention: session?.outcome === 'failed' || session?.outcome === 'interrupted' } : {}),
+        id: record.id, projectID, title: record.task, status: taskStatus(record, session, running.has(record.sessionID)),
+        ...(!session || session.outcome === 'failed' || session.outcome === 'interrupted' ? { attention: true } : {}),
         directory: record.worktree, branch: record.branch,
       };
     });
@@ -71,17 +76,19 @@ export function registerWorkspaceRpc(ctx: Context, options: {
     }
     return {
       projects: [{ id: projectID, directory: root, name: basename(root) }], tasks,
-      sessions: sessions.filter(Boolean).map(session => {
-        const task = taskState.tasks.find(record => record.sessionID === session!.id);
+      sessions: sessions.flatMap(item => {
+        if (!item.session) return [{ id: item.id, title: 'Session unavailable', status: 'unavailable', directory: taskState.tasks.find(record => record.sessionID === item.id)?.worktree ?? locationDirectory }];
+        const session = item.session;
+        const task = taskState.tasks.find(record => record.sessionID === session.id);
         return {
-          id: session!.id, ...(task ? { taskID: task.id, projectID } : {}), title: session!.title ?? 'Untitled session',
-          status: session!.outcome ?? 'idle', updatedAt: new Date(session!.time.updated).toISOString(), directory: session!.location.directory,
+          id: session.id, ...(task ? { taskID: task.id, projectID } : {}), title: session.title ?? 'Untitled session',
+          status: running.has(session.id) ? 'running' : session.outcome ?? 'unknown', updatedAt: new Date(session.time.updated).toISOString(), directory: session.location.directory,
         };
       }),
     };
   };
 
-  const registration = ctx.rpc.register(Workspace, {
+  const registration = await ctx.rpc.register(Workspace, {
     snapshot: async (value, call) => { const input = value as { projectID?: string }; return snapshot(input.projectID, call.signal); },
     open: async (value, call) => {
       const input = value as { sessionID: string };
@@ -101,14 +108,22 @@ export function registerWorkspaceRpc(ctx: Context, options: {
       const input = value as { task: string; branch?: string };
       call.signal.throwIfAborted();
       const record = await createTask({ ctx, canonical: root, projectID, task: input.task, branch: input.branch, signal: call.signal });
+      await emitUpdated();
       return { taskID: record.id, sessionID: record.sessionID, directory: record.worktree };
     },
     delivery: async (value, call) => {
       const input = value as { sessionID: string };
       const session = await owns(input.sessionID, call.signal);
       const directory = resolve(session.location.directory);
+      if (session.projectID !== projectID) throw new Error('Session belongs to another project');
       const path = activeReportPath(directory);
       if (!path || !existsSync(path)) return { status: 'unavailable' };
+      const task = records().tasks.find(record => record.sessionID === session.id);
+      const operation = records().operations.find(record => record.sessionID === session.id);
+      const expectedDirectory = task?.worktree ?? operation?.worktree ?? locationDirectory;
+      if (directory !== resolve(expectedDirectory)) throw new Error('Delivery report is not owned by this session');
+      const reportRelative = relative(directory, path).split(sep);
+      if (reportRelative.length < 3 || reportRelative[0] !== '.harness' || reportRelative[1] !== session.id) throw new Error('Active delivery report belongs to another session');
       const state = JSON.parse(readFileSync(path, 'utf8'));
       if (!state || !state.plan || !state.runId || !Number.isInteger(state.revision)) return { status: 'invalid' };
       assertActiveReport(directory, path);
@@ -138,12 +153,31 @@ export function registerWorkspaceRpc(ctx: Context, options: {
     },
   });
 
+  const emitUpdated = async () => {
+    if (!disposed) await registration.events.emit('updated', { revision: new Date().toISOString() });
+  };
   const watcher = (async () => {
     try {
       for await (const event of ctx.event.subscribe({ signal: events.signal })) {
         if (disposed) return;
-        if (['session.updated', 'session.created', 'session.deleted', 'worktree.updated'].includes(event.type)) {
-          try { options.notify?.(await snapshot()); } catch { /* Updates are invalidations; reads fail closed. */ }
+        const detail = event as { type: string; location?: { directory: string }; data?: { sessionID?: string; status?: { type?: string } } };
+        const sessionID = detail.data?.sessionID;
+        const relevantDirectories = new Set([locationDirectory, ...records().tasks.map(task => resolve(task.worktree)), ...records().operations.map(operation => operation.worktree && resolve(operation.worktree)).filter(Boolean)]);
+        if (!detail.location?.directory || !relevantDirectories.has(resolve(detail.location.directory))) continue;
+        if (detail.type.startsWith('session.execution.') && sessionID) {
+          if (detail.type === 'session.execution.started') running.add(sessionID);
+          else if (['session.execution.succeeded', 'session.execution.failed', 'session.execution.interrupted'].includes(detail.type)) running.delete(sessionID);
+        }
+        if (detail.type === 'session.status' && sessionID && detail.data?.status?.type) {
+          if (detail.data.status.type === 'busy' || detail.data.status.type === 'retry') running.add(sessionID);
+          else running.delete(sessionID);
+        }
+        if (['session.updated', 'session.created', 'session.deleted', 'session.status', 'session.execution.started', 'session.execution.succeeded', 'session.execution.failed', 'session.execution.interrupted', 'worktree.updated'].includes(detail.type)) {
+          try {
+            const value = await snapshot();
+            options.notify?.(value);
+          } catch { /* Updates are invalidations; reads fail closed. */ }
+          try { await emitUpdated(); } catch { /* A disconnected subscriber must not kill the native event stream. */ }
         }
       }
     } catch { /* Stream ends with host teardown; no polling or retry loop. */ }
@@ -152,8 +186,7 @@ export function registerWorkspaceRpc(ctx: Context, options: {
   return async () => {
     disposed = true;
     events.abort();
-    const result = await registration;
-    await result.dispose();
+    await registration.dispose();
     await watcher;
   };
 }

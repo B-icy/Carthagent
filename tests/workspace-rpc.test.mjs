@@ -17,21 +17,37 @@ test('native workspace RPC snapshots journaled sessions, enforces location owner
   const root = join(base, 'project'); mkdirSync(root); git(root, 'init', '-q');
   const other = join(base, 'other'); mkdirSync(other);
   const sessionMap = new Map([
-    ['root-session', { id: 'root-session', location: { directory: root }, title: 'Untracked UI session', outcome: 'succeeded', time: { updated: Date.now() } }],
-    ['task-session', { id: 'task-session', location: { directory: join(base, 'worktree'), workspaceID: 'workspace' }, title: 'Task session', outcome: 'failed', time: { updated: Date.now() } }],
-    ['foreign-session', { id: 'foreign-session', location: { directory: other }, title: 'Not ours', time: { updated: Date.now() } }],
+    ['root-session', { id: 'root-session', projectID: 'project-id', location: { directory: root }, title: 'Untracked UI session', outcome: 'succeeded', time: { updated: Date.now() } }],
+    ['task-session', { id: 'task-session', projectID: 'project-id', location: { directory: join(base, 'worktree'), workspaceID: 'workspace' }, title: 'Task session', outcome: 'failed', time: { updated: Date.now() } }],
+    ['foreign-session', { id: 'foreign-session', projectID: 'other-project', location: { directory: other }, title: 'Not ours', time: { updated: Date.now() } }],
   ]);
   const registered = {};
-  const events = { async *[Symbol.asyncIterator]() { await new Promise(resolve => setTimeout(resolve, 20)); } };
+  const eventQueue = [];
+  let wake;
+  const events = {
+    push(event) { eventQueue.push(event); wake?.(); },
+    async *[Symbol.asyncIterator]({ signal } = {}) {
+      while (true) {
+        if (signal?.aborted) return;
+        if (!eventQueue.length) await new Promise(resolve => {
+          wake = resolve;
+          signal?.addEventListener('abort', resolve, { once: true });
+        });
+        wake = undefined;
+        while (eventQueue.length) yield eventQueue.shift();
+      }
+    },
+  };
+  const emitted = [];
   const ctx = {
-    location: { directory: root, project: { id: 'project-id' } },
+    location: { directory: root, project: { id: 'project-id', canonical: root } },
     session: {
       async get({ sessionID }, options) { options?.signal?.throwIfAborted(); const found = sessionMap.get(sessionID); if (!found) throw Error('missing'); return found; },
-      async create(input, options) { options?.signal?.throwIfAborted(); const id = `created-${sessionMap.size}`; sessionMap.set(id, { id, location: input.location, title: input.title, time: { updated: Date.now() } }); return { id }; },
+      async create(input, options) { options?.signal?.throwIfAborted(); const id = `created-${sessionMap.size}`; sessionMap.set(id, { id, projectID: 'project-id', location: input.location, title: input.title, time: { updated: Date.now() } }); return { id }; },
     },
     worktree: { async create({ projectID, name }, options) { options?.signal?.throwIfAborted(); assert.equal(projectID, 'project-id'); assert.ok(name); return { directory: join(base, 'new-worktree') }; } },
-    rpc: { async register(_definition, handlers) { Object.assign(registered, handlers); return { dispose() {} }; } },
-    event: { subscribe: () => events },
+    rpc: { async register(_definition, handlers) { Object.assign(registered, handlers); return { events: { async emit(name, payload) { emitted.push({ name, payload }); } }, dispose() {} }; } },
+    event: { subscribe: ({ signal }) => ({ [Symbol.asyncIterator]: () => events[Symbol.asyncIterator]({ signal }) }) },
   };
   const taskDir = join(base, 'worktree'); mkdirSync(taskDir);
   const statePath = join(root, '.harness/opencode-tasks.json'); mkdirSync(join(root, '.harness'));
@@ -51,6 +67,27 @@ test('native workspace RPC snapshots journaled sessions, enforces location owner
   await assert.rejects(registered.createWorktree({ projectID: 'other-project', name: 'task' }, { signal: new AbortController().signal }), /outside this OpenCode workspace/);
   const controller = new AbortController(); controller.abort(new Error('cancelled'));
   await assert.rejects(registered.snapshot({}, { signal: controller.signal }), /cancelled/);
+  await new Promise(resolve => setTimeout(resolve, 20));
+  events.push({ type: 'session.status', location: { directory: taskDir }, data: { sessionID: 'task-session', status: { type: 'busy' } } });
+  const deadline = Date.now() + 1000;
+  while (!emitted.length && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(emitted[0]?.name, 'updated');
+  assert.deepEqual(Object.keys(emitted[0]?.payload ?? {}), ['revision']);
+  const inFlight = await registered.snapshot({}, { signal: new AbortController().signal });
+  assert.equal(inFlight.sessions[0].status, 'running');
+});
+
+test('registration failures reject setup and cannot leave an active unregistered bridge', async t => {
+  const root = mkdtempSync('/tmp/opencode/workspace-rpc-register-'); t.after(() => rmSync(root, { recursive: true, force: true }));
+  git(root, 'init', '-q');
+  let subscribed = false;
+  const ctx = {
+    location: { directory: root, project: { id: 'project-id', canonical: root } }, session: {}, worktree: {},
+    rpc: { async register() { throw new Error('registration rejected'); } },
+    event: { subscribe: () => { subscribed = true; return { async *[Symbol.asyncIterator]() {} }; } },
+  };
+  await assert.rejects(registerWorkspaceRpc(ctx), /registration rejected/);
+  assert.equal(subscribed, false, 'event stream should not start when RPC registration fails');
 });
 
 test('durable task creation propagates cancellation into native worktree creation', async t => {
@@ -59,9 +96,9 @@ test('durable task creation propagates cancellation into native worktree creatio
   const registered = {};
   const controller = new AbortController();
   const ctx = {
-    location: { directory: root, project: { id: 'project-id' } }, session: {},
+    location: { directory: root, project: { id: 'project-id', canonical: root } }, session: {},
     worktree: { async create(_input, { signal }) { assert.equal(signal, controller.signal); controller.abort(new Error('cancelled create')); signal.throwIfAborted(); } },
-    rpc: { async register(_definition, handlers) { Object.assign(registered, handlers); return { dispose() {} }; } },
+    rpc: { async register(_definition, handlers) { Object.assign(registered, handlers); return { events: { async emit() {} }, dispose() {} }; } },
     event: { subscribe: () => ({ async *[Symbol.asyncIterator]() {} }) },
   };
   const dispose = await registerWorkspaceRpc(ctx); t.after(dispose);
