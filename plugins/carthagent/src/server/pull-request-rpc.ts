@@ -1,7 +1,7 @@
 import type { Context } from '@opencode/plugin/promise/plugin';
 import { execFile, execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, existsSync, fstatSync, linkSync, lstatSync, mkdirSync, openSync, readSync, realpathSync, renameSync, unlinkSync, writeFileSync, fsyncSync } from 'node:fs';
 import { promisify } from 'node:util';
 import { resolve, join } from 'node:path';
 import { listTasks } from '../../../../lib/opencode/workspace.mjs';
@@ -51,6 +51,13 @@ function publicFailureMessage(code: FailureCode): string {
   return messages[code];
 }
 type TaskRecord = { id: string; sessionID: string; worktree: string };
+/** Resolve symlinked ancestors (such as macOS /tmp -> /private/tmp) while requiring
+ * the requested directory itself to be the real directory, not a symlink leaf. */
+export function canonicalDirectory(path: string): string {
+  const absolute = resolve(path);
+  if (lstatSync(absolute).isSymbolicLink()) throw new PullRequestFailure('not_owned', 'Directory path is not an exact owned directory');
+  return realpathSync(absolute);
+}
 function hasDirtySource(directory: string): boolean {
   const result = execFileSync('git', ['status', '--porcelain', '--untracked-files=all', '--', '.', ':(exclude).harness/**'], { cwd: directory, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 5_000 });
   return result.trim().length > 0;
@@ -76,9 +83,8 @@ async function acquireLock(lockPath: string, signal?: AbortSignal): Promise<() =
       if (existsSync(recoveryPath)) { await waitLock(started, signal); continue; }
     }
     try {
-      const fd = openSync(lockPath, 'wx', 0o600);
       const token = randomUUID();
-      writeFileSync(fd, JSON.stringify({ pid: process.pid, token, createdAt: new Date().toISOString() }));
+      const fd = publishExclusive(lockPath, { pid: process.pid, token, createdAt: new Date().toISOString() });
       const identity = fstatSync(fd);
       return () => {
         try {
@@ -96,6 +102,33 @@ async function acquireLock(lockPath: string, signal?: AbortSignal): Promise<() =
   }
 }
 
+/** Publish a complete owner record atomically at its exclusive name. A crash while
+ * writing the private temporary file can never leave a nameless/partial owner that
+ * blocks future acquisitions. Hard-link publication fails rather than replacing. */
+export function publishExclusive(path: string, record: { pid: number; token: string; createdAt: string }, onStage?: (stage: 'empty' | 'partial' | 'published') => void): number {
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  let fd: number | undefined;
+  try {
+    fd = openSync(temporary, 'wx', 0o600);
+    onStage?.('empty');
+    const contents = JSON.stringify(record);
+    const midpoint = Math.max(1, Math.floor(contents.length / 2));
+    writeFileSync(fd, contents.slice(0, midpoint));
+    onStage?.('partial');
+    writeFileSync(fd, contents.slice(midpoint));
+    fsyncSync(fd);
+    closeSync(fd);
+    fd = undefined;
+    linkSync(temporary, path);
+    const published = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    onStage?.('published');
+    return published;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+    try { unlinkSync(temporary); } catch { /* A crash may leave harmless uniquely named temp debris. */ }
+  }
+}
+
 async function waitLock(started: number, signal?: AbortSignal) {
   if (Date.now() - started >= LOCK_WAIT_MS) throw new PullRequestFailure('cache_busy', 'Pull request cache is busy; retry later');
   await new Promise<void>((resolve, reject) => {
@@ -108,7 +141,7 @@ async function waitLock(started: number, signal?: AbortSignal) {
 /** Only remove a sufficiently old lock with a provably dead PID. A marker serializes
  * recovery contenders, and inode/token checks ensure neither recovery nor release
  * unlinks a replacement lock. */
-function recoverDeadOwner(lockPath: string): boolean {
+export function recoverDeadOwner(lockPath: string, afterMarker?: () => void): boolean {
   let observed;
   let owner: { pid?: unknown; token?: unknown };
   try {
@@ -120,12 +153,13 @@ function recoverDeadOwner(lockPath: string): boolean {
   try { process.kill(owner.pid as number, 0); return false; }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') return false; }
   const recoveryPath = `${lockPath}.recovering`;
+  const recoveryToken = randomUUID();
   let recoveryFD: number;
-  try { recoveryFD = openSync(recoveryPath, 'wx', 0o600); }
+  try { recoveryFD = publishExclusive(recoveryPath, { pid: process.pid, token: recoveryToken, createdAt: new Date().toISOString() }); }
   catch { return false; }
-  writeFileSync(recoveryFD, JSON.stringify({ pid: process.pid, token: randomUUID(), createdAt: new Date().toISOString() }));
   const recoveryStat = fstatSync(recoveryFD);
   try {
+    afterMarker?.();
     const current = lstatSync(lockPath);
     const currentOwner = JSON.parse(readBoundedFile(lockPath, 1024).toString('utf8')) as { pid?: unknown; token?: unknown };
     if (current.dev !== observed.dev || current.ino !== observed.ino || currentOwner.pid !== owner.pid || currentOwner.token !== owner.token || Date.now() - current.mtimeMs < LOCK_STALE_MS) return false;
@@ -180,7 +214,7 @@ async function defaultRun(command: string, args: string[], cwd: string, signal?:
 
 /** Explicit-only GitHub reads and a task-worktree scoped durable cache. */
 export async function registerPullRequests(ctx: Context, options: PullRequestOptions = {}) {
-  const root = resolve(ctx.location.project.canonical);
+  const root = canonicalDirectory(ctx.location.project.canonical);
   const projectID = ctx.location.project.id;
   const run = options.run ?? defaultRun;
   const taskRecords = () => listTasks({ canonical: root, includeOperations: false }) as unknown as TaskRecord[];
@@ -189,11 +223,17 @@ export async function registerPullRequests(ctx: Context, options: PullRequestOpt
     const task = taskRecords().find(item => item.id === taskID && item.sessionID === sessionID);
     if (!task) throw new PullRequestFailure('not_owned', 'Task/session association is not owned by this workspace');
     const session = await ctx.session.get({ sessionID }, { signal });
-    const directory = resolve(task.worktree);
-    if (session.projectID !== projectID || resolve(session.location.directory) !== directory) throw new PullRequestFailure('not_owned', 'Session does not own the recorded task worktree');
-    let canonical: string;
-    try { canonical = realpathSync(directory); } catch { throw new PullRequestFailure('worktree_unavailable', 'Task worktree is unavailable'); }
-    if (canonical !== directory || canonical === root) throw new PullRequestFailure('not_owned', 'Task worktree path is not an exact owned directory');
+    let directory: string;
+    let sessionDirectory: string;
+    try {
+      directory = canonicalDirectory(task.worktree);
+      sessionDirectory = canonicalDirectory(session.location.directory);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new PullRequestFailure('worktree_unavailable', 'Task worktree is unavailable');
+      throw error;
+    }
+    if (session.projectID !== projectID || sessionDirectory !== directory) throw new PullRequestFailure('not_owned', 'Session does not own the recorded task worktree');
+    if (directory === root) throw new PullRequestFailure('not_owned', 'Task worktree path is not an exact owned directory');
     const journalPath = join(directory, '.harness', 'pull-requests.json');
     const lockPath = join(directory, '.harness', 'pull-requests.lock');
     if (existsSync(join(directory, '.harness')) && realpathSync(join(directory, '.harness')) !== join(directory, '.harness')) throw new PullRequestFailure('cache_invalid', 'Task PR cache directory resolves outside its owned worktree');

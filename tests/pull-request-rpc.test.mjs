@@ -1,10 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync, realpathSync, lstatSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const jiti = require('jiti').createJiti(import.meta.url);
@@ -127,6 +128,27 @@ test('rejects cross-task, foreign-session, and unavailable session ownership', a
   f.ctx.session.get = sessionGet;
 });
 
+test('canonicalizes aliased ancestors while rejecting a symlinked task worktree leaf', async t => {
+  const f = fixture(t);
+  const { canonicalDirectory } = await jiti.import('../plugins/carthagent/src/server/pull-request-rpc.ts');
+  const parent = join(f.worktree, '..');
+  const parentAlias = join(parent, 'root-alias'); symlinkSync(parent, parentAlias);
+  assert.equal(canonicalDirectory(join(parentAlias, basename(f.worktree))), realpathSync(f.worktree), 'a symlinked ancestor is resolved to its real path');
+  const aliasRoot = join(f.project, 'alias'); symlinkSync(f.worktree, aliasRoot);
+  const statePath = join(f.project, '.harness', 'opencode-tasks.json');
+  const state = JSON.parse(readFileSync(statePath, 'utf8'));
+  state.tasks[0].worktree = join(parentAlias, basename(f.worktree));
+  writeFileSync(statePath, JSON.stringify(state));
+  f.ctx.session.get = async () => ({ id: 'session-1', projectID: 'project-id', location: { directory: f.worktree } });
+  const dispose = await registerPullRequests(f.ctx, { run: f.run });
+  try {
+    assert.deepEqual((await f.handlers.list({ sessionID: 'session-1', taskID: 'task-1' }, call())).pullRequests, []);
+    await assert.rejects(Promise.resolve().then(() => canonicalDirectory(aliasRoot)), error => error.code === 'not_owned');
+  } finally { await dispose(); }
+  assert.equal(lstatSync(aliasRoot).isSymbolicLink(), true);
+  assert.equal(realpathSync(f.worktree), f.worktree);
+});
+
 test('head-bound reviews keep current changes requests blocking and incomplete checks partial', async t => {
   const f = fixture(t); const handlers = {};
   const run = async (command, args, cwd) => {
@@ -243,6 +265,44 @@ test('recovers an expired dead-owner lock but does not steal a live-owner lock',
   await assert.rejects(waiting, error => error.data?.code === 'canceled');
   assert.equal(JSON.parse(readFileSync(lock, 'utf8')).token, 'live-owner', 'a live owner is never displaced');
   assert.deepEqual((await f.handlers.list({ sessionID: 'session-1', taskID: 'task-1' }, call())).pullRequests.map(pr => pr.number), [7]);
+});
+
+test('crashes during empty/partial lock and recovery publication leave no blocking incomplete owner', async t => {
+  for (const target of ['lock', 'recovery']) for (const stage of ['empty', 'partial']) await t.test(`${target} ${stage}`, async t => {
+    const f = fixture(t); const dispose = await registerPullRequests(f.ctx, { run: f.run }); t.after(dispose);
+    const harness = join(f.worktree, '.harness'); mkdirSync(harness);
+    const lock = join(harness, 'pull-requests.lock');
+    if (target === 'recovery') {
+      writeFileSync(lock, JSON.stringify({ pid: 2_000_000_000, token: 'dead-owner', createdAt: '2000-01-01T00:00:00.000Z' }));
+      const old = new Date(Date.now() - 60_000); utimesSync(lock, old, old);
+    }
+    const destination = target === 'lock' ? lock : `${lock}.recovering`;
+    const modulePath = fileURLToPath(new URL('../plugins/carthagent/src/server/pull-request-rpc.ts', import.meta.url));
+    const testPath = fileURLToPath(import.meta.url);
+    const script = `const jiti=require('jiti').createJiti(${JSON.stringify(testPath)}); jiti.import(${JSON.stringify(modulePath)}).then(({publishExclusive})=>publishExclusive(process.argv[1],{pid:process.pid,token:'crash-token',createdAt:new Date().toISOString()},stage=>{if(stage===process.argv[2])process.exit(73)}));`;
+    const child = spawnSync(process.execPath, ['--input-type=commonjs', '-e', script, destination, stage], { encoding: 'utf8' });
+    assert.equal(child.status, 73, child.stderr);
+    assert.equal((await f.handlers.associate({ sessionID: 'session-1', taskID: 'task-1', number: 7 }, call())).pullRequest.number, 7);
+  });
+});
+
+test('concurrent stale-lock reclaimers serialize and never unlink a successor lock', async t => {
+  const f = fixture(t); const { recoverDeadOwner } = await jiti.import('../plugins/carthagent/src/server/pull-request-rpc.ts');
+  const harness = join(f.worktree, '.harness'); mkdirSync(harness);
+  const lock = join(harness, 'pull-requests.lock');
+  const old = new Date(Date.now() - 60_000);
+  writeFileSync(lock, JSON.stringify({ pid: 2_000_000_000, token: 'dead-owner', createdAt: '2000-01-01T00:00:00.000Z' })); utimesSync(lock, old, old);
+  let successor = false;
+  const reclaimed = recoverDeadOwner(lock, () => {
+    unlinkSync(lock);
+    writeFileSync(lock, JSON.stringify({ pid: process.pid, token: 'successor-token', createdAt: new Date().toISOString() }));
+    successor = true;
+  });
+  assert.equal(successor, true);
+  assert.equal(reclaimed, false, 'reclaim detects that its observed lock has been replaced');
+  assert.equal(JSON.parse(readFileSync(lock, 'utf8')).token, 'successor-token');
+  assert.equal(recoverDeadOwner(lock), false, 'a live successor cannot be reclaimed');
+  assert.equal(JSON.parse(readFileSync(lock, 'utf8')).token, 'successor-token');
 });
 
 test('rejects oversized cache bytes and association counts', async t => {
