@@ -55,5 +55,5 @@
   },
   "physicalOSClipboardVerified": false,
   "paidProviderTraffic": false,
-  "runCaveat": "Results are bounded across separate runs. Full run had an incomplete native selection gesture; focused run established the selection clipboard model round trip. Ctrl+O recent-sessions menu cancellation is not model-picker acceptance. Model-picker navigation/Escape/unchanged-state remains incomplete. The standalone picker-only run did not recognize the recent menu, while corrected full and interactive narrow-layout runs did. No physical clipboard claim is made."
+  "runCaveat": "Results are bounded across separate runs, not one all-green invocation. The full run's native selection gesture remains incomplete; a focused run established the selection clipboard round trip only in the controlled host model. The earlier model-picker attempt remains retained as incomplete, while the newer focused offline A/B model-picker probe passed navigation, Escape dismissal, and unchanged-model verification for that lane. Ctrl+O recent-sessions cancellation is separate from model-picker acceptance. No physical OS clipboard claim is made."
 }
