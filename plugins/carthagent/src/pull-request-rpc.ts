@@ -4,6 +4,13 @@ const id = { type: 'string', minLength: 1, maxLength: 128 } as const;
 const ref = { type: 'string', minLength: 1, maxLength: 255 } as const;
 const hash = { type: 'string', minLength: 40, maxLength: 64 } as const;
 const url = { type: 'string', minLength: 1, maxLength: 2048 } as const;
+const errors = {
+  pull_request_error: {
+    type: 'object', properties: {
+      code: { type: 'string', enum: ['invalid_request', 'not_owned', 'not_associated', 'github_unavailable', 'github_invalid', 'cache_invalid', 'cache_limit', 'cache_busy', 'worktree_unavailable', 'canceled', 'internal'] },
+    }, required: ['code'], additionalProperties: false,
+  },
+} as const;
 const input = {
   type: 'object', properties: { sessionID: id, taskID: id, number: { type: 'integer', minimum: 1, maximum: 2147483647 } },
   required: ['sessionID', 'taskID'], additionalProperties: false,
@@ -23,14 +30,17 @@ export const PullRequests = Rpc.define({
   id: 'carthagent.pull-requests',
   methods: {
     list: {
+      errors,
       input: { type: 'object', properties: { sessionID: id, taskID: id }, required: ['sessionID', 'taskID'], additionalProperties: false },
       output: { type: 'object', properties: { pullRequests: { type: 'array', maxItems: 100, items: pullRequest } }, required: ['pullRequests'], additionalProperties: false },
     },
     associate: {
+      errors,
       input,
       output: { type: 'object', properties: { pullRequest }, required: ['pullRequest'], additionalProperties: false },
     },
     refresh: {
+      errors,
       input,
       output: { type: 'object', properties: { pullRequest }, required: ['pullRequest'], additionalProperties: false },
     },
