@@ -30,7 +30,12 @@ try {
     rpcID: 'carthagent.pull-requests', method: 'list', input, location: host.location,
   }, host.request())).output;
   assert.deepEqual(await tracked(first), { pullRequests: [] }, 'Production PR tracking must register and validate its output schema');
-  await assert.rejects(tracked(first, { sessionID: second.sessionID, taskID: first.taskID }));
+  await assert.rejects(tracked(first, { sessionID: second.sessionID, taskID: first.taskID }), error => {
+    assert.equal(error.type, 'pull_request_error');
+    assert.equal(error.data.code, 'not_owned');
+    assert.ok(!error.message.includes(host.cwd), 'Ownership errors must not expose workspace paths');
+    return true;
+  });
   await writeFile(join(first.directory, 'fixture.txt'), 'first task edit\n');
   assert.equal(await readFile(join(second.directory, 'fixture.txt'), 'utf8'), 'baseline\n');
   assert.equal(await readFile(join(host.cwd, 'fixture.txt'), 'utf8'), 'baseline\n');
