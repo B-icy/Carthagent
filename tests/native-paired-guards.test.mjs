@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, rm, writeFile, symlink } from 'node:fs/promises';
+import { access, mkdtemp, mkdir, rm, writeFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { aggregateConditionExit, assertCompletePluginSource, assertDependencyPackageIdentity, assertPluginCondition, assertPluginImportDependencies, assertSnapshotProvenance, verifySnapshotIdentity } from '../tools/native-paired-guards.mjs';
+import { aggregateConditionExit, assertCompletePluginSource, assertDependencyPackageIdentity, assertPluginCondition, assertPluginImportDependencies, assertSelectedSourceHead, assertSnapshotProvenance, verifySnapshotIdentity } from '../tools/native-paired-guards.mjs';
 
 test('paired CTG fixture fails closed unless inventory says active', () => {
   assert.deepEqual(assertPluginCondition([{ id: 'carthagent', state: { status: 'active' } }], true),
@@ -46,7 +47,7 @@ test('paired runner rejects the old partial plugin staging and accepts a complet
       await writeFile(join(root, file), '');
     }
     await writeFile(join(root, 'plugins/carthagent/src/index.ts'), "import { Plugin } from '@opencode/plugin';\nexport const id = 'carthagent';\n");
-    await symlink(join(root, 'node_modules/@opencode/plugin'), join(root, 'plugins/carthagent/node_modules/@opencode/plugin'));
+    await symlink(join(root, 'node_modules/@opencode/plugin'), join(root, 'plugins/carthagent/node_modules/@opencode/plugin'), process.platform === 'win32' ? 'junction' : 'dir');
     assert.equal(assertCompletePluginSource(root).sourceRoot, root);
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -83,6 +84,69 @@ test('ABBA exit aggregation fails if any condition fails or is missing', () => {
   assert.equal(aggregateConditionExit({ 'baseline-1': 0, 'ctg-1': 127, 'ctg-2': 0, 'baseline-2': 0 }), 1);
 });
 
+test('actual offline ABBA driver runs all four conditions and retains failures with nonzero aggregate exit', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'native-paired-abba-driver-'));
+  const helper = fileURLToPath(new URL('../tools/native-paired-orchestration.sh', import.meta.url));
+  const guardModule = fileURLToPath(new URL('../tools/native-paired-guards.mjs', import.meta.url));
+  const statuses = join(root, 'statuses.tsv');
+  const calls = join(root, 'calls.txt');
+  try {
+    const program = `source "$1"
+CALLS="$2"
+STATUSES="$3"
+GUARDS="$4"
+fake_condition() {
+  local label="$1" mode="$2" status=0
+  [[ "$label" == ctg-1 ]] && status=17
+  printf '%s %s\\n' "$label" "$mode" >> "$CALLS"
+  printf '%s\\t%s\\n' "$label" "$status" >> "$STATUSES"
+  return "$status"
+}
+run_paired_abba fake_condition "$STATUSES" "$GUARDS" 0
+printf 'aggregate=%s\\n' "$paired_exit_status"`;
+    const run = spawnSync('bash', ['-c', program, 'test-abba', helper, calls, statuses, guardModule], { encoding: 'utf8' });
+    assert.equal(run.status, 0, run.stderr);
+    assert.match(run.stdout, /aggregate=1/);
+    assert.deepEqual((await (await import('node:fs/promises')).readFile(calls, 'utf8')).trim().split('\n'), [
+      'baseline-1 baseline', 'ctg-1 ctg', 'ctg-2 ctg', 'baseline-2 baseline',
+    ]);
+    assert.deepEqual((await (await import('node:fs/promises')).readFile(statuses, 'utf8')).trim().split('\n'), [
+      'baseline-1\t0', 'ctg-1\t17', 'ctg-2\t0', 'baseline-2\t0',
+    ]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('actual paired cleanup trap removes preflight work after an early failure', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'native-paired-preflight-cleanup-'));
+  const helper = fileURLToPath(new URL('../tools/native-paired-orchestration.sh', import.meta.url));
+  const workPathFile = join(root, 'work-path');
+  try {
+    const program = `source "$1"
+work=''
+cleanup() { remove_paired_workdir "$work"; }
+register_paired_exit_cleanup cleanup
+work="$(mktemp -d /tmp/ctg-native-paired.XXXXXX)"
+printf '%s' "$work" > "$2"
+exit 23`;
+    const run = spawnSync('bash', ['-c', program, 'test-preflight-cleanup', helper, workPathFile], { encoding: 'utf8' });
+    assert.equal(run.status, 23, run.stderr);
+    const work = (await (await import('node:fs/promises')).readFile(workPathFile, 'utf8'));
+    await assert.rejects(access(work));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('scheduled source commit must be the current integration checkout HEAD', () => {
+  const head = 'a'.repeat(40);
+  assert.equal(assertSelectedSourceHead(head, head), true);
+  // Older commit has the same lockfile identity but is not current acceptance source.
+  assert.throws(() => assertSelectedSourceHead('b'.repeat(40), head), /must equal the current integration checkout HEAD/);
+  assert.throws(() => assertSelectedSourceHead(head, 'malformed'), /must equal the current integration checkout HEAD/);
+});
+
 test('dependency identity comparison fails closed when the physical install changes', () => {
   const expected = { realpath: '/pinned/node_modules', treeSha256: 'a'.repeat(64) };
   assert.equal(assertDependencyPackageIdentity(expected, { ...expected }), true);
@@ -96,7 +160,7 @@ test('baseline absence rejects plugin-provided namespaces, not only exact id', (
 
 test('paired provenance requires the immutable source snapshot and pinned binary identity', () => {
   const valid = { binarySha256: 'a'.repeat(64), binaryVersion: '2.0.32', sourceCommit: 'f'.repeat(40),
-    sourceTree: 'e'.repeat(40), sourceDirty: false, sourceSnapshotSha256: 'b'.repeat(64),
+    sourceCheckoutHead: 'f'.repeat(40), sourceTree: 'e'.repeat(40), sourceDirty: false, sourceSnapshotSha256: 'b'.repeat(64),
     sourceCheckoutDirtyStatus: '', sourceCheckoutStatusSha256: createHash('sha256').update('').digest('hex'),
     sourceCheckoutDirty: false, harnessDirtyStatus: '', harnessDirty: false,
     packageLockSha256: 'c'.repeat(64), installedPackageLockSha256: 'c'.repeat(64), dependencyNodeModulesRealpath: '/pinned/node_modules',
@@ -120,7 +184,7 @@ test('actual manifest generator emits valid typed JSON for clean and dirty quote
   const dirtyStatus = ' M "quoted path\\name"\n?? file with newline\ninside\n';
   const fields = {
     createdAt: '2026-10-17T00:00:00.000Z', binary: '/pinned/opencode', binaryVersion: '2.0.32', binarySha256: 'a'.repeat(64),
-    sourceCheckout: '/tmp/source "checkout"\nline', sourceCheckoutHead: '1'.repeat(40), sourceCheckoutDirtyStatus: '',
+    sourceCheckout: '/tmp/source "checkout"\nline', sourceCheckoutHead: '2'.repeat(40), sourceCheckoutDirtyStatus: '',
     sourceCheckoutStatusSha256: 'b'.repeat(64), sourceCommit: '2'.repeat(40), sourceTree: '3'.repeat(40),
     sourceSnapshotTar: '/tmp/source.tar', sourceArchiveSha256: 'c'.repeat(64), executionSnapshotTar: '/tmp/execution.tar',
     executionSnapshotSha256: 'd'.repeat(64), sourceSnapshotSha256: 'd'.repeat(64), packageLockSha256: 'e'.repeat(64),
@@ -132,7 +196,7 @@ test('actual manifest generator emits valid typed JSON for clean and dirty quote
     harnessSourceManifestSha256: '5'.repeat(64), samplesPerRun: 30, sourceComponentSha256: '6'.repeat(64),
     harnessComponentSha256: '7'.repeat(64),
   };
-  const generator = join(dirname(new URL(import.meta.url).pathname), '../tools/native-paired-manifest.mjs');
+  const generator = join(dirname(fileURLToPath(import.meta.url)), '../tools/native-paired-manifest.mjs');
   for (const checkoutStatus of ['', dirtyStatus]) {
     const input = { ...fields, sourceCheckoutDirtyStatus: checkoutStatus };
     const generated = spawnSync(process.execPath, [generator], { input: JSON.stringify(input), encoding: 'utf8' });
@@ -142,11 +206,13 @@ test('actual manifest generator emits valid typed JSON for clean and dirty quote
     assert.equal(manifest.sourceCheckoutDirty, checkoutStatus.length > 0);
     assert.equal(manifest.sourceCheckout, fields.sourceCheckout);
     assert.equal(manifest.sourceCheckoutHead, fields.sourceCheckoutHead);
+    assert.equal(manifest.sourceCommit, fields.sourceCommit);
     assert.equal(manifest.harnessDirtyStatus, dirtyStatus);
     assert.equal(manifest.harnessDirty, true);
     assert.equal(manifest.sourceDirty, false);
     assert.equal(manifest.sourceCheckoutStatusSha256, createHash('sha256').update(checkoutStatus).digest('hex'));
     assert.throws(() => assertSnapshotProvenance({ ...manifest, sourceCheckoutDirty: !manifest.sourceCheckoutDirty }), /Checkout dirty-state provenance is invalid/);
+    assert.throws(() => assertSnapshotProvenance({ ...manifest, sourceCheckoutHead: '9'.repeat(40) }), /provenance is invalid/);
     assert.equal(assertSnapshotProvenance(manifest), true);
   }
 });
@@ -181,6 +247,7 @@ test('artifact identity is tied to the archived selected git commit, not its mut
     execFileSync('git', ['-C', root, 'add', '.']);
     execFileSync('git', ['-C', root, 'commit', '-qm', 'immutable source fixture']);
     const commit = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    const committedLockHash = createHash('sha256').update(await (await import('node:fs/promises')).readFile(join(root, 'package-lock.json'))).digest('hex');
     const tree = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim();
     const tar = execFileSync('git', ['-C', root, 'archive', '--format=tar', commit]);
     await writeFile(archive, tar);
@@ -190,10 +257,10 @@ test('artifact identity is tied to the archived selected git commit, not its mut
       execFileSync('tar', ['-xf', archive, '-C', archived]);
       await mkdir(join(archived, 'node_modules/@opencode/plugin'), { recursive: true });
       await mkdir(join(archived, 'plugins/carthagent/node_modules/@opencode'), { recursive: true });
-      await symlink(join(archived, 'node_modules/@opencode/plugin'), join(archived, 'plugins/carthagent/node_modules/@opencode/plugin'));
+      await symlink(join(archived, 'node_modules/@opencode/plugin'), join(archived, 'plugins/carthagent/node_modules/@opencode/plugin'), process.platform === 'win32' ? 'junction' : 'dir');
       assert.equal(assertCompletePluginSource(archived).sourceRoot, archived);
       const provenance = {
-        binarySha256: 'a'.repeat(64), binaryVersion: '2.0.32', sourceCommit: commit, sourceTree: tree,
+        binarySha256: 'a'.repeat(64), binaryVersion: '2.0.32', sourceCommit: commit, sourceCheckoutHead: commit, sourceTree: tree,
         sourceDirty: false, sourceSnapshotSha256: snapshotHash,
         sourceCheckoutDirty: false, sourceCheckoutDirtyStatus: '',
         sourceCheckoutStatusSha256: createHash('sha256').update('').digest('hex'), harnessDirty: false, harnessDirtyStatus: '',
@@ -210,6 +277,11 @@ test('artifact identity is tied to the archived selected git commit, not its mut
       };
       assertSnapshotProvenance(provenance);
       await writeFile(join(root, 'lib/ship-auth.mjs'), 'export const shipAgentDir = () => "/changed";\n');
+      execFileSync('git', ['-C', root, 'add', 'lib/ship-auth.mjs']);
+      execFileSync('git', ['-C', root, 'commit', '-qm', 'advance source without changing lockfile']);
+      const currentHead = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+      assert.equal(createHash('sha256').update(await (await import('node:fs/promises')).readFile(join(root, 'package-lock.json'))).digest('hex'), committedLockHash);
+      assert.throws(() => assertSelectedSourceHead(commit, currentHead), /must equal the current integration checkout HEAD/);
       const afterCheckoutMutation = execFileSync('git', ['-C', root, 'archive', '--format=tar', commit]);
       assert.equal(createHash('sha256').update(afterCheckoutMutation).digest('hex'), snapshotHash);
       assert.throws(() => verifySnapshotIdentity(provenance, { ...provenance, sourceSnapshotSha256: 'f'.repeat(64) }, { verifyArtifactFiles: false }), /Snapshot identity mismatch for sourceSnapshotSha256/);

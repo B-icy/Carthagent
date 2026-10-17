@@ -171,8 +171,16 @@ export function aggregateConditionExit(statuses, interrupted = false) {
   return 0;
 }
 
+export function assertSelectedSourceHead(selectedCommit, checkoutHead) {
+  if (typeof selectedCommit !== 'string' || !/^[a-f0-9]{40}$/.test(selectedCommit) ||
+      typeof checkoutHead !== 'string' || !/^[a-f0-9]{40}$/.test(checkoutHead) || selectedCommit !== checkoutHead) {
+    throw new Error(`Selected source commit must equal the current integration checkout HEAD (selected=${selectedCommit ?? '<missing>'}, HEAD=${checkoutHead ?? '<missing>'})`);
+  }
+  return true;
+}
+
 export function assertSnapshotProvenance(provenance, { verifyArtifactFiles = false } = {}) {
-  for (const key of ['binarySha256', 'binaryVersion', 'sourceCommit', 'sourceTree',
+  for (const key of ['binarySha256', 'binaryVersion', 'sourceCommit', 'sourceCheckoutHead', 'sourceTree',
     'sourceSnapshotSha256', 'packageLockSha256', 'dependencyNodeModulesRealpath',
     'installedPackageLockSha256', 'sourceComponentSha256', 'harnessComponentSha256', 'sourceArchiveSha256',
     'executionSnapshotTar', 'executionSnapshotSha256', 'sourceSnapshotTar', 'binary', 'dependencyInstallSha256', 'dependencyInstallRealpath',
@@ -183,7 +191,8 @@ export function assertSnapshotProvenance(provenance, { verifyArtifactFiles = fal
     throw new Error('Missing checkout dirty-state status provenance');
   }
   if (provenance.binaryVersion !== '2.0.32' || !/^[a-f0-9]{64}$/.test(provenance.binarySha256) ||
-      !/^[a-f0-9]{40}$/.test(provenance.sourceCommit) || !/^[a-f0-9]{40}$/.test(provenance.sourceTree) ||
+      !/^[a-f0-9]{40}$/.test(provenance.sourceCommit) || provenance.sourceCheckoutHead !== provenance.sourceCommit ||
+      !/^[a-f0-9]{40}$/.test(provenance.sourceTree) ||
       !/^[a-f0-9]{64}$/.test(provenance.sourceSnapshotSha256) || !/^[a-f0-9]{64}$/.test(provenance.packageLockSha256) ||
       !/^[a-f0-9]{64}$/.test(provenance.sourceComponentSha256) || !/^[a-f0-9]{64}$/.test(provenance.harnessComponentSha256) ||
       !/^[a-f0-9]{64}$/.test(provenance.sourceArchiveSha256) ||
@@ -236,7 +245,7 @@ export function assertSnapshotProvenance(provenance, { verifyArtifactFiles = fal
 
 export function verifySnapshotIdentity(expected, observed, { verifyArtifactFiles = true } = {}) {
   assertSnapshotProvenance(observed, { verifyArtifactFiles });
-  for (const key of ['binarySha256', 'binaryVersion', 'sourceCommit', 'sourceTree',
+  for (const key of ['binarySha256', 'binaryVersion', 'sourceCommit', 'sourceCheckoutHead', 'sourceTree',
     'sourceDirty', 'sourceCheckoutDirty', 'sourceCheckoutDirtyStatus', 'sourceCheckoutStatusSha256', 'harnessDirty', 'harnessDirtyStatus',
     'sourceSnapshotSha256', 'packageLockSha256', 'dependencyNodeModulesRealpath',
     'installedPackageLockSha256', 'sourceComponentSha256', 'harnessComponentSha256', 'sourceArchiveSha256',
