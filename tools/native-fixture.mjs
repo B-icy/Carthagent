@@ -73,7 +73,10 @@ export function streamText(res, text = 'Fixture response complete.') {
 export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'), pluginOptions, plugins: additionalPlugins = [], respond = (_body, res) => streamText(res), env: extraEnv = {} } = {}) {
   const pluginEntries = [
     ...(plugin ? [pluginOptions ? { package: resolve(plugin), options: pluginOptions } : resolve(plugin)] : []),
-    ...additionalPlugins.map(path => resolve(path)),
+    ...additionalPlugins.map(plugin => typeof plugin === 'string' ? resolve(plugin) : {
+      ...plugin,
+      package: resolve(plugin.package),
+    }),
   ];
   const temp = await mkdtemp(join(tmpdir(), 'ctg-native-fixture-'));
   const cwd = join(temp, 'project');
