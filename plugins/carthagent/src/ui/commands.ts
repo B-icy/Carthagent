@@ -15,6 +15,7 @@ export interface CarthagentCommand {
 }
 
 export const COMMANDS: readonly CarthagentCommand[] = [
+  { id: "help", name: "ctg-help", description: "List Carthagent commands and native shortcuts" },
   { id: "resume", name: "resume", aliases: ["sessions"], args: "[id|name]", description: "Resume a local session" },
   { id: "restart", name: "restart", aliases: ["kill"], description: "Recover the selected session by interrupting its active turn" },
   { id: "theme", name: "theme", args: "[name]", description: "Pick or set a Carthagent-compatible theme" },

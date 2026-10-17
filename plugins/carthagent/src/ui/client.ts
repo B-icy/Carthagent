@@ -1,3 +1,5 @@
+import type { Context } from "@opencode/plugin/tui/context";
+import type { LocationRef } from "@opencode/client";
 import { Workspace, type WorkspaceSnapshot } from "../workspace-rpc.js";
 import { SessionControls } from "../session-rpc.js";
 
@@ -6,37 +8,37 @@ export type { WorkspaceSnapshot };
 
 const REQUEST_TIMEOUT_MS = 15_000;
 
-function requestOptions(context: { location?: any; data: { location: { default(): any } } }, signal?: AbortSignal) {
+type RpcContext = Pick<Context, "client" | "location" | "data">;
+
+function requestOptions(context: RpcContext, selectedLocation?: LocationRef, signal?: AbortSignal) {
   return {
-    location: context.location ?? context.data.location.default(),
+    location: selectedLocation ?? context.location ?? context.data.location.default(),
     signal: signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   };
 }
 
-export function workspaceClient(context: { client: { rpc: (definition: typeof Workspace) => any }; location?: any; data: { location: { default(): any } } }, selectedLocation?: any) {
+export function workspaceClient(context: RpcContext, selectedLocation?: LocationRef) {
   const rpc = context.client.rpc(Workspace);
-  const callContext = selectedLocation ? { ...context, location: selectedLocation } : context;
   return {
-    snapshot: (input?: { projectID?: string }, signal?: AbortSignal) => rpc.snapshot(input ?? {}, requestOptions(callContext, signal)) as Promise<WorkspaceSnapshot>,
-    open: (input: { sessionID: string }, signal?: AbortSignal) => rpc.open(input, requestOptions(callContext, signal)),
-    createWorktree: (input: { projectID: string; name: string }, signal?: AbortSignal) => rpc.createWorktree(input, requestOptions(callContext, signal)),
-    createTask: (input: { task: string; branch?: string }, signal?: AbortSignal) => rpc.createTask(input, requestOptions(callContext, signal)),
-    delivery: (input: { sessionID: string }, signal?: AbortSignal) => rpc.delivery(input, requestOptions(callContext, signal)),
-    review: (input: { sessionID: string }, signal?: AbortSignal) => rpc.review(input, requestOptions(callContext, signal)),
-    startReview: (input: { sessionID: string }, signal?: AbortSignal) => rpc.startReview(input, requestOptions(callContext, signal)),
+    snapshot: (input?: { projectID?: string }, signal?: AbortSignal) => rpc.snapshot(input ?? {}, requestOptions(context, selectedLocation, signal)) as Promise<WorkspaceSnapshot>,
+    open: (input: { sessionID: string }, signal?: AbortSignal) => rpc.open(input, requestOptions(context, selectedLocation, signal)) as Promise<{ opened: boolean; directory: string }>,
+    createWorktree: (input: { projectID: string; name: string }, signal?: AbortSignal) => rpc.createWorktree(input, requestOptions(context, selectedLocation, signal)) as Promise<{ directory: string }>,
+    createTask: (input: { task: string; branch?: string }, signal?: AbortSignal) => rpc.createTask(input, requestOptions(context, selectedLocation, signal)) as Promise<{ taskID: string; sessionID: string; directory: string }>,
+    delivery: (input: { sessionID: string }, signal?: AbortSignal) => rpc.delivery(input, requestOptions(context, selectedLocation, signal)) as Promise<{ plan?: unknown; evidence?: unknown; status: string }>,
+    review: (input: { sessionID: string }, signal?: AbortSignal) => rpc.review(input, requestOptions(context, selectedLocation, signal)) as Promise<{ status: string; summary?: string }>,
+    startReview: (input: { sessionID: string }, signal?: AbortSignal) => rpc.startReview(input, requestOptions(context, selectedLocation, signal)) as Promise<{ status: string; summary: string; sessionID?: string }>,
     events: rpc.events,
   };
 }
 
-export function sessionControls(context: { client: { rpc: (definition: typeof SessionControls) => any }; location?: any; data: { location: { default(): any } } }, selectedLocation?: any) {
+export function sessionControls(context: RpcContext, selectedLocation?: LocationRef) {
   const rpc = context.client.rpc(SessionControls);
-  const callContext = selectedLocation ? { ...context, location: selectedLocation } : context;
   return {
-    framing: (input: { sessionID: string; enabled?: boolean }, signal?: AbortSignal) => rpc.framing(input, requestOptions(callContext, signal)),
-    compact: (input: { sessionID: string; notes?: string }, signal?: AbortSignal) => rpc.compact(input, requestOptions(callContext, signal)),
+    framing: (input: { sessionID: string; enabled?: boolean }, signal?: AbortSignal) => rpc.framing(input, requestOptions(context, selectedLocation, signal)) as Promise<{ enabled: boolean }>,
+    compact: (input: { sessionID: string; notes?: string }, signal?: AbortSignal) => rpc.compact(input, requestOptions(context, selectedLocation, signal)) as Promise<{ admitted: boolean }>,
   };
 }
 
-export function rpcEventOptions(_context: { location?: any; data: { location: { default(): any } } }, signal?: AbortSignal) {
+export function rpcEventOptions(_context: RpcContext, signal?: AbortSignal): { signal?: AbortSignal } {
   return signal ? { signal } : {};
 }
