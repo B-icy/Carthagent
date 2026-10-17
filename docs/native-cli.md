@@ -14,7 +14,7 @@ The caller of `runOpenCodeCli()` supplies these concrete capabilities:
 | --- | --- |
 | `run({ mode, options, prompt, args })` | Launch native OpenCode interactive or headless (`print`/JSONL) session. Honor `--engine-cli`/`--agent-cli` as an explicit executable override and `--isolate` as extension/skill/prompt discovery isolation using a fresh CTG profile, not a worktree. |
 | `listModels({ query })` | Enumerate models from the native provider catalog, filter the optional query, and print the compatible provider/model/context/token/input/output columns. |
-| `login({ args })` | Uses OpenCode 2 integration list/connect/status/complete/cancel APIs. Defaults to Carthagent Ship when available; optional integration and method arguments select another integration. Key-based methods are not prompted in clear text. |
+| `login({ args })` | Uses OpenCode 2 integration list/connect/status/complete/cancel APIs. Defaults to Carthagent Ship when available; optional integration and method arguments select another integration. API-key methods use masked terminal input. |
 | `account({ args })` | Uses the profile-owned Ship RPC and active managed OAuth connection; `--json` emits the account response. |
 | `billing({ action })` | Uses the profile-owned Ship RPC to create checkout/portal links and opens the returned URL explicitly. |
 | `logout({ session })` | Uses the profile-owned Ship RPC to revoke a named session or the current session; current logout also removes its native credential. |
@@ -55,6 +55,11 @@ require the exact canonical `v<version>` release tag (including prerelease
 identifiers); `--force` cannot bypass tag/version validation. `quit`/`q`/`exit` report that no interactive
 session is active when invoked as standalone commands.
 
+`--theme` is passed to the pinned CLI through its `OPENCODE_CLI_CONFIG_CONTENT`
+overlay without rewriting the profile. `--ascii` takes precedence over
+`--glyphs`; `auto` resolves through the CLI glyph detector and the selected
+`ascii`/`unicode` mode is forwarded to the TUI process.
+
 `--json` translates real native session tool lifecycle and completed assistant
 messages into the documented `tool_execution_start`, `tool_execution_end`, and
 `message_end` JSONL records. It filters to the selected session and reconciles
@@ -66,7 +71,7 @@ Accepted turns that time out or are cancelled keep their captured session and
 tool lifecycle events, but are never reconciled against older session history.
 Pre-admission interruption has no accepted marker and emits no prior-session
 events. OAuth form secret fields are masked in raw terminal input; unsupported
-API-key login methods are rejected before any prompt is displayed.
+API-key login masks the secret input and never echoes it to the terminal.
 
 The disposable real-host adapter smoke is `node tests/native-cli-host-smoke.mjs`.
 It resolves the pinned OpenCode executable through the package-owned native
