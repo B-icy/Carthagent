@@ -23,7 +23,8 @@ def main():
     parser.add_argument('--plugin', default=str(pathlib.Path(__file__).resolve().parents[1] / 'plugins/carthagent/test-plugin'))
     parser.add_argument('--delivery-plugin', default=str(pathlib.Path(__file__).resolve().parents[1] / 'plugins/carthagent/test-plugin'))
     parser.add_argument('--command', default='/ctg-status')
-    parser.add_argument('--expect', default='2.0.32')
+    parser.add_argument('--expect', default=None)
+    parser.add_argument('--completion', default='Carthagent runtime status')
     args = parser.parse_args()
     if not args.binary:
         parser.error('OpenCode binary is required')
@@ -35,6 +36,7 @@ def main():
         (root / 'config/opencode/opencode.json').write_text(json.dumps({
             'plugins': list(dict.fromkeys([str(pathlib.Path(args.plugin).resolve()), str(pathlib.Path(args.delivery_plugin).resolve())])), 'update': 'disable',
         }))
+        expected = args.expect or 'OpenCode 2.0.32 ·'
         env = {key: os.environ[key] for key in ['PATH', 'LANG', 'LC_ALL'] if key in os.environ}
         env.update({
             'HOME': str(root / 'home'), 'TERM': 'xterm-256color', 'COLORTERM': 'truecolor',
@@ -50,7 +52,9 @@ def main():
         output = bytearray()
         started = time.monotonic()
         sent = False
+        completion_accepted = False
         submitted = False
+        accepted_output_length = 0
         try:
             while time.monotonic() - started < 30:
                 if child.poll() is not None:
@@ -64,17 +68,31 @@ def main():
                     if b'\x1b[c' in chunk:
                         os.write(master, b'\x1b[?1;2c')
                 if not sent and time.monotonic() - started > 8:
-                    output.clear()
                     os.write(master, args.command.encode())
                     sent = True
-                if sent and not submitted and b'No matching commands' in output:
-                    output.clear()
+                # The completion row is evidence that the TUI plugin has
+                # registered its command. First Enter accepts that row; only
+                # submit a second Enter once the editor still shows our command.
+                if sent and not completion_accepted and args.completion.encode() in output:
+                    # Enter selects and runs the registered slash completion
+                    # when the command remains a palette row. Require a fresh
+                    # terminal render before confirming Enter for execution.
+                    os.write(master, b'\r')
+                    completion_accepted = True
+                    accepted_output_length = len(output)
+                if completion_accepted and not submitted and len(output) > accepted_output_length:
+                    if args.command.encode() not in output:
+                        raise RuntimeError('Slash completion was accepted but the editor no longer contains the requested command')
                     os.write(master, b'\r')
                     submitted = True
-                if submitted and args.expect.encode() in output:
-                    if b'runtime unavailable' in output or b'No matching commands' in output:
+                    output.clear()
+                plain_output = re.sub(rb'\x1b\[[0-?]*[ -/]*[@-~]', b'', bytes(output))
+                if submitted and expected.encode() in plain_output:
+                    if b'runtime unavailable' in plain_output or args.completion.encode() in plain_output:
                         raise RuntimeError('Command was unavailable or its RPC failed')
-                    print(json.dumps({'command': args.command, 'observed': args.expect,
+                    print(json.dumps({'command': args.command, 'observed': expected,
+                                      'completionAccepted': completion_accepted,
+                                      'commandSubmitted': submitted,
                                       'elapsedMs': round((time.monotonic() - started) * 1000),
                                       'terminalBytes': len(output)}))
                     return
@@ -83,7 +101,7 @@ def main():
                 lines = [line for line in log.read_text(errors='replace').splitlines()
                          if 'plugin' in line.lower() or 'error' in line.lower()]
                 print('\n'.join(lines[-30:]))
-            raise RuntimeError(f'Expected {args.expect!r} not rendered: {plain[-8000:].decode(errors="replace")}')
+            raise RuntimeError(f'Expected post-command response {expected!r} not rendered (sent={sent}, completionAccepted={completion_accepted}, submitted={submitted}): {plain[-8000:].decode(errors="replace")}')
         finally:
             if child.poll() is None:
                 os.killpg(child.pid, signal.SIGTERM)
