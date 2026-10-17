@@ -239,7 +239,9 @@ test('native paired manifest preserves input, switch, and rendered workspace tar
   assert.match(manifest.sustainedMemoryAcceptance, /<=32 MiB/);
   assert.match(manifest.sustainedMemoryAcceptance, /max D<=128 MiB/);
   assert.match(manifest.sustainedMemoryAcceptance, /<=32 MiB/);
-  assert.match(manifest.sustainedMemoryAcceptance, /parent\/product review.*required before authorization/);
+  assert.match(manifest.sustainedMemoryAcceptance, /1500 planned 1-second monotonic-index slots/);
+  assert.match(manifest.sustainedMemoryAcceptance, />250ms lateness/);
+  assert.match(manifest.sustainedMemoryAcceptance, /identical byte-for-byte between conditions/);
   assert.match(manifest.sustainedMemoryAcceptance, /not mathematical long-term guarantees/);
 });
 

@@ -62,24 +62,31 @@ gate: baseline and CTG each have a 5-minute warmup, followed by 25 minutes of
 1-second RSS observations; record TUI process-tree RSS and owned-server
 process-tree RSS independently and combined. Proposed, reviewable calculations
 use combined TUI+owned-server RSS, with each condition run serially under the
-same disposable loopback streaming/reconnect workload: warm each condition for
-5 minutes, then collect 1-second samples for exactly 25 minutes. Align samples
-by elapsed time from the first measured sample; a missing sample or unmatched
-elapsed-time point fails (no interpolation or dropping). Let `B0` and `C0` be
-the medians of the first measured 5-minute blocks for baseline and CTG. For
-each aligned sample define baseline-adjusted excess growth
-`D(t) = (CTG(t) - C0) - (baseline(t) - B0)`. The proposed retained-growth gate
-is `max(D(t)) <= 128 MiB` over all 25 measured minutes. The proposed observable
-plateau gate is `median(D(t), final 5-minute block) - median(D(t), first measured
-5-minute block) <= 32 MiB`. Preserve raw TUI/server/combined series, timestamps,
+same finite replay trace: warm each condition for 5 minutes, then collect 1,500
+planned one-second slots over exactly 25 minutes. Index slots from a monotonic
+start (`n = 0..1499`); preserve each actual monotonic timestamp and sample
+lateness. A sample later than 250 ms after its planned slot, duplicate slot,
+missing process/PID, or missing sample is a failure; never substitute zero,
+interpolate, drop, or pair runs by exact wall-clock timestamp. Compare matching
+slot indices, not jittered timestamps. Define block 0 as slots 0..299 and the
+final block as 1200..1499. Let `B0` and `C0` be the medians of combined RSS in
+block 0 for baseline and CTG. For every slot define baseline-adjusted excess
+growth `D[n] = (CTG[n] - C0) - (baseline[n] - B0)`. The retained-growth gate
+proposal is `max(D[n]) <= 128 MiB` over all slots. The observable-plateau
+proposal is `median(D[1200..1499]) - median(D[0..299]) <= 32 MiB`. Preserve raw
+TUI/server/combined series, planned and actual monotonic timestamps, lateness,
 host conditions, workload request/reconnect/error counts, and cleanup evidence.
+RSS is a process-tree RSS proxy; summing process RSS may double-count shared
+pages and is not physical unique memory.
 These finite-window release criteria are engineering observations, not
 mathematical long-term memory guarantees. Parent/product review must approve the
 formula, workload, and failure policy before execution; this is plan review
-only, not authorization to run the workload. The bounded workload must
-exercise only disposable loopback streaming and reconnects; capture stream
-request counts, reconnect attempts/results, timeouts/exceptions, missing RSS
-samples, host load/memory, exact durations and cleanup status. Any failure,
+only, not authorization to run the workload. The replay must be a finite,
+checked-in deterministic sequence of loopback streaming requests with fixed
+payload sizes, chunk sizes, chunk pacing, connection close/reconnect positions,
+and exact request count. Baseline and CTG must replay byte-for-byte equivalent
+request traces; record per-request bytes/chunks/timing and reconnect outcomes.
+Any mismatch or failure,
 missed sample, or threshold exceedance is reported as failure, not dropped. Do
 not run beside active authors; no such timed observation is authorized here.
 
@@ -142,14 +149,15 @@ baseline result and CTG fail-closed outcome; do not call the latter a pass.
 Native fixtures now carry the shared runtime identity record separately from
 the compatibility version: compatibility remains exactly `2.0.32`, while the
 runtime version is matched exactly against both `server.info.version` and the
-CTG health RPC. Owned-runtime selection must use the product resolver/identity
-API with the same options object, or the approved shared native-test identity
-loader where that API is not present in the selected source snapshot. Owned
-bytes require the trusted release record (`lib/opencode/runtime-release.json`
-or the explicit developer path `CTG_TEST_RUNTIME_RELEASE_MANIFEST`); an
-adjacent self-declared `ctg-runtime.json` is checked as provenance, never used
-as the trust source. `CTG_TEST_RUNTIME_SHA256` is only an explicit developer
-hash override. No owned final-runtime readiness result is claimed yet.
+CTG health RPC. The fixture first runs the product resolver/identity API with
+the same options object, then independently verifies the selected bytes and
+identity through the approved shared native-test loader against the trusted
+release record (`lib/opencode/runtime-release.json` or the explicit developer
+path `CTG_TEST_RUNTIME_RELEASE_MANIFEST`). For explicit staging roots, the
+loader verifies path/hash/provenance before the product resolver can execute
+the binary. The adjacent `ctg-runtime.json` is provenance only, never a trust
+source; `CTG_TEST_RUNTIME_SHA256` is passed to the verifier as an explicit
+developer hash input. No owned final-runtime readiness result is claimed yet.
 
 The runner stopped with aggregate status 1 as designed. A malformed timestamp
 format in the preliminary window-recording command occurred before the runner
