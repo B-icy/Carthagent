@@ -65,7 +65,7 @@ try {
   assert.ok(unroutable.error || unroutable.outcome === 'failed' || unroutable.session?.outcome === 'failed',
     `A failure without an assistant must expose a failed terminal outcome: ${JSON.stringify(unroutable)}`);
   assert.equal(await stopService(options), true);
-  console.log(JSON.stringify({ host: '2.0.32', serviceReuse: 'passed', repeatedTurns: 'passed', failure: 'passed', recovery: 'passed' }));
+  console.log(JSON.stringify({ host: '2.0.32', serviceReuse: 'passed', repeatedTurns: 'passed', finalAnswerAfterTool: 'passed', successMetadata: 'passed', failure: 'passed', recovery: 'passed' }));
 } finally {
   try { await stopService(options); }
   finally { await host.close(); }

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { nativeFixture } from './native-fixture.mjs';
 
 const host = await nativeFixture({ plugin: process.argv[2] });
-const stream = new AbortController();
+let stream = new AbortController();
 let watching;
 try {
   const { client, location, model, request } = host;
@@ -47,7 +47,36 @@ try {
     const event = await Promise.race([updated, timed]);
     assert.equal(typeof event.data.revision, 'string');
   } finally { clearTimeout(timer); }
-  console.log(JSON.stringify({ host: '2.0.32', entrypoint: 'passed', workspace: 'passed', archive: 'passed', controls: 'passed', eventInvalidation: 'passed' }));
+  // The native event stream is live-only. Drop the subscriber, perform a whole
+  // turn, then recover from authoritative state before watching future events.
+  stream.abort();
+  await watching;
+  await client.session.prompt({ sessionID: session.id, text: 'Completed while disconnected' }, request());
+  assert.equal(await host.outcome(session.id), 'succeeded');
+  stream = new AbortController();
+  const reconnected = new Promise(resolve => { connected = resolve; });
+  const refreshed = new Promise(resolve => { changed = resolve; });
+  watching = (async () => {
+    try {
+      for await (const event of client.event.subscribe({ signal: stream.signal })) {
+        if (event.type === 'server.connected') connected();
+        if (event.type === 'rpc.carthagent.workspace.updated' && event.location?.directory === host.cwd) changed(event);
+      }
+    } catch (error) { if (!stream.signal.aborted) throw error; }
+  })();
+  const reconnectTimeout = new Promise((_, reject) => { timer = setTimeout(() => reject(Error('Reconnected workspace events did not refresh')), 10_000); });
+  try {
+    await Promise.race([reconnected, reconnectTimeout]);
+    const recovered = await client.session.get({ sessionID: session.id }, request());
+    assert.equal(recovered.outcome, 'succeeded');
+    const context = await client.session.context({ sessionID: session.id }, request());
+    assert.ok(context.some(message => message.type === 'user' && message.text === 'Completed while disconnected'));
+    assert.deepEqual(await rpc('carthagent.workspace', 'open', { sessionID: session.id }), opened);
+    await client.session.prompt({ sessionID: session.id, text: 'Turn after reconnect' }, request());
+    assert.equal(await host.outcome(session.id), 'succeeded');
+    assert.equal(typeof (await Promise.race([refreshed, reconnectTimeout])).data.revision, 'string');
+  } finally { clearTimeout(timer); }
+  console.log(JSON.stringify({ host: '2.0.32', entrypoint: 'passed', workspace: 'passed', archive: 'passed', controls: 'passed', eventInvalidation: 'passed', reconnectSnapshot: 'passed', reconnectEvents: 'passed' }));
 } catch (error) {
   console.error(host.output);
   throw error;
