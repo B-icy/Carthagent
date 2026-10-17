@@ -154,6 +154,7 @@ try {
   const assistant = wrappedRun.result?.message;
   assert.equal(wrappedRun.outcome, 'succeeded');
   assert.equal(wrappedRun.terminal, true, 'native wrapper must return a projected terminal session outcome');
+  assert.equal(wrappedRun.budgetReason, undefined, 'a successful terminal turn must not carry a budget failure reason');
   assert.ok(assistant, 'headless prompt must produce an assistant response');
   assert.equal(assistant.finish, 'stop');
   assert.equal(assistant.content.filter((part) => part.type === 'text').map((part) => part.text).join(''), 'CTG_FIXTURE_OK');
@@ -163,6 +164,7 @@ try {
   const secondRun = await runHeadless(ensuredService, cwd, 'WRAPPER_SECOND', { sessionID: session.id, timeout: 90_000 });
   assert.equal(secondRun.outcome, 'succeeded');
   assert.equal(secondRun.result.text, 'SECOND_TURN', 'resumed wrapper calls must select the current turn output');
+  assert.equal(secondRun.budgetReason, undefined, 'a successful resumed turn must not carry a budget failure reason');
   let failedRun;
   try { failedRun = await runHeadless(ensuredService, cwd, 'WRAPPER_FAILURE', { sessionID: session.id, timeout: 90_000 }); }
   catch (error) { failedRun = { error }; }

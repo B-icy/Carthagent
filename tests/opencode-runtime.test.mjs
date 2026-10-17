@@ -245,7 +245,7 @@ test('headless runner passes workspace environment and returns assistant content
       calls.push({ pathname, init });
       if (pathname === '/api/session') return new Response('{"data":{"id":"ses_headless"}}');
       if (pathname.endsWith('/environment')) return new Response(null, { status: 204 });
-      if (pathname.endsWith('/prompt')) return new Response('{"data":{"id":"inbox_1"}}');
+      if (pathname.endsWith('/prompt')) return new Response('{"data":{"id":"user_headless"}}');
       if (pathname.endsWith('/wait')) return new Response(null, { status: 204 });
       if (/\/api\/session\/ses_headless$/.test(pathname)) return new Response('{"data":{"id":"ses_headless","outcome":"succeeded"}}');
       if (pathname.endsWith('/message')) return new Response(JSON.stringify({ data: [{ type: 'assistant', finish: 'stop', content: [{ type: 'text', text: 'fixture result' }] }] }));
@@ -263,6 +263,7 @@ test('headless runner passes workspace environment and returns assistant content
     assert.equal(JSON.parse(calls.find((call) => call.pathname.endsWith('/prompt')).init.body).text, 'say the fixture');
     assert.equal(result.outcome, 'succeeded');
     assert.equal(result.terminal, true);
+    assert.equal(result.budgetReason, undefined, 'a successful terminal session has no budget failure reason');
   } finally { globalThis.fetch = original; }
 });
 
@@ -273,19 +274,21 @@ test('headless result uses newest terminal assistant from chronological conversa
       const pathname = new URL(url).pathname;
       if (pathname === '/api/session') return new Response('{"data":{"id":"ses_resume"}}');
       if (pathname.endsWith('/environment') || pathname.endsWith('/wait')) return new Response(null, { status: 204 });
-      if (pathname.endsWith('/prompt')) return new Response('{"data":{"id":"inbox_new"}}');
+      if (pathname.endsWith('/prompt')) return new Response('{"data":{"id":"user-new"}}');
       if (pathname === '/api/session/ses_resume') return new Response('{"data":{"id":"ses_resume","outcome":"succeeded"}}');
       if (pathname.endsWith('/message')) return new Response(JSON.stringify({ data: [
-        { id: 'assistant-new', type: 'assistant', time: { created: 300 }, finish: 'stop', content: [{ type: 'text', text: 'new result' }] },
+        { id: 'assistant-final', type: 'assistant', time: { created: 300 }, finish: 'stop', content: [{ type: 'text', text: 'final answer' }] },
+        { id: 'assistant-tool', type: 'assistant', time: { created: 250 }, finish: 'tool-calls', content: [{ type: 'tool-call', text: '' }] },
         { id: 'user-new', type: 'user', time: { created: 200 }, content: [{ type: 'text', text: 'new prompt' }] },
         { id: 'assistant-old', type: 'assistant', time: { created: 100 }, finish: 'stop', content: [{ type: 'text', text: 'old result' }] },
       ] }));
       throw new Error(`Unexpected endpoint ${pathname}`);
     };
     const result = await runHeadless({ url: 'http://127.0.0.1:3333', headers: {} }, '/workspace', 'continue', { sessionID: 'ses_resume' });
-    assert.deepEqual(result.messages.map((item) => item.id), ['user-new', 'assistant-new']);
-    assert.equal(result.result.text, 'new result');
-    assert.equal(result.result.message.id, 'assistant-new');
+    assert.deepEqual(result.messages.map((item) => item.id), ['user-new', 'assistant-tool', 'assistant-final']);
+    assert.equal(result.result.text, 'final answer');
+    assert.equal(result.result.message.id, 'assistant-final', 'a preceding tool-call assistant must not replace the final response');
+    assert.equal(result.budgetReason, undefined, 'a terminal successful resumed turn has no budget failure reason');
   } finally { globalThis.fetch = original; }
 });
 
