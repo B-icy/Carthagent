@@ -48,6 +48,9 @@ export async function setupNativeTestPlugin(context: Parameters<typeof registerS
       echo: async input => ({ text: (input as { text: string }).text }),
       authStart: async () => { throw new Error('Device authorization is not available in the isolated delivery test plugin.'); },
       authCancel: async () => ({ cancelled: false }),
+      shipAccount: async () => { throw new Error('Ship account access is not available in the isolated delivery test plugin.'); },
+      shipBilling: async () => { throw new Error('Ship billing is not available in the isolated delivery test plugin.'); },
+      shipLogout: async () => { throw new Error('Ship credential changes are not available in the isolated delivery test plugin.'); },
     });
     cleanups.push(async () => registration.dispose());
     const diagnostics = await context.rpc.register(TestDiagnostics, {
