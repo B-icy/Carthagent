@@ -38,7 +38,8 @@ try {
   assert.equal(manifest.dependencies['@opentui/core'], '0.5.17');
   assert.equal(manifest.dependencies['@opentui/solid'], '0.5.17');
   assert.equal(manifest.dependencies['solid-js'], '1.9.12');
-  assert.equal(manifest.dependencies['web-tree-sitter'], '^0.22.6');
+  assert.equal(manifest.dependencies['web-tree-sitter'], '0.25.10');
+  assert.equal(manifest.dependencies['web-tree-sitter-legacy'], 'npm:web-tree-sitter@0.22.6');
   const sharedRuntime = ['@opentui/core', '@opentui/solid', 'solid-js'];
   for (const name of sharedRuntime) {
     const hostResolution = createRequire(join(install, 'node_modules/@opencode/cli/package.json')).resolve(name);
@@ -58,7 +59,8 @@ try {
     throw new Error(`Could not locate ${name} package manifest from ${entry}`);
   };
   assert.equal(await packageVersion(join(install, 'node_modules/@opentui/core/package.json'), 'web-tree-sitter'), '0.25.10');
-  assert.equal(await packageVersion(join(installed, 'package.json'), 'web-tree-sitter'), '0.22.6');
+  assert.equal(await packageVersion(join(installed, 'package.json'), 'web-tree-sitter'), '0.25.10');
+  assert.equal(JSON.parse(await readFile(join(install, 'node_modules/web-tree-sitter-legacy/package.json'), 'utf8')).version, '0.22.6');
   const binary = join(install, 'node_modules/@opencode/cli/bin/opencode.exe');
   assert.ok((await stat(binary)).size > 100_000_000, 'native host binary must be materialized by postinstall');
   const version = run(binary, ['--version'], { cwd: install }).trim();

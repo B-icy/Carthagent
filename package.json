@@ -88,7 +88,8 @@
     "jsdom": "^30.0.1",
     "solid-js": "1.9.12",
     "tree-sitter-wasms": "^0.1.13",
-    "web-tree-sitter": "^0.22.6"
+    "web-tree-sitter": "0.25.10",
+    "web-tree-sitter-legacy": "npm:web-tree-sitter@0.22.6"
   },
   "overrides": {
     "seroval": "1.6.9"
