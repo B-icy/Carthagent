@@ -46,16 +46,21 @@ npm install -g --install-links=true github:B-icy/Carthagent#vX.Y.Z
 ```
 
 Replace the placeholder only with the real published release tag. No version
-or tag is chosen in this draft. This command is not fresh-install acceptance:
-the current preview's runtime resolver does not yet handle the hoisted OpenCode
-package layout in a fresh npm install, and native installed-package acceptance
-remains open in the [migration ledger](opencode-migration.md#delivery-ledger).
-The current preview should be exercised from a dependency-installed source
-checkout. Its native updater accepts npm-installed packages only and refuses to
-checkout into any active source clone, clean or dirty. For development clones,
-preserve local edits and use the non-forced exact-tag manual procedure in the
-[upgrade guide](native-upgrade.md#release-installation-and-update). `ctg update`
-updates the Carthagent package using its validated release resolver; it does not
-upgrade a user's regular OpenCode installation, and it does not change the
-native opt-in default. The currently-default legacy CLI's clean-clone update
-behavior is distinct from this native updater.
+or tag is chosen in this draft. The composed preview resolves the upstream
+`@opencode/cli@2.0.32` dependency through Node's package resolver, including
+npm-hoisted layouts. This is not final owned-runtime acquisition or fresh
+installed-product acceptance: the preview dependency reports upstream-compatible
+version `2.0.32`, distinct from CTG's owned runtime identity
+`0.0.0-ctg.2.0.32`. Platform artifacts, final manifest/acquisition, performance,
+and full installed acceptance remain open in the
+[migration ledger](opencode-migration.md#delivery-ledger).
+The shared native update operation supports npm-installed packages and clean
+source clones: for a clone it fetches the selected origin tag into a private ref
+before checking out its resolved commit, and refuses dirty clones. Do not infer
+that every native command surface is wired to this operation. `ctg update`
+updates Carthagent, not a user's regular OpenCode installation, and does not
+change the native opt-in default. See the
+[upgrade guide](native-upgrade.md#release-installation-and-update) for the
+current command-path distinction. Native migration acceptance remains open; do
+not infer completion of unrelated CLI, UI, or transport follow-ups not yet
+composed here.

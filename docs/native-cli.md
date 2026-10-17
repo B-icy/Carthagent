@@ -43,13 +43,15 @@ framing; on a resumed session, explicitly supplied options override persisted
 settings for that session only, while unspecified settings are preserved. `demo`
 runs a separately labeled offline Node fixture in a disposable temporary workspace;
 it makes no provider calls, edits no project files, and does not claim evidence for
-the user's project. Update
-checks use the shared release resolver; npm installs use its validated,
-release-pinned package spec, while source clones fail closed rather than
-checking out files in place. Both the shared resolver and the final installer
-require the exact canonical `v<version>` release tag (including prerelease
-identifiers); `--force` cannot bypass tag/version validation. `quit`/`q`/`exit` report that no interactive
-session is active when invoked as standalone commands.
+the user's project. The shared update operation in `lib/opencode/update.mjs`
+supports npm installs
+and clean source clones; clone updates fetch the selected origin tag into a
+private ref and check out its resolved commit, while dirty clones are refused.
+The native CLI's current `update` command path is separate and refuses to
+checkout into its active source tree; it installs the validated, release-pinned
+package spec for npm installs. Release tag/version validation is required;
+`--force` cannot bypass it. `quit`/`q`/`exit` report that no interactive session
+is active when invoked as standalone commands.
 
 `--json` translates real native session tool lifecycle and completed assistant
 messages into the documented `tool_execution_start`, `tool_execution_end`, and
