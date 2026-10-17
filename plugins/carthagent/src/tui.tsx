@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 import { framePrompt } from "../../../lib/tui/framing.mjs";
 import { carthagentConfigPath, loadCarthagentConfig, resolveReviewMode, saveCarthagentConfig } from "../../../lib/review.mjs";
 import { COMMANDS, NATIVE_COMMAND_COLLISIONS } from "./ui/commands.js";
-import { Workspace, rpcEventOptions, sessionControls, workspaceClient } from "./ui/client.js";
+import { Workspace, rpcEventOptions, sessionControls, workspaceClient, shipClient, archiveClient, cloudAccountText, archiveItemText } from "./ui/client.js";
 import { cliConfigDirectory, cliConfigPath, readCliConfig, writeNativeTheme } from "./ui/host-state.js";
 import { WorkspacePage } from "./ui/workspace.js";
 import { provisionNativeThemes } from "./ui/theme-provision.mjs";
@@ -41,7 +41,7 @@ export default Plugin.define({
           description: item.description,
           group: "Carthagent",
           palette: true as const,
-          slash: { name: item.name, ...(item.aliases ? { aliases: item.aliases } : {}), ...(item.args ? { arguments: true as const } : {}) },
+          slash: { name: item.name, ...(item.aliases ? { aliases: item.aliases } : {}), ...(item.args || item.submitSlash ? { arguments: true as const } : {}) },
           run: (input?: string) => {
             const report = (error: unknown) => context.ui.toast.show({ message: error instanceof Error ? error.message : String(error), variant: "error" });
             if (item.id === "restart" || item.id === "abort") {
@@ -232,6 +232,83 @@ export default Plugin.define({
           const hasCost = hasMessageCost || Number.isFinite(cachedCost) && cachedCost > 0;
           const hasTokens = assistants.some((message) => message.tokens !== undefined);
           await context.ui.dialog.alert({ title: "Session stats", message: `${session?.title ?? sessionID}\nMessages: ${messages.length} (${assistants.length} assistant)\nInput tokens: ${hasTokens ? totals.input : "not reported"}\nOutput tokens: ${hasTokens ? totals.output : "not reported"}\nReasoning tokens: ${hasTokens ? totals.reasoning : "not reported"}\nCache read/write: ${hasTokens ? `${totals.cacheRead} / ${totals.cacheWrite}` : "not reported"}\nCost: ${hasCost ? `$${totals.cost.toFixed(4)}` : "not reported"}` });
+          return;
+        }
+        case "account": {
+          const result = await shipClient(context, location).account() as { account: Record<string, unknown> };
+          await context.ui.dialog.alert({ title: "Carthagent Ship account", message: cloudAccountText(result.account) });
+          return;
+        }
+        case "billing": {
+          const action = arg.toLowerCase() || "checkout";
+          if (!["checkout", "portal"].includes(action)) { toast("Usage: /billing [checkout|portal].", "warning"); return; }
+          const { url } = await shipClient(context, location).billing({ action: action as "checkout" | "portal" }) as { url: string };
+          const { openBrowser } = await import("../../../lib/cloud/client.mjs");
+          const opened = await openBrowser(url).catch(() => false);
+          await context.ui.dialog.alert({ title: action === "portal" ? "Ship billing portal" : "Ship checkout", message: `${opened ? "Opened in your browser." : "Open this URL in your browser:"}\n${url}` });
+          return;
+        }
+        case "logout-cloud": {
+          const session = arg || undefined;
+          const confirmed = await context.ui.dialog.confirm({ title: session ? "Revoke Ship session" : "Sign out of Carthagent Ship", message: session ? `Revoke Ship session ${session}?` : "Revoke the active Ship session and remove its OpenCode connection?" });
+          if (confirmed !== true) return;
+          await shipClient(context, location).logout(session ? { session } : {});
+          toast(session ? `Revoked Ship session ${session}.` : "Revoked and removed the active Carthagent Ship connection.", "success");
+          return;
+        }
+        case "archive": {
+          const [operation, ...rest] = arg.split(/\s+/).filter(Boolean);
+          const archive = archiveClient(context, location);
+          if (operation === "search") {
+            const query = rest.join(" ");
+            if (!query) { toast("Usage: /archive search <query>.", "warning"); return; }
+            const result = await archive.search({ query, limit: 50 }) as { total: number; items: Array<Record<string, unknown>> };
+            await context.ui.dialog.alert({ title: `Archive search · ${result.total} results`, message: result.items.map(archiveItemText).join("\n\n") || "No archived sessions matched." });
+            return;
+          }
+          if (operation === "read" || operation === "export") {
+            const id = rest[0];
+            if (!id) { toast(`Usage: /archive ${operation} <id>.`, "warning"); return; }
+            if (operation === "read") {
+              const result = await archive.read({ id }) as { records: unknown[] };
+              const content = result.records.map((record: unknown) => JSON.stringify(record)).join("\n");
+              await context.ui.dialog.alert({ title: `Archived session ${id}`, message: content.slice(0, 30000) || "Archive is empty." });
+            } else {
+              const result = await archive.export({ id, format: "jsonl" }) as { content: string };
+              const path = resolve(location.directory, `${id.replace(/[^a-zA-Z0-9._-]/g, "_")}.jsonl`);
+              await writeFile(path, result.content, { encoding: "utf8", flag: "wx" });
+              toast(`Archive exported to ${context.ui.format.path(path)}.`, "success");
+            }
+            return;
+          }
+          const result = await archive.list({ limit: 50 }) as { total: number; items: Array<Record<string, unknown>> };
+          await context.ui.dialog.alert({ title: `Archived sessions · ${result.total}`, message: result.items.map(archiveItemText).join("\n\n") || "No archived sessions found." });
+          return;
+        }
+        case "demo": {
+          const stages = [
+            { title: "1 · Task", detail: 'Add a JSON health endpoint. Acceptance: GET /health returns HTTP 200 and {"status":"ok"}.' },
+            { title: "2 · Plan", detail: "Implement the route, add a contract test, then run the focused unit check. No files are changed in demo mode." },
+            { title: "3 · Evidence", detail: 'Observed fixture: GET /health → 200; body → {"status":"ok"}. Check fixture: node --test tests/health.test.mjs → passed.' },
+            { title: "4 · Review and finish", detail: "Acceptance is covered by the fixture check. Finish status: verified within this scripted demo only; this is not evidence about the current workspace." },
+          ];
+          for (const stage of stages) {
+            await context.ui.dialog.alert({ title: `Carthagent provider-free demo · ${stage.title}`, message: stage.detail });
+            const next = await context.ui.dialog.confirm({ title: "Continue demo?", message: "Advance to the next scripted stage? No provider requests or workspace writes are performed." });
+            if (next !== true) break;
+          }
+          return;
+        }
+        case "update": {
+          const option = arg.toLowerCase();
+          if (option && option !== "check") { toast("Usage: /update [check].", "warning"); return; }
+          if (option !== "check") { toast("Usage: /update check. Release installation is CLI-only; run `ctg update` from a terminal after reviewing the release.", "info"); return; }
+          const { fetchLatestRelease, compareVersions, packageVersion } = await import("../../../lib/update.mjs");
+          const { release, source } = await fetchLatestRelease();
+          const installed = packageVersion() ?? "unknown";
+          const comparison = compareVersions(installed, release.version);
+          const message = comparison < 0 ? `Carthagent ${release.version} is available (installed: ${installed}). Source: ${source}. Review the release, then run \`ctg update\` in a terminal to install it.` : comparison > 0 ? `Installed version ${installed} is ahead of release ${release.version} (${source}).` : `Carthagent ${installed} is up to date (${source}).`;
+          await context.ui.dialog.alert({ title: "Carthagent update check", message });
           return;
         }
         case "clear":

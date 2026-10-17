@@ -3,8 +3,11 @@ import type { LocationRef } from "@opencode/client";
 import { Workspace, type WorkspaceDelivery, type WorkspaceSnapshot } from "../workspace-rpc.js";
 import { SessionControls } from "../session-rpc.js";
 import { PullRequests, type PullRequestRecord } from "../pull-request-rpc.js";
+import { Archive } from "../archive-rpc.js";
+import { Carthagent } from "../rpc.js";
+import { formatCloudAccount } from "../../../../lib/cloud/client.mjs";
 
-export { Workspace, SessionControls, PullRequests };
+export { Workspace, SessionControls, PullRequests, Archive };
 export type { WorkspaceDelivery, WorkspaceSnapshot, PullRequestRecord };
 
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -50,6 +53,33 @@ export function pullRequestClient(context: RpcContext, selectedLocation?: Select
     associate: (input: { sessionID: string; taskID: string; number: number }, signal?: AbortSignal) => rpc.associate(input, requestOptions(context, selectedLocation, signal)) as Promise<{ pullRequest: PullRequestRecord }>,
     refresh: (input: { sessionID: string; taskID: string; number?: number }, signal?: AbortSignal) => rpc.refresh(input, requestOptions(context, selectedLocation, signal)) as Promise<{ pullRequest: PullRequestRecord }>,
   };
+}
+
+export function shipClient(context: RpcContext, selectedLocation?: SelectedLocation) {
+  const rpc = context.client.rpc(Carthagent);
+  return {
+    account: (signal?: AbortSignal) => rpc.shipAccount({}, requestOptions(context, selectedLocation, signal)),
+    billing: (input: { action: "checkout" | "portal" }, signal?: AbortSignal) => rpc.shipBilling(input, requestOptions(context, selectedLocation, signal)),
+    logout: (input: { session?: string } = {}, signal?: AbortSignal) => rpc.shipLogout(input, requestOptions(context, selectedLocation, signal)),
+  };
+}
+
+export function archiveClient(context: RpcContext, selectedLocation?: SelectedLocation) {
+  const rpc = context.client.rpc(Archive);
+  return {
+    list: (input: { offset?: number; limit?: number } = {}, signal?: AbortSignal) => rpc.list(input, requestOptions(context, selectedLocation, signal)),
+    search: (input: { query: string; offset?: number; limit?: number }, signal?: AbortSignal) => rpc.search(input, requestOptions(context, selectedLocation, signal)),
+    read: (input: { id: string }, signal?: AbortSignal) => rpc.read(input, requestOptions(context, selectedLocation, signal)),
+    export: (input: { id: string; format?: "json" | "jsonl" }, signal?: AbortSignal) => rpc.export(input, requestOptions(context, selectedLocation, signal)),
+  };
+}
+
+export function cloudAccountText(account: Record<string, unknown>) {
+  return formatCloudAccount(account);
+}
+
+export function archiveItemText(item: Record<string, unknown>) {
+  return `${String(item.id)} · ${String(item.messageCount)} messages${item.createdAt ? ` · ${String(item.createdAt)}` : ""}${item.excerpt ? `\n${String(item.excerpt)}` : ""}`;
 }
 
 export function rpcEventOptions(_context: RpcContext, signal?: AbortSignal): { signal?: AbortSignal } {
