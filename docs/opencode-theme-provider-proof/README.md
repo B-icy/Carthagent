@@ -40,5 +40,6 @@ Run against the exact upstream base plus the two approved patch files, with Bun
 
 The test-only source patch is `plugin-theme-provider.patch`.
 
-The test typecheck is being checked in the isolated upstream worktree; its
-result will be recorded before this PR is considered complete.
+The TUI package typecheck command was started in the isolated worktree, but the
+worktree's Git common directory was removed by the environment restart. The
+test itself was rerun after a fresh frozen-lockfile install and passed.
