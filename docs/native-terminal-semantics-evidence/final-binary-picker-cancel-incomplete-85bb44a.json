@@ -1,0 +1,62 @@
+{
+  "startedAtUtc": "2026-10-17T18:52:04.371097+00:00",
+  "case": "picker-regression",
+  "binary": "/tmp/opencode/ctg-final-runtime-build/resume-build/packages/cli/dist-ctg/cli-linux-x64/bin/opencode",
+  "binaryResolvedPath": "/tmp/opencode/ctg-final-runtime-build/resume-build/packages/cli/dist-ctg/cli-linux-x64/bin/opencode",
+  "binarySha256": "85bb44a65e8c185f4f33d41507d29acc77f2db0cdcb0103a14476021c8e43794",
+  "buildHash": "85bb44a65e8c185f4f33d41507d29acc77f2db0cdcb0103a14476021c8e43794",
+  "binaryVersion": "opencode v0.0.0-ctg.2.0.32",
+  "probeSha256": "f35acbcd8e506a32c0ee5240b3cd53be34fe551c7166e3327017c69ab2a57809",
+  "pluginSha256": "f162e6184bcb7980c7ec61e3c5c675563351aa814127cbb0a7fa1b6f79f116e6",
+  "sourceCommit": "1a79b489ba9f287efc03cf2c580ade546d0c9140",
+  "workingTreeDirty": true,
+  "sourceStatus": "M tools/native-terminal-semantics.py",
+  "sourceTreeSha256": "117be09476e05d5b2714a2d2cdbe299074b95c272d76b045246ee1bde67259ee",
+  "sourceDiffDirty": true,
+  "provider": "loopback offline fixture",
+  "terminal": {
+    "initialRows": 32,
+    "initialColumns": 100,
+    "resizeRows": null,
+    "resizeColumns": null,
+    "TERM": "xterm-256color"
+  },
+  "controlledHostClipboardModel": true,
+  "physicalOSClipboardVerified": false,
+  "checks": {
+    "pickerEscapeCancel": {
+      "status": "UNVERIFIED",
+      "reason": "picker case did not complete observable Escape dismissal"
+    },
+    "promptSubmission": {
+      "status": "FAIL",
+      "providerRequests": 0,
+      "noPromptSentDuringPickerAcceptance": true
+    },
+    "narrowLayout": {
+      "status": "NOT_RUN",
+      "reason": "picker-only case does not resize terminal"
+    },
+    "focusedPromptTransport": {
+      "status": "NOT_RUN",
+      "reason": "picker-only case intentionally submits no prompt"
+    },
+    "terminalTitleRestoration": {
+      "status": "NOT_RUN",
+      "reason": "picker-only case exits without title acceptance"
+    },
+    "selectionClipboard": {
+      "status": "NOT_RUN",
+      "reason": "picker-only case does not exercise selection"
+    },
+    "clipboardOSC52": {
+      "status": "NOT_RUN",
+      "reason": "picker-only case does not exercise /copy"
+    }
+  },
+  "status": "INCOMPLETE",
+  "incompleteChecks": [
+    "pickerEscapeCancel",
+    "promptSubmission"
+  ]
+}

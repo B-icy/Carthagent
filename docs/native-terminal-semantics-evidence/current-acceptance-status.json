@@ -1,14 +1,16 @@
 {
-  "status": "INCOMPLETE",
+  "status": "BOUNDED_MULTI_RUN_PASS_PHYSICAL_CLIPBOARD_UNVERIFIED",
   "generatedAtUtc": "2026-10-17",
-  "sourceCommit": "608ea09855edafbe97bad47a799b9f4bc3cdf51d",
+  "sourceCommit": "1a79b489ba9f287efc03cf2c580ade546d0c9140",
   "workingTreeDirtyAtEvidenceCapture": true,
-  "harnessSourceSha256AtEvidenceCapture": "91b432ae3447d2997e4a659ea1f873bdce97d8f37a90437a1bcf3315b917d95e",
+  "harnessSourceSha256AtEvidenceCapture": "f35acbcd8e506a32c0ee5240b3cd53be34fe551c7166e3327017c69ab2a57809",
   "finalAuthorBinary": {
-    "path": null,
-    "version": null,
-    "sha256": null,
-    "status": "NOT_PROVIDED_YET"
+    "path": "/tmp/opencode/ctg-final-runtime-build/resume-build/packages/cli/dist-ctg/cli-linux-x64/bin/opencode",
+    "version": "opencode v0.0.0-ctg.2.0.32",
+    "packageManifest": "/tmp/opencode/ctg-final-runtime-build/resume-build/packages/cli/dist-ctg/cli-linux-x64/package.json",
+    "packageVersion": "0.0.0-ctg.2.0.32",
+    "sha256": "85bb44a65e8c185f4f33d41507d29acc77f2db0cdcb0103a14476021c8e43794",
+    "status": "IDENTIFIED_AND_TESTED"
   },
   "checks": {
     "controlledHostModelSelfTest": {
@@ -17,26 +19,31 @@
     },
     "pickerEscapeCancel": {
       "status": "PASS",
-      "evidence": "picker-previous-probe-pass.json",
-      "note": "Previously recorded native picker pass retained; no rerun performed."
+      "evidence": "final-binary-full-incomplete-85bb44a.json",
+      "note": "Exact supplied binary: Ctrl+O recent-sessions menu observed, Escape dismissed it, home composer restored, and zero provider requests occurred before prompt acceptance."
     },
     "narrowLayout": {
-      "status": "UNVERIFIED",
-      "note": "Previous 40x12 observation used a binary that predates the final title patch; rerun on the exact final binary is pending."
+      "status": "PASS",
+      "evidence": ["final-binary-full-incomplete-85bb44a.json", "final-binary-layout-85bb44a.json"],
+      "note": "Exact supplied binary rendered fixture response and composer in the actual 40x12 PTY; host remained alive, picker absent, and modeled rows fit width."
     },
     "selectionClipboard": {
-      "status": "UNVERIFIED",
-      "note": "Native exact-selection result on the final author binary is pending. Physical OS clipboard is not verified."
+      "status": "PASS_CONTROLLED_HOST_MODEL",
+      "evidence": "final-binary-focused-85bb44a.json",
+      "note": "Focused run sent a real SGR drag over exactly SNIP and the modeled host accepted and queried exactly SNIP. Full-run selection was unstable and incomplete. Physical OS clipboard is not verified."
     },
     "clipboardOSC52": {
-      "status": "UNVERIFIED",
-      "note": "Distinct latest /copy payload and readback on the final author binary are pending. Physical OS clipboard is not verified."
+      "status": "PASS_CONTROLLED_HOST_MODEL",
+      "evidence": "final-binary-focused-85bb44a.json",
+      "note": "Distinct /copy action emitted exactly FINAL[SNIP]END and the modeled OSC 52 host query returned the same value. This is not physical OS clipboard verification."
     },
     "terminalTitleRestoration": {
-      "status": "UNVERIFIED",
-      "note": "Prior title pass used a pre-final author binary and is explicitly superseded. Require ordered save/restore, seeded final modeled title, drained PTY EOF, and normal exit code 0 on the exact final binary."
+      "status": "PASS_CONTROLLED_HOST_MODEL",
+      "evidence": ["final-binary-focused-85bb44a.json", "final-binary-full-incomplete-85bb44a.json"],
+      "note": "Exact supplied binary: ordered 22;0 save / 23;0 restore, seeded modeled title restored, PTY drained to EOF, normal exit code 0, no forced termination."
     }
   },
   "physicalOSClipboardVerified": false,
-  "paidProviderTraffic": false
+  "paidProviderTraffic": false,
+  "runCaveat": "Results are bounded across separate runs. Full run had an incomplete native selection gesture; focused run established the selection clipboard model round trip. Standalone picker-only run did not recognize the menu, while corrected full run did. No physical clipboard claim is made."
 }
