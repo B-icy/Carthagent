@@ -120,6 +120,67 @@ test('a valid legacy primary id seeds future repairs without identity churn', t 
   assert.equal(shipInstallId({ agentDir }), legacyId);
 });
 
+test('a valid legacy primary remains canonical when an existing seed is malformed', t => {
+  const agentDir = tmp(t);
+  const legacyId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  writeFileSync(installIdPath(agentDir), `${legacyId}\n`);
+  writeFileSync(`${installIdPath(agentDir)}.seed`, 'not-a-uuid\n');
+  assert.equal(shipInstallId({ agentDir }), legacyId);
+  assert.equal(readFileSync(`${installIdPath(agentDir)}.seed`, 'utf8').trim(), legacyId);
+  rmSync(installIdPath(agentDir));
+  assert.equal(shipInstallId({ agentDir }), legacyId);
+  assert.equal(readFileSync(installIdPath(agentDir), 'utf8').trim(), legacyId);
+});
+
+test('concurrent malformed-seed repair preserves a valid legacy primary', async t => {
+  const agentDir = tmp(t);
+  const legacyId = 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff';
+  writeFileSync(installIdPath(agentDir), `${legacyId}\n`);
+  writeFileSync(`${installIdPath(agentDir)}.seed`, 'corrupt-seed');
+  const repaired = await (async () => {
+    const lib = new URL('../lib/ship-telemetry.mjs', import.meta.url).href;
+    const gate = join(agentDir, 'legacy-seed.start');
+    const children = Array.from({ length: 6 }, (_, index) => {
+      const ready = join(agentDir, `legacy-seed.${index}.ready`);
+      const code = `import { existsSync, writeFileSync } from 'node:fs';
+        import { shipInstallId } from '${lib}';
+        const ready = ${JSON.stringify(ready)};
+        writeFileSync(ready, 'ready');
+        const gate = ${JSON.stringify(gate)};
+        while (!existsSync(gate)) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+        console.log(shipInstallId({ agentDir: ${JSON.stringify(agentDir)} }));`;
+      const child = spawn(process.execPath, ['--input-type=module', '-e', code], { stdio: ['ignore', 'pipe', 'pipe'] });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.setEncoding('utf8').on('data', chunk => { stdout += chunk; });
+      child.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk; });
+      const result = new Promise((resolve, reject) => child.once('error', reject).once('close', code => {
+        if (code !== 0) reject(new Error(`install-id worker exited ${code}: ${stderr}`));
+        else resolve(stdout.trim());
+      }));
+      return { child, ready, result };
+    });
+    try {
+      const deadline = Date.now() + 10_000;
+      while (!children.every(worker => existsSync(worker.ready))) {
+        assert.ok(Date.now() < deadline, 'all worker processes should reach the start barrier');
+        await new Promise(resolve => setTimeout(resolve, 5));
+      }
+      writeFileSync(gate, 'go');
+      return await Promise.all(children.map(worker => worker.result));
+    } finally {
+      for (const worker of children) {
+        if (worker.child.exitCode === null && worker.child.signalCode === null) worker.child.kill('SIGKILL');
+      }
+      await Promise.allSettled(children.map(worker => worker.result));
+    }
+  })();
+  assert.deepEqual(new Set(repaired), new Set([legacyId]));
+  assert.equal(readFileSync(`${installIdPath(agentDir)}.seed`, 'utf8').trim(), legacyId);
+  rmSync(installIdPath(agentDir));
+  assert.equal(shipInstallId({ agentDir }), legacyId);
+});
+
 test('provider mode reflects ship, byok, both, or no credentials', t => {
   const agentDir = tmp(t);
   assert.equal(providerMode({ agentDir, env: {} }), 'none');
