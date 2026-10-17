@@ -33,14 +33,19 @@ Headless success requires both the assistant's completed `finish: stop` message
 and a terminal `idle` message with `outcome: succeeded`; text output alone is not
 success. Native thinking levels are passed as model variants. The adapter rejects
 `--max-tools`, `--max-seconds`, and `--max-repairs` until the active native
-delivery plugin enforces session budgets. It also rejects `--no-delivery`,
-`--no-strict`, `--bash-cap`, and `--isolate` until their native policy/plugin
-paths enforce them; parsed support is not runtime compatibility. Demo mode
-remains an integration gap: `demo` fails explicitly because its scripted
-agent-RPC mock has not been ported and does not launch the legacy engine. Update
+delivery plugin enforces session budgets. `--no-delivery`, `--no-strict`,
+`--bash-cap`, and `--isolate` remain fail-closed because the active plugin has no
+matching enforcement contract. `--no-guide` is stored in durable
+`carthagent.options` session metadata and honored by native prompt framing; on a
+resumed session, explicitly supplied options merge with existing session settings. `demo`
+runs a separately labeled offline Node fixture in a disposable temporary workspace;
+it makes no provider calls, edits no project files, and does not claim evidence for
+the user's project. Update
 checks use the shared release resolver; npm installs use its validated,
 release-pinned package spec, while source clones fail closed rather than
-checking out files in place. `quit`/`q`/`exit` report that no interactive
+checking out files in place. Both the shared resolver and the final installer
+require the exact canonical `v<version>` release tag (including prerelease
+identifiers); `--force` cannot bypass tag/version validation. `quit`/`q`/`exit` report that no interactive
 session is active when invoked as standalone commands.
 
 `--json` translates real native session tool lifecycle and completed assistant
