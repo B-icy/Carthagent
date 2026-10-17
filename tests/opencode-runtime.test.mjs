@@ -5,8 +5,8 @@ import path from 'node:path';
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { nativeCommandConfig } from '../lib/opencode/compatibility.mjs';
-import { provisionRuntime, resolveOpenCode, runtimeEnvironment, runtimePaths, workspaceEnvironment } from '../lib/opencode/runtime.mjs';
-import { createSession, ensureService, launchTui, promptSession, serviceRequest, setSessionEnvironment, stopService } from '../lib/opencode/service.mjs';
+import { provisionRuntime, resolveOpenCode, runtimeEnvironment, runtimePaths, withFileLock, workspaceEnvironment } from '../lib/opencode/runtime.mjs';
+import { cancelSession, createSession, ensureService, launchTui, promptSession, serviceRequest, sessionMessages, setSessionEnvironment, stopService } from '../lib/opencode/service.mjs';
 import { runHeadless } from '../lib/opencode/headless.mjs';
 
 test('CTG runtime paths and env are isolated from host OpenCode roots', () => {
@@ -84,6 +84,28 @@ test('stale-lock recovery is serialized across independent processes', async () 
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test('persistent stale recovery marker fails closed at the lock deadline with manual recovery guidance', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-stale-recovery-stuck-'));
+  const lock = path.join(root, 'lifecycle.lock');
+  try {
+    await writeFile(lock, JSON.stringify({ pid: 2_000_000_000, token: 'dead-owner', startedAt: 0 }));
+    await writeFile(`${lock}.recovery`, JSON.stringify({ pid: 2_000_000_000, token: 'abandoned-recovery' }));
+    const startedAt = Date.now();
+    await assert.rejects(withFileLock(lock, async () => assert.fail('must not acquire lock'), {
+      timeout: 75,
+      pollInterval: 250,
+      staleLockAge: 0,
+    }), (error) => {
+      assert.match(error.message, /Timed out waiting for CTG runtime lock/);
+      assert.match(error.message, /inspect and remove the stale lock\/recovery files/);
+      assert.match(error.message, new RegExp(`${lock.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}\\.recovery`));
+      return true;
+    });
+    assert.ok(Date.now() - startedAt < 400, 'recovery-marker retries must observe the bounded deadline');
+    assert.equal((await readFile(`${lock}.recovery`, 'utf8')).includes('abandoned-recovery'), true, 'stale marker remains for deliberate manual recovery');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test('profile provisioning creates private isolated profile and absolute plugin reference', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-runtime-'));
   try {
@@ -146,6 +168,14 @@ test('session API helpers use the v2 envelope, prompt payload, and endpoint cont
     assert.equal(JSON.parse(calls[2].init.body).variables.API_KEY, 'fixture');
     assert.equal(JSON.parse(calls[2].init.body).variables.CTG_WORKSPACE, '/workspace');
     assert.equal(new URL(calls[0].url).searchParams.get('location[directory]'), '/work');
+    await sessionMessages(service, 'ses_example', { location: { directory: '/workspace' } });
+    assert.equal(new URL(calls[3].url).searchParams.get('location[directory]'), '/workspace');
+    await cancelSession(service, 'ses_example', { location: { directory: '/workspace' }, timeout: 100 });
+    const interrupt = new URL(calls[4].url);
+    assert.equal(interrupt.pathname, '/api/session/ses_example/interrupt');
+    assert.equal(interrupt.searchParams.get('location[directory]'), '/workspace');
+    assert.equal(interrupt.searchParams.get('resume'), 'false');
+    assert.ok(calls[4].init.signal instanceof AbortSignal, 'interrupt requests have a bounded abort signal');
   } finally { globalThis.fetch = original; }
 });
 

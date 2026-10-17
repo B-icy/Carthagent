@@ -10,6 +10,8 @@ import { once } from 'node:events';
 import { randomBytes } from 'node:crypto';
 import { OpenCode } from '@opencode/client';
 import { resolveOpenCode } from '../lib/opencode/runtime.mjs';
+import { cancelSession } from '../lib/opencode/service.mjs';
+import { runHeadless } from '../lib/opencode/headless.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const plugin = resolve(process.argv[2] ?? join(root, 'plugins/carthagent'));
@@ -150,14 +152,21 @@ try {
     rpcID: 'carthagent', method: 'echo', input: { text: 'native RPC fixture' }, location: { directory: cwd },
   }, request);
   assert.deepEqual(echo.output, { text: 'native RPC fixture' });
-  await client.session.prompt({ sessionID: session.id, text: 'Reply with the fixture response.' }, request);
-  await client.session.wait({ sessionID: session.id }, request);
-  const messages = await client.message.list({ sessionID: session.id }, request);
-  const assistant = [...messages.data].reverse().find((entry) => entry.type === 'assistant');
+  const ensuredService = {
+    url: endpoint,
+    headers: { authorization: `Basic ${Buffer.from(`opencode:${password}`).toString('base64')}` },
+    info: { password },
+  };
+  const wrappedRun = await runHeadless(ensuredService, cwd, 'Reply with the fixture response.', { sessionID: session.id, timeout: 90_000 });
+  const assistant = wrappedRun.result?.message;
   assert.ok(assistant, 'headless prompt must produce an assistant response');
   assert.equal(assistant.finish, 'stop');
   assert.equal(assistant.content.filter((part) => part.type === 'text').map((part) => part.text).join(''), 'CTG_FIXTURE_OK');
+  assert.equal(wrappedRun.accepted.type, 'user');
+  assert.ok(wrappedRun.messages.length >= 2);
   assert.ok(fixtureRequests > 0, 'assistant prompt must reach the local fixture endpoint');
+  const idleInterrupt = await cancelSession(ensuredService, session.id, { location: { directory: cwd }, timeout: 5000 });
+  assert.equal(idleInterrupt.interrupted, false, 'wrapper cancellation should use the v2 bounded interrupt API and report idle state');
   const requestsBeforeAttach = fixtureRequests;
   const attachedRun = await new Promise((resolveRun, reject) => {
     const attached = spawn(binary, [
