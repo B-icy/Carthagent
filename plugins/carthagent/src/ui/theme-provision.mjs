@@ -120,5 +120,15 @@ export async function provisionNativeThemes(profileConfigDir, names = Object.key
 
 /** Launcher hook: install Carthagent's default theme before OpenCode scans themes. */
 export async function provisionDefaultNativeTheme(profileConfigDir) {
-  return provisionNativeThemes(profileConfigDir, ["carthage"]);
+  const compatibilityNames = Object.keys(THEMES).filter((name) => !["opencode", "tokyonight"].includes(name));
+  const installed = [];
+  const conflicts = [];
+  for (const name of compatibilityNames) {
+    try { installed.push(...(await provisionNativeThemes(profileConfigDir, [name])).installed); }
+    catch (error) {
+      if (!error.message.startsWith("Refusing to replace a non-native theme at ")) throw error;
+      conflicts.push(name);
+    }
+  }
+  return { directory: join(profileConfigDir, "themes"), installed, conflicts };
 }

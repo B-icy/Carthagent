@@ -101,6 +101,11 @@ The following probes use a disposable profile and deterministic loopback provide
 package-owned `node_modules/@opencode/cli/bin/opencode.exe`. An optional first
 argument selects an installed plugin directory.
 
+The interactive help command is intentionally checked with both `/help` and
+`/ctg-help`. On OpenCode 2.0.32, `/help` dispatches to the Carthagent command
+in the supported plugin PTY; `/ctg-help` remains the unambiguous compatibility
+name for terminals or contexts where the host claims `/help`.
+
 - `node tools/test-native-controls.mjs`: concurrent framing/raw admission,
   persisted launcher settings and framing overrides, compaction notes reaching
   the summary request, cross-location RPC rejection, and whole-service restart

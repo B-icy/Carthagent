@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { usePlugin } from "@opencode/plugin/tui";
-import { rpcEventOptions, workspaceClient, type WorkspaceSnapshot } from "./client.js";
+import { rpcEventOptions, workspaceClient, type WorkspaceDelivery, type WorkspaceSnapshot } from "./client.js";
 
 function sessionAttention(context: ReturnType<typeof usePlugin>, sessionID: string) {
   return (context.data.session.permission.list(sessionID)?.length ?? 0) + (context.data.session.form.list(sessionID)?.length ?? 0);
@@ -11,15 +11,18 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
   const context = usePlugin();
   const [snapshot, setSnapshot] = createSignal<WorkspaceSnapshot>();
   const [activeSessions, setActiveSessions] = createSignal<Record<string, { type: "running" }>>({});
-  const [deliveryEvidence, setDeliveryEvidence] = createSignal<unknown>();
+  const [deliveryEvidence, setDeliveryEvidence] = createSignal<WorkspaceDelivery>();
   const [reviewEvidence, setReviewEvidence] = createSignal<unknown>();
   const [inventorySessions, setInventorySessions] = createSignal<ReturnType<typeof context.data.session.list>>([]);
   const [query, setQuery] = createSignal("");
   const [error, setError] = createSignal("");
+  const [rpcConnected, setRpcConnected] = createSignal(true);
+  let snapshotRequest = 0;
   const route = context.ui.router.current();
   const currentSessionID = () => props.sessionID ?? (route.type === "session" ? route.sessionID : undefined);
   const sessionLocation = () => currentSessionID() ? context.data.session.get(currentSessionID()!)?.location : undefined;
   const api = workspaceClient(context, sessionLocation());
+  const currentLocation = () => sessionLocation() ?? context.location ?? context.data.location.default();
   const activeSession = () => {
     const activeRoute = context.ui.router.current();
     return activeRoute.type === "plugin" ? activeRoute.data?.sessionID ?? props.sessionID : activeRoute.type === "session" ? activeRoute.sessionID : props.sessionID;
@@ -57,34 +60,91 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
 
   const refresh = async () => {
     if (!api) { setError("Workspace service is not connected. Start the CTG-local workspace server to browse tasks and worktrees."); return; }
-    try { setSnapshot(await api.snapshot()); setError(""); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    const request = ++snapshotRequest;
+    try {
+      const result = await api.snapshot();
+      if (request !== snapshotRequest) return;
+      setSnapshot(result);
+      setRpcConnected(true);
+      setError("");
+    } catch (cause) {
+      if (request === snapshotRequest) {
+        setRpcConnected(false);
+        setError(cause instanceof Error ? cause.message : String(cause));
+      }
+    }
   };
   onMount(() => {
+    let generation = 0;
+    let rpcAbort: AbortController | undefined;
+    let stopRpc: (() => void) | undefined;
+    const subscribeRpc = () => {
+      rpcAbort?.abort();
+      stopRpc?.();
+      if (!api) return;
+      rpcAbort = new AbortController();
+      stopRpc = api.events.on("updated", (event: { location?: { directory: string } }) => {
+        const expected = currentLocation();
+        if (event.location?.directory === expected.directory) void refresh();
+      }, rpcEventOptions(context, rpcAbort.signal));
+    };
+    const queueRehydrate = (() => {
+      let queued = false;
+      return () => {
+        if (queued) return;
+        queued = true;
+        queueMicrotask(() => { queued = false; void rehydrate(); });
+      };
+    })();
     const rehydrate = async () => {
+      const currentGeneration = ++generation;
       const [projects, active] = await Promise.allSettled([
         context.data.project.sync(),
         context.client.session.active(),
       ]);
+      if (currentGeneration !== generation) return;
       if (projects.status === "rejected") setError(String(projects.reason));
       if (active.status === "fulfilled") setActiveSessions(active.value);
       else setError(String(active.reason));
       try { await syncNativeSessions(); }
       catch (cause) { setError(String(cause)); }
+      if (currentGeneration !== generation) return;
       await refresh();
+      if (props.view === "evidence" || props.view === "workflow" || props.view === "architecture") {
+        const selected = activeSession();
+        if (selected) await refreshEvidence(selected);
+      }
+    };
+    const invalidateFromHostEvent = (details: unknown) => {
+      const event = details as { type: string; data?: { sessionID?: string; form?: { sessionID?: string; info?: { sessionID?: string } } }; location?: { directory: string } };
+      const sessionID = event.data?.sessionID ?? event.data?.form?.sessionID ?? event.data?.form?.info?.sessionID;
+      if (sessionID) {
+        const location = event.location ?? currentLocation();
+        context.data.session.invalidate(sessionID);
+        context.data.session.permission.invalidate(sessionID);
+        context.data.session.form.invalidate(sessionID, location);
+      }
+      if (["session.created", "session.deleted", "session.updated", "session.status", "session.idle", "session.execution.started", "session.execution.succeeded", "session.execution.failed", "session.execution.interrupted", "permission.asked", "permission.replied", "form.created", "form.updated", "form.deleted", "form.replied", "form.cancelled"].includes(event.type)) {
+        queueRehydrate();
+      }
     };
     void rehydrate();
-    // A workspace event is an invalidation hint; always fetch a fresh snapshot.
-    const controller = new AbortController();
-    const unsubscribe = api.events.on("updated", (event: { location?: { directory: string } }) => {
-      const expected = sessionLocation() ?? context.location ?? context.data.location.default();
-      if (event.location?.directory === expected.directory) void refresh();
-    }, rpcEventOptions(context, controller.signal));
+    subscribeRpc();
     const stopEvents = context.data.listen(({ details }) => {
-      if (details.type === "server.connected") void rehydrate();
+      if (details.type === "server.connected") {
+        setRpcConnected(true);
+        subscribeRpc();
+        void rehydrate();
+      } else {
+        if ((details as { type: string }).type === "server.disconnected") {
+          setRpcConnected(false);
+          generation++;
+          rpcAbort?.abort();
+          stopRpc?.();
+        } else invalidateFromHostEvent(details);
+      }
     });
-    if (unsubscribe) onCleanup(unsubscribe);
-    onCleanup(() => { controller.abort(); stopEvents(); });
+    onCleanup(() => { generation++; snapshotRequest++; rpcAbort?.abort(); stopRpc?.(); stopEvents(); });
   });
   const filteredProjects = () => (snapshot()?.projects ?? []).filter((project) =>
     `${project.name ?? ""} ${project.directory}`.toLowerCase().includes(query().toLowerCase()));
@@ -133,11 +193,11 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
       api.delivery({ sessionID }),
       api.review({ sessionID }),
     ]);
-    setDeliveryEvidence(delivery.status === "fulfilled" ? delivery.value : { error: String(delivery.reason) });
+    setDeliveryEvidence(delivery.status === "fulfilled" ? delivery.value : { status: "invalid", error: String(delivery.reason) });
     setReviewEvidence(review.status === "fulfilled" ? review.value : { error: String(review.reason) });
   };
   onMount(() => {
-    if (props.view === "evidence" && activeSession()) void refreshEvidence(activeSession()!);
+    if (["evidence", "workflow", "architecture"].includes(props.view) && activeSession()) void refreshEvidence(activeSession()!);
   });
   return <box flexDirection="column" padding={1}>
     <text fg={context.theme.text.feedback.warning.base}>CARTHAGENT · {props.view.toUpperCase()}</text>
@@ -148,6 +208,7 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
       <text fg={context.theme.text.action.primary.base} on:click={() => void refresh()}>↻ Refresh</text>
     </box>
     <Show when={error()}><text fg={context.theme.text.feedback.error.base}>{error()}</text></Show>
+    <Show when={!rpcConnected()}><text fg={context.theme.text.feedback.warning.base}>Workspace RPC disconnected · cached view may be stale; waiting for native reconnect</text></Show>
     <Show when={activeSession()}>{(active) => <box flexDirection="column" marginTop={1}>
       <text fg={context.theme.text.action.primary.base}>Selected native session</text>
       <For each={api ? snapshot()?.sessions.filter((session) => session.id === active()) ?? [] : localSessions().filter((session) => session.id === active())}>{(session) =>
@@ -155,19 +216,28 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
           <text fg={context.theme.text.base}>{session.title}</text>
           <Show when={api}>
             <text fg={context.theme.text.action.secondary.base} on:click={() => void api?.delivery({ sessionID: active() }).then((value: unknown) => context.ui.dialog.alert({ title: "Observed delivery evidence", message: JSON.stringify(value ?? { status: "none" }, null, 2) })).catch((cause: unknown) => setError(String(cause)))}>View delivery evidence</text>
-            <text fg={context.theme.text.action.secondary.base} on:click={() => void api?.review({ sessionID: active() }).then((value: unknown) => context.ui.dialog.alert({ title: "Review status", message: JSON.stringify(value ?? { status: "none" }, null, 2) })).catch((cause: unknown) => setError(String(cause)))}>View review status</text>
+            <text fg={context.theme.text.action.secondary.base} on:click={() => void api?.review({ sessionID: active() }).then((value) => context.ui.dialog.alert({ title: "Review status", message: `${value.status}${value.summary ? `\n\n${value.summary}` : ""}` })).catch((cause: unknown) => setError(String(cause)))}>View review status</text>
           </Show>
         </box>}</For>
     </box>}</Show>
     <Show when={snapshot()} fallback={<text fg={context.theme.text.faint}>{error() || "Loading local workspace…"}</text>}>
       <Show when={props.view === "workflow"}>
-        <text fg={context.theme.text.action.primary.base}>Execution workflow</text>
-        <text fg={context.theme.text.muted}>Projects → tasks → native sessions. Task status and attention come from the workspace service.</text>
-        <For each={snapshot()?.tasks ?? []}>{(task) => <text fg={task.attention ? context.theme.text.feedback.warning.base : context.theme.text.base}>{task.attention ? "! " : "· "}{task.title} [{task.status}] · {task.directory ?? task.branch ?? task.id}</text>}</For>
+        <text fg={context.theme.text.action.primary.base}>Authoritative delivery workflow · {deliveryEvidence()?.status ?? "select a session"}</text>
+        <Show when={deliveryEvidence()?.workflow} fallback={<text fg={context.theme.text.faint}>Select a session with a delivery report to load workflow nodes, edges, and step receipts.</text>}>
+          <text fg={context.theme.text.muted}>{deliveryEvidence()?.workflow?.semantics}</text>
+          <For each={deliveryEvidence()?.workflow?.nodes ?? []}>{(node) => <text fg={node.status === "failed" || node.status === "blocked" ? context.theme.text.feedback.error.base : node.status === "complete" || node.status === "passed" ? context.theme.text.feedback.success.base : context.theme.text.base}>[{node.status}] {node.title} · {node.type}{node.step ? ` · step ${node.step}` : ""} · checks: {node.checks.join(", ") || "none"}</text>}</For>
+          <For each={deliveryEvidence()?.workflow?.edges ?? []}>{(edge) => <text fg={context.theme.text.muted}>{edge.from} → {edge.to} · {edge.label ?? edge.kind}{edge.when ? ` · when ${edge.when}` : ""}</text>}</For>
+        </Show>
+        <text fg={context.theme.text.action.secondary.base} on:click={() => activeSession() && void refreshEvidence(activeSession()!)}>↻ Refresh delivery workflow</text>
       </Show>
       <Show when={props.view === "architecture"}>
-        <text fg={context.theme.text.action.primary.base}>Workspace architecture</text>
-        <For each={filteredProjects()}>{(project) => <text fg={context.theme.text.base}>◆ {project.name ?? project.directory} → {snapshot()?.tasks.filter((task) => task.projectID === project.id).length ?? 0} task(s)</text>}</For>
+        <text fg={context.theme.text.action.primary.base}>Delivery architecture · {deliveryEvidence()?.status ?? "select a session"}</text>
+        <Show when={deliveryEvidence()?.architecture} fallback={<text fg={context.theme.text.faint}>Select a session with a delivery report to load authored architecture nodes, edges, and ports.</text>}>
+          <For each={deliveryEvidence()?.architecture?.nodes ?? []}>{(node) => <text fg={context.theme.text.base}>◆ {node.title} · {node.type ?? "component"}{node.layer ? ` · layer ${node.layer}` : ""}{node.status ? ` · ${node.status}` : ""}</text>}</For>
+          <For each={deliveryEvidence()?.architecture?.edges ?? []}>{(edge) => <text fg={context.theme.text.muted}>{edge.from} → {edge.to} · {edge.label ?? edge.kind}</text>}</For>
+          <For each={deliveryEvidence()?.architecture?.ports ?? []}>{(port) => <text fg={context.theme.text.action.secondary.base}>⇄ {port.id} · {port.owner} via {port.adapter} · root {port.compositionRoot}{port.integrationAssertion ? ` · verifies ${port.integrationAssertion}` : ""}</text>}</For>
+        </Show>
+        <text fg={context.theme.text.action.secondary.base} on:click={() => activeSession() && void refreshEvidence(activeSession()!)}>↻ Refresh delivery architecture</text>
       </Show>
       <Show when={props.view === "evidence"}>
         <text fg={context.theme.text.action.primary.base}>Observed delivery evidence</text>
@@ -176,9 +246,18 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
         <Show when={activeSession()}>
           <text fg={context.theme.text.action.secondary.base} on:click={() => void refreshEvidence(activeSession()!)}>↻ Refresh selected session evidence</text>
           <text fg={context.theme.text.action.primary.base}>Delivery receipt</text>
-          <text fg={context.theme.text.muted}>{deliveryEvidence() === undefined ? "Loading delivery receipt…" : JSON.stringify(deliveryEvidence(), null, 2)}</text>
+          <Show when={deliveryEvidence()} fallback={<text fg={context.theme.text.faint}>Loading delivery receipt…</text>}>
+            <text fg={context.theme.text.base}>Status: {deliveryEvidence()?.status} · {deliveryEvidence()?.freshness ?? "freshness unavailable"} · revision {deliveryEvidence()?.revision ?? "—"} · run {deliveryEvidence()?.runId ?? "—"}</text>
+            <Show when={deliveryEvidence()?.plan}>{(plan) => <box flexDirection="column">
+              <text fg={context.theme.text.action.primary.base}>Goal: {plan().goal}</text>
+              <For each={plan().steps}>{(step) => <text fg={step.status === "completed" ? context.theme.text.feedback.success.base : context.theme.text.base}>[{step.status}] {step.id} · {step.title}{step.dependsOn.length ? ` · after ${step.dependsOn.join(", ")}` : ""}</text>}</For>
+              <For each={deliveryEvidence()?.evidence ?? []}>{(item) => <text fg={item.status === "fresh" ? context.theme.text.feedback.success.base : item.status === "failed" || item.status === "stale" ? context.theme.text.feedback.error.base : context.theme.text.feedback.warning.base}>Receipt {item.id}: {item.status}{item.code !== undefined ? ` · exit ${item.code}` : ""}{item.filename ? ` · ${item.filename}` : ""}</text>}</For>
+            </box>}</Show>
+          </Show>
           <text fg={context.theme.text.action.primary.base}>Review receipt</text>
-          <text fg={context.theme.text.muted}>{reviewEvidence() === undefined ? "Loading review receipt…" : JSON.stringify(reviewEvidence(), null, 2)}</text>
+          <Show when={reviewEvidence()} fallback={<text fg={context.theme.text.faint}>Loading review receipt…</text>}>
+            <text fg={context.theme.text.muted}>{String((reviewEvidence() as { status?: string; summary?: string } | undefined)?.status ?? "unavailable")}{(reviewEvidence() as { summary?: string } | undefined)?.summary ? ` · ${(reviewEvidence() as { summary: string }).summary}` : ""}</text>
+          </Show>
         </Show>
       </Show>
       <select options={navigationOptions()} onSelect={(_index, option) => selectNavigation(option)} focused />

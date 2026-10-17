@@ -16,6 +16,7 @@ const probes = [
   { command: '/ctg-status', expect: 'OpenCode 2.0.32' },
   { command: '/ctg-workspace', expect: 'CARTHAGENT' },
   { command: '/help', expect: 'Carthagent commands' },
+  { command: '/ctg-help', expect: 'Carthagent commands' },
   { command: '/compact', expect: '/compact requires an open session.', secondEnter: true },
   {
     command: '/theme carthage', expect: 'Theme “carthage” saved',
