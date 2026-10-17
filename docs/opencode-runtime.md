@@ -38,7 +38,7 @@ CTG plugin entry path (`plugins/carthagent`); this runtime does not bundle or
 resolve the plugin on behalf of the CLI integration.
 
 `lib/opencode/service.mjs` exports `ensureService`, `serviceRequest`,
-`createSession`, `promptSession`, `cancelSession`, `sessionMessages`,
+`createSession`, `getSession`, `promptSession`, `cancelSession`, `sessionMessages`,
 `setSessionEnvironment`, `stopService`, and `launchTui`. `ensureService({ root, pluginPath, profile, startupTimeout })`
 returns the isolated service URL, auth headers, registration metadata, paths,
 and executable after a health/version/PID check. Startup is bounded (20s by
@@ -56,12 +56,18 @@ the newly accepted prompt.
 profile's private registration. If a registered process is alive but unhealthy,
 the registration is retained and an error is reported rather than orphaning or
 duplicating the daemon. Lock recovery removes only dead-owner or sufficiently
-old incomplete lock files.
+old incomplete lock files. A persistent recovery marker causes bounded failure
+with manual lock-file recovery guidance; CTG does not guess whether another
+recovery owner is still active.
 
 `lib/opencode/headless.mjs` exports `runHeadless` and the session helpers. It
 uses native `/api/session`, `/prompt`, `/message`, `/interrupt`, environment,
-and wait APIs, returns structured session/message data plus the assistant text,
-finish status, and error, and supports an AbortSignal. Slash templates
+and wait APIs. It polls the session projection and returns the refreshed session,
+terminal outcome (`succeeded`, `failed`, `interrupted`, or `timed-out`), accepted
+input, chronological messages, and the assistant result. Provider failures and
+missing terminal outcomes are never reported as success. Polling handles transient
+503 responses within the configured timeout; cancellation uses `resume=false`
+and bounded requests. Slash templates
 can be mapped through `nativeCommandConfig` in `compatibility.mjs` into native
 OpenCode `commands` configuration. A real-host check is available via
 `npm run test:native-host`; it uses disposable roots and validates native plugin
@@ -78,9 +84,10 @@ const tui = launchTui(service, workspace, { sessionID: session.id, env: process.
 await stopService({ root });
 ```
 
-`runHeadless` returns `{ session, accepted, messages, result }`; `result` includes
-`text`, `status`, `error`, and the original assistant message. Supply `location`
-to session helpers when the session's workspace differs from the default.
+`runHeadless` returns `{ session, accepted, messages, result, outcome, terminal,
+error, reason, budgetReason }`; `result` may be absent if the turn produced no
+assistant message. Supply `location` to session helpers when the session's
+workspace differs from the default.
 
 Legacy CTG sessions are intentionally not imported into OpenCode. Keep any
 archive/recovery policy in CTG's existing session store; this runtime only
