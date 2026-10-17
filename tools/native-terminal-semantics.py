@@ -5,6 +5,7 @@ The fixture provider is loopback-only. This intentionally tests an actual TUI
 input/submit round trip, not the JavaScript key parser in isolation.
 """
 import argparse
+import base64
 import fcntl
 import errno
 import http.server
@@ -13,11 +14,10 @@ import os
 import pty
 import re
 import select
-import shutil
 import signal
+import subprocess
 import socketserver
 import struct
-import subprocess
 import tempfile
 import termios
 import threading
@@ -26,20 +26,23 @@ import time
 
 class Provider(http.server.BaseHTTPRequestHandler):
     received = []
+    reply = 'FIXTURE_RESPONSE_OK'
 
     def do_POST(self):
         length = int(self.headers.get('content-length', '0'))
         body = json.loads(self.rfile.read(length) or b'{}')
         self.received.append(body)
-        response = {'id': 'offline-fixture', 'object': 'chat.completion', 'created': 1,
-                    'model': 'fixture', 'choices': [{'index': 0,
-                    'message': {'role': 'assistant', 'content': 'FIXTURE_RESPONSE_OK'},
-                    'finish_reason': 'stop'}], 'usage': {'prompt_tokens': 10,
-                    'completion_tokens': 1, 'total_tokens': 11}}
-        payload = json.dumps(response).encode()
+        def event(delta, finish_reason=None):
+            item = {'id': 'offline-fixture', 'object': 'chat.completion.chunk', 'created': 1,
+                    'model': 'fixture', 'choices': [{'index': 0, 'delta': delta,
+                    'finish_reason': finish_reason}]}
+            return b'data: ' + json.dumps(item).encode() + b'\n\n'
+        payload = (event({'role': 'assistant', 'content': self.reply}) +
+                   event({}, 'stop') + b'data: [DONE]\n\n')
         self.send_response(200)
-        self.send_header('content-type', 'application/json')
-        self.send_header('content-length', str(len(payload)))
+        self.send_header('content-type', 'text/event-stream')
+        self.send_header('cache-control', 'no-cache')
+        self.send_header('connection', 'close')
         self.end_headers()
         self.wfile.write(payload)
 
@@ -48,14 +51,19 @@ class Provider(http.server.BaseHTTPRequestHandler):
 
 
 class Screen:
-    """Small VT screen model for readiness and visible-screen assertions."""
-    def __init__(self, rows=32, columns=100):
+    """Small terminal host model for screen, title-stack, and OSC 52 state."""
+    def __init__(self, rows=32, columns=100, title='CTG-ORIGINAL-TITLE'):
         self.rows, self.columns = rows, columns
         self.cells = [[' '] * columns for _ in range(rows)]
         self.x = self.y = 0
         self.mode = 'text'
         self.csi = ''
         self.osc_escape = False
+        self.osc = ''
+        self.title = title
+        self.title_stack = []
+        self.title_history = []
+        self.clipboard_values = []
 
     def resize(self, rows, columns):
         self.rows, self.columns = rows, columns
@@ -68,7 +76,11 @@ class Screen:
         for char in text:
             if self.mode == 'osc':
                 if char == '\x07' or (self.osc_escape and char == '\\'):
+                    self._osc(self.osc)
+                    self.osc = ''
                     self.mode = 'text'
+                elif char != '\x1b':
+                    self.osc += char
                 self.osc_escape = char == '\x1b'
                 continue
             if self.mode == 'csi':
@@ -114,6 +126,23 @@ class Screen:
         elif final == 'J' and values and values[0] == 2:
             self.cells = [[' '] * self.columns for _ in range(self.rows)]
             self.x = self.y = 0
+        elif final == 't' and values:
+            if values[0] == 22:
+                self.title_stack.append(self.title)
+            elif values[0] == 23 and self.title_stack:
+                self.title = self.title_stack.pop()
+                self.title_history.append(self.title)
+
+    def _osc(self, value):
+        fields = value.split(';', 2)
+        if len(fields) == 3 and fields[0] in ('0', '2'):
+            self.title = fields[2]
+            self.title_history.append(self.title)
+        elif len(fields) == 3 and fields[0] == '52':
+            try:
+                self.clipboard_values.append(base64.b64decode(fields[2], validate=True).decode('utf8'))
+            except (ValueError, UnicodeDecodeError):
+                pass
 
     def visible(self):
         return '\n'.join(''.join(row).rstrip() for row in self.cells)
@@ -164,7 +193,6 @@ def main():
                                  stdin=slave, stdout=slave, stderr=slave, start_new_session=True)
         os.close(slave)
         output = bytearray()
-        title_controls = bytearray()
         screen = Screen()
         errors = bytearray()
         start = time.monotonic()
@@ -172,10 +200,17 @@ def main():
         resized = False
         picker_started = False
         picker_cancelled = False
+        copy_invoked = False
+        copy_confirmed = False
+        selection_sent = False
+        selection_confirmed = False
         # Text is intentionally multi-line, Unicode, and large enough to expose
         # truncation/byte-boundary bugs. It is sent only as bracketed paste.
         exact = 'native-pty: café 日本語 😀\n' + 'large-paste-λ-' * 1200 + '\nEND-PASTE-終'
+        fixture_response = 'FIXTURE_RESPONSE_OK'
         payload = exact.encode('utf8')
+        Provider.received.clear()
+        Provider.reply = fixture_response
         try:
             while time.monotonic() - start < args.timeout:
                 if child.poll() is not None:
@@ -190,27 +225,22 @@ def main():
                         raise
                     output.extend(chunk)
                     screen.feed(chunk)
-                    # Preserve actual OSC title/clipboard traffic for assertions.
-                    for match in re.findall(rb'\x1b\][^\x07]*(?:\x07|\x1b\\)', chunk):
-                        if match.startswith(b'\x1b]0;') or match.startswith(b'\x1b]2;'):
-                            title_controls.extend(match)
-                        if match.startswith(b'\x1b]52;'):
-                            result['clipboardSequence'] = match[:100]
                     if b'\x1b[6n' in chunk:
                         os.write(master, b'\x1b[1;1R')
                     if b'\x1b[c' in chunk:
                         os.write(master, b'\x1b[?1;2c')
                 elapsed = time.monotonic() - start
                 visible = screen.visible().lower()
-                if not picker_started and elapsed > 2 and visible.strip():
-                    # Model selection is a native picker and Escape is a
-                    # read-only cancellation: it cannot dispatch a prompt or
-                    # change the configured model.
-                    os.write(master, b'/model\r')
+                visible_original = screen.visible()
+                home_ready = 'ask anything' in visible or 'what is the tech' in visible
+                if not picker_started and elapsed > 2 and home_ready:
+                    # Ctrl+P opens the native model picker without selecting or
+                    # submitting a prompt; Escape is a non-mutating cancel.
+                    os.write(master, b'\x10')
                     picker_started = True
                     picker_at = time.monotonic()
                 if picker_started and not picker_cancelled and (
-                        'select model' in visible or 'models' in visible and 'search' in visible):
+                        'select model' in visible or 'model' in visible and ('search' in visible or 'provider' in visible)):
                     os.write(master, b'\x1b')
                     picker_cancelled = True
                     picker_heading = ('select model' if 'select model' in visible else 'models')
@@ -236,7 +266,7 @@ def main():
                         'reason': 'native model picker did not expose a recognizable visible heading; '
                                   'Escape was sent to dismiss any command menu',
                         'providerRequestsBeforePrompt': len(Provider.received)}
-                if not sent and elapsed > 5 and screen.visible().strip():
+                if not sent and picker_cancelled and elapsed > 5 and home_ready:
                     # Narrow terminal stress is an actual resize on the PTY.
                     fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', 12, 40, 0, 0))
                     screen.resize(12, 40)
@@ -246,15 +276,48 @@ def main():
                     time.sleep(.25)
                     os.write(master, b'\x1b[200~' + payload + b'\x1b[201~')
                     sent = True
-                    submitted_at = time.monotonic()
-                if sent and time.monotonic() - submitted_at > 1.5 and not Provider.received:
-                    # The one newline in pasted text must not submit by itself.
+                    pasted_at = time.monotonic()
+                if sent and time.monotonic() - pasted_at > 1.5 and not Provider.received:
+                    # Home prompt's first Enter opens a session; submit staged
+                    # prompt only after the session composer is visible.
                     os.write(master, b'\r')
-                    submitted_at = time.monotonic() + 1e6
-                if Provider.received:
+                    first_enter_at = time.monotonic()
+                    pasted_at = time.monotonic() + 1e6
+                if sent and not Provider.received and 'first_enter_at' in locals() and time.monotonic() - first_enter_at > .75:
+                    os.write(master, b'\r')
+                    first_enter_at = time.monotonic() + 1e6
+                if Provider.received and 'provider_received_at' not in locals():
+                    provider_received_at = time.monotonic()
+                visible_lines = screen.visible().splitlines()
+                if not selection_sent and fixture_response in '\n'.join(visible_lines):
+                    target_row = next(index for index, line in enumerate(visible_lines, 1)
+                                      if fixture_response in line)
+                    target_line = visible_lines[target_row - 1]
+                    start_col = target_line.index(fixture_response) + 1
+                    end_col = start_col + len(fixture_response) - 1
+                    os.write(master, f'\x1b[<0;{start_col};{target_row}M'.encode())
+                    os.write(master, f'\x1b[<32;{end_col};{target_row}M'.encode())
+                    os.write(master, f'\x1b[<0;{end_col};{target_row}m'.encode())
+                    selection_sent = True
+                    selection_sent_at = time.monotonic()
+                    selection_clipboard_count = len(screen.clipboard_values)
+                if Provider.received and selection_confirmed and fixture_response.encode() in output and not copy_invoked:
+                    os.write(master, b'/copy')
+                    time.sleep(.2)
+                    os.write(master, b'\r')
+                    copy_invoked = True
+                    copy_sent_at = time.monotonic()
+                if selection_sent and not selection_confirmed and time.monotonic() - selection_sent_at > .3:
+                    selection_confirmed = True
+                if copy_invoked and not copy_confirmed and time.monotonic() - copy_sent_at > .75:
+                    os.write(master, b'\r')
+                    copy_confirmed = True
+                if Provider.received and copy_confirmed and time.monotonic() - provider_received_at > 2:
                     break
             if not Provider.received:
-                raise RuntimeError('loopback provider received no request; TUI may not have accepted prompt')
+                raise RuntimeError('loopback provider received no request; TUI may not have accepted prompt; '
+                                   f'pickerStarted={picker_started}, pickerCancelled={picker_cancelled}, '
+                                   f'visible={screen.visible()[-1500:]!r}, transcript={bytes(output[-4000:])!r}')
             bodies = Provider.received
             messages = bodies[-1].get('messages', [])
             received_text = '\n'.join(str(part.get('text', '')) for message in messages
@@ -263,9 +326,25 @@ def main():
             if exact not in received_text:
                 raise AssertionError(f'provider prompt differs: expected {len(exact)} chars, '
                                      f'got {len(received_text)} chars')
+            matching_bodies = []
+            for body in bodies:
+                request_messages = body.get('messages', [])
+                request_text = '\n'.join(str(part.get('text', '')) for message in request_messages
+                                          for part in (message.get('content', []) if isinstance(message.get('content'), list)
+                                                       else [{'text': message.get('content', '')}]))
+                if any(message.get('role') == 'user' and exact in str(message.get('content', ''))
+                       for message in request_messages):
+                    matching_bodies.append(body)
+            if not matching_bodies:
+                details = [[(message.get('role'), len(str(message.get('content', ''))),
+                             exact in str(message.get('content', '')))
+                            for message in body.get('messages', [])] for body in bodies]
+                raise AssertionError(f'expected exact user prompt, provider received {len(matching_bodies)} '
+                                     f'matching requests (total fixture requests {len(bodies)}): {details}')
             result['checks']['unicodeAndLargeBracketedPaste'] = {
                 'status': 'PASS', 'exactProviderText': True, 'characters': len(exact),
-                'utf8Bytes': len(payload), 'providerRequests': len(bodies)}
+                'utf8Bytes': len(payload), 'matchingPromptRequests': len(matching_bodies),
+                'totalFixtureRequests': len(bodies)}
             result['checks']['narrowLayout'] = {'status': 'PASS' if resized and child.poll() is None else 'FAIL',
                                                  'rows': 12, 'columns': 40,
                                                  'noExit': child.poll() is None,
@@ -278,22 +357,49 @@ def main():
             mouse_mode = b'\x1b[?1000h' in output or b'\x1b[?1002h' in output or b'\x1b[?1006h' in output
             if mouse_mode:
                 os.write(master, b'\x1b[<0;2;2M\x1b[<32;8;2M\x1b[<0;8;2m')
-            result['checks']['selectionClipboard'] = {
-                'status': 'UNSUPPORTED',
-                'reason': 'PTY provides no terminal-emulator selection or clipboard readback; '
-                          'mouse reporting is ' + ('enabled' if mouse_mode else 'not advertised')}
             result['checks'].setdefault('pickerEscapeCancel', {
                 'status': 'UNSUPPORTED',
                 'reason': 'native home screen did not become interactive; no picker was opened'})
+            # Ask the TUI to exit through its own quit command so screen cleanup
+            # and title restoration run before inspecting final output.
+            os.write(master, b'/quit')
+            time.sleep(.1)
+            os.write(master, b'\r')
+            exit_deadline = time.monotonic() + 5
+            while child.poll() is None and time.monotonic() < exit_deadline:
+                if select.select([master], [], [], .05)[0]:
+                    try: chunk = os.read(master, 65536)
+                    except OSError as error:
+                        if error.errno == errno.EIO: break
+                        raise
+                    output.extend(chunk)
+                    screen.feed(chunk)
+            child.wait(timeout=max(1, exit_deadline - time.monotonic()))
+            title_pushes = len(re.findall(rb'\x1b\[22(?:;[^t]*)?t', output))
+            title_pops = len(re.findall(rb'\x1b\[23(?:;[^t]*)?t', output))
             result['checks']['terminalTitleRestoration'] = {
-                'status': 'UNSUPPORTED' if not title_controls else 'OBSERVED_NOT_VERIFIED',
-                'reason': 'PTY has no host-window title state to seed/read back; captured OSC title bytes '
-                          'are diagnostic only', 'oscBytes': len(title_controls)}
+                'status': 'FAIL' if not title_pushes or not title_pops else 'OBSERVED_NOT_VERIFIED',
+                'reason': ('Native TUI emitted title-stack controls, but PTY has no real terminal host title readback' if title_pushes and title_pops else
+                           'Native OpenCode 2.0.32 emitted OSC title changes but no VT title-stack save/restore controls'),
+                'titleSaveControls': title_pushes,
+                'titleRestoreControls': title_pops,
+                'titleSequenceObserved': screen.title_history}
+            selection_values = screen.clipboard_values[selection_clipboard_count:] if selection_sent else []
+            result['checks']['selectionClipboard'] = {
+                'status': 'OBSERVED_NOT_VERIFIED' if selection_sent and any(fixture_response in value for value in selection_values) else 'FAIL',
+                'reason': ('A real SGR mouse drag emitted OSC 52 containing the selected text; PTY cannot read actual terminal clipboard state' if selection_sent and selection_values
+                           else 'Mouse drag did not produce an observable selection clipboard OSC 52'),
+                'mouseReporting': mouse_mode, 'mouseDragSent': selection_sent,
+                'decodedSelectionPayloads': selection_values}
+            decoded_clipboards = screen.clipboard_values
             result['checks']['clipboardOSC52'] = {
-                'status': 'UNSUPPORTED' if 'clipboardSequence' not in result else 'OBSERVED_NOT_VERIFIED',
-                'reason': 'PTY does not implement an OSC 52 clipboard; selection/clipboard readback unavailable'}
+                'status': 'OBSERVED_NOT_VERIFIED' if copy_invoked and fixture_response in decoded_clipboards else 'FAIL',
+                'reason': 'Native /copy emitted OSC 52 with the exact fixture assistant response; PTY cannot verify actual clipboard readback' if copy_invoked and fixture_response in decoded_clipboards else 'No matching OSC 52 clipboard value observed after /copy',
+                'copyActionSent': copy_invoked,
+                'decodedClipboardValues': decoded_clipboards,
+                'sequences': len(decoded_clipboards)}
             incomplete = [name for name, check in result['checks'].items()
-                          if check['status'] not in ('PASS',)]
+                          if check['status'] != 'PASS']
             result['status'] = 'INCOMPLETE' if incomplete else 'PASS'
             result['incompleteChecks'] = incomplete
             print(json.dumps(result, ensure_ascii=False))
