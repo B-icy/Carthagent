@@ -144,6 +144,12 @@ generated manifest invalid for both clean and dirty checkouts. Cleanup is also
 registered too late to cover setup failures. Source staging, plugin observations,
 and failure aggregation appear improved, but actual runner-path regressions are
 required alongside these fixes before a timed run can proceed.
+At `e6d401b`, independent source review confirms typed manifest serialization is
+wired into the runner and cleanup precedes staging. Eleven author guard tests
+pass, including the real JSON generator. Review still requires rejecting a
+selected source commit that differs from current integration HEAD. Parent also
+requested portable test-path handling and offline coverage of actual runner
+failure/cleanup paths. No controlled measurement or performance approval exists.
 Short idle observations showed no PTY output; they do not establish long-running
 memory bounds.
 
