@@ -67,7 +67,7 @@ integration check before its PR merges. In-progress does not mean shipped.
 | Workstream | State | Acceptance |
 | --- | --- | --- |
 | Baseline/build contracts | Merged #137 | Existing checks recorded; TS/TSX included in checks |
-| Runtime/isolation | In progress | CTG and normal OpenCode coexist; authenticated persistent service |
+| Runtime/isolation | Merged #139 | CTG and normal OpenCode coexist; authenticated persistent service |
 | Native plugin host | Bootstrap merged #137; integration in progress | Installed package loads server and TUI entrypoints |
 | Session framing/controls | Merged #144, #145, #147, #148 | Per-session defaults, raw bypass, compaction notes, declared ownership errors, restart recovery |
 | Providers/auth/telemetry | In progress | Concurrent requests/refreshes maintain credential and session identity |
@@ -77,7 +77,7 @@ integration check before its PR merges. In-progress does not mean shipped.
 | Review | Backend merged #146; terminal integration in progress | Fresh-context findings bound to source and PR head; bounded admission |
 | Legacy archive | Merged #150; launcher discovery integration in progress | Read-only searchable transcripts; no implicit continuation |
 | CLI/headless/dashboard | CLI/headless in progress; dashboard lease fix merged #142 | Output/exit/locking behavior verified against native runtime |
-| Packaging/upgrade | #151, #143, #149 merged; installed renderer fix #159 under review | Fresh installation and migration tested from packaged artifact |
+| Packaging/upgrade | #151, #143, #149 merged; #159 installed renderer passes but clean source `npm ci` has a peer conflict under repair | Fresh installation and migration tested from packaged artifact |
 | Terminal/performance | Pending | PTY, interaction, streaming and reconnect evidence |
 | Default switch/retirement | Pending | No supported default execution path depends on Pi |
 
@@ -111,8 +111,12 @@ remain release gates. PR #154 removes per-stream shared-dispatcher destruction a
 uses captured-dispatcher cleanup at print-mode shutdown. Parent verification of
 `46c9ae9` reproduced the pristine patch exactly; seconds and repairs tests passed,
 while tool-mode startup hit its total watchdog. The subsequent `d85579b` fixture
-separates a bounded startup phase from its 15-second post-stop shutdown deadline;
-fresh independent review and parent exact-head verification remain required.
+separates a bounded startup phase from its 15-second post-stop shutdown deadline.
+A controlled clean exact-head parent run passed all three modes and all twelve
+natural exits, including successful requests after reset; initial stop-to-close
+times were 36–102 ms. Independent review and all fifteen CI checks passed, and
+#154 merged. Earlier contended failures remain recorded rather than treated as
+passing evidence.
 Native execution remains opt-in until these gates pass.
 
 Pinned-host extension gaps remain for visual-only transcript `/clear` and
