@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Offline native-runtime adapter smoke: proves real filesystem edits and tests
-// can be made through the standard OpenCode edit/write/shell tools without a key.
+// Adapter/unit smoke using a deterministic injected API; the real host acceptance
+// lives in test-native-swe-host.mjs.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { runNativeEvaluation } from '../lib/opencode/evaluation.mjs';
 
-test('native evaluation consumes actual OpenCode event shapes and fails closed on unknown cost', async () => {
+test('native evaluation adapter consumes native event shapes and reconciles session usage', async () => {
   const events = [];
   const api = {
     server: { info: async () => ({ version: '2.0.32' }) },
@@ -79,7 +79,7 @@ test('native evaluation bounds a nonresponsive interrupt cleanup and reports int
   const abortTimer = setTimeout(() => controller.abort(Error('test cancellation')), 50);
   const started = Date.now();
   try {
-    const result = await runNativeEvaluation({ client:api, directory:'/tmp', prompt:'hang', model:'fixture', provider:'local', signal:controller.signal, timeoutSeconds:5, maxTurns:2, maxCost:1 });
+    const result = await runNativeEvaluation({ client:api, directory:tmpdir(), prompt:'hang', model:'fixture', provider:'local', signal:controller.signal, timeoutSeconds:5, maxTurns:2, maxCost:1 });
     assert.equal(result.exitCode,1);
     assert.equal(result.outcome,null);
     assert.equal(result.interruptionStatus,'unknown');
