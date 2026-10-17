@@ -83,6 +83,7 @@ try {
   const config = join(temp, 'config/opencode');
   const legacy = join(temp, 'home/.carthagent/agent/sessions');
   const homeConfig = join(temp, 'home/.config/opencode');
+  const ancestorConfig = join(temp, '.opencode');
   await Promise.all([
     mkdir(cwd),
     mkdir(config, { recursive: true }),
@@ -90,10 +91,13 @@ try {
     mkdir(join(temp, 'appdata'), { recursive: true }),
     mkdir(join(temp, 'localappdata'), { recursive: true }),
     mkdir(homeConfig, { recursive: true }),
+    mkdir(ancestorConfig, { recursive: true }),
   ]);
   await writeFile(join(legacy, 'legacy.jsonl'), '{"type":"session","id":"legacy-fixture"}\n{"type":"message","message":{"role":"user","content":"fixture needle"}}\nmalformed\n');
   await writeFile(join(homeConfig, 'opencode.json'), JSON.stringify({ model: 'home-poison/model', plugins: ['home-poison-plugin'] }));
   await writeFile(join(cwd, 'opencode.json'), JSON.stringify({ model: 'project-poison/model', plugins: ['project-poison-plugin'] }));
+  await writeFile(join(temp, 'opencode.json'), JSON.stringify({ model: 'ancestor-poison/model', plugins: ['ancestor-poison-plugin'] }));
+  await writeFile(join(ancestorConfig, 'opencode.json'), JSON.stringify({ model: 'hidden-ancestor-poison/model', plugins: ['hidden-ancestor-poison-plugin'] }));
   await writeFile(join(config, 'opencode.json'), JSON.stringify({
     plugins: [plugin], update: 'disable',
     model: 'ctgfixture/fixture',
@@ -151,7 +155,7 @@ try {
     const response = await fetch(url, init);
     if (new URL(url).pathname === '/api/config') {
       const entries = await response.clone().json();
-      assert.ok(!entries.some((entry) => entry.type === 'document' && [join(homeConfig, 'opencode.json'), join(cwd, 'opencode.json')].includes(entry.path)), `home and workspace config must not be discovered: ${JSON.stringify(entries)}`);
+      assert.ok(!entries.some((entry) => entry.type === 'document' && [homeConfig, cwd, temp, ancestorConfig].map(directory => join(directory, 'opencode.json')).includes(entry.path)), `home, workspace and ancestor config must not be discovered: ${JSON.stringify(entries)}`);
       assert.ok(!JSON.stringify(entries).includes('poison'), `foreign config/plugin discovery must not leak into the CTG profile: ${JSON.stringify(entries)}`);
     }
     return response;
