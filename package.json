@@ -61,11 +61,16 @@
     "quality": "npm run lint && npm run build && npm test",
     "test:browser": "node tools/test-webdriver.mjs",
     "test:native-host": "node tools/test-native-host.mjs",
+    "test:native-package": "node tools/test-native-package.mjs",
+    "test:native-controls": "node tools/test-native-controls.mjs",
+    "test:native-outcomes": "node tools/test-native-outcomes.mjs",
+    "test:native-pty": "node tools/test-native-pty.mjs",
     "build": "npm run check && npm run typecheck",
     "test": "node --test tests/*.test.mjs",
     "test:python": "node tools/test-python.mjs"
   },
   "dependencies": {
+    "@opencode/cli": "2.0.32",
     "@opencode/client": "2.0.32",
     "@opencode/plugin": "2.0.32",
     "express": "^5.2.1",
@@ -73,6 +78,9 @@
     "jsdom": "^30.0.1",
     "tree-sitter-wasms": "^0.1.13",
     "web-tree-sitter": "^0.22.6"
+  },
+  "overrides": {
+    "seroval": "1.6.9"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

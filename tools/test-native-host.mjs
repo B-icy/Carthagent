@@ -21,7 +21,13 @@ try {
   const cwd = join(temp, 'project');
   const config = join(temp, 'config/opencode');
   const legacy = join(temp, 'home/.carthagent/agent/sessions');
-  await Promise.all([mkdir(cwd), mkdir(config, { recursive: true }), mkdir(legacy, { recursive: true })]);
+  await Promise.all([
+    mkdir(cwd),
+    mkdir(config, { recursive: true }),
+    mkdir(legacy, { recursive: true }),
+    mkdir(join(temp, 'appdata'), { recursive: true }),
+    mkdir(join(temp, 'localappdata'), { recursive: true }),
+  ]);
   await writeFile(join(legacy, 'legacy.jsonl'), '{"type":"session","id":"legacy-fixture"}\n{"type":"message","message":{"role":"user","content":"fixture needle"}}\nmalformed\n');
   await writeFile(join(config, 'opencode.json'), JSON.stringify({
     plugins: [plugin, archiveFixture], update: 'disable',
@@ -31,6 +37,9 @@ try {
     .map((key) => [key, process.env[key]]));
   Object.assign(env, {
     HOME: join(temp, 'home'),
+    USERPROFILE: join(temp, 'home'),
+    APPDATA: join(temp, 'appdata'),
+    LOCALAPPDATA: join(temp, 'localappdata'),
     XDG_CONFIG_HOME: join(temp, 'config'),
     XDG_DATA_HOME: join(temp, 'data'),
     XDG_STATE_HOME: join(temp, 'state'),
