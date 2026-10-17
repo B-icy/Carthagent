@@ -11,12 +11,16 @@ import { randomBytes } from 'node:crypto';
 import { promisify } from 'node:util';
 import { OpenCode } from '@opencode/client';
 import { resolveOpenCode } from '../lib/opencode/runtime.mjs';
+import { loadNativeTestRuntime } from './native-runtime-identity.mjs';
 import { cancelSession } from '../lib/opencode/service.mjs';
 import { runHeadless } from '../lib/opencode/headless.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const plugin = resolve(process.argv[2] ?? join(root, 'plugins/carthagent'));
-const binary = await resolveOpenCode();
+const ownedRoot = process.env.CTG_OWNED_OPENCODE_RUNTIME;
+const binary = ownedRoot ? ownedRuntimeBinary(ownedRoot) : await resolveOpenCode();
+const expectedManifest = ownedRoot ? JSON.parse(await readFile(process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST ?? join(root, 'lib/opencode/runtime-release.json'), 'utf8')) : undefined;
+const runtimeIdentity = await loadNativeTestRuntime({ binary, ownedRoot, expectedManifest });
 const execFileAsync = promisify(execFile);
 const temp = await mkdtemp(join(tmpdir(), 'ctg-host-smoke-'));
 const password = randomBytes(24).toString('hex');
@@ -167,7 +171,7 @@ try {
   });
   const request = { signal: AbortSignal.timeout(90_000) };
   const info = await client.server.info(request);
-  assert.equal(info.version, '2.0.32');
+  assert.equal(info.version, runtimeIdentity.runtimeVersion);
   const isolationFetch = async (url, init) => {
     const response = await fetch(url, init);
     if (new URL(url).pathname === '/api/config') {
@@ -238,7 +242,8 @@ try {
   const health = await client.rpc.call({
     rpcID: 'carthagent', method: 'health', input: {}, location: { directory: cwd },
   }, request);
-  console.log(JSON.stringify({ version: info.version, plugin: nativePlugin, health }, null, 2));
+  assert.equal(health.output.hostVersion, runtimeIdentity.runtimeVersion);
+  console.log(JSON.stringify({ version: info.version, compatibilityVersion: runtimeIdentity.compatibilityVersion, plugin: nativePlugin, health }, null, 2));
   assert.equal(health.output.directory, cwd);
   assert.equal(health.output.protocol, 1);
   const echo = await client.rpc.call({
@@ -357,7 +362,7 @@ try {
   await assert.rejects(archiveCall('search', { query: '   ' }), (error) => error.type === 'archive_error');
   await assert.rejects(archiveCall('list', { limit: 101 }), (error) => error.type === 'rpc.invalid_input');
   assert.equal(await readFile(join(legacy, 'legacy.jsonl'), 'utf8'), '{"type":"session","id":"legacy-fixture"}\n{"type":"message","message":{"role":"user","content":"fixture needle"}}\nmalformed\n');
-  console.log('Native plugin, archive RPC methods, output schemas, and declared failures passed against OpenCode 2.0.32.');
+  console.log(`Native plugin, archive RPC methods, output schemas, and declared failures passed against OpenCode ${runtimeIdentity.runtimeVersion} (compatibility ${runtimeIdentity.compatibilityVersion}).`);
 } catch (error) {
   console.error(JSON.stringify({ fixtureRequests }));
   console.error(output.replaceAll(password, '[redacted]'));
@@ -387,4 +392,9 @@ try {
   await new Promise((resolveClose) => authServer.close(resolveClose));
   await new Promise((resolveClose) => gatewayServer.close(resolveClose));
   await rm(temp, { recursive: true, force: true, maxRetries: 12, retryDelay: 250 });
+}
+
+function ownedRuntimeBinary(directory) {
+  const key = process.platform === 'win32' ? `windows-${process.arch}` : `${process.platform}-${process.arch}`;
+  return join(resolve(directory), `cli-${key}`, 'bin', process.platform === 'win32' ? 'opencode.exe' : 'opencode');
 }
