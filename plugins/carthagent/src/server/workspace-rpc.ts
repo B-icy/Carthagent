@@ -2,8 +2,9 @@ import type { Context } from '@opencode/plugin/promise/plugin';
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, readFileSync, statSync } from 'node:fs';
 import { basename, join, relative, resolve, sep } from 'node:path';
-import { evidenceFresh, fingerprint, validatePlan } from '../../../../lib/delivery.mjs';
+import { completionIssues, evidenceFresh, fingerprint, reviewFresh, requiresReview, validatePlan } from '../../../../lib/delivery.mjs';
 import { planningView } from '../../../../lib/planning-view.mjs';
+import { planningStatus } from '../../../../lib/planning.mjs';
 import { localReviewSnapshot, startReview } from '../../../../lib/opencode/review.mjs';
 import { createTask, listTasks } from '../../../../lib/opencode/workspace.mjs';
 import { assertActiveReport, activeReportPath } from '../../../../lib/workspace.mjs';
@@ -27,6 +28,7 @@ const MAX_TEXT = 4000;
 const boundedText = (value: unknown, max = MAX_TEXT) => typeof value === 'string' ? value.slice(0, max) : '';
 const asRecord = (value: unknown): JsonRecord => value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
 const boundedList = <T>(value: unknown, max: number, project: (item: unknown, index: number) => T): T[] => Array.isArray(value) ? value.slice(0, max).map(project) : [];
+const listLength = (value: unknown) => Array.isArray(value) ? value.length : 0;
 
 function reportFor(directory: string, sessionID: string) {
   try {
@@ -45,18 +47,18 @@ function reportFor(directory: string, sessionID: string) {
     const state = JSON.parse(readFileSync(path, 'utf8')) as DeliveryState;
     if (!state || typeof state !== 'object' || !state.plan || typeof state.runId !== 'string' || !state.runId || state.runId.length > 128 || reportRelative[2] !== state.runId || !Number.isSafeInteger(state.revision) || state.revision < 1 || !Array.isArray(state.plan.checks)) return { status: 'invalid' } as const;
     if (state.status !== undefined && !['implementing', 'verifying', 'verified', 'blocked'].includes(state.status)) return { status: 'invalid' } as const;
-    if (state.evidence !== undefined && (!state.evidence || typeof state.evidence !== 'object' || Array.isArray(state.evidence) || Object.keys(state.evidence).length > 100)) return { status: 'invalid' } as const;
+    if (state.evidence !== undefined && (!state.evidence || typeof state.evidence !== 'object' || Array.isArray(state.evidence) || Object.keys(state.evidence).length > 20000)) return { status: 'invalid' } as const;
     validatePlan(state.plan, directory);
     if (Object.keys(state.evidence ?? {}).some(id => !state.plan.checks?.some(check => check.id === id))) return { status: 'invalid' } as const;
     for (const check of state.plan.checks) {
       const receipt = state.evidence?.[check.id];
-      if (receipt && (typeof receipt.passed !== 'boolean' || typeof receipt.fingerprint !== 'string' || !Number.isSafeInteger(receipt.code) || !Number.isFinite(receipt.durationMs))) return { status: 'invalid' } as const;
+      if (receipt && (typeof receipt.passed !== 'boolean' || typeof receipt.fingerprint !== 'string' || receipt.runId !== undefined && typeof receipt.runId !== 'string' || receipt.revision !== undefined && !Number.isSafeInteger(receipt.revision) || receipt.checkDigest !== undefined && typeof receipt.checkDigest !== 'string' || receipt.code !== undefined && !Number.isSafeInteger(receipt.code) || receipt.durationMs !== undefined && !Number.isFinite(receipt.durationMs))) return { status: 'invalid' } as const;
     }
     assertActiveReport(directory, path);
     const current = fingerprint(directory, ['.']);
     const view = planningView(state, current);
     const workflowView = view.workflow as { authored?: boolean; semantics?: string; nodes?: JsonRecord[]; edges?: JsonRecord[] } | null;
-    const evidence = boundedList(state.plan.checks, 100, raw => {
+    const allEvidence = state.plan.checks.map(raw => {
       const check = asRecord(raw) as DeliveryCheck;
       const receipt = state.evidence?.[check.id];
       const fresh = evidenceFresh(check, receipt, current, state);
@@ -69,6 +71,7 @@ function reportFor(directory: string, sessionID: string) {
         ...(filename ? { filename: boundedText(filename, 160) } : {}),
       };
     });
+    const evidence = allEvidence.slice(0, 100);
     const plan = {
       goal: boundedText(state.plan.goal), verification: boundedText(state.plan.verification ?? 'required', 32),
       acceptance: boundedList(state.plan.acceptance, 80, raw => { const item = asRecord(raw); return { requirement: boundedText(item.requirement), checks: boundedList(item.checks, 100, id => boundedText(id, 80)) }; }),
@@ -110,9 +113,33 @@ function reportFor(directory: string, sessionID: string) {
       edges: boundedList(view.architecture?.edges, 200, raw => { const edge = asRecord(raw); return { from: boundedText(edge.from, 80), to: boundedText(edge.to, 80), kind: boundedText(edge.kind, 32) }; }),
       ports: boundedList(view.architecture?.ports, 80, raw => { const port = asRecord(raw); return { id: boundedText(port.id, 80), owner: boundedText(port.owner, 80), adapter: boundedText(port.adapter, 80), compositionRoot: boundedText(port.compositionRoot, 80), input: boundedText(port.input), output: boundedText(port.output), errors: boundedText(port.errors), injection: boundedText(port.injection), testDouble: boundedText(port.testDouble), integrationAssertion: boundedText(port.integrationAssertion) }; }),
     };
-    const isStale = evidence.some(item => item.status === 'stale');
-    const status = isStale ? 'stale' : boundedText(state.status || 'active', 32);
-    const result = { status, freshness: isStale ? 'stale' : 'current', runId: state.runId, revision: state.revision, fingerprint: current, plan, workflow, architecture, evidence };
+    const gate = planningStatus(state, current);
+    const issues = completionIssues(state, directory, current);
+    const reviewRequired = requiresReview(state);
+    const reviewIsFresh = !reviewRequired || reviewFresh(state, current);
+    const isStale = allEvidence.some(item => item.status === 'stale') || reviewRequired && !reviewIsFresh;
+    const planningViewLocked = view.gate.locked;
+    const noCompletionIssues = !Object.values(issues).some(value => Array.isArray(value) && value.length > 0);
+    const allChecksFresh = allEvidence.length > 0 && allEvidence.every(item => item.status === 'fresh');
+    const ready = !planningViewLocked && noCompletionIssues && reviewIsFresh && allChecksFresh;
+    const complete = ready && (state.plan.verification ?? 'required') === 'required';
+    const status = state.status === 'blocked' ? 'blocked' : state.status === 'verified' && complete ? 'verified' : isStale ? 'stale' : state.status === 'verifying' ? 'verifying' : 'implementing';
+    const truncation = {
+      checks: { returned: evidence.length, total: allEvidence.length },
+      acceptance: { returned: plan.acceptance.length, total: state.plan.acceptance.length },
+      steps: { returned: plan.steps.length, total: state.plan.steps.length },
+      artifacts: { returned: plan.artifacts.length, total: state.plan.artifacts.length },
+      outputs: { returned: plan.outputs.length, total: state.plan.outputs?.length ?? 0 },
+      assumptions: { returned: plan.assumptions.length, total: state.plan.assumptions?.length ?? 0 },
+      scenarios: { returned: plan.scenarios.length, total: listLength(asRecord(state.plan.design).scenarios) },
+      risks: { returned: plan.risks.length, total: listLength(asRecord(state.plan.design).risks) },
+      workflowNodes: { returned: workflow.nodes.length, total: workflowView?.nodes?.length ?? 0 },
+      workflowEdges: { returned: workflow.edges.length, total: workflowView?.edges?.length ?? 0 },
+      architectureNodes: { returned: architecture.nodes.length, total: view.architecture?.nodes?.length ?? 0 },
+      architectureEdges: { returned: architecture.edges.length, total: view.architecture?.edges?.length ?? 0 },
+      architecturePorts: { returned: architecture.ports.length, total: view.architecture?.ports?.length ?? 0 },
+    };
+    const result = { status, freshness: isStale ? 'stale' : 'current', completion: ready ? 'ready' : 'incomplete', gate: gate.locked ? 'locked' : 'open', runId: state.runId, revision: state.revision, fingerprint: current, plan, workflow, architecture, evidence, truncation };
     if (Buffer.byteLength(JSON.stringify(result), 'utf8') > 64 * 1024) return { status: 'invalid' } as const;
     return result;
   } catch {

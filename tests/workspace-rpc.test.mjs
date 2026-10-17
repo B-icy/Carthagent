@@ -139,7 +139,8 @@ test('delivery RPC returns bounded authoritative session report projections and 
   const runId = 'run-1';
   const current = fingerprint(root, ['.']);
   const report = createReport(root, { runId, revision: 2, status: 'implementing', plan,
-    stepStatus: { step0: 'active' }, evidence: { unit: { runId, revision: 2, checkDigest: checkDigest(check), passed: true, fingerprint: current, executedRevision: 2, durationMs: 9, code: 0, logPath: join(root, '.harness', sessionID, runId, 'logs', 'unit.log'), outputTail: 'must not leave the report DTO' } },
+    stepStatus: { step0: 'active' }, reviewEvidence: { runId, revision: 2, fingerprint: current },
+    evidence: { unit: { runId, revision: 2, checkDigest: checkDigest(check), passed: true, fingerprint: current, executedRevision: 2, durationMs: 9, code: 0, logPath: join(root, '.harness', sessionID, runId, 'logs', 'unit.log'), outputTail: 'must not leave the report DTO' } },
   }, sessionID);
   selectReport(root, report.path);
   const signal = new AbortController().signal;
@@ -157,13 +158,64 @@ test('delivery RPC returns bounded authoritative session report projections and 
   assert.equal(JSON.stringify(result).includes(root), false, 'only a log filename, never the report’s absolute path, is exposed');
   const deliverySchema = workspaceContract.methods.delivery.output;
   assert.equal(deliverySchema.additionalProperties, false);
-  assert.deepEqual(Object.keys(deliverySchema.properties).sort(), ['architecture', 'evidence', 'fingerprint', 'freshness', 'plan', 'revision', 'runId', 'status', 'workflow']);
+  assert.deepEqual(Object.keys(deliverySchema.properties).sort(), ['architecture', 'completion', 'evidence', 'fingerprint', 'freshness', 'gate', 'plan', 'revision', 'runId', 'status', 'truncation', 'workflow']);
   assert.equal(deliverySchema.properties.plan.additionalProperties, false);
 
   writeFileSync(join(root, 'source.txt'), 'edited');
   const stale = await registered.delivery({ sessionID }, { signal });
   assert.equal(stale.freshness, 'stale');
   assert.equal(stale.evidence[0].status, 'stale');
+
+  const changedFingerprint = fingerprint(root, ['.']);
+  const completeState = {
+    runId: 'complete-run', revision: 1, status: 'verified', workflowMode: 'standard', plan: {
+      ...plan, steps: [{ ...plan.steps[0], checks: ['unit'] }],
+    }, stepStatus: { step0: 'done' },
+  };
+  const freshReceipt = { runId: 'complete-run', revision: 1, checkDigest: checkDigest(check), passed: true, fingerprint: changedFingerprint, executedRevision: 1, durationMs: 5, code: 0 };
+  for (const [name, receipt] of [['missing', undefined], ['failed', { ...freshReceipt, passed: false }]]) {
+    const state = { ...completeState, runId: `${name}-run`, evidence: receipt ? { unit: { ...receipt, runId: `${name}-run` } } : {}, reviewEvidence: { runId: `${name}-run`, revision: 1, fingerprint: changedFingerprint } };
+    const report = createReport(root, state, sessionID);
+    selectReport(root, report.path);
+    const projected = await registered.delivery({ sessionID }, { signal });
+    assert.notEqual(projected.status, 'verified', `a forged verified state with ${name} evidence cannot be projected as verified`);
+    assert.equal(projected.completion, 'incomplete');
+  }
+
+  const staleReviewState = { ...completeState, evidence: { unit: freshReceipt }, reviewEvidence: { runId: 'complete-run', revision: 1, fingerprint: '0'.repeat(64) } };
+  const staleReviewReport = createReport(root, staleReviewState, sessionID);
+  selectReport(root, staleReviewReport.path);
+  const staleReview = await registered.delivery({ sessionID }, { signal });
+  assert.equal(staleReview.status, 'stale', 'stale required final-review receipt blocks verified status');
+  assert.equal(staleReview.completion, 'incomplete');
+
+  const lockedState = { ...completeState, runId: 'locked-run', workflowMode: 'strict', evidence: { unit: { ...freshReceipt, runId: 'locked-run' } }, reviewEvidence: { runId: 'locked-run', revision: 1, fingerprint: changedFingerprint } };
+  const lockedReport = createReport(root, lockedState, sessionID);
+  selectReport(root, lockedReport.path);
+  const locked = await registered.delivery({ sessionID }, { signal });
+  assert.notEqual(locked.status, 'verified', 'a locked planning gate blocks a forged verified status');
+  assert.equal(locked.gate, 'locked');
+  assert.equal(locked.completion, 'incomplete');
+
+  const informationalState = { ...completeState, runId: 'informational-run', plan: { ...plan, verification: 'none', steps: [{ ...plan.steps[0], checks: [] }], checks: [], acceptance: [] }, evidence: {}, reviewEvidence: undefined };
+  const informationalReport = createReport(root, informationalState, sessionID);
+  selectReport(root, informationalReport.path);
+  const informational = await registered.delivery({ sessionID }, { signal });
+  assert.notEqual(informational.status, 'verified', 'informational plans cannot claim verified completion');
+  assert.equal(informational.completion, 'incomplete');
+
+  const manyChecks = Array.from({ length: 101 }, (_, index) => ({ id: `check_${String(index).padStart(3, '0')}`, kind: 'test', argv: ['node', '--test'], timeoutSeconds: 20 }));
+  const manyPlan = { ...plan, steps: [{ ...plan.steps[0], checks: manyChecks.map(item => item.id) }], checks: manyChecks, acceptance: [{ requirement: 'Feature is visible', checks: manyChecks.map(item => item.id) }] };
+  const manyEvidence = Object.fromEntries(manyChecks.map((item, index) => [item.id, {
+    runId: 'many-run', revision: 1, checkDigest: checkDigest(item), passed: true,
+    fingerprint: index === 100 ? '0'.repeat(64) : changedFingerprint, executedRevision: 1, durationMs: 2, code: 0,
+  }]));
+  const manyReport = createReport(root, { runId: 'many-run', revision: 1, status: 'implementing', workflowMode: 'standard', plan: manyPlan, stepStatus: { step0: 'done' }, evidence: manyEvidence, reviewEvidence: { runId: 'many-run', revision: 1, fingerprint: changedFingerprint } }, sessionID);
+  selectReport(root, manyReport.path);
+  const manyResult = await registered.delivery({ sessionID }, { signal });
+  assert.equal(manyResult.status, 'stale', 'staleness in a receipt beyond the DTO cap still affects overall status');
+  assert.deepEqual(manyResult.truncation.checks, { returned: 100, total: 101 });
+  assert.equal(manyResult.completion, 'incomplete');
 
   const foreign = createReport(root, { runId: 'foreign-run', revision: 1, status: 'verified', plan, evidence: {} }, 'foreign-session');
   selectReport(root, foreign.path);
