@@ -157,9 +157,15 @@ test('delivery RPC returns bounded authoritative session report projections and 
   assert.equal(JSON.stringify(result).includes('must not leave the report DTO'), false);
   assert.equal(JSON.stringify(result).includes(root), false, 'only a log filename, never the report’s absolute path, is exposed');
   const deliverySchema = workspaceContract.methods.delivery.output;
-  assert.equal(deliverySchema.additionalProperties, false);
-  assert.deepEqual(Object.keys(deliverySchema.properties).sort(), ['architecture', 'completion', 'evidence', 'fingerprint', 'freshness', 'gate', 'plan', 'revision', 'runId', 'status', 'truncation', 'workflow']);
-  assert.equal(deliverySchema.properties.plan.additionalProperties, false);
+  assert.equal(deliverySchema.oneOf.length, 2);
+  assert.deepEqual(deliverySchema.oneOf.map(branch => branch.properties.status.enum), [['active', 'implementing', 'verifying', 'verified', 'blocked', 'stale'], ['unavailable', 'invalid']]);
+  assert.equal(deliverySchema.oneOf[0].additionalProperties, false);
+  assert.deepEqual(Object.keys(deliverySchema.oneOf[0].properties).sort(), ['architecture', 'completion', 'evidence', 'fingerprint', 'freshness', 'gate', 'plan', 'revision', 'runId', 'status', 'truncation', 'workflow']);
+  assert.deepEqual(deliverySchema.oneOf[0].required, Object.keys(deliverySchema.oneOf[0].properties));
+  assert.equal(deliverySchema.oneOf[1].additionalProperties, false);
+  assert.deepEqual(deliverySchema.oneOf[1].required, ['status']);
+  assert.deepEqual(Object.keys(deliverySchema.oneOf[1].properties), ['status']);
+  assert.equal(deliverySchema.oneOf[0].properties.plan.additionalProperties, false);
 
   writeFileSync(join(root, 'source.txt'), 'edited');
   const stale = await registered.delivery({ sessionID }, { signal });

@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { createJiti } = require('jiti');
 const jiti = createJiti(import.meta.url);
-const { createLatestRequestGate, onWorkspaceUpdated } = await jiti.import('../plugins/carthagent/src/ui/workspace-live.ts');
+const { createLatestRequestGate, onWorkspaceUpdated, deliveryReadiness, renderDeliveryReadiness } = await jiti.import('../plugins/carthagent/src/ui/workspace-live.ts');
 
 function deferred() {
   let resolve;
@@ -67,4 +67,21 @@ test('a real workspace RPC event invalidates the active view and stale deferred 
   await oldRefresh;
   assert.equal(visible, 'event-refreshed view');
   stop();
+});
+
+test('bounded delivery DTO reports incomplete capped evidence and keeps the finish gate locked', () => {
+  const checks = { returned: 100, total: 101 };
+  const delivery = {
+    status: 'stale', freshness: 'stale', completion: 'incomplete', gate: 'open',
+    evidence: Array.from({ length: 100 }, (_, index) => ({ id: `check_${index}`, status: index === 99 ? 'stale' : 'fresh' })),
+    truncation: { checks, acceptance: { returned: 1, total: 1 }, steps: { returned: 1, total: 1 } },
+  };
+  const readiness = deliveryReadiness(delivery);
+  const rendered = renderDeliveryReadiness(delivery);
+  assert.equal(readiness.complete, false);
+  assert.match(readiness.status, /checks 100\/101/);
+  assert.equal(rendered.gate, 'locked');
+  assert.match(rendered.label, /Readiness: incomplete/);
+  assert.ok(rendered.sections.includes('checks: 100 of 101 returned'));
+  assert.match(rendered.receipts.at(-1), /check_99: stale/);
 });

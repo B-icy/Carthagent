@@ -20,7 +20,6 @@ const session = {
     updatedAt: string, directory: string,
   }, required: ['id', 'title', 'status', 'directory'], additionalProperties: false,
 } as const;
-const deliveryStatus = { type: 'string', enum: ['unavailable', 'invalid', 'active', 'implementing', 'verifying', 'verified', 'blocked', 'stale'] } as const;
 const evidenceItem = {
   type: 'object', properties: {
     id: string, status: { type: 'string', enum: ['pending', 'failed', 'fresh', 'stale'] },
@@ -57,14 +56,28 @@ const architectureGraph = {
     ports: { type: 'array', items: { type: 'object', properties: { id: string, owner: string, adapter: string, compositionRoot: string, input: { type: 'string' }, output: { type: 'string' }, errors: { type: 'string' }, injection: { type: 'string' }, testDouble: { type: 'string' }, integrationAssertion: { type: 'string' } }, required: ['id', 'owner', 'adapter', 'compositionRoot', 'input', 'output', 'errors', 'injection', 'testDouble', 'integrationAssertion'], additionalProperties: false } },
   }, required: ['nodes', 'edges', 'ports'], additionalProperties: false,
 } as const;
+const deliveryTruncation = {
+  type: 'object', properties: Object.fromEntries(['checks', 'acceptance', 'steps', 'artifacts', 'outputs', 'assumptions', 'scenarios', 'risks', 'workflowNodes', 'workflowEdges', 'architectureNodes', 'architectureEdges', 'architecturePorts'].map(key => [key, { type: 'object', properties: { returned: { type: 'integer' }, total: { type: 'integer' } }, required: ['returned', 'total'], additionalProperties: false }])), required: ['checks', 'acceptance', 'steps', 'artifacts', 'outputs', 'assumptions', 'scenarios', 'risks', 'workflowNodes', 'workflowEdges', 'architectureNodes', 'architectureEdges', 'architecturePorts'], additionalProperties: false,
+} as const;
+const deliveryFullProperties = {
+  status: { type: 'string', enum: ['active', 'implementing', 'verifying', 'verified', 'blocked', 'stale'] },
+  freshness: { type: 'string', enum: ['current', 'stale'] },
+  completion: { type: 'string', enum: ['ready', 'incomplete'] },
+  gate: { type: 'string', enum: ['locked', 'open'] },
+  runId: string,
+  revision: { type: 'integer' },
+  fingerprint: { type: 'string', minLength: 64, maxLength: 64 },
+  plan: deliveryPlan,
+  workflow: workflowGraph,
+  architecture: architectureGraph,
+  evidence: { type: 'array', items: evidenceItem },
+  truncation: deliveryTruncation,
+} as const;
 const deliveryOutput = {
-  type: 'object', properties: {
-    status: deliveryStatus, freshness: { type: 'string', enum: ['current', 'stale'] }, completion: { type: 'string', enum: ['ready', 'incomplete'] }, gate: { type: 'string', enum: ['locked', 'open'] }, runId: string,
-    revision: { type: 'integer' }, fingerprint: { type: 'string', pattern: '^[a-f0-9]{64}$' },
-    plan: deliveryPlan, workflow: workflowGraph, architecture: architectureGraph,
-    evidence: { type: 'array', items: evidenceItem },
-    truncation: { type: 'object', properties: Object.fromEntries(['checks', 'acceptance', 'steps', 'artifacts', 'outputs', 'assumptions', 'scenarios', 'risks', 'workflowNodes', 'workflowEdges', 'architectureNodes', 'architectureEdges', 'architecturePorts'].map(key => [key, { type: 'object', properties: { returned: { type: 'integer' }, total: { type: 'integer' } }, required: ['returned', 'total'], additionalProperties: false }])), required: ['checks', 'acceptance', 'steps', 'artifacts', 'outputs', 'assumptions', 'scenarios', 'risks', 'workflowNodes', 'workflowEdges', 'architectureNodes', 'architectureEdges', 'architecturePorts'], additionalProperties: false },
-  }, required: ['status'], additionalProperties: false,
+  oneOf: [
+    { type: 'object', properties: deliveryFullProperties, required: Object.keys(deliveryFullProperties), additionalProperties: false },
+    { type: 'object', properties: { status: { type: 'string', enum: ['unavailable', 'invalid'] } }, required: ['status'], additionalProperties: false },
+  ],
 } as const;
 
 /** Shared server/TUI contract. Callers supply the intended native location on every call. */
@@ -127,6 +140,7 @@ export interface WorkspaceDelivery {
   runId?: string;
   revision?: number;
   fingerprint?: string;
+  truncation?: Record<string, { returned: number; total: number }>;
   plan?: {
     goal: string;
     verification: string;

@@ -2,7 +2,7 @@
 import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { usePlugin } from "@opencode/plugin/tui";
 import { pullRequestClient, rpcEventOptions, workspaceClient, type PullRequestRecord, type WorkspaceDelivery, type WorkspaceSnapshot } from "./client.js";
-import { createLatestRequestGate, onWorkspaceUpdated } from "./workspace-live.js";
+import { createLatestRequestGate, onWorkspaceUpdated, renderDeliveryReadiness } from "./workspace-live.js";
 
 function sessionAttention(context: ReturnType<typeof usePlugin>, sessionID: string) {
   return (context.data.session.permission.list(sessionID)?.length ?? 0) + (context.data.session.form.list(sessionID)?.length ?? 0);
@@ -228,6 +228,7 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
   };
 
   const evidenceSessions = () => workspaceSessions().filter((session) => !activeSession() || session.id === activeSession());
+  const readiness = () => renderDeliveryReadiness(deliveryEvidence());
   const taskForSession = (sessionID: string) => snapshot()?.sessions.find((session) => session.id === sessionID)?.taskID;
   const loadPullRequests = async (sessionID: string) => {
     const taskID = taskForSession(sessionID);
@@ -305,6 +306,9 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
     <Show when={snapshot()} fallback={<text fg={context.theme.text.faint}>{error() || "Loading local workspace…"}</text>}>
       <Show when={props.view === "workflow"}>
         <text fg={context.theme.text.action.primary.base}>Authoritative delivery workflow · {deliveryEvidence()?.status ?? "select a session"}</text>
+        <text fg={readiness().gate === "open" ? context.theme.text.feedback.success.base : context.theme.text.feedback.warning.base}>{readiness().label} · finish gate {readiness().gate}</text>
+        <For each={readiness().sections}>{(section) => <text fg={context.theme.text.feedback.warning.base}>Incomplete DTO section · {section}</text>}</For>
+        <For each={readiness().receipts}>{(receipt) => <text fg={context.theme.text.feedback.warning.base}>{receipt}</text>}</For>
         <Show when={deliveryEvidence()?.workflow} fallback={<text fg={context.theme.text.faint}>Select a session with a delivery report to load workflow nodes, edges, and step receipts.</text>}>
           <text fg={context.theme.text.muted}>{deliveryEvidence()?.workflow?.semantics}</text>
           <For each={deliveryEvidence()?.workflow?.nodes ?? []}>{(node) => <text fg={node.status === "failed" || node.status === "blocked" ? context.theme.text.feedback.error.base : node.status === "complete" || node.status === "passed" ? context.theme.text.feedback.success.base : context.theme.text.base}>[{node.status}] {node.title} · {node.type}{node.step ? ` · step ${node.step}` : ""} · checks: {node.checks.join(", ") || "none"}</text>}</For>
@@ -314,6 +318,9 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
       </Show>
       <Show when={props.view === "architecture"}>
         <text fg={context.theme.text.action.primary.base}>Delivery architecture · {deliveryEvidence()?.status ?? "select a session"}</text>
+        <text fg={context.theme.text.feedback.warning.base}>{readiness().label} · finish gate {readiness().gate}</text>
+        <For each={readiness().sections}>{(section) => <text fg={context.theme.text.feedback.warning.base}>Incomplete DTO section · {section}</text>}</For>
+        <For each={readiness().receipts}>{(receipt) => <text fg={context.theme.text.feedback.warning.base}>{receipt}</text>}</For>
         <Show when={deliveryEvidence()?.architecture} fallback={<text fg={context.theme.text.faint}>Select a session with a delivery report to load authored architecture nodes, edges, and ports.</text>}>
           <For each={deliveryEvidence()?.architecture?.nodes ?? []}>{(node) => <text fg={context.theme.text.base}>◆ {node.title} · {node.type ?? "component"}{node.layer ? ` · layer ${node.layer}` : ""}{node.status ? ` · ${node.status}` : ""}</text>}</For>
           <For each={deliveryEvidence()?.architecture?.edges ?? []}>{(edge) => <text fg={context.theme.text.muted}>{edge.from} → {edge.to} · {edge.label ?? edge.kind}</text>}</For>
@@ -330,9 +337,14 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
           <text fg={context.theme.text.action.primary.base}>Delivery receipt</text>
           <Show when={deliveryEvidence()} fallback={<text fg={context.theme.text.faint}>Loading delivery receipt…</text>}>
             <text fg={context.theme.text.base}>Status: {deliveryEvidence()?.status} · {deliveryEvidence()?.freshness ?? "freshness unavailable"} · revision {deliveryEvidence()?.revision ?? "—"} · run {deliveryEvidence()?.runId ?? "—"}</text>
+            <text fg={readiness().gate === "open" ? context.theme.text.feedback.success.base : context.theme.text.feedback.warning.base}>{readiness().label} · finish gate {readiness().gate}</text>
+            <For each={readiness().sections}>{(section) => <text fg={context.theme.text.feedback.warning.base}>Incomplete DTO section · {section}</text>}</For>
+            <For each={readiness().receipts}>{(receipt) => <text fg={context.theme.text.feedback.warning.base}>{receipt}</text>}</For>
             <Show when={deliveryEvidence()?.plan}>{(plan) => <box flexDirection="column">
               <text fg={context.theme.text.action.primary.base}>Goal: {plan().goal}</text>
+              <Show when={deliveryEvidence()?.truncation?.steps}>{(scope) => <text fg={context.theme.text.muted}>Steps: {scope().returned} of {scope().total} returned</text>}</Show>
               <For each={plan().steps}>{(step) => <text fg={step.status === "completed" ? context.theme.text.feedback.success.base : context.theme.text.base}>[{step.status}] {step.id} · {step.title}{step.dependsOn.length ? ` · after ${step.dependsOn.join(", ")}` : ""}</text>}</For>
+              <Show when={deliveryEvidence()?.truncation?.checks}>{(scope) => <text fg={context.theme.text.muted}>Checks: {scope().returned} of {scope().total} returned</text>}</Show>
               <For each={deliveryEvidence()?.evidence ?? []}>{(item) => <text fg={item.status === "fresh" ? context.theme.text.feedback.success.base : item.status === "failed" || item.status === "stale" ? context.theme.text.feedback.error.base : context.theme.text.feedback.warning.base}>Receipt {item.id}: {item.status}{item.code !== undefined ? ` · exit ${item.code}` : ""}{item.filename ? ` · ${item.filename}` : ""}</text>}</For>
             </box>}</Show>
           </Show>

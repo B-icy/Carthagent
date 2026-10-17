@@ -1,0 +1,7 @@
+{
+  "name": "ctg-native-report-fixture",
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  }
+}

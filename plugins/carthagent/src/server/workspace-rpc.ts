@@ -56,6 +56,7 @@ function reportFor(directory: string, sessionID: string) {
     }
     assertActiveReport(directory, path);
     const current = fingerprint(directory, ['.']);
+    if (!/^[a-f0-9]{64}$/.test(current)) return { status: 'invalid' } as const;
     const view = planningView(state, current);
     const workflowView = view.workflow as { authored?: boolean; semantics?: string; nodes?: JsonRecord[]; edges?: JsonRecord[] } | null;
     const allEvidence = state.plan.checks.map(raw => {
