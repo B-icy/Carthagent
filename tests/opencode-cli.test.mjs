@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cliHelp, openCodeCliManifest, parseOpenCodeArgs, runOpenCodeCli } from '../lib/opencode/cli.mjs';
+import { createOpenCodeCliRuntime, headlessSucceeded, modelWithThinking, reconcileHeadlessResult, textParts } from '../lib/opencode/cli-runtime.mjs';
 
 function ioCapture() {
   const output = { stdout: [], stderr: [] };
@@ -81,4 +82,141 @@ test('missing native capabilities fail explicitly instead of silently succeeding
   const { output, io } = ioCapture();
   assert.equal(await runOpenCodeCli({ argv: ['account'], runtime: {}, io }), 1);
   assert.match(output.stderr[0], /does not provide account\(\)/);
+});
+
+test('headless native results require authoritative successful terminal and assistant outcomes', () => {
+  assert.equal(headlessSucceeded({ messages: [] }), false);
+  assert.equal(headlessSucceeded({ messages: [{ type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'looks done' }] }] }), false);
+  assert.equal(headlessSucceeded({ messages: [
+    { type: 'assistant', finish: 'error', error: { message: 'provider failed' } },
+    { type: 'idle', outcome: 'failed' },
+  ] }), false);
+  assert.equal(headlessSucceeded({ session: { outcome: 'interrupted' }, messages: [
+    { type: 'assistant', finish: 'stop' }, { type: 'idle', outcome: 'interrupted' },
+  ] }), false);
+  assert.equal(headlessSucceeded({ session: { outcome: 'succeeded' }, messages: [
+    { type: 'assistant', finish: 'stop' }, { type: 'idle', outcome: 'succeeded' },
+  ] }), true);
+  assert.equal(headlessSucceeded({ session: { outcome: 'failed' }, messages: [
+    { type: 'assistant', finish: 'stop' }, { type: 'idle', outcome: 'succeeded' },
+  ] }), false);
+});
+
+test('thinking level maps to native model variant, not an invented prompt property', () => {
+  assert.deepEqual(modelWithThinking({ providerID: 'fixture', id: 'model' }, 'high'), {
+    providerID: 'fixture', id: 'model', variant: 'high',
+  });
+  assert.equal(modelWithThinking(undefined, 'high'), undefined);
+});
+
+test('headless terminal reconciliation observes a delayed native session projection', async () => {
+  let reads = 0;
+  const latest = await reconcileHeadlessResult({
+    session: { id: 'ses_lagging' },
+    messages: [{ type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'answer' }] }],
+  }, { timeoutMs: 500, client: { session: {
+    get: async () => ({ id: 'ses_lagging', ...(++reads < 2 ? {} : { outcome: 'succeeded' }) }),
+    context: async () => reads < 2
+      ? [{ type: 'assistant', finish: 'stop' }]
+      : [{ type: 'assistant', finish: 'stop' }, { type: 'idle', outcome: 'succeeded' }],
+  } } });
+  assert.ok(reads >= 2);
+  assert.equal(headlessSucceeded(latest), true);
+});
+
+test('headless text output selects the completed assistant response for the latest user turn', () => {
+  assert.deepEqual(textParts([
+    { type: 'user', text: 'old question' },
+    { type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'stale answer' }] },
+    { type: 'idle', outcome: 'succeeded' },
+    { type: 'user', text: 'new question' },
+    { type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'current answer' }] },
+    { type: 'idle', outcome: 'succeeded' },
+  ]), ['current answer']);
+});
+
+test('concrete headless runtime returns failure for failed native session outcome', async t => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-opencode-failed-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const service = { url: 'http://127.0.0.1:1', headers: {}, binary: '/fixture/opencode', paths: { root: '/fixture/home' } };
+  const runtime = await createOpenCodeCliRuntime({ cwd, io: ioCapture().io, stdout: { write() {} }, native: {
+    runtime: {},
+    service: { ensureService: async () => service },
+    headless: { runHeadless: async () => ({
+      session: { id: 'ses_failed' },
+      messages: [
+        { type: 'assistant', finish: 'error', error: { message: 'provider failure' }, parts: [{ type: 'text', text: 'provider failure' }] },
+        { type: 'idle', outcome: 'failed' },
+      ],
+    }) },
+    clientFactory: async () => ({ session: {
+      get: async () => ({ id: 'ses_failed', outcome: 'failed' }),
+      context: async () => [
+        { type: 'assistant', finish: 'error', error: { message: 'provider failure' } },
+        { type: 'idle', outcome: 'failed' },
+      ],
+    } }),
+  } });
+  assert.equal(await runtime.run({ mode: 'headless', options: { prompt: 'Run' }, prompt: 'Run' }), 1);
+});
+
+test('concrete native runtime uses OpenCode service/headless/model APIs and real delivery status', async t => {
+  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join, resolve } = await import('node:path');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-opencode-cli-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  writeFileSync(join(cwd, 'source.mjs'), 'export default true;\n');
+  const events = [];
+  const service = { url: 'http://127.0.0.1:1', headers: {}, binary: '/fixture/opencode', paths: { root: '/fixture/home' } };
+  const native = {
+    runtime: {
+      runtimeEnvironment: () => ({ CTG_FIXTURE: '1' }),
+      readRuntimeCredentials: async () => ({ 'experiential-labs': { access: 'fixture-access' } }),
+    },
+    service: {
+      ensureService: async options => { events.push(['service', options.pluginPath]); return service; },
+      launchTui: (selectedService, workspace, options) => {
+        events.push(['tui', selectedService === service, workspace, options.sessionID]);
+        return { once(event, callback) { if (event === 'exit') queueMicrotask(() => callback(0, null)); } };
+      },
+    },
+    headless: {
+      runHeadless: async (selectedService, workspace, prompt, options) => {
+        events.push(['headless', selectedService === service, workspace, prompt, options.sessionID]);
+        return { session: { id: 'ses_fixture', outcome: 'succeeded' }, messages: [
+          { type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'native answer' }] },
+          { type: 'idle', outcome: 'succeeded' },
+        ] };
+      },
+    },
+    clientFactory: async () => ({
+      session: {
+        get: async () => ({ id: 'ses_fixture', outcome: 'succeeded' }),
+        context: async () => [
+          { type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'native answer' }] },
+          { type: 'idle', outcome: 'succeeded' },
+        ],
+      },
+      model: { list: async () => ({ data: [
+        { providerID: 'anthropic', modelID: 'claude-fixture', name: 'Claude Fixture', limit: { context: 100, output: 10 }, cost: [{ input: 1, output: 2 }] },
+      ] }) },
+    }),
+  };
+  const output = [];
+  const io = { log: text => output.push(String(text)), error: text => output.push(`ERR:${text}`) };
+  const stdout = { write: text => output.push(String(text)) };
+  const runtime = await createOpenCodeCliRuntime({ cwd, native, io, stdout });
+  assert.equal(await runtime.run({ mode: 'headless', options: { prompt: 'Do a task' }, prompt: 'Do a task' }), 0);
+  assert.equal(output.at(-1), 'native answer\n');
+  assert.equal(await runtime.listModels({ query: 'claude' }), 1);
+  assert.match(output.at(-1), /anthropic\s+claude-fixture\s+100\s+10/);
+  assert.equal(await runtime.run({ mode: 'interactive', options: {}, prompt: undefined }), 0);
+  assert.ok(events.some(entry => entry[0] === 'service'));
+  assert.ok(events.some(entry => entry[0] === 'headless' && entry[3] === 'Do a task'));
+  assert.ok(events.some(entry => entry[0] === 'tui' && entry[2] === cwd));
+  assert.equal(resolve(cwd), cwd);
 });
