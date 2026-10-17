@@ -1,111 +1,99 @@
 import assert from 'node:assert/strict';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { gzipSync } from 'node:zlib';
 import { afterEach, test } from 'node:test';
-import { verifyOwnedRuntimeRelease } from '../tools/verify-owned-runtime-release.mjs';
+import {
+  REQUIRED_RUNTIME_TARGETS,
+  validateRuntimeReleaseManifest,
+  verifyOwnedRuntimeRelease,
+} from '../tools/verify-owned-runtime-release.mjs';
 
-const sourceRevision = '0123456789abcdef0123456789abcdef01234567';
-const patchBytes = Buffer.from('pinned fixture patch');
-const patchSha256 = sha(patchBytes);
-const lockSha256 = 'b'.repeat(64);
-const version = '9.8.7';
-const platforms = ['linux-x64', 'linux-arm64', 'darwin-x64', 'darwin-arm64', 'windows-x64'];
-const temporary = [];
+const roots = [];
+afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))));
 
-afterEach(async () => {
-  await Promise.all(temporary.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+test('validates required five-platform manifest then supplies every trusted digest to acquisition', async () => {
+  const { root, manifestPath, manifest } = await fixture();
+  const calls = [];
+  await verifyOwnedRuntimeRelease({
+    releaseVersion: manifest.releaseVersion,
+    manifestPath,
+    assetsBaseUrl: 'https://github.example/releases/v9.8.7',
+    repoRoot: root,
+    acquireRuntime: async (options) => { calls.push(options); return `/verified/${options.platform}-${options.arch}`; },
+  });
+  assert.equal(root.length > 0, true);
+  assert.equal(calls.length, 5);
+  for (const [key, [platform, arch, name]] of Object.entries(REQUIRED_RUNTIME_TARGETS)) {
+    const call = calls.find((item) => `${item.platform}-${item.arch}` === key);
+    assert.ok(call, `acquired ${key}`);
+    assert.equal(call.baseUrl, 'https://github.example/releases/v9.8.7');
+    assert.equal(call.expectedArchiveSha256, manifest.assets[key].archiveSha256);
+    assert.equal(call.expectedExecutableSha256, manifest.assets[key].executableSha256);
+    assert.equal(call.expectedSourceRevision, manifest.sourceRevision);
+    assert.equal(call.expectedPatchSha256, manifest.patchSha256);
+    assert.equal(call.expectedLockSha256, manifest.lockSha256);
+    assert.equal(manifest.assets[key].name, name);
+    assert.equal(call.platform, platform);
+    assert.equal(call.arch, arch);
+  }
 });
 
-test('verifies all five trusted archive digests, inner provenance, and executable digests', async () => {
-  const fixture = await makeFixture();
-  await verifyOwnedRuntimeRelease(fixture);
+test('rejects absent Linux arm64 and a release-version mismatch before acquiring anything', async () => {
+  const { root, manifestPath, manifest } = await fixture();
+  delete manifest.assets['linux-arm64'];
+  await writeFile(manifestPath, JSON.stringify(manifest));
+  await assert.rejects(verifyOwnedRuntimeRelease({
+    releaseVersion: manifest.releaseVersion,
+    manifestPath,
+    assetsBaseUrl: 'https://example.test/release',
+    repoRoot: root,
+    acquireRuntime: async () => assert.fail('invalid manifest must not acquire assets'),
+  }), /must contain exactly/);
+  await assert.rejects(verifyOwnedRuntimeRelease({
+    releaseVersion: '9.8.8', manifestPath, assetsBaseUrl: 'https://example.test/release', repoRoot: root,
+    acquireRuntime: async () => assert.fail('wrong release version must not acquire assets'),
+  }), /does not match/);
 });
 
-test('rejects altered archive bytes even if the downloaded asset name is correct', async () => {
-  const fixture = await makeFixture();
-  const target = path.join(fixture.assetsDir, 'opencode-linux-arm64.tar.gz');
-  await writeFile(target, Buffer.concat([await readFile(target), Buffer.from('tampered')]));
-  await assert.rejects(verifyOwnedRuntimeRelease(fixture), /SHA-256 does not match/);
+test('rejects malformed digests and noncanonical platform asset names', async () => {
+  const { manifest } = await fixture();
+  manifest.assets['windows-x64'].archiveSha256 = 'not-a-digest';
+  assert.throws(() => validateRuntimeReleaseManifest(manifest, manifest.releaseVersion), /archiveSha256/);
+  manifest.assets['windows-x64'].archiveSha256 = 'a'.repeat(64);
+  manifest.assets['windows-x64'].name = 'arbitrary.tar.gz';
+  assert.throws(() => validateRuntimeReleaseManifest(manifest, manifest.releaseVersion), /asset name/);
 });
 
-test('rejects a platform set that omits Linux arm64', async () => {
-  const fixture = await makeFixture();
-  await rm(path.join(fixture.assetsDir, 'opencode-linux-arm64.tar.gz'));
-  await assert.rejects(verifyOwnedRuntimeRelease(fixture), /must include all five/);
-});
-
-async function makeFixture() {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-runtime-release-test-'));
-  temporary.push(root);
-  const assetsDir = path.join(root, 'assets');
-  const repoRoot = path.join(root, 'repo');
-  await mkdir(assetsDir);
-  await mkdir(path.join(repoRoot, 'script/ctg'), { recursive: true });
-  await mkdir(path.join(repoRoot, 'docs/patches'), { recursive: true });
-  await writeFile(path.join(repoRoot, 'script/ctg/build-owned-runtime.sh'), [
+async function fixture() {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-runtime-release-manifest-'));
+  roots.push(root);
+  await mkdir(path.join(root, 'script/ctg'), { recursive: true });
+  await mkdir(path.join(root, 'docs/patches'), { recursive: true });
+  const patch = Buffer.from('fixture pinned patch');
+  const patchSha256 = createHash('sha256').update(patch).digest('hex');
+  const sourceRevision = '0123456789abcdef0123456789abcdef01234567';
+  const lockSha256 = 'b'.repeat(64);
+  await writeFile(path.join(root, 'script/ctg/build-owned-runtime.sh'), [
     `EXPECTED_SOURCE="${sourceRevision}"`, `EXPECTED_PATCH="${patchSha256}"`, `EXPECTED_LOCK="${lockSha256}"`,
   ].join('\n'));
-  await writeFile(path.join(repoRoot, 'docs/patches/opencode-v2.0.32-session-ui.patch'), patchBytes);
-  const release = {
+  await writeFile(path.join(root, 'docs/patches/opencode-v2.0.32-session-ui.patch'), patch);
+  const manifest = {
     version: 1,
-    releaseVersion: version,
+    releaseVersion: '9.8.7',
     compatibilityVersion: '2.0.32',
     runtimeVersion: '0.0.0-ctg.2.0.32',
     sourceRevision,
     patchSha256,
     lockSha256,
-    assets: {},
+    assets: Object.fromEntries(Object.entries(REQUIRED_RUNTIME_TARGETS).map(([key, [, , name]], index) => [key, {
+      name,
+      archiveSha256: (index + 1).toString(16).repeat(64),
+      executableSha256: (index + 6).toString(16).repeat(64),
+    }])),
   };
-  const archives = [];
-  for (const platform of platforms) {
-    const name = `opencode-${platform}.tar.gz`;
-    const osName = platform.split('-')[0];
-    const executablePath = `cli-${platform}/bin/${osName === 'windows' ? 'opencode.exe' : 'opencode'}`;
-    const executable = Buffer.from(`fixture ${platform}`);
-    const executableSha256 = sha(executable);
-    const innerManifest = {
-      owner: 'Carthagent', sourceRepository: 'https://github.com/anomalyco/opencode',
-      sourceRevision, lockSha256, patchSha256, compatibilityVersion: '2.0.32',
-      runtimeVersion: '0.0.0-ctg.2.0.32', channel: 'ctg.2.0.32', platform: `${osName}-${platform.split('-')[1]}`, webUI: false,
-    };
-    const sums = `${executableSha256}  ${executablePath}\n`;
-    const archive = makeArchive([
-      [executablePath, executable],
-      ['ctg-runtime.json', Buffer.from(JSON.stringify(innerManifest))],
-      ['SHA256SUMS', Buffer.from(sums)],
-    ]);
-    archives.push([name, archive]);
-    release.assets[platform] = { name, archiveSha256: sha(archive), executableSha256 };
-  }
-  for (const [name, archive] of archives) await writeFile(path.join(assetsDir, name), archive);
   const manifestPath = path.join(root, 'runtime-release.json');
-  await writeFile(manifestPath, JSON.stringify(release));
-  return { version, manifestPath, assetsDir, repoRoot };
-}
-
-function sha(bytes) { return createHash('sha256').update(bytes).digest('hex'); }
-function tarOctal(value, width) { return Buffer.from(`${value.toString(8).padStart(width - 1, '0')}\0`); }
-function tarEntry(name, data) {
-  const header = Buffer.alloc(512);
-  header.write(name, 0, 100);
-  tarOctal(0o644, 8).copy(header, 100);
-  tarOctal(0, 8).copy(header, 108);
-  tarOctal(0, 8).copy(header, 116);
-  tarOctal(data.length, 12).copy(header, 124);
-  tarOctal(0, 12).copy(header, 136);
-  header.fill(32, 148, 156);
-  header[156] = '0'.charCodeAt(0);
-  header.write('ustar\0', 257, 6);
-  header.write('00', 263, 2);
-  let checksum = 0;
-  for (const byte of header) checksum += byte;
-  tarOctal(checksum, 8).copy(header, 148);
-  const padding = Buffer.alloc((512 - (data.length % 512)) % 512);
-  return Buffer.concat([header, data, padding]);
-}
-function makeArchive(entries) {
-  return gzipSync(Buffer.concat([...entries.map(([name, data]) => tarEntry(name, data)), Buffer.alloc(1024)]));
+  await writeFile(manifestPath, JSON.stringify(manifest));
+  return { root, manifestPath, manifest };
 }
