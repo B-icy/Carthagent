@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFile } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import os from 'node:os';
 
 const packageVersion = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')).version;
@@ -37,22 +37,52 @@ test('install id persists across runs and is regenerated when the file is corrup
 
 test('concurrent first runs and corrupt repairs converge on one install id', async t => {
   const lib = new URL('../lib/ship-telemetry.mjs', import.meta.url).href;
-  const run = agentDir => new Promise((resolve, reject) =>
-    execFile(process.execPath, ['--input-type=module', '-e',
-      `import { shipInstallId } from '${lib}'; console.log(shipInstallId({ agentDir: ${JSON.stringify(agentDir)} }));`],
-      (error, stdout) => error ? reject(error) : resolve(stdout.trim())));
+  const startTogether = async (agentDir, label, count = 6) => {
+    const gate = join(agentDir, `${label}.start`);
+    const children = Array.from({ length: count }, (_, index) => {
+      const ready = join(agentDir, `${label}.${index}.ready`);
+      const code = `import { existsSync, writeFileSync } from 'node:fs';
+        import { shipInstallId } from '${lib}';
+        const ready = ${JSON.stringify(ready)};
+        while (true) { try { writeFileSync(ready, 'ready', { flag: 'wx' }); break; } catch { if (existsSync(ready)) break; } }
+        const gate = ${JSON.stringify(gate)};
+        while (!existsSync(gate)) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+        console.log(shipInstallId({ agentDir: ${JSON.stringify(agentDir)} }));`;
+      const child = spawn(process.execPath, ['--input-type=module', '-e', code], { stdio: ['ignore', 'pipe', 'pipe'] });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.setEncoding('utf8').on('data', chunk => { stdout += chunk; });
+      child.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk; });
+      const result = new Promise((resolve, reject) => child.once('error', reject).once('close', code => {
+        if (code !== 0) reject(new Error(`install-id worker exited ${code}: ${stderr}`));
+        else resolve(stdout.trim());
+      }));
+      return { ready, result };
+    });
+    const deadline = Date.now() + 10_000;
+    while (!children.every(child => existsSync(child.ready))) {
+      assert.ok(Date.now() < deadline, 'all worker processes should reach the start barrier');
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    writeFileSync(gate, 'go');
+    return Promise.all(children.map(child => child.result));
+  };
   // Fresh directory: racing launches adopt a single id.
   const fresh = tmp(t);
-  const ids = await Promise.all([run(fresh), run(fresh), run(fresh), run(fresh)]);
-  assert.equal(new Set(ids).size, 1);
+  const ids = await startTogether(fresh, 'fresh');
+  assert.equal(new Set(ids).size, 1, `fresh IDs diverged: ${ids.join(', ')}`);
   assert.match(ids[0], UUID);
   assert.equal(readFileSync(installIdPath(fresh), 'utf8').trim(), ids[0]);
   // Corrupt file: racing repairs also converge.
   const corrupt = tmp(t);
   writeFileSync(installIdPath(corrupt), 'garbage');
-  const repaired = await Promise.all([run(corrupt), run(corrupt), run(corrupt), run(corrupt)]);
-  assert.equal(new Set(repaired).size, 1);
+  const lockPath = `${installIdPath(corrupt)}.lock`;
+  writeFileSync(lockPath, 'legacy-stale-lock');
+  const repaired = await startTogether(corrupt, 'corrupt');
+  assert.equal(new Set(repaired).size, 1, `repaired IDs diverged: ${repaired.join(', ')}`);
   assert.equal(readFileSync(installIdPath(corrupt), 'utf8').trim(), repaired[0]);
+  assert.match(repaired[0], UUID);
+  assert.equal(readFileSync(lockPath, 'utf8'), 'legacy-stale-lock', 'legacy lock is not stolen or deleted');
 });
 
 test('provider mode reflects ship, byok, both, or no credentials', t => {
