@@ -73,6 +73,29 @@ test('parallel per-session admissions reserve the final slot once, replay IDs id
   }
 });
 
+test('Code Mode nested tools sharing an execute ID reserve independently but duplicate tool calls stay idempotent',async()=>{
+  const temp=mkdtempSync(join(tmpdir(),'benchmark-guard-codemode-'));
+  const old={limit:process.env.BENCH_TOOL_LIMIT,log:process.env.BENCH_GUARD_LOG,home:process.env.CTG_OPENCODE_HOME};
+  process.env.BENCH_TOOL_LIMIT='3';process.env.BENCH_GUARD_LOG=join(temp,'guard.jsonl');process.env.CTG_OPENCODE_HOME=temp;
+  const state=harness();let dispose=await guard(state.ctx);
+  try{
+    const before=state.hooks.get('tool:execute.before');
+    const invoke=(tool,id='execute-1')=>before({id,tool,sessionID:'codemode-session'});
+    await invoke('execute');await invoke('carthagent.delivery_plan');
+    await assert.rejects(invoke('carthagent.delivery_plan'),/budget exhausted/);
+    await invoke('carthagent.delivery_check','execute-2');
+    assert.deepEqual(state.storage.get(key('codemode-session')).map(row=>({tool:row.tool,admitted:row.admitted})),[
+      {tool:'execute',admitted:true},{tool:'carthagent.delivery_plan',admitted:true},{tool:'carthagent.delivery_check',admitted:true},
+    ]);
+    const log=readFileSync(process.env.BENCH_GUARD_LOG,'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepEqual(log.map(row=>row.tool),['execute','carthagent.delivery_plan','carthagent.delivery_check']);
+  }finally{
+    await dispose();
+    for(const[name,value]of Object.entries({BENCH_TOOL_LIMIT:old.limit,BENCH_GUARD_LOG:old.log,CTG_OPENCODE_HOME:old.home}))if(value===undefined)delete process.env[name];else process.env[name]=value;
+    rmSync(temp,{recursive:true,force:true});
+  }
+});
+
 test('failed durable reservation is fail-closed and a cancelled queued call consumes no slot',async()=>{
   const temp=mkdtempSync(join(tmpdir(),'benchmark-guard-fail-'));
   const old={limit:process.env.BENCH_TOOL_LIMIT,log:process.env.BENCH_GUARD_LOG,home:process.env.CTG_OPENCODE_HOME};
