@@ -151,6 +151,11 @@ pass, including the real JSON generator. Review still requires rejecting a
 selected source commit that differs from current integration HEAD. Parent also
 requested portable test-path handling and offline coverage of actual runner
 failure/cleanup paths. No controlled measurement or performance approval exists.
+The `d5ad57c` follow-up adds current-HEAD validation and shared ABBA/cleanup tests
+(14 author tests pass), but parent inspection found the early validator's exit
+code is ignored before `set -e`, and a callback's nonzero exit can be hidden by
+an already-recorded zero status. Actual shell-exit regressions and corrections
+are assigned; independent review is in progress and ABBA remains on hold.
 Short idle observations showed no PTY output; they do not establish long-running
 memory bounds.
 
