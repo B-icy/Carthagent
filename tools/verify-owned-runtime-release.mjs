@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { createRuntimeGithubFetch } from '../lib/opencode/runtime-github-transport.mjs';
 
 export const REQUIRED_RUNTIME_TARGETS = Object.freeze({
   'linux-x64': ['linux', 'x64', 'opencode-linux-x64.tar.gz'],
@@ -32,11 +33,15 @@ export async function verifyOwnedRuntimeRelease({
   acquireRuntime,
   cacheRoot,
   fetchImpl,
+  runtimeToken = process.env.CTG_RUNTIME_GITHUB_TOKEN,
 }) {
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
   validateRuntimeReleaseManifest(manifest, releaseVersion);
   await validateRuntimeBuildInputs(manifest, path.resolve(repoRoot ?? process.cwd()));
   const acquireOwnedRuntime = acquireRuntime ?? (await import('../lib/opencode/runtime-artifact.mjs')).acquireOwnedRuntime;
+  const runtimeFetch = runtimeToken
+    ? createRuntimeGithubFetch({ token: runtimeToken, fetchImpl: fetchImpl ?? globalThis.fetch })
+    : fetchImpl;
 
   for (const [key, [platform, arch, name]] of Object.entries(REQUIRED_RUNTIME_TARGETS)) {
     const asset = manifest.assets[key];
@@ -54,7 +59,7 @@ export async function verifyOwnedRuntimeRelease({
       expectedRuntimeVersion: manifest.runtimeVersion,
       expectedChannel: `ctg.${manifest.compatibilityVersion}`,
       ...(cacheRoot ? { cacheRoot } : {}),
-      ...(fetchImpl ? { fetchImpl } : {}),
+      ...(runtimeFetch ? { fetchImpl: runtimeFetch } : {}),
     });
     if (typeof installed !== 'string' || !installed) throw new Error(`Acquisition did not verify ${name}`);
   }

@@ -25,7 +25,7 @@ function pendingUntilAbort(signal) {
 test('CTG runtime paths and env are isolated from host OpenCode roots', () => {
   const root = path.join(os.tmpdir(), 'ctg-test-profile');
   const paths = runtimePaths({ root });
-  const env = runtimeEnvironment({ root, env: { ANTHROPIC_API_KEY: 'test' } });
+  const env = runtimeEnvironment({ root, env: { ANTHROPIC_API_KEY: 'test', CTG_RUNTIME_GITHUB_TOKEN: 'fake-runtime-token' } });
   assert.equal(env.XDG_CONFIG_HOME, paths.config);
   assert.equal(env.XDG_DATA_HOME, paths.data);
   assert.equal(env.XDG_STATE_HOME, paths.state);
@@ -38,6 +38,7 @@ test('CTG runtime paths and env are isolated from host OpenCode roots', () => {
   assert.equal(env.OPENCODE_CONFIG_PROJECT_DISABLE, 'true');
   assert.equal(env.OPENCODE_DB, path.join(paths.data, 'opencode.db'));
   assert.equal(env.ANTHROPIC_API_KEY, 'test');
+  assert.equal(env.CTG_RUNTIME_GITHUB_TOKEN, undefined);
   assert.equal(env.OPENCODE_CUSTOM_CONFIG, undefined);
   assert.notEqual(paths.serviceFile, path.join(os.homedir(), '.local/state/opencode/service.json'));
 });
@@ -51,12 +52,14 @@ test('runtime removes inherited OpenCode profile overrides', () => {
     OPENCODE_CONFIG_PROJECT_DISABLE: 'false',
     OPENCODE_SERVER_PASSWORD: 'user-service-secret',
     OPENAI_API_KEY: 'preserved',
+    CTG_RUNTIME_GITHUB_TOKEN: 'fake-runtime-token',
   } });
   assert.equal(env.OPENCODE_CONFIG_DIR, paths.configDir);
   assert.equal(env.OPENCODE_CONFIG, paths.configFile);
   assert.equal(env.OPENCODE_CONFIG_PROJECT_DISABLE, 'true');
   assert.equal(env.OPENCODE_SERVER_PASSWORD, undefined);
   assert.equal(env.OPENAI_API_KEY, 'preserved');
+  assert.equal(env.CTG_RUNTIME_GITHUB_TOKEN, undefined);
   assert.equal(env.APPDATA, paths.appData);
   assert.equal(env.LOCALAPPDATA, paths.localAppData);
 });
@@ -160,10 +163,34 @@ test('profile provisioning creates private isolated profile and absolute plugin 
 
 test('workspace environment records workspace without leaking CTG XDG overrides', () => {
   const workspace = path.resolve('/tmp/workspace');
-  const env = workspaceEnvironment(workspace, { XDG_CONFIG_HOME: '/host/config', OPENAI_API_KEY: 'secret' });
+  const env = workspaceEnvironment(workspace, { XDG_CONFIG_HOME: '/host/config', OPENAI_API_KEY: 'secret', CTG_RUNTIME_GITHUB_TOKEN: 'fake-runtime-token' });
   assert.equal(env.XDG_CONFIG_HOME, '/host/config');
   assert.equal(env.CTG_WORKSPACE, workspace);
   assert.equal(env.OPENAI_API_KEY, 'secret');
+  assert.equal(env.CTG_RUNTIME_GITHUB_TOKEN, undefined);
+});
+
+test('runtime version-check subprocess does not inherit the draft transport credential', async () => {
+  const { PassThrough } = await import('node:stream');
+  let childEnv;
+  const child = new (await import('node:events')).EventEmitter();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  child.kill = () => {};
+  const pending = (await import('../lib/opencode/runtime.mjs')).runCapture('fixture-runtime', ['--version'], {
+    env: { CTG_RUNTIME_GITHUB_TOKEN: 'fake-runtime-token', PATH: '/bin' },
+    spawnImpl: (_command, _args, options) => {
+      childEnv = options.env;
+      queueMicrotask(() => {
+        child.stdout.end('opencode v2.0.32');
+        child.stderr.end();
+        child.emit('close', 0, null);
+      });
+      return child;
+    },
+  });
+  assert.equal((await pending).stdout, 'opencode v2.0.32');
+  assert.equal(childEnv.CTG_RUNTIME_GITHUB_TOKEN, undefined);
 });
 
 test('native slash command conversion validates and preserves template', () => {
@@ -192,8 +219,10 @@ test('default packaged OpenCode resolves through Node package exports when hoist
     await mkdir(path.join(dependencyRoot, 'bin'), { recursive: true });
     const runtime = await readFile(new URL('../lib/opencode/runtime.mjs', import.meta.url), 'utf8');
     const artifactModule = await readFile(new URL('../lib/opencode/runtime-artifact.mjs', import.meta.url), 'utf8');
+    const transportModule = await readFile(new URL('../lib/opencode/runtime-github-transport.mjs', import.meta.url), 'utf8');
     await writeFile(path.join(packageRoot, 'lib', 'opencode', 'runtime.mjs'), runtime);
     await writeFile(path.join(packageRoot, 'lib', 'opencode', 'runtime-artifact.mjs'), artifactModule);
+    await writeFile(path.join(packageRoot, 'lib', 'opencode', 'runtime-github-transport.mjs'), transportModule);
     await writeFile(path.join(packageRoot, 'package.json'), JSON.stringify({ name: 'carthagent', version: '1.0.0', type: 'module' }));
     await writeFile(path.join(dependencyRoot, 'package.json'), JSON.stringify({ name: '@opencode/cli', bin: { opencode: './bin/opencode.exe' }, version: OPENCODE_VERSION }));
     const binary = path.join(dependencyRoot, 'bin', 'opencode.exe');
@@ -323,7 +352,7 @@ test('missing runtime release manifest keeps the developer-preview package resol
   try {
     await mkdir(path.join(packageRoot, 'lib', 'opencode'), { recursive: true });
     await mkdir(path.join(dependencyRoot, 'bin'), { recursive: true });
-    for (const name of ['runtime.mjs', 'runtime-artifact.mjs']) {
+    for (const name of ['runtime.mjs', 'runtime-artifact.mjs', 'runtime-github-transport.mjs']) {
       await writeFile(path.join(packageRoot, 'lib', 'opencode', name), await readFile(new URL(`../lib/opencode/${name}`, import.meta.url), 'utf8'));
     }
     await writeFile(path.join(packageRoot, 'package.json'), JSON.stringify({ name: 'carthagent', version: '1.0.0', type: 'module' }));
