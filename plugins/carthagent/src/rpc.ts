@@ -36,6 +36,12 @@ export const Carthagent = Rpc.define({
         required: ['tools', 'maxTools', 'seconds', 'maxSeconds', 'repairs', 'maxRepairs', 'stopped'],
         additionalProperties: false,
       },
+      errors: {
+        budgetUnavailable: {
+          type: 'object', properties: { reason: { type: 'string', enum: ['wrong-location', 'not-initialized'] } },
+          required: ['reason'], additionalProperties: false,
+        },
+      },
     },
     echo: {
       input: {
@@ -82,14 +88,17 @@ export const Carthagent = Rpc.define({
     shipAccount: {
       input: { type: 'object', additionalProperties: false },
       output: { type: 'object', properties: { account: { type: 'object', additionalProperties: true }, error: { type: 'string' } }, required: ['account'], additionalProperties: false },
+      errors: { unauthenticated: { type: 'object', properties: {}, additionalProperties: false } },
     },
     shipBilling: {
       input: { type: 'object', properties: { action: { type: 'string', enum: ['checkout', 'portal'] } }, required: ['action'], additionalProperties: false },
       output: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'], additionalProperties: false },
+      errors: { unauthenticated: { type: 'object', properties: {}, additionalProperties: false } },
     },
     shipLogout: {
       input: { type: 'object', properties: { session: { type: 'string', minLength: 1, maxLength: 128 } }, additionalProperties: false },
       output: { type: 'object', properties: { revoked: { type: 'boolean' }, credentialID: { type: 'string' } }, required: ['revoked'], additionalProperties: false },
+      errors: { unauthenticated: { type: 'object', properties: {}, additionalProperties: false } },
     },
   },
   events: {
