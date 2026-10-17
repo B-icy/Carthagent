@@ -72,10 +72,14 @@ see `docs/native-terminal-semantics-evidence/` for exact harness hashes and
 per-run caveats. An additional 40x12 interactive run typed unique input,
 backspaced one character, opened and navigated the recent-sessions menu, then
 cancelled with Escape and verified the edited composer returned. This does not
-establish model-picker behavior: navigating the actual model picker, cancelling
-without selection, and checking authoritative unchanged model state remains
-incomplete. Recent-sessions cancellation and model-picker cancellation are
-separate checks. No physical clipboard claim is made.
+Model-picker behavior has since been tested separately using two offline models:
+the native picker showed current A and alternate B, ArrowDown changed rendered
+selection styling to B, Escape cleared the search filter and a second Escape
+dismissed the picker, no provider request occurred during cancellation, active
+session metadata remained A, and a unique post-cancel prompt reached the fixture
+with model A. The prior failed attempt remains retained as superseded evidence.
+Recent-sessions cancellation and model-picker cancellation are separate checks.
+No physical clipboard claim is made.
 
 The existing `tests/tui-copy-paste.test.mjs` covers parser logic and selection
 string calculation only; it is not a substitute for this native probe.

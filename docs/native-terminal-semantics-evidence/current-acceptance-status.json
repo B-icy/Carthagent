@@ -44,9 +44,9 @@
     }
   },
   "modelPickerNavigationAndEscapeUnchangedModel": {
-    "status": "INCOMPLETE",
-    "evidence": "final-binary-model-picker-unchanged-model-incomplete-85bb44a.json",
-    "note": "The actual Select model dialog was visible, but this attempt did not prove option navigation followed by Escape dismissal or unchanged model after a valid post-cancel prompt. No model-picker acceptance claim."
+    "status": "PASS_BOUNDED",
+    "evidence": "final-binary-model-picker-escape-unchanged-85bb44a.json",
+    "note": "Native model picker presented offline A/B options; current A was visible, ArrowDown changed selected styling to B, first Escape cleared the active filter and second Escape dismissed the dialog, no provider request occurred during cancel, active session metadata remained A, and a unique subsequent prompt used fixture model A. Earlier failed attempt is retained separately and superseded only for this lane."
   },
   "recentSessionsMenuEscapeAndComposerRestoration": {
     "status": "PASS",
