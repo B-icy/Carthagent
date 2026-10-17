@@ -3,6 +3,9 @@ import { Carthagent } from './rpc';
 import { registerSessionControls } from './server/session-controls';
 import { registerWorkspaceRpc } from './server/workspace-rpc';
 import { registerArchive } from './server/archive-rpc';
+import { registerProviders } from './server/providers';
+import { createDeviceAuthController } from './server/device-auth.ts';
+import { shipAgentDir } from '../../../lib/ship-auth.mjs';
 
 export default Plugin.define({
   id: 'carthagent',
@@ -13,7 +16,10 @@ export default Plugin.define({
       const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
       if (failures.length) throw new AggregateError(failures.map(result => result.reason), 'Carthagent plugin cleanup failed');
     };
+    const deviceAuth = createDeviceAuthController({ env: process.env, agentDir: shipAgentDir() });
+    cleanups.push(() => deviceAuth.cleanup());
     try {
+      cleanups.push(await registerProviders(context, { deviceAuth }));
       cleanups.push(await registerSessionControls(context));
       cleanups.push(await registerWorkspaceRpc(context, context.options));
       const archive = await registerArchive(context, context.options);
@@ -25,6 +31,23 @@ export default Plugin.define({
           directory: context.location.directory,
         }),
         echo: async (input) => ({ text: (input as { text: string }).text }),
+        authStart: async (_input, call) => {
+          call.signal.throwIfAborted();
+          const flow = await deviceAuth.start(call.signal);
+          const cancel = () => deviceAuth.cancel(flow.flowId);
+          if (call.signal.aborted) cancel();
+          else call.signal.addEventListener('abort', cancel, { once: true });
+          return {
+            flowId: flow.flowId,
+            userCode: flow.authorization.userCode,
+            verificationUri: flow.authorization.verificationUriComplete || flow.authorization.verificationUri,
+            expiresAt: flow.expiresAt,
+          };
+        },
+        authCancel: async (input, call) => {
+          call.signal.throwIfAborted();
+          return { cancelled: deviceAuth.cancel((input as { flowId: string }).flowId) };
+        },
       });
       cleanups.push(() => registration.dispose());
       return dispose;
