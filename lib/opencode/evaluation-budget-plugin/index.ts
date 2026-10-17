@@ -84,6 +84,9 @@ export default Plugin.define({
         await pendingWrites.get(event.sessionID);
         const session = await ctx.session.get({ sessionID: event.sessionID });
         const configured = session.metadata?.[budgetKey];
+        // This hook is an admission guard for evaluation sessions, not a
+        // general model-request gate for unrelated native host workflows.
+        if (configured === undefined) return;
         if (!configured || typeof configured !== 'object'
           || configured.maxTurns !== maxTurns || configured.maxCost !== maxCost) {
           throw Error('Evaluation session budget handshake is missing or differs from the active admission guard');

@@ -129,7 +129,7 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
       OPENCODE_CONFIG_PROJECT_DISABLE: 'true',
     });
     child = spawn(await resolveOpenCode(),
-      ['serve', '--hostname', '127.0.0.1', '--port', '0'], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+      ['serve', '--hostname', '127.0.0.1', '--port', '0', ...(extraEnv.CTG_NATIVE_DEBUG === '1' ? ['--print-logs', '--log-level', 'debug'] : [])], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
     const baseUrl = await new Promise((done, reject) => {
       const timer = setTimeout(() => reject(Error(`Host startup timeout: ${output}`)), 30_000);
       const collect = chunk => {
