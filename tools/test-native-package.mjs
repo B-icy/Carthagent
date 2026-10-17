@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /** Build and install the published artifact in isolation, then exercise its owned host. */
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
+import { dirname, join as joinPath } from 'node:path';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -28,7 +30,34 @@ try {
   await import('node:fs/promises').then(({ mkdir }) => mkdir(install));
   run('npm', ['install', '--prefix', install, '--omit=dev', '--no-audit', '--no-fund', tarball]);
   const manifest = JSON.parse(await readFile(join(install, 'node_modules/carthagent/package.json'), 'utf8'));
+  const installed = join(install, 'node_modules/carthagent');
+  const installedPlugin = join(installed, 'plugins/carthagent');
   assert.equal(manifest.dependencies['@opencode/cli'], '2.0.32');
+  assert.equal(manifest.dependencies['@opencode/theme'], '2.0.32');
+  assert.equal(manifest.dependencies['@opentui/core'], '0.5.17');
+  assert.equal(manifest.dependencies['@opentui/solid'], '0.5.17');
+  assert.equal(manifest.dependencies['solid-js'], '1.9.12');
+  assert.equal(manifest.dependencies['web-tree-sitter'], '^0.22.6');
+  const sharedRuntime = ['@opentui/core', '@opentui/solid', 'solid-js'];
+  for (const name of sharedRuntime) {
+    const hostResolution = createRequire(join(install, 'node_modules/@opencode/cli/package.json')).resolve(name);
+    const pluginResolution = createRequire(join(installedPlugin, 'package.json')).resolve(name);
+    assert.equal(pluginResolution, hostResolution, `${name} must resolve to the same host and plugin runtime instance`);
+  }
+  const packageVersion = async (from, name) => {
+    const entry = createRequire(from).resolve(name);
+    let directory = dirname(entry);
+    while (directory !== dirname(directory)) {
+      try {
+        const manifest = JSON.parse(await readFile(joinPath(directory, 'package.json'), 'utf8'));
+        if (manifest.name === name) return manifest.version;
+      } catch {}
+      directory = dirname(directory);
+    }
+    throw new Error(`Could not locate ${name} package manifest from ${entry}`);
+  };
+  assert.equal(await packageVersion(join(install, 'node_modules/@opentui/core/package.json'), 'web-tree-sitter'), '0.25.10');
+  assert.equal(await packageVersion(join(installed, 'package.json'), 'web-tree-sitter'), '0.22.6');
   const binary = join(install, 'node_modules/@opencode/cli/bin/opencode.exe');
   assert.ok((await stat(binary)).size > 100_000_000, 'native host binary must be materialized by postinstall');
   const version = run(binary, ['--version'], { cwd: install }).trim();
@@ -46,8 +75,6 @@ try {
     XDG_STATE_HOME: join(temp, 'state'),
     XDG_CACHE_HOME: join(temp, 'cache'),
   };
-  const installed = join(install, 'node_modules/carthagent');
-  const installedPlugin = join(installed, 'plugins/carthagent');
   // Run the acceptance harness from the installed artifact itself so its
   // imports (including @opencode/client) resolve only through that install.
   for (const test of [
