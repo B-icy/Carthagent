@@ -18,9 +18,9 @@ test("Carthagent command manifest resolves visible CTG commands", () => {
   assert.equal(resolveCommand("/review-mode")?.id, "review");
   for (const name of ["workflow", "architecture", "evidence"]) assert.equal(resolveCommand(name)?.hidden, undefined);
   for (const name of ["model", "compact", "autocompact", "abort", "clear"]) assert.equal(resolveCommand(name)?.id, name);
-  assert.deepEqual(matchCommand("/arch").map((item) => item.name), ["architecture"]);
+  assert.deepEqual(matchCommand("/arch").map((item) => item.name), ["architecture", "archive"]);
   assert.deepEqual(matchCommand("/rev status"), []);
-  for (const name of ["account", "billing", "logout-cloud", "archive", "demo", "update"]) {
+  for (const name of ["account", "usage", "billing", "logout-cloud", "archive", "demo", "update"]) {
     assert.ok(resolveCommand(`/${name}`), `/${name} must resolve to a registered handler`);
   }
   assert.equal(resolveCommand("/cloud")?.id, "account");

@@ -5,7 +5,7 @@ import { SessionControls } from "../session-rpc.js";
 import { PullRequests, type PullRequestRecord } from "../pull-request-rpc.js";
 import { Archive } from "../archive-rpc.js";
 import { Carthagent } from "../rpc.js";
-import { formatCloudAccount } from "../../../../lib/cloud/client.mjs";
+import { formatCloudAccount, formatCloudUsage } from "../../../../lib/cloud/client.mjs";
 
 export { Workspace, SessionControls, PullRequests, Archive };
 export type { WorkspaceDelivery, WorkspaceSnapshot, PullRequestRecord };
@@ -59,6 +59,7 @@ export function shipClient(context: RpcContext, selectedLocation?: SelectedLocat
   const rpc = context.client.rpc(Carthagent);
   return {
     account: (signal?: AbortSignal) => rpc.shipAccount({}, requestOptions(context, selectedLocation, signal)),
+    usage: (input: { limit?: number } = {}, signal?: AbortSignal) => rpc.shipUsage(input, requestOptions(context, selectedLocation, signal)),
     billing: (input: { action: "checkout" | "portal" }, signal?: AbortSignal) => rpc.shipBilling(input, requestOptions(context, selectedLocation, signal)),
     logout: (input: { session?: string } = {}, signal?: AbortSignal) => rpc.shipLogout(input, requestOptions(context, selectedLocation, signal)),
   };
@@ -76,6 +77,10 @@ export function archiveClient(context: RpcContext, selectedLocation?: SelectedLo
 
 export function cloudAccountText(account: Record<string, unknown>) {
   return formatCloudAccount(account);
+}
+
+export function cloudUsageText(usage: Record<string, unknown>, account?: Record<string, unknown>) {
+  return formatCloudUsage(usage, { account } as Parameters<typeof formatCloudUsage>[1]);
 }
 
 export function archiveItemText(item: Record<string, unknown>) {

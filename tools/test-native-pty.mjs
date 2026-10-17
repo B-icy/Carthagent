@@ -14,15 +14,14 @@ const binary = process.env.CTG_OPENCODE_BIN ?? process.env.OPENCODE_BIN ?? 'open
 const plugin = resolve(process.argv[2] ?? resolve(root, 'plugins/carthagent'));
 const probes = [
   { command: '/ctg-status', expect: 'OpenCode 2.0.32' },
-  { command: '/ctg-workspace', expect: 'CARTHAGENT' },
-  { command: '/help', expect: 'Carthagent commands' },
-  { command: '/ctg-help', expect: 'Carthagent commands' },
-  { command: '/compact', expect: '/compact requires an open session.', secondEnter: true },
+  { command: '/ctg-workspace', expect: 'CARTHAGENT', dismissCompletion: true },
+  { command: '/help', expect: 'Carthagent commands', postSubmitMarker: '(/ctg-help)', dismissCompletion: true },
+  { command: '/ctg-help', expect: 'Carthagent commands', dismissCompletion: true },
+  { command: '/compact', expect: '/compact requires an open session.', secondEnter: true, dismissCompletion: true },
   {
-    command: '/theme carthage', expect: 'Theme “carthage” saved',
-    next: [{ command: '/ctg-workspace', expect: 'CARTHAGENT' }],
-    color: '230,196,128',
+    command: '/theme carthage', expect: 'Theme “carthage” saved to native OpenCode cli.json.', postSubmitMarker: 'Restart the native CLI to apply it.', dismissCompletion: true,
   },
+  { command: '/ctg-status', expect: 'OpenCode 2.0.32', initialTheme: 'carthage', color: '213,175,102' },
 ];
 
 for (const probe of probes) {
@@ -30,7 +29,10 @@ for (const probe of probes) {
     '--command', probe.command, '--expect', probe.expect, '--ready', '◆ CTG',
     ...(probe.secondEnter ? ['--second-enter'] : ['--confirm'])];
   for (const next of probe.next ?? []) args.push('--after-command', next.command, '--after-expect', next.expect);
+  if (probe.dismissCompletion) args.push('--dismiss-completion');
+  if (probe.postSubmitMarker) args.push('--post-submit-marker', probe.postSubmitMarker);
   if (probe.color) args.push('--expect-color', probe.color);
+  if (probe.initialTheme) args.push('--initial-theme', probe.initialTheme);
   const result = spawnSync('python3', args, { cwd: root, stdio: 'inherit', timeout: 90_000 });
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);

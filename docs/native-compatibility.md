@@ -10,11 +10,11 @@ the installed native package.
 | Command | Aliases / arguments | Required behavior |
 | --- | --- | --- |
 | `/help` | | CTG commands, arguments and actual native shortcuts |
-| `/resume` | `/sessions`, `[id\|name]` | Search and open native sessions; legacy results explicitly archive-only |
+| `/resume` | `/sessions`, `[id\|name]` | Search every native session page and open one; legacy results explicitly archive-only |
 | `/new` | | New independent native session, without deleting current work |
 | `/restart` | `/kill` | Interrupt/recover the selected session without restarting other sessions |
-| `/theme` | `[name]` | Native theme picker; explicit name applies; confirmation commits selection |
-| `/model` | `[name]` | Provider-aware search/selection; explicit name actually selects a model |
+| `/theme` | `[name]` | Native theme picker; explicit name persists selection; custom compatibility themes require pre-launch provisioning and native CLI restart to apply |
+| `/model` | `[name]` | Provider-aware search/selection; exact provider/model or unique name actually selects a model |
 | `/thinking` | | Supported variant selection, honest errors for unsupported levels |
 | `/compact` | `[notes]` | Await or report admitted compaction correctly; notes reach summary context |
 | `/autocompact` | `[on\|off]` | Preserve the requested session policy, not a misleading UI-only switch |
@@ -29,6 +29,8 @@ the installed native package.
 | `/login` | `/auth` | Native CTG-scoped provider connection |
 | `/account` | `/cloud` | Ship credit, plan, grants, sessions |
 | `/usage` | | Recent Ship usage from the control plane |
+| `/archive` | `[list|search <query>|read <id>|export <id>]` | Paginated list/search with returned/total counts, continued reads, complete exports, reject unknown operations |
+| `/demo` | | Execute the disposable offline fixture, report actual subprocess output/status and cancellation; never represent the current project |
 | `/billing` | `[checkout [plan]\|portal]` | Open the authenticated billing destination |
 | `/logout-cloud` | `[session-id]` | Revoke/remove current connection or revoke specified Ship session |
 | `/update` | `/upgrade`, `[check]` | Check/update CTG without upgrading regular OpenCode |
