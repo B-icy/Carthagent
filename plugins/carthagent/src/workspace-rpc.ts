@@ -60,7 +60,7 @@ const architectureGraph = {
 const deliveryOutput = {
   type: 'object', properties: {
     status: deliveryStatus, freshness: { type: 'string', enum: ['current', 'stale'] }, completion: { type: 'string', enum: ['ready', 'incomplete'] }, gate: { type: 'string', enum: ['locked', 'open'] }, runId: string,
-    revision: { type: 'integer' }, fingerprint: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+    revision: { type: 'integer' }, fingerprint: { type: 'string', minLength: 64, maxLength: 64 },
     plan: deliveryPlan, workflow: workflowGraph, architecture: architectureGraph,
     evidence: { type: 'array', items: evidenceItem },
     truncation: { type: 'object', properties: Object.fromEntries(['checks', 'acceptance', 'steps', 'artifacts', 'outputs', 'assumptions', 'scenarios', 'risks', 'workflowNodes', 'workflowEdges', 'architectureNodes', 'architectureEdges', 'architecturePorts'].map(key => [key, { type: 'object', properties: { returned: { type: 'integer' }, total: { type: 'integer' } }, required: ['returned', 'total'], additionalProperties: false }])), required: ['checks', 'acceptance', 'steps', 'artifacts', 'outputs', 'assumptions', 'scenarios', 'risks', 'workflowNodes', 'workflowEdges', 'architectureNodes', 'architectureEdges', 'architecturePorts'], additionalProperties: false },
