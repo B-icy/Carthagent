@@ -73,6 +73,7 @@
     "test:native-terminal-semantics": "python3 tools/native-terminal-semantics.py",
     "test:native-outcomes": "node tools/test-native-outcomes.mjs",
     "test:native-pty": "node tools/test-native-pty.mjs",
+    "test:owned-opencode": "node tools/test-owned-opencode-runtime.mjs",
     "build": "npm run check && npm run typecheck",
     "test": "node --test tests/*.test.mjs",
     "test:python": "node tools/test-python.mjs"
