@@ -184,6 +184,39 @@ test('local source snapshot includes tracked diff bytes and durable review recei
   assert.deepEqual(reviewState.history[0].details.findings, [finding]);
 });
 
+test('local review includes real untracked source contents and uses raw reviewer prompt metadata', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'review untracked ')); t.after(() => rmSync(root, { recursive: true, force: true }));
+  git(root, 'init', '-q'); git(root, 'config', 'user.email', 'test@example.invalid'); git(root, 'config', 'user.name', 'Test');
+  writeFileSync(join(root, 'tracked.txt'), 'base\n'); git(root, 'add', '.'); git(root, 'commit', '-qm', 'base');
+  writeFileSync(join(root, 'new-source.ts'), 'export const untrackedReviewSentinel = "present in exact review source";\n');
+  let reviewerPrompt;
+  let promptMetadata;
+  const ctx = {
+    agent: { async list() { return { data: [{ id: 'build' }] }; } },
+    session: {
+      async create(input) {
+        assert.ok(input.permissions.some(rule => rule.action === 'shell' && rule.effect === 'deny'));
+        assert.ok(input.permissions.some(rule => rule.action === 'edit' && rule.effect === 'deny'));
+        return { id: 'review-untracked' };
+      },
+      async prompt(input) { reviewerPrompt = input.text; promptMetadata = input.metadata; },
+      async wait() {}, async get() { return { outcome: 'succeeded' }; },
+      async context() {
+        const head = git(root, 'rev-parse', 'HEAD');
+        const snapshot = reviewerPrompt.match(/Snapshot SHA-256: ([a-f0-9]+)/)[1];
+        return [{ type: 'assistant', finish: 'stop', content: [{ type: 'text', text: `REVIEW_JSON: ${JSON.stringify({ version: 1, snapshot, head, findings: [] })}\nVERDICT: APPROVE` }] }, { type: 'idle', outcome: 'succeeded' }];
+      },
+    },
+  };
+  const result = await startReview({ ctx, cwd: root, identity: 'untracked-source-review' });
+  assert.equal(result.verdict, 'APPROVE');
+  assert.deepEqual(promptMetadata, { 'ctg.raw': true });
+  assert.match(reviewerPrompt, /new-source\.ts/);
+  const encodedSource = reviewerPrompt.match(/new-source\.ts\0([A-Za-z0-9+/=]+)/)?.[1];
+  assert.ok(encodedSource);
+  assert.match(Buffer.from(encodedSource, 'base64').toString('utf8'), /present in exact review source/);
+});
+
 test('PR review fetches authoritative GitHub metadata and exact git objects before and after review', { skip: process.platform === 'win32' }, async t => {
   const root = mkdtempSync(join(tmpdir(), 'pr authoritative ')); t.after(() => rmSync(root, { recursive: true, force: true }));
   const bare = join(root, 'origin.git'); const cwd = join(root, 'checkout'); mkdirSync(bare); git(bare, 'init', '--bare', '-q');
@@ -207,7 +240,7 @@ test('PR review fetches authoritative GitHub metadata and exact git objects befo
     agent: { async list() { return { data: [{ id: 'build' }] }; } },
     session: {
       async create({ location }) { assert.equal(location.directory, cwd); return { id: 'pr-reviewer' }; },
-      async prompt({ text }) { promptText = text; }, async wait() {}, async get() { return { outcome: 'succeeded' }; }, async interrupt() {},
+      async prompt({ text, metadata }) { assert.deepEqual(metadata, { 'ctg.raw': true }); promptText = text; }, async wait() {}, async get() { return { outcome: 'succeeded' }; }, async interrupt() {},
       async context() {
         const snapshot = promptText.match(/Snapshot SHA-256: ([a-f0-9]+)/)[1];
         return [{ type: 'assistant', finish: 'stop', content: [{ type: 'text', text: `REVIEW_JSON: ${JSON.stringify({ version: 1, snapshot, head, findings: [] })}\nVERDICT: APPROVE` }] }, { type: 'idle', outcome: 'succeeded' }];
