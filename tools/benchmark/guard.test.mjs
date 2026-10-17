@@ -50,12 +50,12 @@ test('parallel per-session admissions reserve the final slot once, replay IDs id
     // A duplicate delivery of the admitted call ID is idempotent, including
     // after a plugin restart which discards in-memory state.
     const admittedID=state.storage.get(key('session-a')).find(row=>row.id.startsWith('call-')&&row.admitted).id;
-    await assert.rejects(before({id:admittedID,tool:'read',sessionID:'session-a'}),/budget exhausted/);
+    await assert.rejects(before({id:admittedID,tool:'read',sessionID:'session-a'}),/invocation ID was already reserved/);
     assert.equal(state.storage.get(key('session-a')).filter(row=>row.admitted).length,2);
     await dispose();
     const other=harness(state.storage);
     dispose=await guard(other.ctx);
-    await assert.rejects(other.hooks.get('tool:execute.before')({id:admittedID,tool:'read',sessionID:'session-a'}),/budget exhausted/);
+    await assert.rejects(other.hooks.get('tool:execute.before')({id:admittedID,tool:'read',sessionID:'session-a'}),/invocation ID was already reserved/);
     await other.hooks.get('tool:execute.before')({id:'neighbor',tool:'read',sessionID:'session-b'});
     assert.equal(other.storage.get(key('session-b')).filter(row=>row.admitted).length,1);
     await assert.rejects(other.hooks.get('tool:execute.before')({id:'new-after-restart',tool:'read',sessionID:'session-a'}),/budget exhausted/);
@@ -73,7 +73,7 @@ test('parallel per-session admissions reserve the final slot once, replay IDs id
   }
 });
 
-test('Code Mode nested tools sharing an execute ID reserve independently but duplicate tool calls stay idempotent',async()=>{
+test('Code Mode same-tool calls sharing an execute ID fail closed as ambiguous, not exhausted',async()=>{
   const temp=mkdtempSync(join(tmpdir(),'benchmark-guard-codemode-'));
   const old={limit:process.env.BENCH_TOOL_LIMIT,log:process.env.BENCH_GUARD_LOG,home:process.env.CTG_OPENCODE_HOME};
   process.env.BENCH_TOOL_LIMIT='3';process.env.BENCH_GUARD_LOG=join(temp,'guard.jsonl');process.env.CTG_OPENCODE_HOME=temp;
@@ -82,7 +82,17 @@ test('Code Mode nested tools sharing an execute ID reserve independently but dup
     const before=state.hooks.get('tool:execute.before');
     const invoke=(tool,id='execute-1')=>before({id,tool,sessionID:'codemode-session'});
     await invoke('execute');await invoke('carthagent.delivery_plan');
-    await assert.rejects(invoke('carthagent.delivery_plan'),/budget exhausted/);
+    let nestedExecutions=0;
+    const executeNested=async()=>{await invoke('carthagent.delivery_plan');nestedExecutions++;};
+    const repeated=await Promise.allSettled([executeNested(),executeNested()]);
+    assert.equal(repeated.filter(result=>result.status==='rejected').length,2);
+    for(const result of repeated)if(result.status==='rejected'){
+      assert.match(result.reason.message,/attribution unavailable/);
+      assert.doesNotMatch(result.reason.message,/exhausted/);
+    }
+    assert.equal(nestedExecutions,0,'ambiguous calls must be rejected at the pre-execution hook boundary');
+    assert.equal(state.storage.get(key('codemode-session')).filter(row=>row.admitted).length,2,'ambiguous repeated calls must not consume or appear admitted against the remaining slot');
+    assert.equal(state.storage.get(key('codemode-session')).length,2,'ambiguous calls do not create inferred reservations');
     await invoke('carthagent.delivery_check','execute-2');
     assert.deepEqual(state.storage.get(key('codemode-session')).map(row=>({tool:row.tool,admitted:row.admitted})),[
       {tool:'execute',admitted:true},{tool:'carthagent.delivery_plan',admitted:true},{tool:'carthagent.delivery_check',admitted:true},
