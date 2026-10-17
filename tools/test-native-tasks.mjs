@@ -26,6 +26,11 @@ try {
     assert.equal(session.location.directory, [first, second][index].directory);
   }
   assert.equal(sessions[0].projectID, sessions[1].projectID);
+  const tracked = async (task, input = { sessionID: task.sessionID, taskID: task.taskID }) => (await host.client.rpc.call({
+    rpcID: 'carthagent.pull-requests', method: 'list', input, location: host.location,
+  }, host.request())).output;
+  assert.deepEqual(await tracked(first), { pullRequests: [] }, 'Production PR tracking must register and validate its output schema');
+  await assert.rejects(tracked(first, { sessionID: second.sessionID, taskID: first.taskID }));
   await writeFile(join(first.directory, 'fixture.txt'), 'first task edit\n');
   assert.equal(await readFile(join(second.directory, 'fixture.txt'), 'utf8'), 'baseline\n');
   assert.equal(await readFile(join(host.cwd, 'fixture.txt'), 'utf8'), 'baseline\n');
@@ -54,6 +59,7 @@ try {
   const restored = await rpc('snapshot', {});
   assert.deepEqual(restored.tasks.map(task => task.id).sort(), snapshot.tasks.map(task => task.id).sort());
   assert.deepEqual(restored.sessions.map(session => session.id).sort(), snapshot.sessions.map(session => session.id).sort());
+  assert.deepEqual(await tracked(first), { pullRequests: [] });
   console.log(JSON.stringify({ host: '2.0.32', worktrees: 2, rootSessions: 2, isolation: 'passed', concurrentTurns: 'passed', restart: 'passed' }));
 } catch (error) {
   console.error(host.output);

@@ -2,6 +2,7 @@ import { Plugin } from '@opencode/plugin';
 import { Carthagent } from './rpc';
 import { registerSessionControls } from './server/session-controls';
 import { registerWorkspaceRpc } from './server/workspace-rpc';
+import { registerPullRequests } from './server/pull-request-rpc';
 import { registerArchive } from './server/archive-rpc';
 import { registerProviders } from './server/providers';
 import { createDeviceAuthController } from './server/device-auth.ts';
@@ -25,6 +26,7 @@ export default Plugin.define({
       cleanups.push(await registerProviders(context, { deviceAuth }));
       cleanups.push(await registerSessionControls(context));
       cleanups.push(await registerWorkspaceRpc(context, context.options));
+      cleanups.push(await registerPullRequests(context));
       const archive = await registerArchive(context, context.options);
       cleanups.push(() => archive.dispose());
       const registration = await context.rpc.register(Carthagent, {
