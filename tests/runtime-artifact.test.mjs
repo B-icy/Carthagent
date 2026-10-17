@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { once } from 'node:events';
 import { promisify } from 'node:util';
-import { gzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import { after, before, test } from 'node:test';
 import { acquireOwnedRuntime } from '../lib/opencode/runtime-artifact.mjs';
 
@@ -61,19 +61,20 @@ function tarEntry(name, data, type = '0', mode = 0o644) {
   const padding = Buffer.alloc((512 - (data.length % 512)) % 512);
   return Buffer.concat([header, data, padding]);
 }
-function makeArchive(entries = []) {
+function makeArchive(entries = [], { key = targetKey, platform = 'linux-x64', executableMode = 0o755 } = {}) {
   const manifest = Buffer.from(JSON.stringify({
     owner: 'Carthagent', sourceRepository: 'https://github.com/anomalyco/opencode',
     sourceRevision, lockSha256, patchSha256,
     compatibilityVersion: '2.0.32', runtimeVersion: '0.0.0-ctg.2.0.32',
-    channel: 'ctg.2.0.32', platform: 'linux-x64', webUI: false,
+    channel: 'ctg.2.0.32', platform, webUI: false,
   }));
-  const sums = Buffer.from(`${sha(executableBytes)}  ${executableRelative}\n`);
+  const executablePath = `cli-${key}/bin/${key.startsWith('windows-') ? 'opencode.exe' : 'opencode'}`;
+  const sums = Buffer.from(`${sha(executableBytes)}  ${executablePath}\n`);
   const all = [
     tarEntry('./', Buffer.alloc(0), '5'),
-    tarEntry(`./cli-${targetKey}/`, Buffer.alloc(0), '5'),
-    tarEntry(`./cli-${targetKey}/bin/`, Buffer.alloc(0), '5'),
-    tarEntry(`./${executableRelative}`, executableBytes, '0', 0o755),
+    tarEntry(`./cli-${key}/`, Buffer.alloc(0), '5'),
+    tarEntry(`./cli-${key}/bin/`, Buffer.alloc(0), '5'),
+    tarEntry(`./${executablePath}`, executableBytes, '0', executableMode),
     tarEntry('SHA256SUMS', sums),
     tarEntry('ctg-runtime.json', manifest),
     ...entries,
@@ -99,15 +100,37 @@ async function makeSystemTarArchive() {
   }));
   const archivePath = path.join(temp, 'system-ustar.tar.gz');
   await execFileAsync('tar', ['-czf', archivePath, '--format=ustar', '-C', fixture, '.']);
-  return readFile(archivePath);
+  // Windows tar implementations cannot preserve POSIX source-file mode. Set
+  // the declared USTAR mode on this Unix-target fixture directly so the test
+  // always covers a valid release header, independent of the host filesystem.
+  const tar = gunzipSync(await readFile(archivePath));
+  for (let offset = 0; offset + 512 <= tar.length; offset += 512) {
+    const header = tar.subarray(offset, offset + 512);
+    if (header.every((byte) => byte === 0)) break;
+    const name = header.subarray(0, 100).toString('utf8').replace(/\0.*$/, '');
+    const prefix = header.subarray(345, 500).toString('utf8').replace(/\0.*$/, '');
+    if (`${prefix ? `${prefix}/` : ''}${name}`.replace(/^\.\//, '') !== executableRelative) {
+      const size = Number.parseInt(header.subarray(124, 136).toString('ascii').replace(/\0.*$/, '').trim(), 8) || 0;
+      offset += Math.ceil(size / 512) * 512;
+      continue;
+    }
+    octal(0o755, 8).copy(header, 100);
+    header.fill(32, 148, 156);
+    let checksum = 0; for (const byte of header) checksum += byte;
+    octal(checksum, 8).copy(header, 148);
+    break;
+  }
+  return gzipSync(tar);
 }
 function args(extra = {}) {
+  const key = extra.platform === 'windows' ? `windows-${extra.arch ?? 'x64'}` : targetKey;
   return {
     releaseVersion: version, platform: 'linux', arch: 'x64', expectedArchiveSha256: assets.size ? sha(assets.values().next().value) : 'd'.repeat(64),
     expectedSourceRevision: sourceRevision, expectedPatchSha256: patchSha256,
     expectedLockSha256: lockSha256, expectedCompatibilityVersion: '2.0.32',
     expectedRuntimeVersion: '0.0.0-ctg.2.0.32', expectedChannel: 'ctg.2.0.32',
     expectedExecutableSha256: sha(executableBytes),
+    ...(key !== targetKey ? { platform: 'windows', arch: 'x64', assetName: `opencode-${key}.tar.gz` } : {}),
     baseUrl, cacheRoot: path.join(temp, 'cache'), ...extra,
   };
 }
@@ -147,6 +170,41 @@ test('extracts a system tar USTAR artifact in the resolver-compatible root layou
 test('rejects PAX extensions because release assets are required to use USTAR format', async () => {
   setArchive(makeArchive([tarEntry('PaxHeaders/entry', Buffer.from('path=cli-linux-x64/bin/opencode\n'), 'x')]));
   await assert.rejects(acquireOwnedRuntime(args({ cacheRoot: path.join(temp, 'pax-cache') })), /must use USTAR format/);
+});
+
+test('rejects a Unix executable without its USTAR execute bit, regardless of extraction host', async () => {
+  setArchive(makeArchive([], { executableMode: 0o644 }));
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+  try {
+    Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+    await assert.rejects(acquireOwnedRuntime(args({ cacheRoot: path.join(temp, 'non-executable-cache') })), /not marked executable/);
+    assert.deepEqual(await readdir(path.join(temp, 'non-executable-cache', '.staging')), []);
+  } finally {
+    Object.defineProperty(process, 'platform', platform);
+  }
+});
+
+test('does not require a POSIX execute bit for a Windows-target executable', async () => {
+  const archive = makeArchive([], { key: 'windows-x64', platform: 'windows-x64', executableMode: 0o644 });
+  assets = new Map([[`/releases/${version}/opencode-windows-x64.tar.gz`, archive]]);
+  const destination = await acquireOwnedRuntime(args({ platform: 'windows', arch: 'x64', cacheRoot: path.join(temp, 'windows-target-cache') }));
+  assert.deepEqual(await readFile(path.join(destination, 'cli-windows-x64', 'bin', 'opencode.exe')), executableBytes);
+});
+
+test('revalidates Unix cached executable mode only on hosts with POSIX file modes', async () => {
+  const archive = makeArchive(); setArchive(archive);
+  const cacheRoot = path.join(temp, 'host-mode-cache');
+  const destination = await acquireOwnedRuntime(args({ cacheRoot }));
+  const executable = path.join(destination, executableRelative);
+  await chmod(executable, 0o600);
+  assets.clear();
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+  try {
+    Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+    assert.equal(await acquireOwnedRuntime(args({ cacheRoot })), destination);
+  } finally {
+    Object.defineProperty(process, 'platform', platform);
+  }
 });
 
 test('rejects tampered cached executables and archive digest mismatches without publishing', async () => {
