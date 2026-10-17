@@ -88,6 +88,7 @@ export async function generateOwnedRuntimeRelease({
         expectedLockSha256: provenance.lockSha256,
         expectedCompatibilityVersion: provenance.compatibilityVersion,
         expectedRuntimeVersion: provenance.runtimeVersion,
+        expectedChannel: `ctg.${provenance.compatibilityVersion}`,
       });
       const verifiedExecutable = await readFile(path.join(verifiedRoot, executablePath));
       if (sha256(verifiedExecutable) !== expectedExecutableSha256) {
