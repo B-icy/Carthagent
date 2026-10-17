@@ -50,6 +50,7 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
   const registrations: Array<{ dispose(): Promise<void> }> = []
   const serial = new Map<string, Promise<unknown>>()
   const budgetTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  const admittedCalls = new Set<string>()
   const profiles = loadGuidanceProfiles()
   let disposed = false
   const limitOptions: Record<string, string> = { "delivery-max-tools": "maxTools", "delivery-max-seconds": "maxSeconds", "delivery-max-repairs": "maxRepairs" }
@@ -75,14 +76,14 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
     if (data.budget.limits.seconds && !budgetTimers.has(sessionID) && !data.budget.stopped) {
       const remaining = Math.max(1, data.budget.startedAt + data.budget.limits.seconds * 1000 - Date.now())
       const timer = setTimeout(() => {
-        void (async () => {
+        void serialized(sessionID, async () => {
           const latest = await scope(sessionID)
           if (!latest.data.budget.stopped) {
             latest.data.budget.stopped = "elapsed-time"
             await ctx.storage.set(sessionKey(sessionID), latest.data)
-              await ctx.session.interrupt({ sessionID, resume: false })
+            await ctx.session.interrupt({ sessionID, resume: false })
           }
-        })().catch(error => console.error("Carthagent delivery budget stop failed", error))
+        }).catch(error => console.error("Carthagent delivery budget stop failed", error))
       }, remaining)
       timer.unref?.(); budgetTimers.set(sessionID, timer)
     }
@@ -248,9 +249,16 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
     }))
   }))
 
-  registrations.push(await ctx.tool.hook("execute.before", async event => {
+  registrations.push(await ctx.tool.hook("execute.before", async event => serialized(event.sessionID, async () => {
+    if (typeof event.id !== "string" || !event.id) throw Error("Tool execution locked: host did not provide an authoritative call ID.")
+    if (typeof event.messageID !== "string" || !event.messageID) throw Error("Tool execution locked: host did not provide an authoritative message ID.")
+    // Include tool name because Code Mode's dispatcher and its nested tools can
+    // share the outer call ID/message ID while still being distinct invocations.
+    const callKey = `${event.sessionID}\0${event.messageID}\0${event.id}\0${event.tool}`
+    if (admittedCalls.has(callKey)) return
     const { cwd, data, options: opts } = await scope(event.sessionID)
     if (!opts.delivery && Number(data.budget.limits.tools) === 0 && Number(data.budget.limits.seconds) === 0 && Number(data.budget.limits.repairs) === 0) return
+    let persistenceAttempted = false
     try {
       const nativeShell = ["bash", "shell", "powershell"].includes(event.tool)
       const input = event.input && typeof event.input === "object" ? event.input as Record<string, unknown> : {}
@@ -286,24 +294,29 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
       // execute.before is the authoritative per-invocation boundary, including
       // native shell, plugin tools, subagent dispatch, and Code Mode calls. It
       // carries sessionID/call ID; shell.create.before does not.
-      const reason = budgetReason(data.budget, "tool")
-      if (reason) {
-        data.budget.stopped ||= reason
-        await ctx.storage.set(sessionKey(event.sessionID), data)
-        await ctx.session.interrupt({ sessionID: event.sessionID, resume: false })
-        throw Error(`Delivery budget exhausted: ${reason}. Explicit delivery-budget-reset required.`)
+      if (!admittedCalls.has(callKey)) {
+        const reason = budgetReason(data.budget, "tool")
+        if (reason) {
+          data.budget.stopped ||= reason
+          persistenceAttempted = true
+          await ctx.storage.set(sessionKey(event.sessionID), data)
+          await ctx.session.interrupt({ sessionID: event.sessionID, resume: false })
+          throw Error(`Delivery budget exhausted: ${reason}. Explicit delivery-budget-reset required.`)
+        }
+        data.budget.tools++
       }
-      data.budget.tools++
+      persistenceAttempted = true
       await ctx.storage.set(sessionKey(event.sessionID), data)
+      admittedCalls.add(callKey)
     } catch (error) {
       // A policy rejection means no tool executes. Persist the observed state but
       // never leave a provisional shell claim behind for a later user command.
-      await ctx.storage.set(sessionKey(event.sessionID), data)
+      if (!persistenceAttempted) await ctx.storage.set(sessionKey(event.sessionID), data)
       throw error
     }
-  }))
+  })))
 
-  registrations.push(await ctx.tool.hook("execute.after", async event => {
+  registrations.push(await ctx.tool.hook("execute.after", async event => serialized(event.sessionID, async () => {
     const { cwd, data } = await scope(event.sessionID)
     if (!sessionOptions(await ctx.session.get({ sessionID: event.sessionID })).delivery) {
       await ctx.storage.set(sessionKey(event.sessionID), data)
@@ -333,7 +346,7 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
       event.result = { ...event.result, content }
     }
     await ctx.storage.set(sessionKey(event.sessionID), data)
-  }))
+  })))
 
   registrations.push(await ctx.shell.hook("create.before", async event => {
     // Session-scoped policy, limits, and budget were handled at execute.before.
@@ -366,7 +379,7 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
     event.system.push({ type: "text", text: `${data.guidance || DELIVERY_INVARIANTS}\n\nCurrent delivery recovery record (not authorization; recompute freshness before checks/finish):\n${checkpoint}\n\n${deliveryPhaseGuidance(data.state)}` })
   }))
 
-  registrations.push(await ctx.session.hook("prompt", async event => {
+  registrations.push(await ctx.session.hook("prompt", async event => serialized(event.sessionID, async () => {
     const { cwd, data, options: opts } = await scope(event.sessionID)
     if (!opts.delivery) return
     const workflow = data.state && !["verified", "blocked"].includes(data.state.status) ? data.state.workflowMode : opts.workflow
@@ -384,7 +397,7 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
     const internal = event.metadata?.carthagentRecovery === true || event.metadata?.carthagentBudget === true
     if (!internal) { data.discovery = newDiscovery(!looksInformational(event.prompt.text)); data.nudges = 0; data.touched = false }
     await ctx.storage.set(sessionKey(event.sessionID), data)
-  }))
+  })))
 
   registrations.push(await ctx.command.transform(editor => {
     editor.add({ name: "delivery-budget-status", description: "Show this session's persistent delivery budget", execute: async ({ sessionID }) => {
@@ -392,8 +405,12 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
       await ctx.session.prompt({ sessionID, delivery: "steer", metadata: { carthagentBudget: true }, text: `Delivery budget status: ${JSON.stringify(budgetSnapshot(data.budget))}` })
     } })
     editor.add({ name: "delivery-budget-reset", description: "Explicitly authorize a fresh budget for this session", execute: async ({ sessionID }) => {
-      const { data, options: opts } = await scope(sessionID); clearTimeout(budgetTimers.get(sessionID)); budgetTimers.delete(sessionID); data.budget = newBudget(budgetLimits((name: string) => opts[limitOptions[name]] ?? opts[name] ?? "0")); await ctx.storage.set(sessionKey(sessionID), data)
-      await ctx.session.prompt({ sessionID, delivery: "steer", metadata: { carthagentBudget: true }, text: `Delivery budget explicitly reset: ${JSON.stringify(budgetSnapshot(data.budget))}` })
+      const snapshot = await serialized(sessionID, async () => {
+        const { data, options: opts } = await scope(sessionID); clearTimeout(budgetTimers.get(sessionID)); budgetTimers.delete(sessionID); data.budget = newBudget(budgetLimits((name: string) => opts[limitOptions[name]] ?? opts[name] ?? "0")); await ctx.storage.set(sessionKey(sessionID), data)
+        for (const key of admittedCalls) if (key.startsWith(`${sessionID}\0`)) admittedCalls.delete(key)
+        return budgetSnapshot(data.budget)
+      })
+      await ctx.session.prompt({ sessionID, delivery: "steer", metadata: { carthagentBudget: true }, text: `Delivery budget explicitly reset: ${JSON.stringify(snapshot)}` })
     } })
   }))
 
@@ -403,6 +420,7 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
       for await (const event of ctx.event.subscribe({ signal: abort.signal })) {
         if (event.type === "session.idle" && event.data?.sessionID) {
           const sessionID = event.data.sessionID
+          let followup: string | undefined
           await serialized(sessionID, async () => {
             const { cwd, data, session } = await scope(sessionID)
             const reason = budgetReason(data.budget)
@@ -441,16 +459,13 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
               data.nudges++
               const pending = issues.pendingChecks.join(", ") || "none"
               await ctx.storage.set(sessionKey(sessionID), data)
-              await ctx.session.prompt({
-                sessionID,
-                metadata: { carthagentRecovery: true },
-                text: `Delivery follow-up ${data.nudges}/2: the required contract has no fresh verified handoff. Pending checks: ${pending}. Inspect current delivery_status, repair the actual cause, rerun checks and finish verified, or record status=blocked with specific limitations. Do not repeat a success claim or weaken obligations.`,
-                delivery: "steer",
-              })
+              followup = `Delivery follow-up ${data.nudges}/2: the required contract has no fresh verified handoff. Pending checks: ${pending}. Inspect current delivery_status, repair the actual cause, rerun checks and finish verified, or record status=blocked with specific limitations. Do not repeat a success claim or weaken obligations.`
             } catch (error) {
               console.error("Carthagent delivery recovery failed closed", error)
             } finally { release() }
           })
+          if (followup) await ctx.session.prompt({ sessionID, metadata: { carthagentRecovery: true }, text: followup, delivery: "steer" })
+          for (const key of admittedCalls) if (key.startsWith(`${sessionID}\0`)) admittedCalls.delete(key)
         }
       }
     } catch (error) { if (!abort.signal.aborted) console.error("Carthagent delivery event subscription failed", error) }
@@ -458,6 +473,7 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
   return async () => {
     if (disposed) return
     disposed = true; abort.abort()
+    admittedCalls.clear()
     for (const timer of budgetTimers.values()) clearTimeout(timer)
     budgetTimers.clear()
     await Promise.all(registrations.map(registration => registration.dispose()))
