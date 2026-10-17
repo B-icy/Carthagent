@@ -32,7 +32,7 @@ jobs:
             tag_commit="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_commit" --jq '.object.sha')"
           fi
           [[ "$tag_commit" =~ ^[0-9a-f]{40}$ ]]
-          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft >/dev/null
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft == true' | grep -qx true
           echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "release_commit=$tag_commit" >> "$GITHUB_OUTPUT"
 
@@ -52,8 +52,6 @@ jobs:
             target: opencode-linux-arm64
           - os: windows-latest
             target: opencode-windows-x64
-          - os: windows-11-arm
-            target: opencode-windows-arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -95,7 +93,7 @@ jobs:
             docs/patches/opencode-v2.0.32-session-ui.patch \
             script/ctg/build-owned-runtime.sh \
             docs/opencode-owned-runtime.md
-          (cd release-assets && sha256sum *.tar.gz > SHA256SUMS)
+          (cd release-assets && sha256sum "${{ matrix.target }}.tar.gz" "${{ matrix.target }}-source.tar.gz" > "${{ matrix.target }}-SHA256SUMS.txt")
       - uses: actions/upload-artifact@v4
         with:
           name: opencode-ctg-${{ matrix.target }}
@@ -119,6 +117,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
-          find runtime-assets -type f -name '*.tar.gz' -print0 | while IFS= read -r -d '' asset; do
+          ref="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG")"
+          tag_commit="$(jq -r '.object.sha' <<<"$ref")"
+          tag_type="$(jq -r '.object.type' <<<"$ref")"
+          if [[ "$tag_type" == tag ]]; then
+            tag_commit="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_commit" --jq '.object.sha')"
+          fi
+          test "$tag_commit" = "${{ needs.validate-release-target.outputs.release_commit }}"
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft == true' | grep -qx true
+          find runtime-assets -type f \( -name '*.tar.gz' -o -name '*-SHA256SUMS.txt' \) -print0 | while IFS= read -r -d '' asset; do
             gh release upload "$RELEASE_TAG" "$asset#$(basename "$asset")" --repo "$GITHUB_REPOSITORY"
           done
