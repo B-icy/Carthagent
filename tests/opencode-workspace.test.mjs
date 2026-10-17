@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, symlinkSync } from 'node:fs';
+import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createTask, listNativeSessions, listNativeWorktrees, listTasks, reconcileTasks } from '../lib/opencode/workspace.mjs';
@@ -71,19 +71,24 @@ test('reconciliation preserves live pending operations and filters inventory by 
   assert.equal((await creating).projectID, 'project-one');
 });
 
-test('native inventory uses projectID and canonical directory with explicit root sessions', async () => {
-  const calls = [];
+test('native inventory uses the actual Context get and projectID-scoped worktree.list APIs', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'ctg-inventory ')); t.after(() => rmSync(root, { recursive: true, force: true }));
+  let worktreeListInput;
+  const sessionRecords = new Map();
   const ctx = {
-    session: { async list(input) { calls.push(['sessions', input]); return { data: [
-      { id: 'root', projectID: 'p', location: { directory: '/project/wt' } },
-      { id: 'child', projectID: 'p', parentID: 'root', location: { directory: '/project/wt' } },
-      { id: 'other-project', projectID: 'q', location: { directory: '/project' } },
-    ], cursor: { next: undefined } }; } },
-    worktree: { async list(input) { calls.push(['worktrees', input]); return typeof input === 'object' ? [{ directory: '/project' }, { directory: '/project/wt' }] : [{ directory: '/project/wt' }]; } },
+    worktree: {
+      async create() { const directory = join(root, 'task-worktree'); mkdirSync(directory); return { directory }; },
+      async list(input) { worktreeListInput = input; assert.deepEqual(input, { projectID: 'p' }); return [{ directory: join(root, 'task-worktree') }]; },
+    },
+    session: {
+      async create({ location }) { sessionRecords.set('root-session', { id: 'root-session', projectID: 'p', location, outcome: 'succeeded' }); return { id: 'root-session' }; },
+      async get({ sessionID }) { if (!sessionRecords.has(sessionID)) throw Error('not found'); return sessionRecords.get(sessionID); },
+    },
   };
-  assert.deepEqual((await listNativeSessions({ ctx, canonical: '/project/.', projectID: 'p' })).map(session => session.id), ['root']);
-  assert.deepEqual(await listNativeWorktrees({ ctx, canonical: '/project', projectID: 'p' }), [{ directory: '/project/wt' }]);
-  assert.deepEqual(calls, [['sessions', { project: 'p', order: 'desc', limit: 100 }], ['worktrees', { projectID: 'p' }], ['worktrees', '/project']]);
+  await createTask({ ctx, canonical: root, projectID: 'p', task: 'inventory task' });
+  assert.deepEqual((await listNativeSessions({ ctx, canonical: root, projectID: 'p' })).map(session => session.id), ['root-session']);
+  assert.deepEqual(await listNativeWorktrees({ ctx, canonical: root, projectID: 'p' }), [{ directory: join(root, 'task-worktree') }]);
+  assert.deepEqual(worktreeListInput, { projectID: 'p' });
 });
 
 test('legacy archive parses searchable records and preserves malformed line diagnostics without mutation', t => {
@@ -179,7 +184,40 @@ test('local source snapshot includes tracked diff bytes and durable review recei
   assert.deepEqual(reviewState.history[0].details.findings, [finding]);
 });
 
-test('PR review fetches authoritative GitHub metadata and exact git objects before and after review', async t => {
+test('local review includes real untracked source contents and uses raw reviewer prompt metadata', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'review untracked ')); t.after(() => rmSync(root, { recursive: true, force: true }));
+  git(root, 'init', '-q'); git(root, 'config', 'user.email', 'test@example.invalid'); git(root, 'config', 'user.name', 'Test');
+  writeFileSync(join(root, 'tracked.txt'), 'base\n'); git(root, 'add', '.'); git(root, 'commit', '-qm', 'base');
+  writeFileSync(join(root, 'new-source.ts'), 'export const untrackedReviewSentinel = "present in exact review source";\n');
+  let reviewerPrompt;
+  let promptMetadata;
+  const ctx = {
+    agent: { async list() { return { data: [{ id: 'build' }] }; } },
+    session: {
+      async create(input) {
+        assert.ok(input.permissions.some(rule => rule.action === 'shell' && rule.effect === 'deny'));
+        assert.ok(input.permissions.some(rule => rule.action === 'edit' && rule.effect === 'deny'));
+        return { id: 'review-untracked' };
+      },
+      async prompt(input) { reviewerPrompt = input.text; promptMetadata = input.metadata; },
+      async wait() {}, async get() { return { outcome: 'succeeded' }; },
+      async context() {
+        const head = git(root, 'rev-parse', 'HEAD');
+        const snapshot = reviewerPrompt.match(/Snapshot SHA-256: ([a-f0-9]+)/)[1];
+        return [{ type: 'assistant', finish: 'stop', content: [{ type: 'text', text: `REVIEW_JSON: ${JSON.stringify({ version: 1, snapshot, head, findings: [] })}\nVERDICT: APPROVE` }] }, { type: 'idle', outcome: 'succeeded' }];
+      },
+    },
+  };
+  const result = await startReview({ ctx, cwd: root, identity: 'untracked-source-review' });
+  assert.equal(result.verdict, 'APPROVE');
+  assert.deepEqual(promptMetadata, { 'ctg.raw': true });
+  assert.match(reviewerPrompt, /new-source\.ts/);
+  const encodedSource = reviewerPrompt.match(/new-source\.ts\0([A-Za-z0-9+/=]+)/)?.[1];
+  assert.ok(encodedSource);
+  assert.match(Buffer.from(encodedSource, 'base64').toString('utf8'), /present in exact review source/);
+});
+
+test('PR review fetches authoritative GitHub metadata and exact git objects before and after review', { skip: process.platform === 'win32' }, async t => {
   const root = mkdtempSync(join(tmpdir(), 'pr authoritative ')); t.after(() => rmSync(root, { recursive: true, force: true }));
   const bare = join(root, 'origin.git'); const cwd = join(root, 'checkout'); mkdirSync(bare); git(bare, 'init', '--bare', '-q');
   mkdirSync(cwd); git(cwd, 'init', '-q'); git(cwd, 'config', 'user.email', 'test@example.invalid'); git(cwd, 'config', 'user.name', 'Test');
@@ -188,51 +226,58 @@ test('PR review fetches authoritative GitHub metadata and exact git objects befo
   const baseHead = git(cwd, 'rev-parse', 'HEAD');
   git(cwd, 'checkout', '-qb', 'feature'); writeFileSync(join(cwd, 'source.txt'), 'authoritative PR content\n'); git(cwd, 'commit', '-qam', 'PR change'); git(cwd, 'push', '-q', 'origin', 'feature');
   const head = git(cwd, 'rev-parse', 'HEAD');
-  let reads = 0; const calls = [];
-  const commandRunner = (command, args, options) => {
-    calls.push({ command, args: [...args] });
-    if (command === 'gh') {
-      reads++;
-      return JSON.stringify({
-        state: 'open', number: 18,
-        head: { sha: head, ref: 'feature', repo: { full_name: 'fork/fixture', clone_url: bare } },
-        base: { sha: baseHead, ref: 'main', repo: { full_name: 'owner/fixture', clone_url: bare } },
-      });
-    }
-    return execFileSync(command, args, { cwd: options.cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  };
+  const bin = join(root, 'bin'); mkdirSync(bin);
+  const ghLog = join(root, 'gh.log');
+  const ghFixture = join(bin, process.platform === 'win32' ? 'gh.cmd' : 'gh');
+  writeFileSync(ghFixture, `#!/bin/sh\nprintf x >> '${ghLog}'\nprintf '%s' '${JSON.stringify({ state: 'open', number: 18, head: { sha: head, ref: 'feature', repo: { full_name: 'fork/fixture', clone_url: bare } }, base: { sha: baseHead, ref: 'main', repo: { full_name: 'owner/fixture', clone_url: bare } } })}'\n`);
+  if (process.platform === 'win32') {
+    writeFileSync(ghFixture, `@echo off\r\necho ${JSON.stringify({ state: 'open', number: 18, head: { sha: head, ref: 'feature', repo: { full_name: 'fork/fixture', clone_url: bare } }, base: { sha: baseHead, ref: 'main', repo: { full_name: 'owner/fixture', clone_url: bare } } })}\r\n`);
+  } else chmodSync(ghFixture, 0o755);
+  const priorPath = process.env.PATH;
+  process.env.PATH = `${bin}${process.platform === 'win32' ? ';' : ':'}${priorPath ?? ''}`;
   let promptText;
   const ctx = {
     agent: { async list() { return { data: [{ id: 'build' }] }; } },
     session: {
       async create({ location }) { assert.equal(location.directory, cwd); return { id: 'pr-reviewer' }; },
-      async prompt({ text }) { promptText = text; }, async wait() {}, async get() { return { outcome: 'succeeded' }; }, async interrupt() {},
+      async prompt({ text, metadata }) { assert.deepEqual(metadata, { 'ctg.raw': true }); promptText = text; }, async wait() {}, async get() { return { outcome: 'succeeded' }; }, async interrupt() {},
       async context() {
         const snapshot = promptText.match(/Snapshot SHA-256: ([a-f0-9]+)/)[1];
         return [{ type: 'assistant', finish: 'stop', content: [{ type: 'text', text: `REVIEW_JSON: ${JSON.stringify({ version: 1, snapshot, head, findings: [] })}\nVERDICT: APPROVE` }] }, { type: 'idle', outcome: 'succeeded' }];
       },
     },
   };
-  const result = await startPullRequestReview({ ctx, cwd, repository: 'owner/fixture', prNumber: 18, commandRunner });
-  assert.equal(result.verdict, 'APPROVE'); assert.equal(result.head, head);
-  assert.match(promptText, /authoritative PR content/);
-  assert.equal(reads, 2);
-  assert.ok(calls.filter(call => call.command === 'git' && call.args[0] === 'fetch').length >= 4);
-  assert.ok(JSON.parse(readFileSync(join(cwd, '.harness/reviews', `${(await import('node:crypto')).createHash('sha256').update('pr:owner/fixture#18').digest('hex')}.json`), 'utf8')).history[0].details.remote);
+  try {
+    let injectedRunnerCalled = false;
+    const result = await startPullRequestReview({
+      ctx, cwd, repository: 'owner/fixture', prNumber: 18,
+      commandRunner() { injectedRunnerCalled = true; throw Error('untrusted command runner must not execute'); },
+    });
+    assert.equal(result.verdict, 'APPROVE'); assert.equal(result.head, head);
+    assert.equal(injectedRunnerCalled, false);
+    assert.match(promptText, /authoritative PR content/);
+    if (process.platform !== 'win32') assert.equal(readFileSync(ghLog, 'utf8'), 'xx');
+    assert.ok(JSON.parse(readFileSync(join(cwd, '.harness/reviews', `${(await import('node:crypto')).createHash('sha256').update('pr:owner/fixture#18').digest('hex')}.json`), 'utf8')).history[0].details.remote);
+  } finally { process.env.PATH = priorPath; }
 });
 
-test('PR review refuses untrusted metadata/source and changed remote head', async t => {
+test('PR review rejects GitHub metadata that does not match fetched real branch objects', { skip: process.platform === 'win32' }, async t => {
   const root = mkdtempSync(join(tmpdir(), 'pr forged ')); t.after(() => rmSync(root, { recursive: true, force: true }));
   git(root, 'init', '-q'); git(root, 'config', 'user.email', 'test@example.invalid'); git(root, 'config', 'user.name', 'Test');
   writeFileSync(join(root, 'f'), 'x'); git(root, 'add', '.'); git(root, 'commit', '-qm', 'base');
   const head = git(root, 'rev-parse', 'HEAD'); git(root, 'branch', 'main'); git(root, 'branch', 'feature'); let reviewerCreated = false;
-  const invalidRunner = (command, args, options) => {
-    if (command === 'gh') return JSON.stringify({ state: 'open', head: { sha: 'a'.repeat(40), ref: 'main', repo: { full_name: 'fork/fixture', clone_url: root } }, base: { sha: head, ref: 'main', repo: { full_name: 'owner/fixture', clone_url: root } } });
-    return execFileSync(command, args, { cwd: options.cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  };
+  const bin = join(root, 'bin'); mkdirSync(bin);
+  const ghFixture = join(bin, 'gh');
+  const invalidPR = JSON.stringify({ state: 'open', head: { sha: 'a'.repeat(40), ref: 'feature', repo: { full_name: 'fork/fixture', clone_url: root } }, base: { sha: head, ref: 'main', repo: { full_name: 'owner/fixture', clone_url: root } } });
+  if (process.platform === 'win32') writeFileSync(ghFixture, `@echo off\r\necho ${invalidPR}\r\n`);
+  else { writeFileSync(ghFixture, `#!/bin/sh\nprintf '%s' '${invalidPR}'\n`); chmodSync(ghFixture, 0o755); }
+  const priorPath = process.env.PATH;
+  process.env.PATH = `${bin}${process.platform === 'win32' ? ';' : ':'}${priorPath ?? ''}`;
   const ctx = { agent: { async list() { return { data: [{ id: 'build' }] }; } }, session: { async create() { reviewerCreated = true; return { id: 'no' }; } } };
-  await assert.rejects(startPullRequestReview({ ctx, cwd: root, repository: 'owner/fixture', prNumber: 9, commandRunner: invalidRunner }), /Fetched GitHub branch refs do not match/);
-  assert.equal(reviewerCreated, false);
+  try {
+    await assert.rejects(startPullRequestReview({ ctx, cwd: root, repository: 'owner/fixture', prNumber: 9 }), /Fetched GitHub branch refs do not match/);
+    assert.equal(reviewerCreated, false);
+  } finally { process.env.PATH = priorPath; }
 });
 
 test('review rejects unsuccessful execution and bounds timeout/cancellation while stopping its reviewer', async t => {
@@ -245,7 +290,7 @@ test('review rejects unsuccessful execution and bounds timeout/cancellation whil
     session: {
       async create() { return { id: 'reviewer-timeout' }; }, async prompt() {},
       async wait(_input, { signal }) { await new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true })); },
-      async interrupt({ sessionID, continue: shouldContinue }, { signal }) { assert.equal(sessionID, 'reviewer-timeout'); assert.equal(shouldContinue, false); assert.ok(signal); interrupted++; return { interrupted: true }; },
+      async interrupt({ sessionID, resume }, { signal }) { assert.equal(sessionID, 'reviewer-timeout'); assert.equal(resume, false); assert.ok(signal); interrupted++; return { interrupted: true }; },
       async get() { return { outcome: 'interrupted' }; }, async context() { return []; },
     },
   };
@@ -256,7 +301,12 @@ test('review rejects unsuccessful execution and bounds timeout/cancellation whil
     ...ctx,
     session: { ...ctx.session, async interrupt(_input, { signal }) { await new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true })); } },
   };
-  await assert.rejects(startReview({ ctx: hangingInterrupt, cwd: root, timeoutMs: 15 }), /interruption was not confirmed/);
+  await assert.rejects(startReview({ ctx: hangingInterrupt, cwd: root, identity: 'hanging-interrupt', timeoutMs: 15 }), /interruption was not confirmed/);
+  const notInterrupted = {
+    ...ctx,
+    session: { ...ctx.session, async interrupt({ sessionID, resume }, { signal }) { assert.equal(sessionID, 'reviewer-timeout'); assert.equal(resume, false); assert.ok(signal); return { interrupted: false }; } },
+  };
+  await assert.rejects(startReview({ ctx: notInterrupted, cwd: root, identity: 'not-interrupted', timeoutMs: 15 }), /reviewer may still be running; interruption was not confirmed/);
 });
 
 test('failed and interrupted native reviewer outcomes are never accepted as verdicts', async t => {
