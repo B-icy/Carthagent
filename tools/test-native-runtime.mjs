@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /** Exercise CTG's wrappers, including resumed failures, against the real host. */
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ensureService, stopService } from '../lib/opencode/service.mjs';
 import { runHeadless } from '../lib/opencode/headless.mjs';
@@ -10,11 +10,22 @@ import { nativeFixture, streamText } from './native-fixture.mjs';
 const host = await nativeFixture({
   plugin: process.argv[2],
   respond(body, res) {
-    const text = JSON.stringify(body.messages.at(-1));
+    const text = JSON.stringify([...body.messages].reverse().find(message => message.role === 'user'));
+    if (text.includes('WRAPPER_TOOL') && !body.messages.some(message => message.role === 'tool')) {
+      assert.ok(body.tools.some(tool => tool.function?.name === 'read'), 'Native host must advertise the requested read tool');
+      const chunk = (delta, finish_reason = null) => `data: ${JSON.stringify({
+        id: 'runtime-tool', object: 'chat.completion.chunk', created: 1, model: 'fixture',
+        choices: [{ index: 0, delta, finish_reason }],
+      })}\n\n`;
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.end(`${chunk({ role: 'assistant', tool_calls: [{ index: 0, id: 'wrapper-read', type: 'function',
+        function: { name: 'read', arguments: JSON.stringify({ path: join(host.cwd, 'wrapper-tool.txt') }) } }] })}${chunk({}, 'tool_calls')}data: [DONE]\n\n`);
+      return;
+    }
     if (text.includes('WRAPPER_FAILURE')) {
       res.writeHead(400, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: { message: 'Offline wrapper rejection', type: 'invalid_request_error' } }));
-    } else streamText(res, text.includes('WRAPPER_SECOND') ? 'SECOND_TURN' : 'FIRST_TURN');
+    } else streamText(res, text.includes('WRAPPER_TOOL') ? 'FINAL_AFTER_TOOL' : text.includes('WRAPPER_SECOND') ? 'SECOND_TURN' : 'FIRST_TURN');
   },
 });
 const options = { root: join(host.temp, 'runtime'), pluginPath: process.argv[2] ?? join(import.meta.dirname, '../plugins/carthagent') };
@@ -34,6 +45,10 @@ try {
   assert.equal(first.budgetReason, undefined, 'A successful terminal outcome has no budget failure reason');
   const second = await runHeadless(service, host.cwd, 'WRAPPER_SECOND', { ...common, sessionID: first.session.id });
   assert.equal(second.result?.text, 'SECOND_TURN', 'Resume must return the current turn');
+  await writeFile(join(host.cwd, 'wrapper-tool.txt'), 'Read this through the native tool.\n');
+  const toolTurn = await runHeadless(service, host.cwd, 'WRAPPER_TOOL', common);
+  assert.equal(toolTurn.outcome, 'succeeded');
+  assert.equal(toolTurn.result?.text, 'FINAL_AFTER_TOOL', 'Return the final assistant after tools, not the initial tool-call message');
   let failure;
   try { failure = await runHeadless(service, host.cwd, 'WRAPPER_FAILURE', { ...common, sessionID: first.session.id }); }
   catch (error) { failure = { error }; }
