@@ -10,7 +10,6 @@ export interface NativeReviewConsumerOptions {
   diff: (sessionID: string, signal?: AbortSignal) => Promise<unknown>;
   offer: (value: NativeReviewOffer) => Promise<unknown>;
   kickoff: (sessionID: string, signal?: AbortSignal) => Promise<unknown>;
-  latestUserMessage?: (sessionID: string) => { type?: string; metadata?: Record<string, unknown> } | undefined;
   isLoopActive?: (sessionID: string) => boolean;
   setLoopActive?: (sessionID: string, active: boolean) => void;
   signal?: AbortSignal;
@@ -21,10 +20,11 @@ export function nativeReviewMode(session: any, config: any, explicitMode?: strin
 export function createNativeReviewConsumer(options: NativeReviewConsumerOptions): {
   setLoopActive(sessionID: string, active: boolean): void;
   onUserPromptAdmitted(sessionID: string, message?: { type?: string; metadata?: Record<string, unknown> }): void;
+  onInboxDelivered(event: any, message?: { type?: string; metadata?: Record<string, unknown> }): void;
   onStarted(event: any): void;
   onSucceeded(event: any): Promise<void>;
   onFailed(event: any): Promise<void>;
   onInterrupted(event: any): Promise<void>;
   dispose(): void;
 };
-export function subscribeNativeReviewEvents(data: any, consumer: ReturnType<typeof createNativeReviewConsumer>, onError?: (error: unknown) => void): Array<() => void>;
+export function subscribeNativeReviewEvents(data: any, consumer: ReturnType<typeof createNativeReviewConsumer>, onError?: (error: unknown) => void, getMessage?: (sessionID: string, messageID: string) => Promise<{ type?: string; metadata?: Record<string, unknown> } | undefined>): Array<() => void>;

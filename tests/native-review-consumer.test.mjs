@@ -87,40 +87,74 @@ test('yes kicks off only successful new-change runs and suppresses only that ses
   assert.equal(started.length, 3, 'only session-a may re-enter a loop after a new user prompt');
 });
 
-test('execution.started resets restored persisted loop only for admitted user work, not auto-review kickoff', () => {
+test('inbox.delivered resets restored loop only for the admitted message, not auto-review kickoff', async () => {
   const persisted = new Set(['session-restored', 'session-kickoff']);
-  const messages = new Map([
-    ['session-restored', { type: 'user', metadata: {} }],
-    ['session-kickoff', { type: 'user', metadata: { 'ctg.raw': true, 'ctg.reviewKickoff': true } }],
-  ]);
+  const messages = new Map();
   const consumer = createNativeReviewConsumer({
     mode: () => 'no', diff: async () => [], offer: async () => {}, kickoff: async () => {},
-    latestUserMessage: (sessionID) => messages.get(sessionID),
     isLoopActive: (sessionID) => persisted.has(sessionID),
     setLoopActive: (sessionID, active) => active ? persisted.add(sessionID) : persisted.delete(sessionID),
   });
   const handlers = new Map();
-  const cleanups = subscribeNativeReviewEvents({ on(type, handler) { handlers.set(type, handler); return () => {}; } }, consumer);
+  const cleanups = subscribeNativeReviewEvents(
+    { on(type, handler) { handlers.set(type, handler); return () => {}; } },
+    consumer,
+    assert.fail,
+    async (sessionID, messageID) => messages.get(`${sessionID}:${messageID}`),
+  );
 
-  handlers.get('session.execution.started')(execution('restored-user-turn', 'session-restored'));
+  messages.set('session-restored:user-2', { type: 'user', metadata: {} });
+  handlers.get('session.inbox.delivered')({ data: { sessionID: 'session-restored', inboxID: 'user-2' } });
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(persisted.has('session-restored'), false, 'restored session loop state is explicitly persisted as cleared');
-  handlers.get('session.execution.started')(execution('review-kickoff-turn', 'session-kickoff'));
+  messages.set('session-kickoff:review-1', { type: 'user', metadata: { 'ctg.raw': true, 'ctg.reviewKickoff': true } });
+  handlers.get('session.inbox.delivered')({ data: { sessionID: 'session-kickoff', inboxID: 'review-1' } });
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(persisted.has('session-kickoff'), true, 'review kickoff does not clear its own loop suppression');
 
   cleanups.forEach((cleanup) => cleanup());
   consumer.dispose();
 });
 
-test('execution.started ignores non-user latest messages when clearing a restored loop', () => {
-  let persisted = true;
+test('execution.started does not use stale cached message state; inbox deliveries distinguish kickoff then user and coalesced work', async () => {
+  const persisted = new Set(['session-a']);
+  const messages = new Map([
+    ['session-a:kickoff', { type: 'user', metadata: { 'ctg.raw': true, 'ctg.reviewKickoff': true } }],
+    ['session-a:user-1', { type: 'user', metadata: {} }],
+    ['session-a:user-2', { type: 'user', metadata: {} }],
+    ['session-a:assistant', { type: 'assistant', metadata: {} }],
+  ]);
+  const writes = [];
   const consumer = createNativeReviewConsumer({
     mode: () => 'no', diff: async () => [], offer: async () => {}, kickoff: async () => {},
-    latestUserMessage: () => ({ type: 'assistant', metadata: {} }),
-    isLoopActive: () => persisted,
-    setLoopActive: (_sessionID, active) => { persisted = active; },
+    isLoopActive: (sessionID) => persisted.has(sessionID),
+    setLoopActive: (sessionID, active) => { writes.push([sessionID, active]); if (active) persisted.add(sessionID); else persisted.delete(sessionID); },
   });
-  consumer.onStarted(execution('assistant-retry', 'session-a'));
-  assert.equal(persisted, true);
+  const handlers = new Map();
+  const cleanups = subscribeNativeReviewEvents(
+    { on(type, handler) { handlers.set(type, handler); return () => {}; } }, consumer, assert.fail,
+    async (sessionID, messageID) => messages.get(`${sessionID}:${messageID}`),
+  );
+  // The execution-start lifecycle fires first; it must not inspect an old
+  // cached message and reset this restored loop.
+  handlers.get('session.execution.started')(execution('run-1', 'session-a'));
+  assert.deepEqual(writes, []);
+  handlers.get('session.inbox.delivered')({ data: { sessionID: 'session-a', inboxID: 'kickoff' } });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(writes, [], 'kickoff delivery preserves suppression');
+
+  // Multiple queued user messages are distinct admissions even if the host
+  // coalesces them into one later execution.started event.
+  handlers.get('session.inbox.delivered')({ data: { sessionID: 'session-a', inboxID: 'user-1' } });
+  handlers.get('session.inbox.delivered')({ data: { sessionID: 'session-a', inboxID: 'user-2' } });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(writes, [['session-a', false]], 'restored state is persisted cleared once on real user admission');
+  assert.equal(persisted.has('session-a'), false);
+
+  handlers.get('session.inbox.delivered')({ data: { sessionID: 'session-a', inboxID: 'assistant' } });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(writes, [['session-a', false]], 'non-user delivered message is ignored');
+  cleanups.forEach((cleanup) => cleanup());
   consumer.dispose();
 });
 
@@ -153,5 +187,5 @@ test('host execution subscriptions are disposed and plugin shutdown blocks pendi
   consumer.dispose();
   assert.equal(await offers[0].start(), false);
   cleanups.forEach((cleanup) => cleanup());
-  assert.equal(unsubscribed.length, 4);
+  assert.equal(unsubscribed.length, 5);
 });

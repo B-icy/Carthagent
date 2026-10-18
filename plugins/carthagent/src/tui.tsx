@@ -27,7 +27,6 @@ export default Plugin.define({
     const reviewConsumer = createNativeReviewConsumer({
       mode: (sessionID: string) => nativeReviewMode(context.data.session.get(sessionID), loadCarthagentConfig()),
       diff: async (sessionID: string, signal?: AbortSignal) => await context.client.session.diff({ sessionID }, { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000) }),
-      latestUserMessage: (sessionID: string) => context.data.session.message.list(sessionID).findLast((message) => message.type === "user"),
       signal: lifecycle.signal,
       isLoopActive: (sessionID: string) => reviewLoops.has(sessionID),
       setLoopActive: (sessionID: string, active: boolean) => {
@@ -42,7 +41,12 @@ export default Plugin.define({
       kickoff: async (reviewSessionID: string, signal?: AbortSignal) => sendNativeReviewKickoff({ client: context.client, sessionID: reviewSessionID, signal }),
     });
     cleanups.push(() => reviewConsumer.dispose());
-    cleanups.push(...subscribeNativeReviewEvents(context.data, reviewConsumer, (error: unknown) => context.ui.toast.show({ message: error instanceof Error ? error.message : String(error), variant: "error" })));
+    cleanups.push(...subscribeNativeReviewEvents(
+      context.data,
+      reviewConsumer,
+      (error: unknown) => context.ui.toast.show({ message: error instanceof Error ? error.message : String(error), variant: "error" }),
+      async (sessionID: string, messageID: string) => await context.client.session.message.get({ sessionID, messageID }),
+    ));
     const workspaceEvents = context.client.rpc(Workspace);
     cleanups.push(workspaceEvents.events.on("updated", (event) => {
       // Promise RPC exposes the server event envelope (including location)
