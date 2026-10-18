@@ -42,3 +42,13 @@ test('explicit developer binary requires an independently supplied digest before
   }), /requires CTG_NATIVE_PTY_EXPECTED_SHA256/);
   assert.equal(resolved, false);
 });
+
+test('PTY command submit path types command and arguments before one natural Enter', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const source = await readFile(new URL('../tools/native-pty-smoke.py', import.meta.url), 'utf8');
+  assert.match(source, /command = args\.command \+ \(f' \{args\.command_args\}' if args\.command_args else ''\)/);
+  assert.match(source, /os\.write\(master, command\.encode\(\)\)[\s\S]{0,400}os\.write\(master, b'\\r'\)/);
+  const submit = source.match(/if sent and not submitted and after_index == 0[\s\S]*?(?=confirmation_prompt)/)?.[0] ?? '';
+  assert.match(submit, /submitted = True/);
+  assert.doesNotMatch(submit, /sent = False|selected_at/);
+});

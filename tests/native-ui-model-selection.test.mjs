@@ -56,3 +56,16 @@ test('invalid explicit variant never mutates the selected model', async () => {
   assert.deepEqual(result, { status: 'invalid', variant: 'turbo' });
   assert.equal(switches, 0);
 });
+
+test('variant requested while filtering multiple models remains selected after the model picker', async () => {
+  let switched;
+  const result = await selectModelWithVariant({
+    model: candidate,
+    variant: 'deep',
+    promptForVariant: true,
+    chooseVariant: async () => 'deep',
+    switchModel: async (selection) => { switched = selection; },
+  });
+  assert.deepEqual(result, { status: 'selected', variant: 'deep' });
+  assert.deepEqual(switched, { providerID: 'provider-b', id: 'model-b', variant: 'deep' });
+});

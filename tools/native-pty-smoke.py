@@ -142,22 +142,13 @@ def main():
                     pre_submit_transcript = bytes(transcript)
                     output.clear()
                     sent_at = time.monotonic()
-                    os.write(master, args.command.encode())
+                    command = args.command + (f' {args.command_args}' if args.command_args else '')
+                    os.write(master, command.encode())
                     sent = True
                 if sent and not submitted and after_index == 0 and time.monotonic() - sent_at > 1:
-                    # First Enter accepts native slash completion; after any
-                    # explicit args, a second natural Enter submits the command.
+                    # Submit the fully typed native command once. Do not reset
+                    # `sent`: the ready gate must never type the command twice.
                     output.clear()
-                    os.write(master, b'\r')
-                    enter_count += 1
-                    if args.command_args:
-                        time.sleep(0.15)
-                        os.write(master, args.command_args.encode())
-                    sent = False
-                    sent_at = None
-                    selected_at = time.monotonic()
-                    continue
-                if enter_count == 1 and after_index == 0 and not submitted and time.monotonic() - selected_at > 0.5:
                     os.write(master, b'\r')
                     enter_count += 1
                     submitted = True

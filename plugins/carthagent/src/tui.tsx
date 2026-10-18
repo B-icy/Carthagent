@@ -233,7 +233,7 @@ export default Plugin.define({
           if (arg && options.length === 0) { toast(`No provider model matches “${arg}”.`, "warning"); return; }
           const selected = await context.ui.dialog.select({ title: "Select provider model", placeholder: "Search provider/model…", options });
           if (selected && sessionID) {
-            await selectModel(selected, undefined, true);
+            await selectModel(selected, requestedVariant, true);
           } else if (selected) toast("Open or create a session before selecting its model.", "warning");
           return;
         }

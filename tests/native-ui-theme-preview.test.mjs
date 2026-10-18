@@ -11,6 +11,8 @@ test('theme preview renders a provisioned compatibility palette without host mut
   assert.match(preview.background, /^#[a-f\d]{6}$/i);
   assert.match(preview.text, /^#[a-f\d]{6}$/i);
   assert.match(preview.accent, /^#[a-f\d]{6}$/i);
+  assert.equal(preview.background, '#160e20', 'Carthage preview reads the palette actually provisioned to OpenCode');
+  assert.equal(preview.accent, '#d5af66', 'Carthage preview matches its installed yellow accent');
   assert.match(preview.sample, /Plan → Verify/);
 });
 

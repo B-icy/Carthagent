@@ -1,4 +1,6 @@
 import { parseThemeDocument, resolveThemeDocument } from "@opencode/theme/tui";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { flattenTheme, THEMES } from "../../../../lib/tui/theme.mjs";
 import { convertLegacyTheme } from "./theme-provision.mjs";
 
@@ -12,7 +14,9 @@ function hex(color) {
 export function buildNativeThemePreview(name, preferredMode = "dark") {
   const source = THEMES[name];
   if (!source) throw new Error(`Theme “${name}” has no preview palette.`);
-  const document = convertLegacyTheme(name, flattenTheme(source, "dark"), ADAPTIVE.has(name) ? flattenTheme(source, "light") : undefined);
+  const document = name === "carthage"
+    ? JSON.parse(readFileSync(fileURLToPath(new URL("../../themes/carthage.json", import.meta.url)), "utf8"))
+    : convertLegacyTheme(name, flattenTheme(source, "dark"), ADAPTIVE.has(name) ? flattenTheme(source, "light") : undefined);
   const parsed = parseThemeDocument(document, name);
   const mode = preferredMode === "light" && parsed.light ? "light" : "dark";
   const theme = resolveThemeDocument(parsed, mode);
