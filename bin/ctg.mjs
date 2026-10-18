@@ -647,6 +647,7 @@ function handleEval() {
 // Staged native route. Parent integration flips this default only after native
 // runtime/provider/review/package gates pass; opt-in users can exercise it now.
 if (process.env.CTG_NATIVE === '1') {
+  if (!process.env.CTG_NODE_EXECUTABLE && process.versions?.node) process.env.CTG_NODE_EXECUTABLE = process.execPath;
   import('../lib/opencode/cli-runtime.mjs')
     .then(({ createOpenCodeCliRuntime }) => createOpenCodeCliRuntime())
     .then(runtime => import('../lib/opencode/cli.mjs').then(({ runOpenCodeCli }) => runOpenCodeCli({

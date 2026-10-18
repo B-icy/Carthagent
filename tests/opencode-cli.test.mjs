@@ -6,6 +6,7 @@ import { createOpenCodeCliRuntime as createRuntime, headlessSucceeded, latestSes
 // These are offline fixtures, including when they simulate an interactive TTY.
 // Never let a fixture URL reach the user's operating-system browser launcher.
 const createOpenCodeCliRuntime = options => createRuntime({ openBrowserImpl: async () => false, ...options });
+import { runNativeUpdate } from '../lib/opencode/update.mjs';
 
 function ioCapture() {
   const output = { stdout: [], stderr: [] };
@@ -331,6 +332,31 @@ test('native runtime fails closed when the active plugin does not advertise deli
   }
 });
 
+test('native bash-cap requires session-option enforcement and is sent in per-session metadata', async t => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-bash-cap-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  let saved;
+  const runtime = await createOpenCodeCliRuntime({ cwd, stdout: { write() {} }, native: {
+    runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) },
+    rpcDefinitions: { Carthagent: {} },
+    headless: { runHeadless: async (_service, _cwd, _prompt, options) => {
+      saved = options.session.metadata['carthagent.options'];
+      return { session: { id: 'ses_bash_cap' }, outcome: 'succeeded', terminal: true, accepted: { id: 'a' }, messages: [
+        { type: 'user', id: 'a' }, { type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'ok' }] }, { type: 'idle', outcome: 'succeeded' },
+      ] };
+    } },
+    clientFactory: async () => ({ rpc: () => ({ health: async () => ({ capabilities: ['delivery.session-options.v1'] }) }), session: {
+      get: async () => ({ id: 'ses_bash_cap', outcome: 'succeeded' }),
+      context: async () => [{ type: 'user', id: 'a' }, { type: 'assistant', finish: 'stop' }, { type: 'idle', outcome: 'succeeded' }],
+    } }),
+  } });
+  assert.equal(await runtime.run({ mode: 'headless', options: { prompt: 'task', bashCap: '12.5' }, prompt: 'task' }), 0);
+  assert.equal(saved.bashCap, 12.5);
+});
+
 test('native run rejects only options without an enforcement contract and persists framing metadata', async t => {
   const { mkdtempSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
@@ -402,6 +428,294 @@ test('interactive native session persists an explicit no-guide setting before la
     ['framing', 'ses_no_guide', false],
     ['launch', 'ses_no_guide'],
   ]);
+});
+
+test('no-prompt interactive launch persists review, bash cap, and budget options for new and resumed sessions', async t => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-interactive-options-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const expected = { maxTools: 7, bashCap: 2.5, review: 'yes' };
+  const capabilities = ['delivery.session-options.v1', 'delivery.budgets.v1'];
+
+  for (const resumed of [false, true]) {
+    const calls = [];
+    const sessionID = resumed ? 'ses_existing' : 'ses_created';
+    const runtime = await createOpenCodeCliRuntime({ cwd, stdout: { write() {} }, native: {
+      runtime: {},
+      service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }), launchTui: (_service, _cwd, options) => {
+        calls.push(['launch', options.sessionID]);
+        return { once(event, callback) { if (event === 'exit') queueMicrotask(() => callback(0)); return this; }, kill() {} };
+      } },
+      headless: { createSession: async (_service, _cwd, { body }) => {
+        calls.push(['create', body.metadata['carthagent.options']]);
+        return { id: sessionID };
+      } },
+      rpcDefinitions: { Carthagent: {} },
+      clientFactory: async () => ({
+        rpc: () => ({ health: async () => ({ capabilities }) }),
+        session: {
+          get: async () => ({ id: sessionID, location: { directory: cwd }, metadata: { keep: 'yes', 'carthagent.options': { workflow: 'strict' } } }),
+          update: async input => calls.push(['update', input.metadata]),
+        },
+      }),
+    } });
+    const options = { ...(resumed ? { session: sessionID } : {}), review: 'yes', bashCap: '2.5', maxTools: '7' };
+    assert.equal(await runtime.run({ mode: 'interactive', options, prompt: '' }), 0);
+    if (resumed) {
+      assert.deepEqual(calls[0], ['update', { keep: 'yes', 'carthagent.options': { workflow: 'strict', ...expected } }]);
+      assert.deepEqual(calls[1], ['launch', sessionID]);
+    } else {
+      assert.deepEqual(calls[0], ['create', expected]);
+      assert.deepEqual(calls[1], ['launch', sessionID]);
+    }
+  }
+});
+
+test('no-prompt interactive explicit model and thinking selection applies to fresh and resumed sessions before TUI launch', async t => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-interactive-model-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const expectedModel = { providerID: 'fixture', id: 'explicit-model', variant: 'high' };
+
+  for (const resumed of [false, true]) {
+    const calls = [];
+    const sessionID = resumed ? 'ses_model_existing' : 'ses_model_created';
+    const runtime = await createOpenCodeCliRuntime({ cwd, stdout: { write() {} }, native: {
+      runtime: {},
+      service: {
+        ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }),
+        launchTui: (_service, _cwd, options) => {
+          calls.push(['launch', options.sessionID]);
+          return { once(event, callback) { if (event === 'exit') queueMicrotask(() => callback(0)); return this; }, kill() {} };
+        },
+      },
+      headless: { createSession: async (_service, _cwd, { body }) => {
+        calls.push(['create', body.model]);
+        return { id: sessionID };
+      } },
+      clientFactory: async () => ({ rpc: () => ({ health: async () => ({ capabilities: ['delivery.session-options.v1', 'delivery.budgets.v1'] }) }), session: {
+        switchModel: async input => calls.push(['switchModel', input]),
+        get: async () => ({ id: sessionID, location: { directory: cwd }, metadata: {} }),
+      } }),
+    } });
+
+    assert.equal(await runtime.run({
+      mode: 'interactive',
+      options: { ...(resumed ? { session: sessionID } : {}), provider: 'fixture', model: 'explicit-model', thinking: 'high' },
+      prompt: '',
+    }), 0);
+    if (resumed) {
+      assert.deepEqual(calls, [['switchModel', { sessionID, model: expectedModel }], ['launch', sessionID]]);
+    } else {
+      assert.deepEqual(calls, [['create', expectedModel], ['launch', sessionID]]);
+    }
+  }
+});
+
+test('resumed interactive model selection verifies workspace ownership before any session mutation or launch', async t => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-foreign-model-session-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const calls = [];
+  const runtime = await createOpenCodeCliRuntime({ cwd, stdout: { write() {} }, native: {
+    runtime: {},
+    service: {
+      ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }),
+      launchTui: () => { calls.push('launch'); return { once() { return this; }, kill() {} }; },
+    },
+    headless: {},
+    clientFactory: async () => ({ rpc: () => ({ health: async () => ({ capabilities: ['delivery.session-options.v1', 'delivery.budgets.v1'] }) }), session: {
+      get: async input => { calls.push(['get', input.sessionID]); return { id: input.sessionID, location: { directory: join(cwd, 'another-workspace') }, metadata: {} }; },
+      switchModel: async () => calls.push('switchModel'),
+      update: async () => calls.push('update'),
+    } }),
+  } });
+  await assert.rejects(runtime.run({
+    mode: 'interactive', options: { session: 'ses_foreign', model: 'fixture/explicit-model', maxTools: '3' }, prompt: '',
+  }), /another workspace/);
+  assert.deepEqual(calls, [['get', 'ses_foreign']], 'ownership is checked before switching models, updating metadata, or launching TUI');
+});
+
+test('interactive provider or thinking flags without a model fail instead of being silently ignored', async () => {
+  const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const root = mkdtempSync(join(tmpdir(), 'ctg-model-flags-no-default-'));
+  try {
+    const config = join(root, 'config.json');
+    writeFileSync(config, '{}');
+    const previousConfig = process.env.CARTHAGENT_CONFIG;
+    process.env.CARTHAGENT_CONFIG = config;
+    try {
+      for (const options of [{ provider: 'fixture' }, { thinking: 'high' }]) {
+        let touched = false;
+        const runtime = await createOpenCodeCliRuntime({ cwd: '/work/project', native: {
+          runtime: {}, service: { ensureService: async () => { touched = true; return {}; } }, headless: {},
+        } });
+        await assert.rejects(runtime.run({ mode: 'interactive', options, prompt: '' }), /require --model/);
+        assert.equal(touched, false);
+      }
+    } finally {
+      if (previousConfig === undefined) delete process.env.CARTHAGENT_CONFIG;
+      else process.env.CARTHAGENT_CONFIG = previousConfig;
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('interactive thinking-only selection resolves the configured default model and applies its variant', async t => {
+  const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-thinking-default-model-'));
+  const config = join(cwd, 'config.json');
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  writeFileSync(config, JSON.stringify({ model: 'configured-provider/configured-model' }));
+  const previousConfig = process.env.CARTHAGENT_CONFIG;
+  process.env.CARTHAGENT_CONFIG = config;
+  let createdModel;
+  try {
+    const runtime = await createOpenCodeCliRuntime({ cwd, stdout: { write() {} }, native: {
+      runtime: {},
+      service: {
+        ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }),
+        launchTui: (_service, _cwd, options) => { assert.equal(options.sessionID, 'ses_default_thinking'); return { once(event, callback) { if (event === 'exit') queueMicrotask(() => callback(0)); return this; }, kill() {} }; },
+      },
+      headless: { createSession: async (_service, _cwd, { body }) => { createdModel = body.model; return { id: 'ses_default_thinking' }; } },
+      clientFactory: async () => ({ session: {} }),
+    } });
+    assert.equal(await runtime.run({ mode: 'interactive', options: { thinking: 'high' }, prompt: '' }), 0);
+    assert.deepEqual(createdModel, { providerID: 'configured-provider', id: 'configured-model', variant: 'high' });
+  } finally {
+    if (previousConfig === undefined) delete process.env.CARTHAGENT_CONFIG;
+    else process.env.CARTHAGENT_CONFIG = previousConfig;
+  }
+});
+
+test('qualified model with explicit provider uses the provider override and unqualified model ID', async t => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-provider-model-override-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  let createdModel;
+  const runtime = await createOpenCodeCliRuntime({ cwd, stdout: { write() {} }, native: {
+    runtime: {},
+    service: {
+      ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }),
+      launchTui: (_service, _cwd, options) => { assert.equal(options.sessionID, 'ses_provider_override'); return { once(event, callback) { if (event === 'exit') queueMicrotask(() => callback(0)); return this; }, kill() {} }; },
+    },
+    headless: { createSession: async (_service, _cwd, { body }) => { createdModel = body.model; return { id: 'ses_provider_override' }; } },
+    clientFactory: async () => ({ session: {} }),
+  } });
+  assert.equal(await runtime.run({ mode: 'interactive', options: { provider: 'override-provider', model: 'original-provider/model-id' }, prompt: '' }), 0);
+  assert.deepEqual(createdModel, { providerID: 'override-provider', id: 'model-id' });
+});
+
+test('resumed interactive validator launch merges required checks with existing session metadata before prompting', async t => {
+  const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-resumed-validators-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const manifest = join(cwd, 'validators.json');
+  writeFileSync(manifest, JSON.stringify({ version: 1, checks: [{ id: 'unit', kind: 'test', argv: ['node', '--test'], timeoutSeconds: 20 }] }));
+  const originalMetadata = {
+    external: { owner: 'fixture', preserve: true },
+    'carthagent.options': { guide: false, maxTools: 9 },
+    'carthagent.other': { retained: true },
+  };
+  const updates = [];
+  const calls = [];
+  const sessionID = 'ses_validator_resume';
+  const runtime = await createOpenCodeCliRuntime({ cwd, stdout: { write() {} }, native: {
+    runtime: {},
+    service: {
+      ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }),
+      launchTui: (_service, _cwd, options) => {
+        calls.push(['launch', options.sessionID]);
+        return { once(event, callback) { if (event === 'exit') queueMicrotask(() => callback(0)); return this; }, kill() {} };
+      },
+    },
+    headless: { promptSession: async (_service, id, text, options) => calls.push(['prompt', id, text, options?.body]) },
+    rpcDefinitions: { Carthagent: {}, SessionControls: {} },
+    clientFactory: async () => ({
+      rpc: () => ({ health: async () => ({ capabilities: ['delivery.session-options.v1'] }), framing: async input => calls.push(['framing', input]) }),
+      session: {
+        get: async () => ({ id: sessionID, location: { directory: cwd }, metadata: originalMetadata }),
+        update: async input => updates.push(input),
+      },
+    }),
+  } });
+  assert.equal(await runtime.run({
+    mode: 'interactive', options: { session: sessionID, validators: 'validators.json' }, prompt: 'continue with the required checks',
+  }), 0);
+
+  assert.equal(updates.length, 1, 'persist required checks and launcher options in one merge update');
+  assert.equal(updates[0].sessionID, sessionID);
+  assert.deepEqual(updates[0].metadata.external, originalMetadata.external);
+  assert.deepEqual(updates[0].metadata['carthagent.other'], originalMetadata['carthagent.other']);
+  assert.deepEqual(updates[0].metadata['carthagent.options'], { guide: false, maxTools: 9, validators: manifest });
+  assert.deepEqual(updates[0].metadata['carthagent.requiredChecks'], [{ id: 'required_unit', kind: 'test', argv: ['node', '--test'], timeoutSeconds: 20 }]);
+  assert.deepEqual(calls.map(call => call[0]), ['prompt', 'prompt', 'launch']);
+  assert.match(calls[0][2], /Required user-owned validators/);
+  assert.equal(calls[2][1], sessionID);
+});
+
+test('native --isolate starts a clean CTG profile without inheriting the regular profile or creating a worktree', async () => {
+  const calls = [];
+  const runtime = await createOpenCodeCliRuntime({ cwd: '/work/project', stdout: { write() {} }, native: {
+    runtime: {
+      runtimePaths: options => ({ root: options.root ?? '/private/profile' }),
+    },
+    service: {
+      ensureService: async options => { calls.push(options); return { url: 'http://127.0.0.1:1', headers: {}, paths: { root: options.root } }; },
+      stopService: async options => { calls.push({ stopRoot: options.root }); return true; },
+      launchTui: (_service, workspace, options) => {
+        calls.push({ workspace, options });
+        return { once(event, callback) { if (event === 'exit') queueMicrotask(() => callback(0)); return this; }, kill() {} };
+      },
+    },
+    headless: {},
+    clientFactory: async () => ({ session: { create: async () => ({ id: 'ses_isolated' }) } }),
+  } });
+  assert.equal(await runtime.run({ mode: 'interactive', options: { isolate: true }, prompt: '' }), 0);
+  assert.match(calls[0].root, /^\/private\/profile\/isolated\/[0-9a-f-]+$/);
+  assert.equal(calls[0].isolate, true);
+  assert.match(calls[0].pluginPath, /plugins[\\/]carthagent$/);
+  assert.equal(calls[1].workspace, '/work/project');
+  assert.deepEqual(calls[2], { stopRoot: calls[0].root });
+});
+
+test('headless review modes are transported without inventing an unsupported interactive-only error', async t => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-review-headless-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  for (const review of ['ask', 'yes', 'no']) {
+    let captured;
+    const runtime = await createOpenCodeCliRuntime({ cwd, stdout: { write() {} }, io: { error() {}, log() {} }, native: {
+      runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) },
+      headless: { runHeadless: async (_service, _cwd, _prompt, options) => {
+        captured = options.session.metadata['carthagent.options'];
+        return { session: { id: `ses_${review}`, outcome: 'succeeded' }, messages: [{ role: 'assistant', content: [{ type: 'text', text: 'done' }], finish: 'stop' }], outcome: 'succeeded', terminal: true };
+      } },
+      rpcDefinitions: { Carthagent: {} },
+      clientFactory: async () => ({
+        rpc: () => ({ health: async () => ({ capabilities: ['delivery.session-options.v1'] }) }),
+      }),
+    } });
+    assert.equal(await runtime.run({ mode: 'headless', options: { review, prompt: 'task' }, prompt: 'task' }), 0);
+    assert.equal(captured.review, review);
+  }
 });
 
 test('resumed native sessions merge explicit launcher options into their own workspace metadata', async t => {
@@ -561,13 +875,36 @@ test('native login abort closes an in-flight ordinary OAuth form prompt', async 
   assert.equal(promptClosed, true);
 });
 
-test('native key login rejects before prompting; secret OAuth form input is masked and hidden fields retain defaults', async () => {
+test('native CLI resolves glyph mode for the host transport while preserving --ascii precedence', async () => {
   const calls = [];
-  const keyRuntime = await createOpenCodeCliRuntime({ cwd: '/project', io: ioCapture().io, stdin: { isTTY: true }, stdout: { isTTY: true }, native: {
-    runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) }, headless: {},
-    clientFactory: async () => ({ integration: { list: async () => ({ data: [{ id: 'key-provider', name: 'Key Provider', methods: [{ id: 'api-key', type: 'key', label: 'API key' }] }] }) } }),
+  const runtime = await createOpenCodeCliRuntime({ cwd: '/project', io: ioCapture().io, native: {
+    runtime: {}, service: { ensureService: async () => { calls.push('ensure'); return {}; }, launchTui: (_service, _cwd, options) => { calls.push(options.glyphs); return { once(event, callback) { if (event === 'exit') queueMicrotask(() => callback(0)); return this; }, kill() {} }; } }, headless: {},
+    clientFactory: async () => ({ integration: {} }),
   } });
-  await assert.rejects(keyRuntime.login({ args: ['key-provider', 'key'] }), /not supported/);
+  const capture = ioCapture();
+  assert.equal(await runOpenCodeCli({ argv: ['--ascii'], runtime, io: capture.io, stdoutIsTTY: true }), 0);
+  assert.deepEqual(calls, ['ensure', 'ascii']);
+});
+
+test('native API-key login masks secrets; OAuth form input is masked and hidden fields retain defaults', async () => {
+  const calls = [];
+  const keyCalls = [];
+  const keyInput = Object.assign(new (await import('node:events')).EventEmitter(), { isTTY: true, isRaw: false, setRawMode(value) { this.isRaw = value; }, resume() {} });
+  const keyDisplayed = [];
+  const keyRuntime = await createOpenCodeCliRuntime({ cwd: '/project', io: ioCapture().io, stdin: keyInput, stdout: { isTTY: true, write: value => keyDisplayed.push(String(value)) }, native: {
+    runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) }, headless: {},
+    clientFactory: async () => ({ integration: {
+      list: async () => ({ data: [{ id: 'key-provider', name: 'Key Provider', methods: [{ id: 'api-key', type: 'key', label: 'API key' }] }] }),
+      connect: { key: async input => keyCalls.push(input) },
+    } }),
+  } });
+  const keyLogin = keyRuntime.login({ args: ['key-provider', 'key'] });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  keyInput.emit('data', 'fake-test-api-key\r');
+  assert.equal(await keyLogin, 0);
+  assert.equal(keyCalls[0].key, 'fake-test-api-key');
+  assert.ok(keyDisplayed.join('').includes('*'));
+  assert.ok(!keyDisplayed.join('').includes('fake-test-api-key'));
 
   const displayed = [];
   const fakeInput = Object.assign(new (await import('node:events')).EventEmitter(), { isTTY: true, isRaw: false, setRawMode(value) { this.isRaw = value; }, resume() {} });
@@ -597,6 +934,81 @@ test('native key login rejects before prompting; secret OAuth form input is mask
   assert.deepEqual(calls[0], { client_secret: 'sensitive-value', scope: 'default-scope' });
   assert.ok(displayed.join('').includes('**************'));
   assert.ok(!displayed.join('').includes('sensitive-value'));
+});
+
+test('invalid native review arguments fail with usage before touching workspace files or OpenCode', async () => {
+  let touched = false;
+  const runtime = await createOpenCodeCliRuntime({ cwd: '/definitely/not/a/workspace', io: ioCapture().io, native: {
+    runtime: {}, service: { ensureService: async () => { touched = true; throw new Error('service must not start'); } }, headless: {},
+    runCommand: async () => { touched = true; throw new Error('commands must not run'); },
+  } });
+  for (const args of [['bogus'], ['0'], ['-1'], ['123extra'], ['https://example.com/pull/3'], ['workspace', 'extra'], ['--timeout', '0', '12']]) {
+    const capture = ioCapture();
+    const code = await runtime.review({ args }).catch(error => { capture.io.error(error.message); return error.exitCode ?? 1; });
+    assert.equal(code, 2, `args=${args.join(' ')}`);
+    assert.match(capture.output.stderr.join('\n'), /review|Review|Invalid|Use/);
+  }
+  assert.equal(touched, false);
+});
+
+test('native workspace review preserves raw metadata and returns usage exit codes for invalid structured outcomes', async t => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { execFileSync } = await import('node:child_process');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-cli-review-contract-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  execFileSync('git', ['init', '-q'], { cwd });
+  execFileSync('git', ['config', 'user.email', 'fixture@example.invalid'], { cwd });
+  execFileSync('git', ['config', 'user.name', 'Fixture'], { cwd });
+  const { writeFileSync } = await import('node:fs');
+  writeFileSync(join(cwd, 'source.txt'), 'base\n');
+  writeFileSync(join(cwd, 'task.txt'), 'Make the requested change safely.\n');
+  execFileSync('git', ['add', '.'], { cwd });
+  execFileSync('git', ['commit', '-qm', 'fixture'], { cwd });
+  writeFileSync(join(cwd, 'source.txt'), 'changed\n');
+  let mode = 'missing';
+  const runtime = await createOpenCodeCliRuntime({ cwd, native: {
+    runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) }, headless: {},
+    clientFactory: async () => ({
+      location: { get: async () => ({}) },
+      agent: { list: async () => ({ data: [{ id: 'build' }] }) },
+      session: {
+        create: async input => { globalThis.fixtureReviewer = { permissions: input.permissions }; return { id: 'reviewer' }; },
+        prompt: async input => { globalThis.fixtureReviewer = { ...globalThis.fixtureReviewer, prompt: input }; },
+        wait: async () => {},
+        get: async () => ({ outcome: 'succeeded' }),
+        context: async () => {
+          const prompt = globalThis.fixtureReviewer.prompt.text;
+          const head = prompt.match(/HEAD: ([a-f0-9]+)/)?.[1];
+          const snapshot = prompt.match(/Snapshot SHA-256: ([a-f0-9]+)/)?.[1];
+          if (mode === 'missing') return [{ type: 'assistant', finish: 'stop', content: [{ type: 'text', text: 'VERDICT: APPROVE' }] }, { type: 'idle', outcome: 'succeeded' }];
+          return [{ type: 'assistant', finish: 'stop', content: [{ type: 'text', text: `REVIEW_JSON: ${JSON.stringify({ version: 1, snapshot, head, findings: [] })}\nVERDICT: APPROVE` }] }, { type: 'idle', outcome: 'succeeded' }];
+        },
+      },
+    }),
+  } });
+  await assert.rejects(runtime.review({ args: ['bogus'] }), { exitCode: 2 });
+  const reviewArgs = ['workspace', '--request-file', 'task.txt'];
+  const error = await runtime.review({ args: reviewArgs }).then(() => null, value => value);
+  assert.equal(error.exitCode, 2);
+  mode = 'valid';
+  assert.deepEqual(globalThis.fixtureReviewer.prompt.metadata, { 'ctg.raw': true });
+  const result = await runtime.review({ args: reviewArgs });
+  assert.equal(result, 0);
+  delete globalThis.fixtureReviewer;
+});
+
+test('native Ship billing and logout explain how to connect when the typed auth error is returned', async () => {
+  const runtime = await createOpenCodeCliRuntime({ cwd: '/project', io: ioCapture().io, native: {
+    runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) }, headless: {},
+    clientFactory: async () => ({ rpc: () => ({
+      shipBilling: async () => { throw Object.assign(new Error('Not authenticated'), { type: 'ship.unauthenticated' }); },
+      shipLogout: async () => { throw Object.assign(new Error('Not authenticated'), { type: 'ship.unauthenticated' }); },
+    }) }),
+  } });
+  await assert.rejects(runtime.billing({ action: 'checkout' }), /not connected.*ctg login.*Carthagent Ship/i);
+  await assert.rejects(runtime.logout({}), /not connected.*ctg login.*Carthagent Ship/i);
 });
 
 test('OAuth forms honor conditional fields, defaults, validation, and typed selections', async () => {
@@ -715,16 +1127,17 @@ test('native demo runs a clearly labeled offline fixture without starting OpenCo
   assert.match(output.output.stdout.join('\n'), /disposable demo fixture/);
 });
 
-test('native update installs the validated package spec, and fails closed for source clones', async () => {
+test('native update installs the validated package spec', async () => {
   const calls = [];
   const runtime = await createOpenCodeCliRuntime({ cwd: '/demo/workspace', native: {
     runtime: {}, service: { ensureService: async () => { throw new Error('demo must not launch the native service'); } }, headless: {},
     updateApi: {
-      fetchLatestRelease: async () => ({ release: { version: '1.0.4', minNode: '18.0.0', installSpec: 'github:B-icy/Carthagent#v1.0.4' } }),
-      packageVersion: () => '1.0.3', compareVersions: (left, right) => left.localeCompare(right, undefined, { numeric: true }),
+      fetchLatestRelease: async () => ({ release: { version: '1.0.4', tag: 'v1.0.4', minNode: '18.0.0', installSpec: 'github:B-icy/Carthagent#v1.0.4' } }),
+      packageVersion: () => '1.0.3',
       detectInstallMethod: () => 'npm',
     },
     packageRoot: '/package/root',
+    updateModule: { runNativeUpdate },
     runCommand: async (argv, options) => { calls.push({ argv, options }); return { code: 0, timedOut: false, cancelled: false, output: '' }; },
   } });
   assert.equal(await runtime.command({ command: 'update', args: [] }), 0);
@@ -733,55 +1146,22 @@ test('native update installs the validated package spec, and fails closed for so
     argv: [...npmPrefix, 'install', '-g', '--install-links=true', 'github:B-icy/Carthagent#v1.0.4'],
     options: { cwd: '/package/root', timeoutSeconds: 600 },
   }]);
-  const cloneCalls = [];
-  const cloneRuntime = await createOpenCodeCliRuntime({ cwd: '/package/root', native: {
-    runtime: {}, service: {}, headless: {}, packageRoot: '/package/root',
-    updateApi: {
-      fetchLatestRelease: async () => ({ release: { version: '1.0.4', minNode: '18.0.0', installSpec: 'github:B-icy/Carthagent#v1.0.4' } }),
-      packageVersion: () => '1.0.3', compareVersions: (left, right) => left.localeCompare(right, undefined, { numeric: true }), detectInstallMethod: () => 'clone',
-    },
-    runCommand: async (...args) => { cloneCalls.push(args); return { code: 0, output: '', timedOut: false, cancelled: false }; },
-  } });
-  await assert.rejects(cloneRuntime.command({ command: 'update', args: [] }), /refuses to checkout a release/);
-  assert.deepEqual(cloneCalls, [[['git', 'status', '--porcelain'], { cwd: '/package/root', timeoutSeconds: 30 }]]);
 });
-
 test('native update check reports an available release without invoking the installer', async () => {
   const calls = [];
   const output = ioCapture();
   const runtime = await createOpenCodeCliRuntime({ cwd: '/package/root', io: output.io, native: {
     runtime: {}, service: {}, headless: {},
     updateApi: {
-      fetchLatestRelease: async () => ({ release: { version: '1.0.4', minNode: '18.0.0', installSpec: 'github:B-icy/Carthagent#v1.0.4' } }),
-      packageVersion: () => '1.0.3', compareVersions: (left, right) => left.localeCompare(right, undefined, { numeric: true }), detectInstallMethod: () => 'npm',
+      fetchLatestRelease: async () => ({ release: { version: '1.0.4', tag: 'v1.0.4', minNode: '18.0.0', installSpec: 'github:B-icy/Carthagent#v1.0.4' } }),
+      packageVersion: () => '1.0.3', detectInstallMethod: () => 'npm',
     },
+    updateModule: { runNativeUpdate },
     runCommand: async (...args) => { calls.push(args); return { code: 0 }; },
   } });
   assert.equal(await runtime.command({ command: 'update', args: ['--check'] }), 0);
   assert.match(output.output.stdout[0], /1\.0\.4 is available/);
   assert.deepEqual(calls, []);
-});
-
-test('native updater rejects an independently supplied release ref even with --force', async () => {
-  for (const release of [
-    { version: '1.0.4', tag: 'main', installSpec: 'github:B-icy/Carthagent#main' },
-    { version: '1.0.4', tag: 'v1.0.3', installSpec: 'github:B-icy/Carthagent#v1.0.3' },
-    { version: '1.0.4', tag: 'v1.0.4%2Fmain', installSpec: 'github:B-icy/Carthagent#v1.0.4%2Fmain' },
-  ]) {
-    const installs = [];
-    const runtime = await createOpenCodeCliRuntime({ cwd: '/package/root', native: {
-      runtime: {}, service: {}, headless: {}, packageRoot: '/package/root',
-      updateApi: {
-        fetchLatestRelease: async () => ({ release }),
-        packageVersion: () => '1.0.4',
-        compareVersions: (left, right) => left.localeCompare(right, undefined, { numeric: true }),
-        detectInstallMethod: () => 'npm',
-      },
-      runCommand: async (...args) => { installs.push(args); return { code: 0 }; },
-    } });
-    await assert.rejects(runtime.command({ command: 'update', args: ['--force'] }), /does not identify a valid, version-matched/);
-    assert.deepEqual(installs, []);
-  }
 });
 
 test('native updater force-reinstalls only the canonical validated release tag once', async () => {
@@ -791,9 +1171,9 @@ test('native updater force-reinstalls only the canonical validated release tag o
     updateApi: {
       fetchLatestRelease: async () => ({ release: { version: '1.0.4', tag: 'v1.0.4', installSpec: 'github:B-icy/Carthagent#v1.0.4' } }),
       packageVersion: () => '1.0.4',
-      compareVersions: (left, right) => left.localeCompare(right, undefined, { numeric: true }),
       detectInstallMethod: () => 'npm',
     },
+    updateModule: { runNativeUpdate },
     runCommand: async (argv, options) => { installs.push({ argv, options }); return { code: 0, timedOut: false, cancelled: false, output: '' }; },
   } });
   assert.equal(await runtime.command({ command: 'update', args: ['--force'] }), 0);
@@ -802,6 +1182,35 @@ test('native updater force-reinstalls only the canonical validated release tag o
     argv: [...npmPrefix, 'install', '-g', '--install-links=true', 'github:B-icy/Carthagent#v1.0.4'],
     options: { cwd: '/package/root', timeoutSeconds: 600 },
   }]);
+});
+
+test('native serve child does not inherit runtime download tokens', async t => {
+  const { mkdtempSync, readFileSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const runtimeRoot = mkdtempSync(join(tmpdir(), 'ctg-serve-env-'));
+  t.after(() => rmSync(runtimeRoot, { recursive: true, force: true }));
+  const resultFile = join(runtimeRoot, 'result.json');
+  writeFileSync(join(runtimeRoot, 'server.mjs'), `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(resultFile)}, JSON.stringify({ workspace: process.env.CARTHAGENT_WORKSPACE, other: process.env.CTG_RUNTIME_OTHER, tokens: Object.keys(process.env).filter(key => key.toUpperCase() === 'CTG_RUNTIME_GITHUB_TOKEN') }));`);
+  const previous = Object.fromEntries(['CTG_RUNTIME_GITHUB_TOKEN', 'ctg_runtime_github_token', 'Ctg_Runtime_Github_Token', 'CTG_RUNTIME_OTHER'].map(key => [key, process.env[key]]));
+  Object.assign(process.env, {
+    CTG_RUNTIME_GITHUB_TOKEN: 'fake-uppercase-token',
+    ctg_runtime_github_token: 'fake-lowercase-token',
+    Ctg_Runtime_Github_Token: 'fake-mixedcase-token',
+    CTG_RUNTIME_OTHER: 'preserve-this-value',
+  });
+  try {
+    const runtime = await createOpenCodeCliRuntime({ cwd: '/workspace/fixture', native: { runtime: {}, service: {}, headless: {}, runtimeRoot } });
+    assert.equal(await runtime.command({ command: 'serve', args: [] }), 0);
+    assert.deepEqual(JSON.parse(readFileSync(resultFile, 'utf8')), {
+      workspace: '/workspace/fixture', other: 'preserve-this-value', tokens: [],
+    });
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 });
 
 test('concrete headless runtime returns failure for failed native session outcome', async t => {

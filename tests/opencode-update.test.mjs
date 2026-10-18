@@ -185,6 +185,86 @@ test('clone update rejects an origin-missing release tag without checking out a 
   assert.equal(calls.every(argv => argv[0] === 'git'), true);
 }));
 
+test('clone update still removes its private ref after fetch cancellation', async () => {
+  const controller = new AbortController();
+  const calls = [];
+  await assert.rejects(runNativeUpdate({
+    io: noopIo, root: '/fixture/clone', currentVersion: '1.0.0', signal: controller.signal,
+    fetchLatestRelease: async () => ({ release }), detectInstallMethod: () => 'clone',
+    runCommand: async (argv, options) => {
+      calls.push({ argv, options });
+      if (argv[1] === 'fetch') {
+        controller.abort(new Error('cancelled during fetch'));
+        return { code: 1, output: '', cancelled: true };
+      }
+      if (argv[1] === 'status') return { code: 0, output: '' };
+      if (argv[1] === 'update-ref') return { code: 0, output: '' };
+      throw new Error(`unexpected command ${argv.join(' ')}`);
+    },
+  }), /git fetch v1\.2\.0 failed \(cancelled\)/);
+  const cleanup = calls.find(call => call.argv[1] === 'update-ref');
+  assert.ok(cleanup, 'best-effort cleanup is attempted after cancelled fetch');
+  assert.equal(cleanup.options.signal, undefined, 'cleanup is not suppressed by the aborted lifecycle signal');
+
+  await assert.rejects(runNativeUpdate({
+    io: noopIo, root: '/fixture/clone', currentVersion: '1.0.0',
+    fetchLatestRelease: async () => ({ release }), detectInstallMethod: () => 'clone',
+    runCommand: async argv => {
+      if (argv[1] === 'status') return { code: 0, output: '' };
+      if (argv[1] === 'fetch') throw new Error('fetch fixture failure');
+      if (argv[1] === 'update-ref') throw new Error('cleanup fixture failure');
+      throw new Error(`unexpected command ${argv.join(' ')}`);
+    },
+  }), /fetch fixture failure/);
+});
+
+test('clone update removes a real fetched private ref after cancellation', () => tempDir(async base => {
+  const remote = join(base, 'remote.git');
+  const seed = join(base, 'seed');
+  const clone = join(base, 'clone');
+  mkdirSync(seed);
+  git(['init', '--bare', remote], base);
+  git(['init', '-b', 'main'], seed);
+  git(['config', 'user.email', 'test@example.invalid'], seed);
+  git(['config', 'user.name', 'Test'], seed);
+  writeFileSync(join(seed, 'tracked.txt'), 'release\n');
+  git(['add', 'tracked.txt'], seed);
+  git(['commit', '-m', 'release'], seed);
+  git(['tag', 'v1.2.0'], seed);
+  git(['remote', 'add', 'origin', remote], seed);
+  git(['push', 'origin', 'main', '--tags'], seed);
+  git(['symbolic-ref', 'HEAD', 'refs/heads/main'], remote);
+  git(['clone', remote, clone], base);
+
+  const controller = new AbortController();
+  const commands = [];
+  await assert.rejects(runNativeUpdate({
+    io: noopIo, root: clone, currentVersion: '1.0.0', signal: controller.signal,
+    fetchLatestRelease: async () => ({ release }), detectInstallMethod: () => 'clone',
+    runCommand: async (argv, options) => {
+      commands.push({ argv, options });
+      const result = await (await import('../lib/opencode/update.mjs')).runUpdateCommand(argv, options);
+      if (argv[1] === 'fetch') {
+        assert.equal(result.code, 0, result.output);
+        assert.match(argv[4], /^refs\/tags\/v1\.2\.0:refs\/opencode-update\/[a-f0-9-]+$/);
+        controller.abort(new Error('cancelled immediately after fetch'));
+        return { ...result, code: 1, cancelled: true };
+      }
+      return result;
+    },
+  }), /git fetch v1\.2\.0 failed \(cancelled\)/);
+
+  const fetch = commands.find(command => command.argv[1] === 'fetch');
+  const cleanup = commands.find(command => command.argv[1] === 'update-ref');
+  assert.ok(fetch);
+  assert.ok(cleanup);
+  assert.equal(cleanup.options.signal, undefined);
+  assert.equal(cleanup.options.timeoutSeconds, 30);
+  assert.equal(cleanup.argv[2], '-d');
+  assert.equal(cleanup.argv[3], fetch.argv[4].split(':')[1]);
+  assert.equal(git(['for-each-ref', '--format=%(refname)', 'refs/opencode-update/'], clone), '');
+}));
+
 test('failed update command stops later steps and includes bounded failure output', async () => {
   const calls = [];
   await assert.rejects(runNativeUpdate({
@@ -192,6 +272,61 @@ test('failed update command stops later steps and includes bounded failure outpu
     detectInstallMethod: () => 'npm', runCommand: async argv => { calls.push(argv); return { code: 2, output: 'npm failure' }; },
   }), /npm install .* failed:\nnpm failure/);
   assert.equal(calls.length, 1);
+});
+
+test('runUpdateCommand strips runtime download tokens from child env case-insensitively without mutating caller env', async () => {
+  const env = {
+    ...process.env,
+    CTG_RUNTIME_GITHUB_TOKEN: 'fake-uppercase-token',
+    ctg_runtime_github_token: 'fake-lowercase-token',
+    Ctg_Runtime_Github_Token: 'fake-mixedcase-token',
+    CTG_RUNTIME_OTHER: 'preserve-this-value',
+  };
+  const result = await (await import('../lib/opencode/update.mjs')).runUpdateCommand(
+    [process.execPath, '-e', 'process.stdout.write(JSON.stringify({env: process.env.CTG_RUNTIME_OTHER, tokenKeys: Object.keys(process.env).filter(key => key.toUpperCase() === "CTG_RUNTIME_GITHUB_TOKEN")}))'],
+    { cwd: process.cwd(), env, timeoutSeconds: 10 },
+  );
+  assert.equal(result.code, 0);
+  assert.deepEqual(JSON.parse(result.output), { env: 'preserve-this-value', tokenKeys: [] });
+  assert.equal(env.ctg_runtime_github_token, 'fake-lowercase-token');
+});
+
+test('Windows cancellation sanitizes taskkill environment and handles taskkill spawn errors', async () => {
+  const { EventEmitter } = await import('node:events');
+  const controller = new AbortController();
+  const calls = [];
+  const env = {
+    PATH: process.env.PATH,
+    CTG_RUNTIME_GITHUB_TOKEN: 'fake-uppercase-token',
+    ctg_runtime_github_token: 'fake-lowercase-token',
+    Ctg_Runtime_Github_Token: 'fake-mixedcase-token',
+    CTG_RUNTIME_OTHER: 'preserve-this-value',
+  };
+  const spawnImpl = (command, args, options) => {
+    calls.push({ command, args, options });
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.pid = command === 'taskkill' ? 9999 : 4242;
+    child.kill = () => { if (command !== 'taskkill') queueMicrotask(() => child.emit('close', 1)); };
+    child.unref = () => {};
+    if (command === 'taskkill') queueMicrotask(() => child.emit('error', new Error('taskkill unavailable')));
+    return child;
+  };
+  const pending = (await import('../lib/opencode/update.mjs')).runUpdateCommand(
+    ['fixture-updater'], { cwd: process.cwd(), env, signal: controller.signal, platform: 'win32', spawnImpl, timeoutSeconds: 10 },
+  );
+  controller.abort(new Error('cancel test'));
+  const result = await pending;
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(result.cancelled, true);
+  assert.deepEqual(calls.map(call => call.command), ['fixture-updater', 'taskkill']);
+  assert.equal(calls[0].options.detached, false);
+  assert.equal(calls[1].options.env.CTG_RUNTIME_GITHUB_TOKEN, undefined);
+  assert.equal(calls[1].options.env.ctg_runtime_github_token, undefined);
+  assert.equal(calls[1].options.env.Ctg_Runtime_Github_Token, undefined);
+  assert.equal(calls[1].options.env.CTG_RUNTIME_OTHER, 'preserve-this-value');
+  assert.equal(env.Ctg_Runtime_Github_Token, 'fake-mixedcase-token');
 });
 
 test('zero exit code with timeout or cancellation is failure and prevents later steps', async () => {
@@ -203,6 +338,33 @@ test('zero exit code with timeout or cancellation is failure and prevents later 
     }), result.timedOut ? /timed out/ : /cancelled/);
     assert.equal(calls.length, 1);
   }
+});
+
+test('an already-aborted lifecycle never checks releases or starts an installer', async () => {
+  const controller = new AbortController();
+  controller.abort(new Error('plugin disposed'));
+  let fetched = false;
+  let installed = false;
+  await assert.rejects(runNativeUpdate({
+    signal: controller.signal,
+    fetchLatestRelease: async () => { fetched = true; return { release }; },
+    detectInstallMethod: () => 'npm',
+    runCommand: async () => { installed = true; return { code: 0, output: '' }; },
+  }), /plugin disposed/);
+  assert.equal(fetched, false);
+  assert.equal(installed, false);
+});
+
+test('runUpdateCommand kills the updater process tree when its host lifecycle aborts', async () => {
+  const controller = new AbortController();
+  const pending = (await import('../lib/opencode/update.mjs')).runUpdateCommand(
+    [process.execPath, '-e', 'setTimeout(() => {}, 30000)'],
+    { cwd: process.cwd(), timeoutSeconds: 60, signal: controller.signal },
+  );
+  setTimeout(() => controller.abort(new Error('plugin disposed')), 40).unref?.();
+  const result = await pending;
+  assert.equal(result.cancelled, true);
+  assert.notEqual(result.code, 0);
 });
 
 test('a successful code with a timed-out global-install retry remains a failure', async () => {

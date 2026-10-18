@@ -48,16 +48,20 @@ test('profile Ship RPC uses resolved native OAuth and loopback account, billing,
 test('profile Ship RPC rejects BYOK, absent auth, and pre-aborted operations without network calls', async () => {
   let requests = 0;
   const cloudClient = { async account() { requests++; }, async checkout() { requests++; }, async portal() { requests++; }, async revokeCurrent() { requests++; }, async revokeSession() { requests++; } };
+  const rpcCall = signal => ({
+    signal,
+    error: (code, message, data) => { throw Object.assign(new Error(message), { type: `ship.${code}`, data }); },
+  });
   for (const connection of [undefined, { type: 'credential', method: 'key', id: 'key' }]) {
     const handlers = createHandlers({ integration: { connection: {
       active: async () => connection,
       resolve: async () => connection ? { type: 'key', key: 'byok' } : undefined,
     } } }, { cloudClient });
-    await assert.rejects(handlers.shipAccount({}, { signal: new AbortController().signal }), /active Carthagent Ship OAuth/);
+    await assert.rejects(handlers.shipAccount({}, rpcCall(new AbortController().signal)), /active Carthagent Ship OAuth/);
   }
   const handlers = createHandlers({ integration: { connection: { active: async () => undefined, resolve: async () => undefined } } }, { cloudClient });
   const controller = new AbortController();
   controller.abort(new Error('cancelled before request'));
-  await assert.rejects(handlers.shipAccount({}, { signal: controller.signal }), /cancelled before request/);
+  await assert.rejects(handlers.shipAccount({}, rpcCall(controller.signal)), /cancelled before request/);
   assert.equal(requests, 0);
 });
