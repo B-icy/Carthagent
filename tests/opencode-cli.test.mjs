@@ -473,6 +473,98 @@ test('no-prompt interactive launch persists review, bash cap, and budget options
   }
 });
 
+test('no-prompt interactive explicit model and thinking selection applies to fresh and resumed sessions before TUI launch', async t => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-interactive-model-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const expectedModel = { providerID: 'fixture', id: 'explicit-model', variant: 'high' };
+
+  for (const resumed of [false, true]) {
+    const calls = [];
+    const sessionID = resumed ? 'ses_model_existing' : 'ses_model_created';
+    const runtime = await createOpenCodeCliRuntime({ cwd, stdout: { write() {} }, native: {
+      runtime: {},
+      service: {
+        ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }),
+        launchTui: (_service, _cwd, options) => {
+          calls.push(['launch', options.sessionID]);
+          return { once(event, callback) { if (event === 'exit') queueMicrotask(() => callback(0)); return this; }, kill() {} };
+        },
+      },
+      headless: { createSession: async (_service, _cwd, { body }) => {
+        calls.push(['create', body.model]);
+        return { id: sessionID };
+      } },
+      clientFactory: async () => ({ session: {
+        switchModel: async input => calls.push(['switchModel', input]),
+      } }),
+    } });
+
+    assert.equal(await runtime.run({
+      mode: 'interactive',
+      options: { ...(resumed ? { session: sessionID } : {}), provider: 'fixture', model: 'explicit-model', thinking: 'high' },
+      prompt: '',
+    }), 0);
+    if (resumed) {
+      assert.deepEqual(calls, [['switchModel', { sessionID, model: expectedModel }], ['launch', sessionID]]);
+    } else {
+      assert.deepEqual(calls, [['create', expectedModel], ['launch', sessionID]]);
+    }
+  }
+});
+
+test('resumed interactive validator launch merges required checks with existing session metadata before prompting', async t => {
+  const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-resumed-validators-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const manifest = join(cwd, 'validators.json');
+  writeFileSync(manifest, JSON.stringify({ version: 1, checks: [{ id: 'unit', kind: 'test', argv: ['node', '--test'], timeoutSeconds: 20 }] }));
+  const originalMetadata = {
+    external: { owner: 'fixture', preserve: true },
+    'carthagent.options': { guide: false, maxTools: 9 },
+    'carthagent.other': { retained: true },
+  };
+  const updates = [];
+  const calls = [];
+  const sessionID = 'ses_validator_resume';
+  const runtime = await createOpenCodeCliRuntime({ cwd, stdout: { write() {} }, native: {
+    runtime: {},
+    service: {
+      ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }),
+      launchTui: (_service, _cwd, options) => {
+        calls.push(['launch', options.sessionID]);
+        return { once(event, callback) { if (event === 'exit') queueMicrotask(() => callback(0)); return this; }, kill() {} };
+      },
+    },
+    headless: { promptSession: async (_service, id, text, options) => calls.push(['prompt', id, text, options?.body]) },
+    rpcDefinitions: { Carthagent: {}, SessionControls: {} },
+    clientFactory: async () => ({
+      rpc: () => ({ health: async () => ({ capabilities: ['delivery.session-options.v1'] }), framing: async input => calls.push(['framing', input]) }),
+      session: {
+        get: async () => ({ id: sessionID, location: { directory: cwd }, metadata: originalMetadata }),
+        update: async input => updates.push(input),
+      },
+    }),
+  } });
+  assert.equal(await runtime.run({
+    mode: 'interactive', options: { session: sessionID, validators: 'validators.json' }, prompt: 'continue with the required checks',
+  }), 0);
+
+  assert.equal(updates.length, 1, 'persist required checks and launcher options in one merge update');
+  assert.equal(updates[0].sessionID, sessionID);
+  assert.deepEqual(updates[0].metadata.external, originalMetadata.external);
+  assert.deepEqual(updates[0].metadata['carthagent.other'], originalMetadata['carthagent.other']);
+  assert.deepEqual(updates[0].metadata['carthagent.options'], { guide: false, maxTools: 9, validators: manifest });
+  assert.deepEqual(updates[0].metadata['carthagent.requiredChecks'], [{ id: 'required_unit', kind: 'test', argv: ['node', '--test'], timeoutSeconds: 20 }]);
+  assert.deepEqual(calls.map(call => call[0]), ['prompt', 'prompt', 'launch']);
+  assert.match(calls[0][2], /Required user-owned validators/);
+  assert.equal(calls[2][1], sessionID);
+});
+
 test('native --isolate starts a clean CTG profile without inheriting the regular profile or creating a worktree', async () => {
   const calls = [];
   const runtime = await createOpenCodeCliRuntime({ cwd: '/work/project', stdout: { write() {} }, native: {
