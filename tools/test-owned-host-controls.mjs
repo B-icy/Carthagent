@@ -4,28 +4,44 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { fileURLToPath } from 'node:url';
 import { OpenCode } from '@opencode/client';
 import { preflightNativeTestRuntimeArtifact } from './native-runtime-identity.mjs';
 import { resolveOpenCode, runtimeIdentity, provisionRuntime, runtimeEnvironment } from '../lib/opencode/runtime.mjs';
 
 if (process.platform !== 'linux') throw new Error('This native shell provenance probe currently targets Linux; it is not a cross-platform acceptance claim.');
-if (process.env.CTG_OPENCODE_BIN) throw new Error('Do not set CTG_OPENCODE_BIN for this explicit owned-artifact proof; it must resolve the preflighted root itself.');
-if (process.env.CTG_TEST_RUNTIME_SHA256) throw new Error('Do not override the trusted release-manifest executable hash with CTG_TEST_RUNTIME_SHA256.');
-const ownedRoot = process.env.CTG_OWNED_OPENCODE_RUNTIME;
-const trustedManifestPath = process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST;
-if (!ownedRoot) throw new Error('Set CTG_OWNED_OPENCODE_RUNTIME to the owned runtime artifact root under test.');
-if (!trustedManifestPath) throw new Error('Set CTG_TEST_RUNTIME_RELEASE_MANIFEST to a trusted release manifest pinning this staging artifact.');
-const preflight = await preflightNativeTestRuntimeArtifact({ ownedRoot, expectedManifestPath: trustedManifestPath });
-const runtimeOptions = { ownedRuntime: ownedRoot, runtimeReleaseManifestPath: trustedManifestPath };
+const installedDefault = process.argv.includes('--installed-default');
+if (process.env.CTG_OPENCODE_BIN) throw new Error('Do not set CTG_OPENCODE_BIN for owned acceptance.');
+if (process.env.CTG_TEST_RUNTIME_SHA256) throw new Error('Do not override the trusted release-manifest executable hash.');
+if (installedDefault && (process.env.CTG_OWNED_OPENCODE_RUNTIME || process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST)) {
+  throw new Error('Installed acceptance must use the packaged manifest and default runtime resolver without test overrides.');
+}
+const ownedRoot = installedDefault ? undefined : process.env.CTG_OWNED_OPENCODE_RUNTIME;
+const trustedManifestPath = installedDefault
+  ? fileURLToPath(new URL('../lib/opencode/runtime-release.json', import.meta.url))
+  : process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST;
+if (!installedDefault && !ownedRoot) throw new Error('Set CTG_OWNED_OPENCODE_RUNTIME to the owned runtime artifact root under test.');
+if (!trustedManifestPath) throw new Error('A trusted release manifest is required for owned acceptance.');
+const preflight = ownedRoot ? await preflightNativeTestRuntimeArtifact({ ownedRoot, expectedManifestPath: trustedManifestPath }) : null;
+const runtimeOptions = { ...(ownedRoot ? { ownedRuntime: ownedRoot } : {}), runtimeReleaseManifestPath: trustedManifestPath };
 const binary = await resolveOpenCode(runtimeOptions);
 const identity = await runtimeIdentity(binary, runtimeOptions);
 assert.equal(identity.kind, 'ctg-owned');
-assert.equal(identity.binaryPath, preflight.identity.binary, 'product resolver selected the preflighted artifact');
-assert.equal(identity.binarySha256, preflight.identity.binarySha256, 'product identity matches trusted pre-execution byte verification');
-assert.equal(identity.version, preflight.identity.runtimeVersion);
+if (preflight) {
+  assert.equal(identity.binaryPath, preflight.identity.binary, 'product resolver selected the preflighted artifact');
+  assert.equal(identity.binarySha256, preflight.identity.binarySha256, 'product identity matches trusted pre-execution byte verification');
+  assert.equal(identity.version, preflight.identity.runtimeVersion);
+} else {
+  assert.equal(identity.kind, 'ctg-owned', 'installed acceptance requires the production default resolver to select CTG-owned runtime');
+  const { loadNativeTestRuntime } = await import('./native-runtime-identity.mjs');
+  const expectedManifest = JSON.parse(await readFile(trustedManifestPath, 'utf8'));
+  const verified = await loadNativeTestRuntime({ binary, ownedRoot: dirname(dirname(dirname(binary))), expectedManifest });
+  assert.equal(verified.binary, binary);
+  assert.equal(verified.binarySha256, identity.binarySha256);
+}
 
 const temp = await mkdtemp(join(tmpdir(), 'ctg-owned-controls-'));
 const cwd = join(temp, 'project');
@@ -201,8 +217,8 @@ try {
   }
 
   console.log(JSON.stringify({
-    host: { compatibilityVersion: preflight.identity.compatibilityVersion, runtimeVersion: identity.version, binarySha256: identity.binarySha256 },
-    runtimeSelection: 'explicit, trusted-preflighted CTG_OWNED_OPENCODE_RUNTIME staging artifact; not a claim about installed-package default selection',
+    host: { compatibilityVersion: preflight?.identity.compatibilityVersion ?? identity.compatibilityVersion, runtimeVersion: identity.version, binarySha256: identity.binarySha256 },
+    runtimeSelection: installedDefault ? 'installed package default resolver; trusted manifest verified' : 'explicit, trusted-preflighted CTG_OWNED_OPENCODE_RUNTIME staging artifact',
     sameDatabaseServiceRestart: 'passed',
     autoCompaction: { off: 'overflow failed with one provider attempt and no compaction', on: 'compaction request and successful retry observed' },
     concurrentIdenticalShell: 'real runtime events correlated to distinct sessionID/origin/callID',
