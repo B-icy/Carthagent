@@ -8,6 +8,7 @@ import { readFile } from 'node:fs/promises';
 import { resolveOpenCode, runtimeIdentity } from '../lib/opencode/runtime.mjs';
 import { loadNativeTestRuntime, preflightNativeTestRuntimeArtifact } from './native-runtime-identity.mjs';
 import { selectNativePtyRuntime } from './native-pty-runtime.mjs';
+import { nativePtySmokeArgs } from './native-pty-invocation.mjs';
 
 if (process.platform === 'win32') {
   console.log('Native PTY smoke skipped: the Python PTY implementation is Unix-only.');
@@ -35,20 +36,10 @@ const probes = [
 ];
 
 for (const probe of probes) {
-  const args = [resolve(root, 'tools/native-pty-smoke.py'), '--binary', binary, '--plugin', plugin,
-    '--command', probe.command, '--expect', probe.expect, '--ready', '◆ CTG',
-    ...(probe.secondEnter ? ['--second-enter'] : ['--confirm'])];
-  for (const next of probe.next ?? []) args.push('--after-command', next.command, '--after-expect', next.expect);
-  if (probe.dismissCompletion) args.push('--dismiss-completion');
-  if (probe.postSubmitMarker) args.push('--post-submit-marker', probe.postSubmitMarker);
-  if (probe.color) args.push('--expect-color', probe.color);
-  if (probe.initialTheme) args.push('--initial-theme', probe.initialTheme);
-  if (selection.identity.kind === 'ctg-owned') {
-    const independentlyVerifiedSha256 = selection.verified.binarySha256;
-    const currentSha256 = createHash('sha256').update(await readFile(binary)).digest('hex');
-    if (currentSha256 !== independentlyVerifiedSha256) throw new Error('Selected owned OpenCode binary changed after native runtime verification.');
-    args.push('--expected-sha256', independentlyVerifiedSha256);
-  }
+  const currentSha256 = createHash('sha256').update(await readFile(binary)).digest('hex');
+  const independentlyVerifiedSha256 = selection.identity.kind === 'ctg-owned' ? selection.verified.binarySha256 : selection.binarySha256;
+  if (!independentlyVerifiedSha256 || currentSha256 !== independentlyVerifiedSha256) throw new Error('Selected OpenCode binary changed after native runtime verification.');
+  const args = nativePtySmokeArgs({ root, binary, plugin, selection: { ...selection, binarySha256: independentlyVerifiedSha256 }, probe });
   const result = spawnSync('python3', args, { cwd: root, stdio: 'inherit', timeout: 90_000 });
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);
