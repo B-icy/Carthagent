@@ -134,14 +134,14 @@ export async function resolveFixtureRuntime({ productRuntime, options = {}, env 
   }) };
 }
 
-export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'), pluginOptions, plugins: additionalPlugins = [], pluginExpected = plugin ? 'active' : 'absent', verifyInventory = false, provenance, respond = (_body, res) => streamText(res), env: extraEnv = {}, preserveTemp = false } = {}) {
+export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'), pluginOptions, plugins: additionalPlugins = [], pluginExpected = plugin ? 'active' : 'absent', verifyInventory = false, provenance, respond = (_body, res) => streamText(res), env: extraEnv = {}, preserveTemp = false, runtimeResolver } = {}) {
   const { OpenCode } = await import('@opencode/client');
   const pluginEntries = [
     ...(plugin ? [pluginOptions ? { package: resolve(plugin), options: pluginOptions } : resolve(plugin)] : []),
     ...additionalPlugins.map(entry => typeof entry === 'string' ? resolve(entry) : { ...entry, package: resolve(entry.package) }),
   ];
   const productRuntime = await import('../lib/opencode/runtime.mjs');
-  const { binary: runtimeBinary, runtimeIdentity } = await resolveFixtureRuntime({ productRuntime });
+  const { binary: runtimeBinary, runtimeIdentity } = await resolveFixtureRuntime({ productRuntime: runtimeResolver ?? productRuntime });
   const temp = await mkdtemp(join(tmpdir(), 'ctg-native-fixture-'));
   const cwd = join(temp, 'project');
   const pluginProbeCwd = verifyInventory ? join(temp, 'project-alpha') : cwd;

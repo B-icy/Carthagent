@@ -40,4 +40,24 @@ test('terminal semantics contract accepts only exact owned controlled-emulator e
   ]) {
     assert.throws(() => assertTerminalSemanticsProof({ ...proof, [key]: value }, { binary, identity, manifest }), key);
   }
+  assert.throws(() => assertTerminalSemanticsProof(proof, {
+    binary, identity, manifest, probeSha256: 'f'.repeat(64),
+  }), /probe digest/);
+});
+
+test('terminal semantics contract rejects a probe digest that differs from the pinned source bytes', () => {
+  const binary = '/isolated/cache/cli-linux-x64/bin/opencode';
+  const identity = { binarySha256: 'b'.repeat(64) };
+  const manifest = { runtimeVersion: '0.0.0-ctg.test' };
+  const proof = {
+    status: 'PASS', binaryResolvedPath: binary, binarySha256: identity.binarySha256,
+    binaryVersion: `opencode v${manifest.runtimeVersion}`, probeSha256: 'd'.repeat(64),
+    physicalOSClipboardVerified: false, controlledHostClipboardModel: true,
+  };
+  assert.doesNotThrow(() => assertTerminalSemanticsProof(proof, {
+    binary, identity, manifest, probeSha256: 'd'.repeat(64),
+  }));
+  assert.throws(() => assertTerminalSemanticsProof(proof, {
+    binary, identity, manifest, probeSha256: 'e'.repeat(64),
+  }), /probe digest/);
 });

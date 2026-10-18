@@ -258,6 +258,10 @@ def sha256_file(path):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--binary', default=os.environ.get('CTG_OPENCODE_BIN'))
+    parser.add_argument('--expected-binary-sha256', required=True,
+                        help='independently trusted SHA-256 required before executing the native binary')
+    parser.add_argument('--expected-probe-sha256', required=True,
+                        help='expected digest of this exact Python probe source')
     parser.add_argument('--timeout', type=int, default=75)
     parser.add_argument('--host-model-only', action='store_true',
                         help='run controlled terminal-host fixture without launching OpenCode')
@@ -284,6 +288,12 @@ def main():
     if not os.path.isfile(binary):
         parser.error(f'native binary does not exist: {binary}')
     binary = os.path.realpath(binary)
+    binary_sha = sha256_file(binary)
+    if not re.fullmatch(r'[a-f0-9]{64}', args.expected_binary_sha256) or binary_sha != args.expected_binary_sha256:
+        parser.error(f'native binary SHA-256 mismatch: expected {args.expected_binary_sha256}, got {binary_sha}')
+    probe_sha = sha256_file(__file__)
+    if not re.fullmatch(r'[a-f0-9]{64}', args.expected_probe_sha256) or probe_sha != args.expected_probe_sha256:
+        parser.error(f'probe source SHA-256 mismatch: expected {args.expected_probe_sha256}, got {probe_sha}')
     binary_version = subprocess.run([binary, '--version'], capture_output=True, text=True, timeout=20)
     if binary_version.returncode != 0 or '2.0.32' not in (binary_version.stdout + binary_version.stderr):
         parser.error(f'owned executable must identify the OpenCode 2.0.32 line; got {binary_version.stdout.strip()!r}')
@@ -299,7 +309,6 @@ def main():
                                    capture_output=True, text=True).stdout.strip()
     source_commit = subprocess.run(['git', '-C', str(repo_root), 'rev-parse', 'HEAD'],
                                    capture_output=True, text=True).stdout.strip()
-    binary_sha = sha256_file(binary)
     result = {'startedAtUtc': datetime.now(timezone.utc).isoformat(),
               'case': ('focused-host-roundtrip' if args.focused_host_roundtrip else
                        'layout-regression' if args.assertion_regression_only else
@@ -307,7 +316,7 @@ def main():
               'binary': binary, 'binaryResolvedPath': os.path.realpath(binary),
               'binarySha256': binary_sha, 'buildHash': binary_sha,
               'binaryVersion': (binary_version.stdout + binary_version.stderr).strip(),
-              'probeSha256': sha256_file(__file__),
+              'probeSha256': probe_sha,
               'pluginSha256': sha256_file(repo_root / 'plugins' / 'carthagent' / 'src' / 'tui.tsx'),
               'sourceCommit': source_commit,
               'workingTreeDirty': bool(source_status),
