@@ -41,7 +41,7 @@ export function createNativeReviewConsumer({ mode, diff, offer, kickoff, isLoopA
     const writes = changes.filter((file) => file && (file.additions > 0 || file.deletions > 0 || file.status === "added" || file.status === "deleted") && before.get(file.file) !== `${file.status}\0${file.patch}`).length;
     const runKey = `${sessionID}@${run.id}`;
     const currentMode = mode(sessionID);
-    if (!(currentMode === "ask" || currentMode === "yes") || writes <= 0 || admitted.has(runKey)) return;
+    if (!(currentMode === "ask" || currentMode === "yes") || writes <= 0 || admitted.has(runKey) || (currentMode === "yes" && loopSessions.has(sessionID))) return;
     admitted.add(runKey);
 
     const start = async () => {
@@ -51,11 +51,6 @@ export function createNativeReviewConsumer({ mode, diff, offer, kickoff, isLoopA
       setLoopActive(sessionID, true);
       try {
         await kickoff(sessionID, signal);
-        if (disposed || signal?.aborted || runs.get(sessionID) !== run) {
-          loopSessions.delete(sessionID);
-          setLoopActive(sessionID, false);
-          return false;
-        }
         return true;
       } catch (error) {
         loopSessions.delete(sessionID);
@@ -80,6 +75,9 @@ export function createNativeReviewConsumer({ mode, diff, offer, kickoff, isLoopA
   }
 
   return {
+    onPromptSubmitted(sessionID) {
+      if (sessionID && loopSessions.delete(sessionID)) setLoopActive(sessionID, false);
+    },
     setLoopActive(sessionID, active) {
       if (!sessionID) return;
       if (active) loopSessions.add(sessionID);

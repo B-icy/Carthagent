@@ -42,6 +42,11 @@ export default Plugin.define({
     });
     cleanups.push(() => reviewConsumer.dispose());
     cleanups.push(...subscribeNativeReviewEvents(context.data, reviewConsumer, (error: unknown) => context.ui.toast.show({ message: error instanceof Error ? error.message : String(error), variant: "error" })));
+    cleanups.push(context.data.on("tui.prompt.append", (event) => {
+      const route = context.ui.router.current();
+      const sessionID = route.type === "session" ? route.sessionID : undefined;
+      if (sessionID && event.data.text.trim()) reviewConsumer.onPromptSubmitted(sessionID);
+    }));
     const workspaceEvents = context.client.rpc(Workspace);
     cleanups.push(workspaceEvents.events.on("updated", (event) => {
       // Promise RPC exposes the server event envelope (including location)
