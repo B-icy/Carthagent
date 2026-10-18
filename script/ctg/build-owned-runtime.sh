@@ -24,12 +24,13 @@ if [[ "$(git rev-parse HEAD)" != "$EXPECTED_SOURCE" ]]; then
   echo "Expected pristine OpenCode source $EXPECTED_SOURCE; got $(git rev-parse HEAD)" >&2
   exit 1
 fi
-# Windows checkouts may convert bun.lock line endings. Restore it with
-# conversion disabled so both the pinned hash and Bun input use the committed
-# bytes, without changing the upstream lockfile or its pin.
-git -c core.autocrlf=false checkout-index --force -- bun.lock
-if [[ "$("${HASH_COMMAND[@]}" bun.lock | awk '{print $1}')" != "$EXPECTED_LOCK" ]]; then
-  echo "Pinned bun.lock checksum mismatch" >&2
+# Reject staged edits and every tracked worktree edit other than a bun.lock
+# line-ending conversion before restoring anything. On Windows, validate that
+# normalizing CRLF to LF exactly reproduces the committed blob; this keeps
+# checkout conversion distinct from user edits and fails closed on content
+# changes. The blob itself must still match the pinned lock hash.
+if ! git diff --cached --quiet HEAD --; then
+  echo "Refusing to build with staged source changes" >&2
   exit 1
 fi
 expected_inputs=(
@@ -45,13 +46,39 @@ while IFS= read -r entry; do
   for input in "${expected_inputs[@]}"; do
     [[ "$path" == "$input" ]] && allowed=true
   done
-  if [[ "$allowed" != true ]]; then
+  if [[ "$allowed" != true && "$path" != "bun.lock" ]]; then
     unexpected+="${entry}"$'\n'
   fi
 done <<< "$actual_status"
 if [[ -n "$unexpected" ]]; then
   echo "Expected pristine tracked source and only the two reviewed CTG build inputs as untracked files" >&2
   git status --short >&2
+  exit 1
+fi
+if ! git diff --quiet HEAD -- . ':(exclude)bun.lock'; then
+  echo "Refusing to build with modified tracked source files" >&2
+  git status --short >&2
+  exit 1
+fi
+node - "$EXPECTED_LOCK" <<'NODE'
+const { createHash } = require("node:crypto")
+const { execFileSync } = require("node:child_process")
+const { readFileSync } = require("node:fs")
+const expectedHash = process.argv[2]
+const committed = execFileSync("git", ["show", "HEAD:bun.lock"])
+const current = readFileSync("bun.lock")
+const normalized = Buffer.from(current.toString("utf8").replace(/\r\n/g, "\n"))
+const hash = createHash("sha256").update(committed).digest("hex")
+if (hash !== expectedHash || !normalized.equals(committed)) {
+  console.error("Refusing to restore bun.lock: tracked content differs from the pinned blob")
+  process.exit(1)
+}
+NODE
+# Only after the fail-closed pristine check, restore Windows checkout line
+# endings with conversion disabled so Bun sees the exact committed bytes.
+git -c core.autocrlf=false checkout-index --force -- bun.lock
+if [[ "$("${HASH_COMMAND[@]}" bun.lock | awk '{print $1}')" != "$EXPECTED_LOCK" ]]; then
+  echo "Pinned bun.lock checksum mismatch" >&2
   exit 1
 fi
 if [[ "$(bun --version)" != "1.4.2" ]]; then

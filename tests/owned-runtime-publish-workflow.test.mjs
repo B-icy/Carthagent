@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
@@ -153,6 +153,9 @@ async function fixture(t) {
     copyFile(path.join(root, 'script/ctg/build-owned-runtime.sh'), path.join(ctg, 'script/ctg/build-owned-runtime.sh')),
     copyFile(path.join(root, combinedPatchPath), path.join(ctg, combinedPatchPath)),
   ]);
+  execFileSync('git', ['init', '-q'], { cwd: ctg });
+  execFileSync('git', ['-c', 'user.name=Workflow Fixture', '-c', 'user.email=fixture@example.invalid', 'add', combinedPatchPath], { cwd: ctg });
+  execFileSync('git', ['-c', 'user.name=Workflow Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture candidate patch'], { cwd: ctg });
   await copyFile(path.join(root, 'lib/opencode/runtime.mjs'), path.join(ctg, 'lib/opencode/runtime.mjs'));
 
   const manifest = {
@@ -375,13 +378,17 @@ test('draft metadata validation has scoped write capability; artifact mutation s
   assert.doesNotMatch(assembly, /contents: write/);
   assert.match(publish, /contents: write/);
   assert.match(uploadBlock, /gh release upload/);
-  assert.match(workflow, /cp ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v2\.patch opencode\/docs\/patches\//);
-  assert.match(workflow, /hash_file ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v2\.patch/);
-  assert.equal((workflow.match(/cp ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v2\.patch ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui\.patch/g) ?? []).length, 2,
-    'both generation paths must adapt the pinned historical recipe path to the exact reviewed candidate bytes');
+  assert.match(workflow, /git -C ctg show HEAD:docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v2\.patch > opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v2\.patch/);
+  assert.match(workflow, /patch_sha256="\$\(hash_file opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v2\.patch\)"/);
+  assert.equal((workflow.match(/git -C ctg show HEAD:docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v2\.patch > ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui\.patch/g) ?? []).length, 2,
+    'both generation paths must extract exact committed candidate bytes at the pinned historical path');
+  assert.match(workflow, /git -C ctg show HEAD:script\/ctg\/build-owned-runtime\.sh > opencode\/script\/ctg\/build-owned-runtime\.sh/);
+  assert.match(workflow, /chmod \+x opencode\/script\/ctg\/build-owned-runtime\.sh/);
+  assert.match(workflow, /git -C opencode -c core\.autocrlf=false checkout-index --force --all/);
+  assert.match(workflow, /patch_sha256="\$\(hash_file opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v2\.patch\)"/);
 });
 
-test('review-branch prebuild source is exact dispatch SHA; publish validation is default-branch-only', { skip: requiresUbuntuWorkflowShell }, async (t) => {
+test('review-branch prebuild source is exact dispatch SHA; publish validation is default-branch-only', { skip: requiresUbuntuWorkflowShell, timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   const out = path.join(f.directory, 'prebuild-output');
   await writeFile(out, '');
@@ -404,7 +411,7 @@ test('review-branch prebuild source is exact dispatch SHA; publish validation is
   assertFailure(publishOnReviewBranch, 'publish validation from non-default branch');
 });
 
-test('positive publish verifies five archive bytes and fake-captures exactly seven identical assets', { skip: requiresUbuntuWorkflowShell }, async (t) => {
+test('positive publish verifies five archive bytes and fake-captures exactly seven identical assets', { skip: requiresUbuntuWorkflowShell, timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   const result = await runPublishFixture(f);
   assertSuccess(result.upload, 'fake upload');
@@ -427,14 +434,14 @@ test('positive publish verifies five archive bytes and fake-captures exactly sev
   }
 });
 
-test('tampered candidate archive is rejected before any fake upload', { skip: requiresUbuntuWorkflowShell }, async (t) => {
+test('tampered candidate archive is rejected before any fake upload', { skip: requiresUbuntuWorkflowShell, timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   const result = await runPublishFixture(f, { tamper: true });
   assert.equal(result.upload, undefined);
   assert.deepEqual(await (await import('node:fs/promises')).readdir(f.capture), []);
 });
 
-test('stale annotated tag is rejected by upload recheck before any fake upload', { skip: requiresUbuntuWorkflowShell }, async (t) => {
+test('stale annotated tag is rejected by upload recheck before any fake upload', { skip: requiresUbuntuWorkflowShell, timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   const result = await runPublishFixture(f, { tagCommitSha: 'dddddddddddddddddddddddddddddddddddddddd' });
   assertFailure(result.upload, 'stale-tag upload recheck');
