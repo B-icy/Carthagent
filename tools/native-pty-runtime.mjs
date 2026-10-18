@@ -65,7 +65,7 @@ export async function selectNativePtyRuntime({ runtime, env = process.env, root 
       || verified.lockSha256 !== identity.lockSha256) {
       throw new Error('Independent owned runtime verification does not match the production runtime identity.');
     }
-    return Object.freeze({ binary, identity, verified });
+    return Object.freeze({ binary, identity, verified, binarySha256: verified.binarySha256 });
   }
 
   if (identity.kind !== 'upstream-compatible') throw new Error(`Unrecognized selected native runtime kind: ${identity.kind}`);

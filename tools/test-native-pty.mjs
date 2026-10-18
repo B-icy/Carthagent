@@ -37,9 +37,8 @@ const probes = [
 
 for (const probe of probes) {
   const currentSha256 = createHash('sha256').update(await readFile(binary)).digest('hex');
-  const independentlyVerifiedSha256 = selection.identity.kind === 'ctg-owned' ? selection.verified.binarySha256 : selection.binarySha256;
-  if (!independentlyVerifiedSha256 || currentSha256 !== independentlyVerifiedSha256) throw new Error('Selected OpenCode binary changed after native runtime verification.');
-  const args = nativePtySmokeArgs({ root, binary, plugin, selection: { ...selection, binarySha256: independentlyVerifiedSha256 }, probe });
+  if (currentSha256 !== selection.binarySha256) throw new Error('Selected OpenCode binary changed after native runtime verification.');
+  const args = nativePtySmokeArgs({ root, binary, plugin, selection, probe });
   const result = spawnSync('python3', args, { cwd: root, stdio: 'inherit', timeout: 90_000 });
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);
