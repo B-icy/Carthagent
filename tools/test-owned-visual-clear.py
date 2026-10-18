@@ -278,7 +278,7 @@ process.stdout.write(JSON.stringify(await c.message.list({sessionID:id},{signal:
 
         neighbor=Tui(binary,fixture,b['id'],env)
         neighbor.wait_for(lambda:b['marker'] in neighbor.screen.visible(),'B marker')
-        if a['marker'] in neighbor.screen.visible() or conversation(durable(b['id']))!=before_b:
+        if a['marker'] in neighbor.screen.visible() or durable_snapshot(b['id']) != before_b:
             raise AssertionError('neighbor session B was affected by clearing A')
         neighbor.stop()
 
