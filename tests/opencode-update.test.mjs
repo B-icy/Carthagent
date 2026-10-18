@@ -194,6 +194,23 @@ test('failed update command stops later steps and includes bounded failure outpu
   assert.equal(calls.length, 1);
 });
 
+test('runUpdateCommand strips runtime download tokens from child env case-insensitively without mutating caller env', async () => {
+  const env = {
+    ...process.env,
+    CTG_RUNTIME_GITHUB_TOKEN: 'fake-uppercase-token',
+    ctg_runtime_github_token: 'fake-lowercase-token',
+    Ctg_Runtime_Github_Token: 'fake-mixedcase-token',
+    CTG_RUNTIME_OTHER: 'preserve-this-value',
+  };
+  const result = await (await import('../lib/opencode/update.mjs')).runUpdateCommand(
+    [process.execPath, '-e', 'process.stdout.write(JSON.stringify({env: process.env.CTG_RUNTIME_OTHER, tokenKeys: Object.keys(process.env).filter(key => key.toUpperCase() === "CTG_RUNTIME_GITHUB_TOKEN")}))'],
+    { cwd: process.cwd(), env, timeoutSeconds: 10 },
+  );
+  assert.equal(result.code, 0);
+  assert.deepEqual(JSON.parse(result.output), { env: 'preserve-this-value', tokenKeys: [] });
+  assert.equal(env.ctg_runtime_github_token, 'fake-lowercase-token');
+});
+
 test('zero exit code with timeout or cancellation is failure and prevents later steps', async () => {
   for (const result of [{ code: 0, output: '', timedOut: true }, { code: 0, output: '', cancelled: true }]) {
     const calls = [];
@@ -203,6 +220,33 @@ test('zero exit code with timeout or cancellation is failure and prevents later 
     }), result.timedOut ? /timed out/ : /cancelled/);
     assert.equal(calls.length, 1);
   }
+});
+
+test('an already-aborted lifecycle never checks releases or starts an installer', async () => {
+  const controller = new AbortController();
+  controller.abort(new Error('plugin disposed'));
+  let fetched = false;
+  let installed = false;
+  await assert.rejects(runNativeUpdate({
+    signal: controller.signal,
+    fetchLatestRelease: async () => { fetched = true; return { release }; },
+    detectInstallMethod: () => 'npm',
+    runCommand: async () => { installed = true; return { code: 0, output: '' }; },
+  }), /plugin disposed/);
+  assert.equal(fetched, false);
+  assert.equal(installed, false);
+});
+
+test('runUpdateCommand kills the updater process tree when its host lifecycle aborts', async () => {
+  const controller = new AbortController();
+  const pending = (await import('../lib/opencode/update.mjs')).runUpdateCommand(
+    [process.execPath, '-e', 'setTimeout(() => {}, 30000)'],
+    { cwd: process.cwd(), timeoutSeconds: 60, signal: controller.signal },
+  );
+  setTimeout(() => controller.abort(new Error('plugin disposed')), 40).unref?.();
+  const result = await pending;
+  assert.equal(result.cancelled, true);
+  assert.notEqual(result.code, 0);
 });
 
 test('a successful code with a timed-out global-install retry remains a failure', async () => {
