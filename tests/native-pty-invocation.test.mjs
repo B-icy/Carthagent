@@ -65,11 +65,20 @@ test('invocation helper fails closed if the selected runtime omitted the digest'
   assert.throws(() => nativePtySmokeArgs({ root: '/package', binary: '/bin/opencode', plugin: '/plugin', selection: {}, probe: { command: '/ctg-status', expect: 'OpenCode' } }), /missing its independently verified/);
 });
 
-const pythonForPtyTest = process.env.PYTHON || (process.platform === 'win32' ? 'python.exe' : 'python3');
+const pythonCandidates = [
+  process.env.PYTHON,
+  join(process.cwd(), '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'),
+  process.platform === 'win32' ? 'python.exe' : 'python3',
+  'python',
+].filter(Boolean);
+const pythonForPtyTest = pythonCandidates.find((candidate) => {
+  const result = spawnSync(candidate, ['--version'], { stdio: 'ignore' });
+  return !result.error && result.status === 0;
+});
 const pythonPtyBoundarySkip = process.platform === 'win32'
   ? 'The Python PTY preflight imports Unix-only fcntl; native PTY acceptance is Unix-only.'
-  : spawnSync(pythonForPtyTest, ['--version'], { stdio: 'ignore' }).error
-    ? `Python interpreter ${pythonForPtyTest} is unavailable.`
+  : !pythonForPtyTest
+    ? 'No configured or standard Python interpreter is available.'
     : false;
 
 test('Python digest preflight rejects changed bytes before executing the selected binary', { skip: pythonPtyBoundarySkip }, async () => {
