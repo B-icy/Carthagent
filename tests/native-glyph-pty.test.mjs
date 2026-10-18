@@ -76,7 +76,9 @@ print('PASS')`], { encoding: 'utf8' });
   assert.match(result.stdout, /PASS/);
 });
 
-test('native glyph PTY entrypoint imports its hyphenated sibling helper', { skip: skipPython }, () => {
+test('native glyph PTY entrypoint imports its hyphenated sibling helper', {
+  skip: skipPython || (process.platform === 'win32' ? 'The PTY entrypoint depends on Unix fcntl; portable helper contracts are tested above' : false),
+}, () => {
   const result = spawnSync(python, ['-c', `import importlib.util, pathlib
 entry=pathlib.Path(${JSON.stringify(join(root, 'tools/native-glyph-pty.py'))})
 spec=importlib.util.spec_from_file_location('native_glyph_pty_entry', entry)
