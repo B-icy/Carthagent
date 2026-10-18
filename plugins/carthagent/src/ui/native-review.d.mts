@@ -19,6 +19,7 @@ export function sendNativeReviewKickoff(options: { client: any; sessionID: strin
 export function nativeReviewMode(session: any, config: any, explicitMode?: string): string;
 export function createNativeReviewConsumer(options: NativeReviewConsumerOptions): {
   setLoopActive(sessionID: string, active: boolean): void;
+  onPromptSubmitted(sessionID: string): void;
   onStarted(event: any): void;
   onSucceeded(event: any): Promise<void>;
   onFailed(event: any): Promise<void>;

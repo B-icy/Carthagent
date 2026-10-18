@@ -75,13 +75,16 @@ test('yes kicks off only successful new-change runs and suppresses only that ses
   ]);
   assert.deepEqual(started.sort(), ['session-a', 'session-b'], 'one session loop must not suppress an unrelated session');
   assert.ok(loops.has('session-a') && loops.has('session-b'));
+  consumer.onPromptSubmitted('session-a');
+  assert.equal(loops.has('session-a'), false, 'user prompt exits the session loop state');
+  assert.equal(loops.has('session-b'), true, 'unrelated session loop state remains active');
   consumer.onStarted(execution('run-a2', 'session-a'));
   consumer.onStarted(execution('run-b2', 'session-b'));
   await Promise.all([
     consumer.onSucceeded(execution('run-a2', 'session-a')),
     consumer.onSucceeded(execution('run-b2', 'session-b')),
   ]);
-  assert.equal(started.length, 2, 'loop sessions do not recursively trigger another loop');
+  assert.equal(started.length, 3, 'only session-a may re-enter a loop after a new user prompt');
 });
 
 test('failed/interrupted and unchanged executions do not launch a workflow', async () => {
