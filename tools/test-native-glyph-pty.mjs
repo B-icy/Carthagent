@@ -12,6 +12,13 @@ import { resolveOpenCode, runtimeIdentity } from '../lib/opencode/runtime.mjs';
 import { loadNativeTestRuntime, preflightNativeTestRuntimeArtifact } from './native-runtime-identity.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const installedDefault = process.argv.includes('--installed-default');
+assert.ok(!installedDefault || !process.env.CTG_TEST_RUNTIME_ARTIFACT_ROOT,
+  'installed acceptance must use the package default runtime resolver, not CTG_TEST_RUNTIME_ARTIFACT_ROOT');
+assert.ok(!installedDefault || !process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST,
+  'installed acceptance must use its packaged trusted release manifest');
+assert.ok(!installedDefault || !process.env.CTG_OWNED_OPENCODE_RUNTIME,
+  'installed acceptance must not select a developer-owned runtime artifact');
 const ownedRoot = process.env.CTG_TEST_RUNTIME_ARTIFACT_ROOT ?? process.env.CTG_OWNED_OPENCODE_RUNTIME;
 const trustedManifestPath = process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST ?? join(root, 'lib/opencode/runtime-release.json');
 assert.ok(!process.env.CTG_OPENCODE_BIN, 'Unset CTG_OPENCODE_BIN; this proof uses the production owned-runtime resolver');
@@ -40,6 +47,10 @@ const identity = await loadNativeTestRuntime({
   expectedManifest: preflight?.expectedManifest ?? JSON.parse(await readFile(trustedManifestPath, 'utf8')),
 });
 assert.equal(resolve(identity.binary), resolve(binary));
+if (installedDefault) {
+  assert.equal(productIdentity.kind, 'ctg-owned', 'installed glyph acceptance requires the default resolver to select CTG-owned runtime');
+  assert.equal(identity.binarySha256, productIdentity.binarySha256, 'independent identity must match default resolver byte identity');
+}
 if (preflight) {
   assert.equal(identity.binarySha256, preflight.identity.binarySha256);
   assert.equal(productIdentity.binarySha256, preflight.identity.binarySha256);

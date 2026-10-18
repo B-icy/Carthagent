@@ -161,6 +161,8 @@ try {
   // imports (including @opencode/client) resolve only through that install.
   const probes = [];
   const acceptanceTests = [
+    'test-owned-host-controls.mjs', 'test-native-glyph-pty.mjs',
+    'test-native-terminal-semantics-installed.mjs', 'test-native-visual-clear-installed.mjs',
     'test-native-host.mjs', 'test-native-controls.mjs', 'test-native-outcomes.mjs',
     'test-native-product.mjs', 'test-native-runtime.mjs', 'test-native-tasks.mjs',
     'test-native-review.mjs', 'test-native-swe-host.mjs', 'test-native-pty.mjs',
@@ -177,6 +179,21 @@ try {
     : [{ test }]);
   for (const { test, scenario } of cases) {
     const identity = { test, ...(scenario ? { scenario } : {}), runtime: resolution.identity };
+    const ownedProbe = ['test-owned-host-controls.mjs', 'test-native-glyph-pty.mjs',
+      'test-native-terminal-semantics-installed.mjs', 'test-native-visual-clear-installed.mjs'].includes(test);
+    if (ownedProbe && resolution.identity.kind !== 'ctg-owned') {
+      const result = { ...identity, status: 'skipped', reason: 'owned-runtime probe is outside upstream-compatible preview scope' };
+      probes.push(result);
+      console.log(JSON.stringify(result));
+      continue;
+    }
+    if (ownedProbe && process.platform !== 'linux') {
+      assert.ok(!requireOwnedRuntime, `--require-owned cannot skip ${test} on ${process.platform}`);
+      const result = { ...identity, status: 'skipped', reason: 'owned installed acceptance probes currently require Linux PTY' };
+      probes.push(result);
+      console.log(JSON.stringify(result));
+      continue;
+    }
     if (test === 'test-native-pty.mjs' && process.platform === 'win32') {
       const result = { ...identity, status: 'skipped', reason: 'Unix-only Python PTY harness' };
       probes.push(result);
@@ -189,11 +206,13 @@ try {
       const probePath = join(installed, 'tools', test);
       // Parser/WASM behavior must resolve from the packed installation too.
       const args = test.endsWith('.test.mjs') ? ['--test', probePath] : [probePath, installedPlugin];
+      if (test === 'test-owned-host-controls.mjs' || test === 'test-native-glyph-pty.mjs') args.push('--installed-default');
       run(process.execPath, args, {
-        // Trusted acceptance probes may resolve the default runtime on a cache
-        // miss. runtimeEnvironment/workspaceEnvironment remove this transport
-        // credential before launching OpenCode or workspace child processes.
-        cwd: install, env: { ...env, CTG_NATIVE_SCENARIO: scenario ?? '' },
+        // The trusted harness may need to reacquire a missing default runtime.
+        // Runtime identity/version, host, PTY, workspace, and npm children
+        // independently strip the optional transport credential.
+        env: { ...env, CTG_NATIVE_SCENARIO: scenario ?? '' },
+        cwd: install,
       });
     } catch (error) {
       console.error(JSON.stringify({ ...identity, status: 'failed', elapsedMs: Math.round(performance.now() - started), completed: probes }));
