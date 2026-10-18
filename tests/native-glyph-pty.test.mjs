@@ -75,3 +75,16 @@ print('PASS')`], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /PASS/);
 });
+
+test('native glyph PTY entrypoint imports its hyphenated sibling helper', { skip: skipPython }, () => {
+  const result = spawnSync(python, ['-c', `import importlib.util, pathlib
+entry=pathlib.Path(${JSON.stringify(join(root, 'tools/native-glyph-pty.py'))})
+spec=importlib.util.spec_from_file_location('native_glyph_pty_entry', entry)
+module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+assert module.USER_TEXT == 'CTG_GLYPH_PAYLOAD 漢字 café → • − …'
+assert module.GlyphScreen.char_width('漢') == 2
+assert callable(module.assert_composer_payload)
+print('PASS')`], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /PASS/);
+});
