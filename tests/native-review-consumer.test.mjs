@@ -1,100 +1,117 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createNativeReviewConsumer, subscribeNativeReviewEvents } from '../plugins/carthagent/src/ui/native-review.mjs';
+import { reviewKickoff } from '../lib/review.mjs';
+import { createNativeReviewConsumer, nativeReviewMode, sendNativeReviewKickoff, subscribeNativeReviewEvents } from '../plugins/carthagent/src/ui/native-review.mjs';
 
 const execution = (id, sessionID) => ({ id, data: { sessionID } });
+const changed = [{ file: 'src/change.ts', additions: 1, deletions: 0, status: 'modified', patch: '@@ change' }];
 
-test('ask offers once after a successful changed run, scoped to its session', async () => {
+function makeDiff() {
+  const calls = new Map();
+  return async (sessionID, signal) => {
+    signal?.throwIfAborted();
+    const count = (calls.get(sessionID) ?? 0) + 1;
+    calls.set(sessionID, count);
+    return count % 2 === 1 ? [] : changed;
+  };
+}
+
+test('native prompt payload is the legacy PR-review kickoff and only bypasses framing', async () => {
+  let request;
+  const signal = new AbortController().signal;
+  await sendNativeReviewKickoff({
+    client: { session: { async prompt(input, options) { request = { input, options }; } } },
+    sessionID: 'working-session', signal,
+  });
+  assert.equal(request.input.sessionID, 'working-session');
+  assert.equal(request.input.text, reviewKickoff());
+  assert.match(request.input.text, /gh pr create/);
+  assert.match(request.input.text, /ctg\.mjs" review <pr-number-or-url>/);
+  assert.deepEqual(request.input.metadata, { 'ctg.raw': true });
+  assert.equal(request.options.signal, signal);
+});
+
+test('session explicit review mode overrides profile; launch mode overrides both', () => {
+  const session = { metadata: { 'carthagent.options': { review: 'yes' } } };
+  assert.equal(nativeReviewMode(session, { review: 'no' }), 'yes');
+  assert.equal(nativeReviewMode(session, { review: 'yes' }, 'no'), 'no');
+  assert.equal(nativeReviewMode({}, { review: 'no' }), 'no');
+  assert.equal(nativeReviewMode({}, {}), 'ask');
+});
+
+test('ask confirmation is current-run-bound and one-shot; a later run invalidates the old offer', async () => {
   const offers = [];
-  const starts = [];
-  const diffCalls = new Map();
+  const kickoffs = [];
   const consumer = createNativeReviewConsumer({
-    mode: () => 'ask',
-    diff: async (sessionID) => {
-      const count = (diffCalls.get(sessionID) ?? 0) + 1;
-      diffCalls.set(sessionID, count);
-      return sessionID === 'changed' && count > 1 ? [{ file: 'a.ts', additions: 2, deletions: 0, status: 'modified', patch: '@@ changed' }] : [];
-    },
-    offer: async (offer) => offers.push(offer),
-    startReview: async (sessionID) => { starts.push(sessionID); return 'review-session'; },
+    mode: () => 'ask', diff: makeDiff(), offer: async (offer) => offers.push(offer),
+    kickoff: async (sessionID) => kickoffs.push(sessionID),
   });
-  consumer.onStarted(execution('run-1', 'failed'));
-  consumer.onStarted(execution('run-2', 'empty'));
-  await consumer.onSucceeded(execution('run-2', 'empty'));
-  await consumer.onFailed(execution('run-1', 'failed'));
-  assert.equal(offers.length, 0, 'failed runs cannot prompt');
-  consumer.onStarted(execution('run-3', 'changed'));
-  await consumer.onSucceeded(execution('run-3', 'changed'));
-  await consumer.onSucceeded(execution('duplicate', 'changed'));
+  consumer.onStarted(execution('run-1', 'session-a'));
+  await consumer.onSucceeded(execution('run-1', 'session-a'));
   assert.equal(offers.length, 1);
-  assert.equal(offers[0].writes, 1);
-  assert.equal(offers[0].sessionID, 'changed');
-  await offers[0].start();
-  assert.deepEqual(starts, ['changed']);
+  consumer.onStarted(execution('run-2', 'session-a'));
+  assert.equal(await offers[0].start(), false, 'older confirmation cannot start after a new run');
+  await consumer.onSucceeded(execution('run-2', 'session-a'));
+  assert.equal(offers.length, 2);
+  assert.equal(await offers[1].start(), true);
+  assert.equal(await offers[1].start(), false, 'confirmation closure admits exactly once');
+  assert.deepEqual(kickoffs, ['session-a']);
 });
 
-test('yes auto-starts once only for successful evidence-bearing runs; no suppresses', async () => {
-  let mode = 'yes';
+test('yes kicks off only successful new-change runs and suppresses only that session loop', async () => {
+  const loops = new Set();
+  const started = [];
+  const consumer = createNativeReviewConsumer({
+    mode: () => 'yes', diff: makeDiff(), offer: async () => assert.fail('yes does not prompt'),
+    kickoff: async (sessionID) => started.push(sessionID),
+    isLoopActive: (sessionID) => loops.has(sessionID),
+    setLoopActive: (sessionID, active) => active ? loops.add(sessionID) : loops.delete(sessionID),
+  });
+  consumer.onStarted(execution('run-a1', 'session-a'));
+  consumer.onStarted(execution('run-b1', 'session-b'));
+  await Promise.all([
+    consumer.onSucceeded(execution('run-a1', 'session-a')),
+    consumer.onSucceeded(execution('run-b1', 'session-b')),
+  ]);
+  assert.deepEqual(started.sort(), ['session-a', 'session-b'], 'one session loop must not suppress an unrelated session');
+  assert.ok(loops.has('session-a') && loops.has('session-b'));
+  consumer.onStarted(execution('run-a2', 'session-a'));
+  consumer.onStarted(execution('run-b2', 'session-b'));
+  await Promise.all([
+    consumer.onSucceeded(execution('run-a2', 'session-a')),
+    consumer.onSucceeded(execution('run-b2', 'session-b')),
+  ]);
+  assert.equal(started.length, 2, 'loop sessions do not recursively trigger another loop');
+});
+
+test('failed/interrupted and unchanged executions do not launch a workflow', async () => {
   const starts = [];
-  const diffCalls = new Map();
   const consumer = createNativeReviewConsumer({
-    mode: () => mode,
-    diff: async (sessionID) => {
-      const count = (diffCalls.get(sessionID) ?? 0) + 1;
-      diffCalls.set(sessionID, count);
-      return sessionID === 'changed' && count > 1 ? [{ file: 'a.ts', additions: 1, deletions: 0, status: 'modified', patch: '@@ changed' }] : [];
-    },
-    offer: async () => assert.fail('yes/no modes do not prompt'),
-    startReview: async (sessionID) => { starts.push(sessionID); return 'review-session'; },
+    mode: () => 'yes', diff: async () => [], offer: async () => assert.fail(),
+    kickoff: async (sessionID) => starts.push(sessionID),
   });
-  consumer.onStarted(execution('run-1', 'changed'));
-  await consumer.onSucceeded(execution('run-1', 'changed'));
-  consumer.onStarted(execution('run-2', 'empty'));
-  await consumer.onSucceeded(execution('run-2', 'empty'));
-  consumer.onStarted(execution('run-3', 'cancelled'));
-  await consumer.onInterrupted(execution('run-3', 'cancelled'));
-  mode = 'no';
-  consumer.onStarted(execution('run-4', 'changed-again'));
-  await consumer.onSucceeded(execution('run-4', 'changed-again'));
-  assert.deepEqual(starts, ['changed']);
+  consumer.onStarted(execution('failed', 'failed'));
+  await consumer.onFailed(execution('failed', 'failed'));
+  consumer.onStarted(execution('interrupted', 'interrupted'));
+  await consumer.onInterrupted(execution('interrupted', 'interrupted'));
+  consumer.onStarted(execution('unchanged', 'unchanged'));
+  await consumer.onSucceeded(execution('unchanged', 'unchanged'));
+  assert.deepEqual(starts, []);
 });
 
-test('manual review session events are ignored to prevent reviewer loops', async () => {
-  let calls = 0;
-  const consumer = createNativeReviewConsumer({
-    mode: () => 'yes',
-    diff: async () => [{ file: 'a', additions: 1, deletions: 0, status: 'modified', patch: '@@ change' }],
-    offer: async () => {},
-    startReview: async () => { calls++; },
-  });
-  consumer.ignoreSession('manual');
-  consumer.onStarted(execution('run', 'manual'));
-  await consumer.onSucceeded(execution('run', 'manual'));
-  assert.equal(calls, 0);
-});
-
-test('host event subscriptions correlate execution lifecycle with the real session diff API', async () => {
+test('host execution subscriptions are disposed and plugin shutdown blocks pending review admission', async () => {
   const handlers = new Map();
   const unsubscribed = [];
   const data = { on(type, handler) { handlers.set(type, handler); return () => unsubscribed.push(type); } };
   const offers = [];
-  const diffs = [];
-  const diff = async (sessionID) => {
-    diffs.push(sessionID);
-    return diffs.filter((id) => id === sessionID).length === 1 ? [] : [{ file: 'src/change.ts', additions: 1, deletions: 0, status: 'modified', patch: '@@ -0,0 +1 @@' }];
-  };
-  const consumer = createNativeReviewConsumer({
-    mode: () => 'ask',
-    diff,
-    offer: async (value) => offers.push(value),
-    startReview: async () => 'review-session',
-  });
-  const cleanups = subscribeNativeReviewEvents(data, consumer, (error) => { throw error; });
-  handlers.get('session.execution.started')(execution('event-run', 'session-a'));
-  handlers.get('session.execution.succeeded')(execution('event-run', 'session-a'));
+  const consumer = createNativeReviewConsumer({ mode: () => 'ask', diff: makeDiff(), offer: async (value) => offers.push(value), kickoff: async () => {} });
+  const cleanups = subscribeNativeReviewEvents(data, consumer);
+  handlers.get('session.execution.started')(execution('run', 'session'));
+  handlers.get('session.execution.succeeded')(execution('run', 'session'));
   await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(diffs, ['session-a', 'session-a']);
   assert.equal(offers.length, 1);
+  consumer.dispose();
+  assert.equal(await offers[0].start(), false);
   cleanups.forEach((cleanup) => cleanup());
   assert.equal(unsubscribed.length, 4);
 });
