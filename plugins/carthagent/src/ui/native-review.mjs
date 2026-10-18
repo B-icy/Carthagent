@@ -4,7 +4,7 @@ import { SESSION_OPTIONS_KEY } from "../../../../lib/opencode/session-options.mj
 
 /** Send the PR ↔ fresh-review ↔ fixes instruction to the working session. */
 export async function sendNativeReviewKickoff({ client, sessionID, signal, prompt = reviewKickoff() }) {
-  await client.session.prompt({ sessionID, text: prompt, metadata: { "ctg.raw": true } }, { signal });
+  await client.session.prompt({ sessionID, text: prompt, metadata: { "ctg.raw": true, "ctg.reviewKickoff": true } }, { signal });
 }
 
 /** Explicit launch mode persisted for the session wins over the profile default. */
@@ -14,7 +14,7 @@ export function nativeReviewMode(session, config, explicitMode) {
 
 /** Correlate host executions and admit one current-run kickoff per session. */
 /** @param {{ mode: (sessionID: string) => string, diff: (sessionID: string, signal?: AbortSignal) => Promise<unknown>, offer: (value: { sessionID: string; runKey: string; writes: number; start: () => Promise<boolean> }) => Promise<unknown>, kickoff: (sessionID: string, signal?: AbortSignal) => Promise<unknown>, isLoopActive?: (sessionID: string) => boolean, setLoopActive?: (sessionID: string, active: boolean) => void, signal?: AbortSignal }} options */
-export function createNativeReviewConsumer({ mode, diff, offer, kickoff, isLoopActive = () => false, setLoopActive = () => {}, signal }) {
+export function createNativeReviewConsumer({ mode, diff, offer, kickoff, latestUserMessage = () => undefined, isLoopActive = () => false, setLoopActive = () => {}, signal }) {
   const runs = new Map();
   const admitted = new Set();
   const pending = new Set();
@@ -75,8 +75,10 @@ export function createNativeReviewConsumer({ mode, diff, offer, kickoff, isLoopA
   }
 
   return {
-    onPromptSubmitted(sessionID) {
-      if (sessionID && loopSessions.delete(sessionID)) setLoopActive(sessionID, false);
+    onUserPromptAdmitted(sessionID, message = latestUserMessage(sessionID)) {
+      if (!sessionID || message?.type !== "user" || message.metadata?.["ctg.reviewKickoff"] === true) return;
+      loopSessions.delete(sessionID);
+      if (isLoopActive(sessionID)) setLoopActive(sessionID, false);
     },
     setLoopActive(sessionID, active) {
       if (!sessionID) return;
@@ -87,6 +89,10 @@ export function createNativeReviewConsumer({ mode, diff, offer, kickoff, isLoopA
     onStarted(event) {
       const sessionID = event?.data?.sessionID;
       if (!sessionID || disposed) return;
+      // The host emits execution.started only after it admits a prompt. The
+      // message store distinguishes a real user turn from the review kickoff
+      // that this consumer injected (including after plugin state is restored).
+      this.onUserPromptAdmitted(sessionID);
       const id = event.id ?? `${event.created ?? Date.now()}-${++sequence}`;
       // A rejection is handled here, not left as an unhandled promise if the run fails.
       const baseline = Promise.resolve().then(() => diff(sessionID, signal)).catch(() => undefined);

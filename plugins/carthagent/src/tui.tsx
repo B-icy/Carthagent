@@ -27,6 +27,7 @@ export default Plugin.define({
     const reviewConsumer = createNativeReviewConsumer({
       mode: (sessionID: string) => nativeReviewMode(context.data.session.get(sessionID), loadCarthagentConfig()),
       diff: async (sessionID: string, signal?: AbortSignal) => await context.client.session.diff({ sessionID }, { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000) }),
+      latestUserMessage: (sessionID: string) => context.data.session.message.list(sessionID).findLast((message) => message.type === "user"),
       signal: lifecycle.signal,
       isLoopActive: (sessionID: string) => reviewLoops.has(sessionID),
       setLoopActive: (sessionID: string, active: boolean) => {
@@ -42,11 +43,6 @@ export default Plugin.define({
     });
     cleanups.push(() => reviewConsumer.dispose());
     cleanups.push(...subscribeNativeReviewEvents(context.data, reviewConsumer, (error: unknown) => context.ui.toast.show({ message: error instanceof Error ? error.message : String(error), variant: "error" })));
-    cleanups.push(context.data.on("tui.prompt.append", (event) => {
-      const route = context.ui.router.current();
-      const sessionID = route.type === "session" ? route.sessionID : undefined;
-      if (sessionID && event.data.text.trim()) reviewConsumer.onPromptSubmitted(sessionID);
-    }));
     const workspaceEvents = context.client.rpc(Workspace);
     cleanups.push(workspaceEvents.events.on("updated", (event) => {
       // Promise RPC exposes the server event envelope (including location)
