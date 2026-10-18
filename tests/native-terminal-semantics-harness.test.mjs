@@ -45,6 +45,9 @@ print(json.dumps({'stillOpen': m.picker_cancel_observation(h, overlay, True, Tru
 test('terminal semantics reports clipboard/title proof as controlled-host modeling, not OS claims', () => {
   assert.match(source, /'physicalOSClipboardVerified': False/);
   assert.match(source, /terminal-semantics-decisions\.py/);
+  assert.match(source, /'mouseTrackingModesObserved'/);
+  assert.match(source, /'gestureEventsSent'/);
+  assert.match(source, /'submitInputTrace'/);
   assert.match(source, /'terminalTitleRestoration'/);
   assert.match(source, /'selectionClipboard'/);
   assert.match(source, /'clipboardOSC52'/);
