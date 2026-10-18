@@ -146,6 +146,14 @@ def main():
                     os.write(master, command.encode())
                     sent = True
                 if sent and not submitted and after_index == 0 and time.monotonic() - sent_at > 1:
+                    if not completion_dismissed:
+                        # Argument-taking commands consume Enter to select a
+                        # slash suggestion. Dismiss that overlay first, just as
+                        # the follow-up path does, then submit exactly once.
+                        os.write(master, b'\x1b')
+                        completion_dismissed = True
+                        sent_at = time.monotonic()
+                        continue
                     # Submit the fully typed native command once. Do not reset
                     # `sent`: the ready gate must never type the command twice.
                     output.clear()
