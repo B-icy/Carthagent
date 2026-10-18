@@ -23,8 +23,21 @@ override.
 
 - Upstream: `https://github.com/anomalyco/opencode`
 - Tag/revision: `v2.0.32` / `843a6c514e606b436a7fe713422ace0a93ad3d61`
-- CTG patch: `docs/patches/opencode-v2.0.32-session-ui.patch` (composed session/runtime + `/help` + live-theme + glyph-v4)
-- Patch SHA-256: `81e86a4c139e02ebd077e1b635a62ea804ec60b6ae20100893cb6d9f73b06d62`
+- CTG patch candidate: `docs/patches/opencode-v2.0.32-session-ui-combined-v1.patch` (approved session/runtime + `/help` + live-theme + glyph-v4, spinner test-isolation fix, real-provider theme integration proof)
+- Candidate patch SHA-256: `94a18eece950da260213e66168583f83e44923638f014efa2e58ff74f315bae7`
+- Candidate verification: Bun 1.4.2 frozen-lockfile install passed, TUI
+  typecheck passed, and glyph/keymap/plugin-theme/real-provider-theme tests
+  passed together (19 tests / 186 assertions, one process,
+  `--timeout 60000`). The workflow fixture passed 6/6 tests. This candidate is
+  awaiting independent review; no build or release is authorized yet.
+- Dispatch limitation: GitHub requires a `workflow_dispatch` workflow to be
+  present on the default branch. This workflow is not registered on `main`; a
+  separately reviewed bootstrap merge there is required before prebuild
+  dispatch. Fixture coverage does not prove dispatch availability.
+- Separate parent-quality follow-up: native CLI browser-launch isolation
+  `d4983b57328a187e8be6bc0e2c6bd2dda7518920` is not part of this upstream source
+  patch and must be integrated in its applicable parent branch before the
+  parent's full-quality result is claimed.
 - Toolchain: Bun `1.4.2` as pinned by the upstream source
 - Compatibility version: `2.0.32`; detached CTG version/channel:
   `0.0.0-ctg.2.0.32` / `ctg.2.0.32`
@@ -111,7 +124,10 @@ remaining exact-binary integration proofs.
 
 ## Full-TUI glyph compatibility
 
-The approved glyph-v4 patch is now composed into the final source patch. It adds
+The approved glyph-v4 patch is composed into the reviewed `81e` base patch. A
+new combined candidate adds the separately approved spinner test-isolation
+follow-up and real-provider theme integration test; it is pending exact-digest
+combined-suite review and is not final build input. It adds
 a centralized host-chrome registry to the full TUI while preserving arbitrary
 user text. The glyph author reports independent source approval and 11 focused
 tests/146 assertions passing on the author worktree. This is source evidence,

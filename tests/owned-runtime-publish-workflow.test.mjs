@@ -220,7 +220,7 @@ if(entries.length!==10 || names.some(n=>!entries.includes(n)||!entries.includes(
 const recipe=await readFile(path.join(repo,'script/ctg/build-owned-runtime.sh'),'utf8');
 const patch=await readFile(path.join(repo,${JSON.stringify(combinedPatchPath)}));
 const expected=recipe.match(/^EXPECTED_PATCH="([^"]+)"$/m)?.[1];
-if(!expected || sha(patch)!==expected) throw new Error('recipe patch digest mismatch');
+if(!expected || sha(patch)!==expected) throw new Error('recipe patch digest mismatch: expected='+expected+' actual='+sha(patch)+' path='+${JSON.stringify(combinedPatchPath)});
 const runtimeSource=await readFile(path.join(repo,'lib/opencode/runtime.mjs'),'utf8');
 const runtimePatch=runtimeSource.match(/CTG_RUNTIME_PATCH_SHA256 = '([a-f0-9]{64})'/)?.[1];
 if(runtimePatch!==expected) throw new Error('fixture packaged runtime trust root patch digest mismatch');
@@ -229,6 +229,7 @@ for(let i=0;i<names.length;i++) {
  const record=JSON.parse(await readFile(path.join(directory,names[i]+'.build.json'),'utf8'));
  if(record.target!==keys[i] || record.platform!==platforms[i] || record.arch!==arches[i] || record.sourceRevision!==manifest.sourceRevision || record.patchSha256!==expected || record.lockSha256!==manifest.lockSha256 || record.compatibilityVersion!==manifest.compatibilityVersion || record.runtimeVersion!==manifest.runtimeVersion) throw new Error('build record mismatch '+keys[i]);
  manifest.assets[keys[i]].archiveSha256=sha(await readFile(path.join(directory,names[i])));
+ manifest.assets[keys[i]].executableSha256=record.executableSha256;
 }
 await writeFile(path.resolve(directory,'..','runtime-release.json.candidate'),JSON.stringify(manifest,null,2)+'\\n',{flag:'wx'});
 `);
@@ -375,6 +376,8 @@ test('draft metadata validation has scoped write capability; artifact mutation s
   assert.match(uploadBlock, /gh release upload/);
   assert.match(workflow, /cp ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v1\.patch opencode\/docs\/patches\//);
   assert.match(workflow, /hash_file ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v1\.patch/);
+  assert.equal((workflow.match(/cp ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v1\.patch ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui\.patch/g) ?? []).length, 2,
+    'both generation paths must adapt the pinned historical recipe path to the exact reviewed candidate bytes');
 });
 
 test('review-branch prebuild source is exact dispatch SHA; publish validation is default-branch-only', { skip: requiresUbuntuWorkflowShell }, async (t) => {

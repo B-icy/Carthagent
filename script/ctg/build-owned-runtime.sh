@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 EXPECTED_SOURCE="843a6c514e606b436a7fe713422ace0a93ad3d61"
 EXPECTED_LOCK="9d78379cd264584a495440a217b9d2ecab524c9a56f7f8b4b5bed3926daa330d"
-EXPECTED_PATCH="81e86a4c139e02ebd077e1b635a62ea804ec60b6ae20100893cb6d9f73b06d62"
+EXPECTED_PATCH="94a18eece950da260213e66168583f83e44923638f014efa2e58ff74f315bae7"
 TARGET="${1:-opencode-linux-x64}"
 HOST_PLATFORM="$(node -p 'process.platform')"
 HOST_ARCH="$(node -p 'process.arch')"
@@ -29,7 +29,7 @@ if [[ "$("${HASH_COMMAND[@]}" bun.lock | awk '{print $1}')" != "$EXPECTED_LOCK" 
   exit 1
 fi
 expected_inputs=(
-  "docs/patches/opencode-v2.0.32-session-ui.patch"
+  "docs/patches/opencode-v2.0.32-session-ui-combined-v1.patch"
   "script/ctg/build-owned-runtime.sh"
 )
 actual_status="$(git status --porcelain --untracked-files=all)"
@@ -55,7 +55,7 @@ if [[ "$(bun --version)" != "1.4.2" ]]; then
   exit 1
 fi
 
-patch_file="$ROOT/docs/patches/opencode-v2.0.32-session-ui.patch"
+patch_file="$ROOT/docs/patches/opencode-v2.0.32-session-ui-combined-v1.patch"
 actual_patch="$("${HASH_COMMAND[@]}" "$patch_file" | awk '{print $1}')"
 if [[ "$actual_patch" != "$EXPECTED_PATCH" ]]; then
   echo "Patch checksum mismatch: $actual_patch" >&2
@@ -79,6 +79,7 @@ bun test --cwd packages/core test/shell-retention.test.ts
 bun test --cwd packages/server test/shell-provenance.test.ts
 bun test --cwd packages/tui test/clear-session.test.tsx
 bun test --cwd packages/tui test/util/renderer.test.ts
+bun test --cwd packages/tui --timeout 60000 test/glyphs.test.ts test/plugin-keymap.test.tsx test/plugin-theme.test.tsx test/plugin-theme-provider.test.tsx
 
 cd packages/cli
 # A CTG build is intentionally detached from upstream updater channels and
