@@ -1,20 +1,34 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
 
 const source = await readFile(new URL('../tools/native-terminal-semantics.py', import.meta.url), 'utf8');
 
-test('terminal semantics opens a session before staging and submitting its prompt', () => {
-  assert.match(source, /if not session_opened and not picker_only and ready_for_prompt:[\s\S]*?os\.write\(master, b'\\r'\)[\s\S]*?session_opened = True/);
-  assert.match(source, /session_opened and not sent and not picker_only[\s\S]*?os\.write\(master, b'\\x1b\[200~' \+ payload \+ b'\\x1b\[201~'\)/);
-  assert.match(source, /if sent and time\.monotonic\(\) - pasted_at > 1\.5 and not Provider\.received:[\s\S]*?os\.write\(master, b'\\r'\)/);
+function python(code) {
+  const result = spawnSync('python3', ['-c', code], { cwd: new URL('..', import.meta.url), encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  return JSON.parse(result.stdout);
+}
+
+test('picker-only mode actually enables picker lifecycle', () => {
+  const result = python(`import importlib.util, json
+s=importlib.util.spec_from_file_location('probe','tools/native-terminal-semantics.py'); m=importlib.util.module_from_spec(s); s.loader.exec_module(m)
+print(json.dumps({'pickerOnlyIsFocused': m.is_focused_terminal_case(False, False), 'focusedRoundtripIsFocused': m.is_focused_terminal_case(True, False), 'layoutIsFocused': m.is_focused_terminal_case(False, True)}))`);
+  assert.deepEqual(result, { pickerOnlyIsFocused: false, focusedRoundtripIsFocused: true, layoutIsFocused: true });
 });
 
-test('terminal semantics never stages a prompt until picker cancellation and home restoration pass', () => {
-  assert.match(source, /still_open = \(picker_heading in current_screen or 'no matches' in current_screen/);
-  assert.match(source, /picker_home_restored = \('ask anything' in current_screen or[\s\S]*?'what is the tech' in current_screen\)/);
-  assert.match(source, /picker_cancel_passed = \(not picker_started or[\s\S]*?get\('status'\) == 'PASS'\)/);
-  assert.match(source, /'noPromptProviderRequestBeforeAcceptance': no_provider_request/);
+test('picker cancellation waits for composer restoration and catches stale overlays/early requests', () => {
+  const result = python(`import importlib.util, json
+s=importlib.util.spec_from_file_location('probe','tools/native-terminal-semantics.py'); m=importlib.util.module_from_spec(s); s.loader.exec_module(m)
+h='recent sessions'; home='Ask anything'; overlay='No matches · search all\\nOpen                       esc'
+print(json.dumps({'stillOpen': m.picker_cancel_observation(h, overlay, True, True, 0), 'notHome': m.picker_cancel_observation(h, 'Recent sessions', False, True, 0), 'requestDuringCancel': m.picker_cancel_observation(h, home, True, True, 1), 'valid': m.picker_cancel_observation(h, home, True, True, 0)}))`);
+  assert.equal(result.stillOpen, null);
+  assert.equal(result.notHome, null);
+  assert.equal(result.requestDuringCancel.status, 'FAIL');
+  assert.equal(result.requestDuringCancel.noPromptProviderRequestBeforeAcceptance, false);
+  assert.equal(result.valid.status, 'PASS');
+  assert.equal(result.valid.composerRestored, true);
 });
 
 test('terminal semantics reports clipboard/title proof as controlled-host modeling, not OS claims', () => {

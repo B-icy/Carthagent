@@ -197,6 +197,30 @@ class Screen:
         return '\n'.join(''.join(row).rstrip() for row in self.cells)
 
 
+def picker_cancel_observation(heading, visible, home_ready, home_before, provider_requests):
+    """Return a cancellation verdict only after overlay dismissal and home restoration."""
+    screen = visible.lower()
+    overlay_visible = (heading in screen or 'no matches' in screen or
+                       'open                       esc' in screen)
+    if overlay_visible or not home_ready:
+        return None
+    no_request = provider_requests == 0
+    return {
+        'status': 'PASS' if home_before and no_request else 'FAIL',
+        'pickerObserved': True,
+        'cancelKey': 'Escape',
+        'dismissed': True,
+        'composerRestored': True,
+        'providerRequestsBeforePrompt': provider_requests,
+        'noPromptProviderRequestBeforeAcceptance': no_request,
+    }
+
+
+def is_focused_terminal_case(focused_roundtrip, layout_regression):
+    """Focused transport modes skip picker setup; picker-only is interactive."""
+    return focused_roundtrip or layout_regression
+
+
 def controlled_terminal_model_fixture():
     """Self-test host state semantics; this is not physical OS clipboard proof."""
     host = Screen()
@@ -350,12 +374,13 @@ def main():
         picker_cancelled = False
         picker_home_before = False
         picker_home_restored = False
-        session_opened = False
-        session_open_at = None
+        prompt_entry_primed = False
+        prompt_entry_primed_at = None
         copy_invoked = False
         copy_confirmed = False
         selection_sent = False
         selection_confirmed = False
+        selection_diagnostics = {'mouseModeObserved': False, 'responseRowsObserved': []}
         selected_clipboard_count = 0
         copy_clipboard_count = 0
         auth_dismissed = False
@@ -364,7 +389,10 @@ def main():
         regression_case = args.assertion_regression_only
         picker_only = args.picker_regression_only
         layout_only = regression_case and not picker_only
-        focused_case = args.focused_host_roundtrip or regression_case or picker_only
+        # Picker regression is explicitly an interaction case: it must enter
+        # the same picker lifecycle as the full scenario, not the focused mode
+        # that suppresses picker opening.
+        focused_case = is_focused_terminal_case(args.focused_host_roundtrip, regression_case)
         resize_case = layout_only or (not focused_case and not args.picker_regression_only)
         exact = ('focused-host-request' if focused_case else
                  'native-pty: café 日本語 😀\n' + 'large-paste-λ-' * 1200 + '\nEND-PASTE-終')
@@ -427,12 +455,13 @@ def main():
                         'cancelKey': 'Escape', 'providerRequestsBeforePrompt': len(Provider.received)}
                 if picker_cancelled and result['checks'].get('pickerEscapeCancel', {}).get('status') == 'PENDING':
                     if time.monotonic() - picker_cancelled_at > .5:
-                        current_screen = screen.visible().lower()
-                        still_open = (picker_heading in current_screen or 'no matches' in current_screen or
-                                      'open                       esc' in current_screen)
-                        picker_home_restored = ('ask anything' in current_screen or
-                                                'what is the tech' in current_screen)
-                        if still_open or not picker_home_restored:
+                        current_screen = screen.visible()
+                        picker_home_restored = ('ask anything' in current_screen.lower() or
+                                                'what is the tech' in current_screen.lower())
+                        cancellation = picker_cancel_observation(
+                            picker_heading, current_screen, picker_home_restored,
+                            picker_home_before, len(Provider.received))
+                        if cancellation is None:
                             # Picker search/filter dialogs can consume the
                             # first Escape to clear search. Keep the staged
                             # prompt out of that dialog and dismiss until the
@@ -440,13 +469,7 @@ def main():
                             os.write(master, b'\x1b')
                             picker_cancelled_at = time.monotonic()
                             continue
-                        no_provider_request = len(Provider.received) == 0
-                        result['checks']['pickerEscapeCancel'] = {
-                            'status': 'PASS' if picker_home_before and picker_home_restored and not still_open and no_provider_request else 'FAIL',
-                            'pickerObserved': True, 'cancelKey': 'Escape',
-                            'dismissed': not still_open, 'composerRestored': picker_home_restored,
-                            'providerRequestsBeforePrompt': len(Provider.received),
-                            'noPromptProviderRequestBeforeAcceptance': no_provider_request}
+                        result['checks']['pickerEscapeCancel'] = cancellation
                         if picker_only:
                             break
                 if picker_started and not picker_cancelled and time.monotonic() - picker_at > 3:
@@ -464,22 +487,22 @@ def main():
                 ready_for_prompt = (((not focused_case) and picker_cancelled and picker_cancel_passed and elapsed > 5 and home_ready) or
                                     (args.focused_host_roundtrip and elapsed > 2 and home_ready) or
                                     (layout_only and elapsed > 2 and home_ready))
-                if not session_opened and not picker_only and ready_for_prompt:
-                    # The home screen's first Enter creates/opens a session; it
-                    # does not submit text. Open it separately before staging
-                    # the test prompt so Escape/picker state cannot consume the
-                    # later Enter intended for submission.
+                if not prompt_entry_primed and not picker_only and ready_for_prompt:
+                    # Send a post-cancel Enter as an input-boundary/settle
+                    # action. Empty home submits may be ignored by the TUI;
+                    # this is not evidence that a session was created. Keep
+                    # the real submission assertion on the provider request.
                     os.write(master, b'\r')
-                    session_opened = True
-                    session_open_at = time.monotonic()
+                    prompt_entry_primed = True
+                    prompt_entry_primed_at = time.monotonic()
                     if focused_case and not args.assertion_regression_only:
                         # The focused case runs the PTY asynchronously; give
                         # the active-session transition a beat before the
                         # bracketed paste, rather than sending the paste while
                         # the home screen is still handling the Enter.
                         time.sleep(.75)
-                if (session_opened and not sent and not picker_only and
-                        time.monotonic() - session_open_at > .75):
+                if (prompt_entry_primed and not sent and not picker_only and
+                        time.monotonic() - prompt_entry_primed_at > .75):
                     # Narrow terminal stress is an actual resize on the PTY.
                     if resize_case:
                         fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', 12, 40, 0, 0))
@@ -497,14 +520,33 @@ def main():
                     os.write(master, b'\r')
                     first_enter_at = time.monotonic()
                     pasted_at = time.monotonic() + 1e6
+                if (sent and not Provider.received and 'first_enter_at' in locals() and
+                        'second_submit_enter_sent' not in locals() and
+                        time.monotonic() - first_enter_at > 2.0):
+                    # A paste can be staged while the TUI is still on its
+                    # welcome composer. If the first Enter only commits that
+                    # composer transition, retry once; the provider request is
+                    # the acceptance proof, and the guard prevents repeated
+                    # Enter events or intentional duplicate submissions.
+                    os.write(master, b'\r')
+                    second_submit_enter_sent = True
                 if Provider.received and 'provider_received_at' not in locals():
                     provider_received_at = time.monotonic()
                 visible_lines = screen.visible().splitlines()
                 mouse_mode = (b'\x1b[?1000h' in output or b'\x1b[?1002h' in output or
                               b'\x1b[?1006h' in output)
+                selection_diagnostics['mouseModeObserved'] |= mouse_mode
+                selection_diagnostics['responseRowsObserved'] = [
+                    {'row': index, 'text': line[:screen.columns]}
+                    for index, line in enumerate(visible_lines, 1)
+                    if 'FINAL' in line and selection_target in line and 'END' in line]
+                # Use the current rendered screen bounds, not an assumed
+                # content band: the response can legitimately be near the top
+                # or bottom after a narrow PTY resize. Coordinates below are
+                # still constrained to the exact visible response row/cells.
                 response_rows = [index for index, line in enumerate(visible_lines, 1)
                                  if ('FINAL' in line and selection_target in line and 'END' in line and
-                                     4 <= index <= screen.rows - 4)]
+                                     1 <= index <= screen.rows)]
                 if (not selection_sent and response_rows and mouse_mode):
                     target_row = response_rows[-1]
                     target_line = visible_lines[target_row - 1]
@@ -518,6 +560,7 @@ def main():
                     selected_clipboard_count = len(screen.clipboard_history)
                     selection_coordinates = {'startColumn': start_col, 'endColumn': end_col,
                                              'row': target_row, 'screenLine': target_line,
+                                             'screenRows': screen.rows, 'screenColumns': screen.columns,
                                              'coordinateBasis': '1-based displayed terminal cells'}
                     # Send a real SGR press, held-button drag, and release as three
                     # separate PTY events, allowing the TUI event loop to process each.
@@ -748,6 +791,7 @@ def main():
                 'reason': ('Controlled host model accepted and queried OSC 52 containing only the exact selected substring; this is not physical OS clipboard proof' if selection_sent and selection_values == [selected_text] and selection_readback == selected_text
                            else 'Native selection gesture did not yield an exact selection OSC 52 update and modeled readback'),
                 'mouseReporting': mouse_mode, 'mouseDragSent': selection_sent,
+                'selectionDiagnostics': selection_diagnostics,
                 'fixtureResponseInCapturedPty': fixture_response.encode() in output,
                 'fixtureResponseInScreenModel': fixture_response in screen.visible(),
                 'screenExcerpt': screen.visible()[-500:],
