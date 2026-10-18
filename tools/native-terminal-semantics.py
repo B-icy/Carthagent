@@ -350,6 +350,8 @@ def main():
         picker_cancelled = False
         picker_home_before = False
         picker_home_restored = False
+        session_opened = False
+        session_open_at = None
         copy_invoked = False
         copy_confirmed = False
         selection_sent = False
@@ -425,9 +427,19 @@ def main():
                         'cancelKey': 'Escape', 'providerRequestsBeforePrompt': len(Provider.received)}
                 if picker_cancelled and result['checks'].get('pickerEscapeCancel', {}).get('status') == 'PENDING':
                     if time.monotonic() - picker_cancelled_at > .5:
-                        still_open = picker_heading in screen.visible().lower()
-                        picker_home_restored = ('ask anything' in screen.visible().lower() or
-                                                'what is the tech' in screen.visible().lower())
+                        current_screen = screen.visible().lower()
+                        still_open = (picker_heading in current_screen or 'no matches' in current_screen or
+                                      'open                       esc' in current_screen)
+                        picker_home_restored = ('ask anything' in current_screen or
+                                                'what is the tech' in current_screen)
+                        if still_open or not picker_home_restored:
+                            # Picker search/filter dialogs can consume the
+                            # first Escape to clear search. Keep the staged
+                            # prompt out of that dialog and dismiss until the
+                            # real home composer has been observed again.
+                            os.write(master, b'\x1b')
+                            picker_cancelled_at = time.monotonic()
+                            continue
                         no_provider_request = len(Provider.received) == 0
                         result['checks']['pickerEscapeCancel'] = {
                             'status': 'PASS' if picker_home_before and picker_home_restored and not still_open and no_provider_request else 'FAIL',
@@ -447,10 +459,27 @@ def main():
                         'reason': 'native model picker did not expose a recognizable visible heading; '
                                   'Escape was sent to dismiss any command menu',
                         'providerRequestsBeforePrompt': len(Provider.received)}
-                if not sent and not picker_only and (((not focused_case) and
-                                  picker_cancelled and elapsed > 5 and home_ready) or
-                                 (args.focused_host_roundtrip and elapsed > 2 and home_ready) or
-                                 (layout_only and elapsed > 2 and home_ready)):
+                picker_cancel_passed = (not picker_started or
+                                        result['checks'].get('pickerEscapeCancel', {}).get('status') == 'PASS')
+                ready_for_prompt = (((not focused_case) and picker_cancelled and picker_cancel_passed and elapsed > 5 and home_ready) or
+                                    (args.focused_host_roundtrip and elapsed > 2 and home_ready) or
+                                    (layout_only and elapsed > 2 and home_ready))
+                if not session_opened and not picker_only and ready_for_prompt:
+                    # The home screen's first Enter creates/opens a session; it
+                    # does not submit text. Open it separately before staging
+                    # the test prompt so Escape/picker state cannot consume the
+                    # later Enter intended for submission.
+                    os.write(master, b'\r')
+                    session_opened = True
+                    session_open_at = time.monotonic()
+                    if focused_case and not args.assertion_regression_only:
+                        # The focused case runs the PTY asynchronously; give
+                        # the active-session transition a beat before the
+                        # bracketed paste, rather than sending the paste while
+                        # the home screen is still handling the Enter.
+                        time.sleep(.75)
+                if (session_opened and not sent and not picker_only and
+                        time.monotonic() - session_open_at > .75):
                     # Narrow terminal stress is an actual resize on the PTY.
                     if resize_case:
                         fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', 12, 40, 0, 0))
@@ -463,14 +492,11 @@ def main():
                     sent = True
                     pasted_at = time.monotonic()
                 if sent and time.monotonic() - pasted_at > 1.5 and not Provider.received:
-                    # Home prompt's first Enter opens a session; submit staged
-                    # prompt only after the session composer is visible.
+                    # Submit only after the bracketed-paste event has been
+                    # delivered and the active session composer has settled.
                     os.write(master, b'\r')
                     first_enter_at = time.monotonic()
                     pasted_at = time.monotonic() + 1e6
-                if sent and not Provider.received and 'first_enter_at' in locals() and time.monotonic() - first_enter_at > .75:
-                    os.write(master, b'\r')
-                    first_enter_at = time.monotonic() + 1e6
                 if Provider.received and 'provider_received_at' not in locals():
                     provider_received_at = time.monotonic()
                 visible_lines = screen.visible().splitlines()
