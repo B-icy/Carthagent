@@ -6,9 +6,54 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createTask, listNativeSessions, listNativeWorktrees, listTasks, reconcileTasks } from '../lib/opencode/workspace.mjs';
 import { listLegacyArchive, searchLegacyArchive, readLegacyTranscript, exportLegacyTranscript } from '../lib/opencode/archive.mjs';
-import { startReview, startPullRequestReview, verifyPullRequestHeads } from '../lib/opencode/review.mjs';
+import { localReviewSnapshot, startReview, startPullRequestReview, verifyPullRequestHeads } from '../lib/opencode/review.mjs';
 
 function git(cwd, ...args) { return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim(); }
+
+test('local review git children strip every runtime token spelling and preserve unrelated environment', { skip: process.platform === 'win32' }, t => {
+  const root = mkdtempSync(join(tmpdir(), 'ctg-review-git-env-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  git(root, 'init', '-q');
+  git(root, 'config', 'user.email', 'test@example.invalid');
+  git(root, 'config', 'user.name', 'Test');
+  writeFileSync(join(root, 'source.txt'), 'review me\n');
+  git(root, 'add', 'source.txt');
+  git(root, 'commit', '-qm', 'fixture');
+
+  const bin = join(root, 'bin');
+  mkdirSync(bin);
+  const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+  const capturePath = join(root, 'git-child-env.jsonl');
+  const wrapper = join(bin, 'git');
+  writeFileSync(wrapper, `#!/usr/bin/env node\nimport { appendFileSync } from 'node:fs';\nimport { spawnSync } from 'node:child_process';\nappendFileSync(process.env.CTG_REVIEW_GIT_CAPTURE, JSON.stringify({ tokenKeys: Object.keys(process.env).filter(key => key.toUpperCase() === 'CTG_RUNTIME_GITHUB_TOKEN'), unrelated: process.env.CTG_RUNTIME_OTHER }) + '\\n');\nconst result = spawnSync(${JSON.stringify(realGit)}, process.argv.slice(2), { stdio: 'inherit', env: process.env });\nprocess.exit(result.status ?? 1);\n`);
+  chmodSync(wrapper, 0o755);
+
+  const envKeys = ['PATH', 'CTG_RUNTIME_GITHUB_TOKEN', 'ctg_runtime_github_token', 'Ctg_Runtime_Github_Token', 'CTG_RUNTIME_OTHER', 'CTG_REVIEW_GIT_CAPTURE'];
+  const previous = Object.fromEntries(envKeys.map(key => [key, process.env[key]]));
+  Object.assign(process.env, {
+    PATH: `${bin}${process.platform === 'win32' ? ';' : ':'}${previous.PATH || ''}`,
+    CTG_RUNTIME_GITHUB_TOKEN: 'sentinel-uppercase-secret',
+    ctg_runtime_github_token: 'sentinel-lowercase-secret',
+    Ctg_Runtime_Github_Token: 'sentinel-mixedcase-secret',
+    CTG_RUNTIME_OTHER: 'preserve-review-env',
+    CTG_REVIEW_GIT_CAPTURE: capturePath,
+  });
+  try {
+    assert.match(localReviewSnapshot(root).head, /^[a-f0-9]{40,64}$/i);
+    const childEnvironments = readFileSync(capturePath, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    assert.ok(childEnvironments.length >= 3, 'snapshot runs multiple real git children');
+    for (const childEnv of childEnvironments) {
+      assert.deepEqual(childEnv.tokenKeys, []);
+      assert.equal(childEnv.unrelated, 'preserve-review-env');
+    }
+    assert.equal(process.env.CTG_RUNTIME_GITHUB_TOKEN, 'sentinel-uppercase-secret', 'credential remains in the parent process');
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
 
 test('creates native worktree and explicit independent session; recovery is not blindly replayed', async t => {
   const root = mkdtempSync(join(tmpdir(), 'ctg-native ')); t.after(() => rmSync(root, { recursive: true, force: true }));
