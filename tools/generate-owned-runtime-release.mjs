@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
-import { link, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { link, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { readPinnedOwnedRuntimeInputs } from './pinned-owned-runtime-inputs.mjs';
 
 export const REQUIRED_RUNTIME_TARGETS = Object.freeze({
   'linux-x64': ['linux', 'x64', 'opencode-linux-x64.tar.gz', 'cli-linux-x64/bin/opencode'],
@@ -134,46 +135,15 @@ function validateReleaseVersion(value) {
 async function readPinnedBuildInputs(repoRoot) {
   const recipePath = path.join(repoRoot, 'script/ctg/build-owned-runtime.sh');
   const recipe = await readFile(recipePath, 'utf8');
-  const constant = (name) => {
-    const match = recipe.match(new RegExp(`^${name}="([^"]+)"$`, 'm'));
-    if (!match) throw new Error(`Build recipe is missing pinned ${name}`);
-    return match[1];
-  };
-  // Read the reviewed literal selected by the build recipe, not a separately
-  // hard-coded patch name. Accept only a canonical docs/patches-relative path;
-  // the recipe is data here and is never evaluated as shell code.
-  const patchAssignments = [...recipe.matchAll(/^\s*patch_file\s*=.*$/gm)];
-  if (patchAssignments.length !== 1) throw new Error('Build recipe must contain exactly one literal ROOT-relative patch_file');
-  const patchFileMatch = patchAssignments[0][0].match(/^\s*patch_file="\$ROOT\/([^"\r\n]+)"\s*$/);
-  if (!patchFileMatch) throw new Error('Build recipe patch_file must be a literal ROOT-relative path');
-  const patchFile = patchFileMatch[1];
-  if (!patchFile.startsWith('docs/patches/')
-    || patchFile.includes('\\')
-    || path.posix.isAbsolute(patchFile)
-    || path.posix.normalize(patchFile) !== patchFile
-    || patchFile.split('/').some((part) => part === '.' || part === '..' || part === '')) {
-    throw new Error('Build recipe patch_file must be a canonical docs/patches-relative path');
-  }
-  const canonicalRoot = await realpath(path.resolve(repoRoot));
-  const patchPath = path.resolve(canonicalRoot, ...patchFile.split('/'));
-  const relativePatchPath = path.relative(canonicalRoot, patchPath);
-  if (relativePatchPath.startsWith(`..${path.sep}`) || relativePatchPath === '..' || path.isAbsolute(relativePatchPath)) {
-    throw new Error('Build recipe patch_file escapes the repository root');
-  }
-  const canonicalPatchPath = await realpath(patchPath);
-  const actualRelativePatchPath = path.relative(canonicalRoot, canonicalPatchPath);
-  if (actualRelativePatchPath.startsWith(`..${path.sep}`) || actualRelativePatchPath === '..' || path.isAbsolute(actualRelativePatchPath)) {
-    throw new Error('Build recipe patch_file resolves outside the repository root');
-  }
-  const patch = await readFile(canonicalPatchPath);
+  const pinnedInputs = await readPinnedOwnedRuntimeInputs(repoRoot);
   const runtime = recipe.match(/OPENCODE_VERSION=([^\s]+)\s+OPENCODE_CHANNEL=ctg\.([^\s]+)/);
   if (!runtime || runtime[2] !== runtime[1].replace(/^0\.0\.0-ctg\./, '')) {
     throw new Error('Build recipe must pin a matching CTG compatibility/runtime version');
   }
   const provenance = {
-    sourceRevision: constant('EXPECTED_SOURCE'),
-    lockSha256: constant('EXPECTED_LOCK').toLowerCase(),
-    patchSha256: constant('EXPECTED_PATCH').toLowerCase(),
+    sourceRevision: pinnedInputs.sourceRevision,
+    lockSha256: pinnedInputs.lockSha256,
+    patchSha256: pinnedInputs.patchSha256,
     compatibilityVersion: runtime[2],
     runtimeVersion: runtime[1],
   };
@@ -181,7 +151,6 @@ async function readPinnedBuildInputs(repoRoot) {
   for (const field of ['lockSha256', 'patchSha256']) {
     if (!/^[a-f0-9]{64}$/.test(provenance[field])) throw new Error(`Build recipe ${field} is not a SHA-256 digest`);
   }
-  if (sha256(patch) !== provenance.patchSha256) throw new Error('Pinned patch bytes do not match the build recipe');
   return provenance;
 }
 
