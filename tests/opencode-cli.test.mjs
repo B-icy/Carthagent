@@ -426,8 +426,51 @@ test('interactive native session persists an explicit no-guide setting before la
   assert.deepEqual(calls, [
     ['create', { guide: false }],
     ['framing', 'ses_no_guide', false],
-    ['launch', 'ses_no_guide', undefined, 'ascii'],
+    ['launch', 'ses_no_guide'],
   ]);
+});
+
+test('no-prompt interactive launch persists review, bash cap, and budget options for new and resumed sessions', async t => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-interactive-options-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const expected = { maxTools: 7, bashCap: 2.5, review: 'yes' };
+  const capabilities = ['delivery.session-options.v1', 'delivery.budgets.v1'];
+
+  for (const resumed of [false, true]) {
+    const calls = [];
+    const sessionID = resumed ? 'ses_existing' : 'ses_created';
+    const runtime = await createOpenCodeCliRuntime({ cwd, stdout: { write() {} }, native: {
+      runtime: {},
+      service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }), launchTui: (_service, _cwd, options) => {
+        calls.push(['launch', options.sessionID]);
+        return { once(event, callback) { if (event === 'exit') queueMicrotask(() => callback(0)); return this; }, kill() {} };
+      } },
+      headless: { createSession: async (_service, _cwd, { body }) => {
+        calls.push(['create', body.metadata['carthagent.options']]);
+        return { id: sessionID };
+      } },
+      rpcDefinitions: { Carthagent: {} },
+      clientFactory: async () => ({
+        rpc: () => ({ health: async () => ({ capabilities }) }),
+        session: {
+          get: async () => ({ id: sessionID, location: { directory: cwd }, metadata: { keep: 'yes', 'carthagent.options': { workflow: 'strict' } } }),
+          update: async input => calls.push(['update', input.metadata]),
+        },
+      }),
+    } });
+    const options = { ...(resumed ? { session: sessionID } : {}), review: 'yes', bashCap: '2.5', maxTools: '7' };
+    assert.equal(await runtime.run({ mode: 'interactive', options, prompt: '' }), 0);
+    if (resumed) {
+      assert.deepEqual(calls[0], ['update', { keep: 'yes', 'carthagent.options': { workflow: 'strict', ...expected } }]);
+      assert.deepEqual(calls[1], ['launch', sessionID]);
+    } else {
+      assert.deepEqual(calls[0], ['create', expected]);
+      assert.deepEqual(calls[1], ['launch', sessionID]);
+    }
+  }
 });
 
 test('native --isolate starts a clean CTG profile without inheriting the regular profile or creating a worktree', async () => {
