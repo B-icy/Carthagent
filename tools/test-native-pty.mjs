@@ -30,9 +30,10 @@ for (const key of Object.keys(pythonEnv)) {
 }
 const plugin = resolve(process.argv[2] ?? resolve(root, 'plugins/carthagent'));
 const themeState = mkdtempSync(join(tmpdir(), 'ctg-theme-reload-'));
+const workspaceCapture = resolve(process.env.CTG_NATIVE_PTY_CAPTURE_DIR ?? '/tmp/opencode', 'pty-workspace-pr192-actual.raw');
 const probes = [
   { command: '/ctg-status', expect: `OpenCode ${selection.identity.version}` },
-  { command: '/ctg-workspace', expect: 'CARTHAGENT' },
+  { command: '/ctg-workspace', expect: 'Workspace native sessions', capture: workspaceCapture },
   { command: '/help', expect: 'Carthagent commands', postSubmitMarker: '(/ctg-help)' },
   { command: '/ctg-help', expect: 'Carthagent commands' },
   { command: '/compact', expect: '/compact requires an open session.', secondEnter: true },
@@ -50,6 +51,7 @@ try {
       ...(probe.secondEnter ? ['--second-enter'] : ['--confirm'])];
     for (const next of probe.next ?? []) args.push('--after-command', next.command, '--after-expect', next.expect);
     if (probe.postSubmitMarker) args.push('--post-submit-marker', probe.postSubmitMarker);
+    if (probe.capture) args.push('--capture', probe.capture);
     if (probe.color) args.push('--expect-color', probe.color);
     if (probe.initialTheme) args.push('--initial-theme', probe.initialTheme);
     if (probe.commandArgs) args.push('--command-args', probe.commandArgs);
