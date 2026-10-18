@@ -4,13 +4,13 @@ import { Show } from "solid-js";
 import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { framePrompt } from "../../../lib/tui/framing.mjs";
-import { carthagentConfigPath, loadCarthagentConfig, resolveReviewMode, saveCarthagentConfig } from "../../../lib/review.mjs";
+import { carthagentConfigPath, loadCarthagentConfig, resolveReviewMode, reviewKickoff, saveCarthagentConfig } from "../../../lib/review.mjs";
 import { COMMANDS, NATIVE_COMMAND_COLLISIONS } from "./ui/commands.js";
 import { Workspace, rpcEventOptions, sessionControls, workspaceClient } from "./ui/client.js";
 import { cliConfigDirectory, cliConfigPath, readCliConfig, writeNativeTheme } from "./ui/host-state.js";
 import { WorkspacePage } from "./ui/workspace.js";
 import { provisionNativeThemes } from "./ui/theme-provision.mjs";
-import { createNativeReviewConsumer, subscribeNativeReviewEvents } from "./ui/native-review.mjs";
+import { createNativeReviewConsumer, nativeReviewMode, sendNativeReviewKickoff, subscribeNativeReviewEvents } from "./ui/native-review.mjs";
 
 const THEMES = ["carthage", "opencode", "tokyonight", "nebula", "ember", "forest", "mono", "obsidian", "midnight", "solarized-dark", "nord", "contrast-dark", "okabe-dark", "paper", "daylight", "solarized-light", "contrast-light", "okabe-light", "solarized", "okabe", "contrast", "system"];
 const OPENCODE_BUILTIN_THEMES = new Set(["opencode", "tokyonight"]);
@@ -22,28 +22,20 @@ export default Plugin.define({
     const cleanups = [unregister];
     const lifecycle = new AbortController();
     cleanups.push(() => lifecycle.abort());
-    const reviewLoop = { active: false };
+    const reviewLoops = new Set<string>();
     const reviewConsumer = createNativeReviewConsumer({
-      mode: () => resolveReviewMode(undefined, loadCarthagentConfig()),
-      diff: async (sessionID: string) => await context.client.session.diff({ sessionID }, { signal: AbortSignal.timeout(15_000) }),
-      isLoopActive: () => reviewLoop.active,
-      offer: async ({ sessionID, writes, start }: { sessionID: string; writes: number; start: () => Promise<void> }) => {
+      mode: (sessionID: string) => nativeReviewMode(context.data.session.get(sessionID), loadCarthagentConfig()),
+      diff: async (sessionID: string, signal?: AbortSignal) => await context.client.session.diff({ sessionID }, { signal: signal ?? AbortSignal.timeout(15_000) }),
+      signal: lifecycle.signal,
+      isLoopActive: (sessionID: string) => reviewLoops.has(sessionID),
+      setLoopActive: (sessionID: string, active: boolean) => { if (active) reviewLoops.add(sessionID); else reviewLoops.delete(sessionID); },
+      offer: async ({ sessionID, writes, start }: { sessionID: string; writes: number; start: () => Promise<boolean> }) => {
         const accepted = await context.ui.dialog.confirm({ title: `Review ${context.data.session.get(sessionID)?.title ?? sessionID}?`, message: `This successful run changed ${writes} file${writes === 1 ? "" : "s"}. Start the PR → fresh-context review → fixes workflow?`, label: { confirm: "Start review", cancel: "Not now" } });
         if (accepted) await start();
       },
-      startReview: async (reviewSessionID: string): Promise<string | undefined> => {
-        reviewLoop.active = true;
-        try {
-          const location = context.data.session.get(reviewSessionID)?.location ?? context.location ?? context.data.location.default();
-          const result = await workspaceClient(context, location).startReview({ sessionID: reviewSessionID }, AbortSignal.timeout(5 * 60_000));
-          if (result.sessionID) context.ui.router.navigate({ type: "session", sessionID: result.sessionID });
-          context.ui.toast.show({ title: "Independent review", message: `${result.status}\n${result.summary}`, variant: "info", sessionID: reviewSessionID });
-          return result.sessionID;
-        } finally {
-          reviewLoop.active = false;
-        }
-      },
+      kickoff: async (reviewSessionID: string, signal?: AbortSignal) => sendNativeReviewKickoff({ client: context.client, sessionID: reviewSessionID, signal }),
     });
+    cleanups.push(() => reviewConsumer.dispose());
     cleanups.push(...subscribeNativeReviewEvents(context.data, reviewConsumer, (error: unknown) => context.ui.toast.show({ message: error instanceof Error ? error.message : String(error), variant: "error" })));
     const workspaceEvents = context.client.rpc(Workspace);
     cleanups.push(workspaceEvents.events.on("updated", (event) => {
@@ -177,16 +169,19 @@ export default Plugin.define({
           if (arg && ["ask", "yes", "no"].includes(arg.toLowerCase())) {
             const mode = arg.toLowerCase() as "ask" | "yes" | "no";
             const config = saveCarthagentConfig({ review: mode });
-            toast(`Automatic fresh-review default saved to ${carthagentConfigPath()}: ${resolveReviewMode(undefined, config)}. Bare /review remains available regardless of this default.`, "success");
+            toast(`Automatic fresh-review default saved to ${carthagentConfigPath()}: ${resolveReviewMode(undefined, config)}.`, "success");
             return;
           }
-          if (arg.toLowerCase() === "status") { toast(`Automatic fresh-review default: ${resolveReviewMode(undefined, loadCarthagentConfig())} (Carthagent profile: ${carthagentConfigPath()}). Bare /review always starts an independent reviewer.`, "info"); return; }
+          if (arg.toLowerCase() === "status") { toast(`Automatic fresh-review default: ${nativeReviewMode(activeSession, loadCarthagentConfig())} (Carthagent profile: ${carthagentConfigPath()}).`, "info"); return; }
           {
-            const api = workspaceClient(context, location);
-            const result = await api.startReview({ sessionID }, AbortSignal.timeout(5 * 60_000));
-            reviewConsumer.ignoreSession(result.sessionID);
-            if (result.sessionID) context.ui.router.navigate({ type: "session", sessionID: result.sessionID });
-            await context.ui.dialog.alert({ title: "Independent review", message: `${result.status}\n\n${result.summary}` });
+            reviewConsumer.setLoopActive(sessionID, true);
+            try {
+              await sendNativeReviewKickoff({ client: context.client, sessionID, signal: lifecycle.signal, prompt: reviewKickoff() });
+              toast("Started the PR → fresh-context review → fixes workflow in this session.", "success");
+            } catch (error) {
+              reviewConsumer.setLoopActive(sessionID, false);
+              throw error;
+            }
           }
           return;
         }
