@@ -17,6 +17,8 @@ assert.ok(!installedDefault || !process.env.CTG_TEST_RUNTIME_ARTIFACT_ROOT,
   'installed acceptance must use the package default runtime resolver, not CTG_TEST_RUNTIME_ARTIFACT_ROOT');
 assert.ok(!installedDefault || !process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST,
   'installed acceptance must use its packaged trusted release manifest');
+assert.ok(!installedDefault || !process.env.CTG_OWNED_OPENCODE_RUNTIME,
+  'installed acceptance must not select a developer-owned runtime artifact');
 const ownedRoot = process.env.CTG_TEST_RUNTIME_ARTIFACT_ROOT ?? process.env.CTG_OWNED_OPENCODE_RUNTIME;
 const trustedManifestPath = process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST ?? join(root, 'lib/opencode/runtime-release.json');
 assert.ok(!process.env.CTG_OPENCODE_BIN, 'Unset CTG_OPENCODE_BIN; this proof uses the production owned-runtime resolver');

@@ -207,11 +207,12 @@ try {
       // Parser/WASM behavior must resolve from the packed installation too.
       const args = test.endsWith('.test.mjs') ? ['--test', probePath] : [probePath, installedPlugin];
       if (test === 'test-owned-host-controls.mjs' || test === 'test-native-glyph-pty.mjs') args.push('--installed-default');
-      // The package's default runtime acquisition above may use the optional
-      // GitHub token. Acceptance harnesses and every descendant must not.
-      const probeEnv = withoutRuntimeGithubToken(env);
       run(process.execPath, args, {
-        cwd: install, env: { ...probeEnv, CTG_NATIVE_SCENARIO: scenario ?? '' },
+        // The trusted harness may need to reacquire a missing default runtime.
+        // Runtime identity/version, host, PTY, workspace, and npm children
+        // independently strip the optional transport credential.
+        env: { ...env, CTG_NATIVE_SCENARIO: scenario ?? '' },
+        cwd: install,
       });
     } catch (error) {
       console.error(JSON.stringify({ ...identity, status: 'failed', elapsedMs: Math.round(performance.now() - started), completed: probes }));
