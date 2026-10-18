@@ -74,9 +74,10 @@ export async function selectNativePtyRuntime({ runtime, env = process.env, root 
   if (verified.runtimeVersion !== identity.version || verified.runtimeVersion !== '2.0.32') {
     throw new Error('Selected upstream-compatible runtime does not match the pinned compatibility version.');
   }
-  if (env.CTG_NATIVE_PTY_EXPECTED_SHA256) {
-    const actual = createHash('sha256').update(await readFile(binary)).digest('hex');
-    if (actual !== env.CTG_NATIVE_PTY_EXPECTED_SHA256.toLowerCase()) throw new Error(`Explicit native PTY binary changed during runtime selection: ${actual}`);
-  }
-  return Object.freeze({ binary, identity, verified });
+  const actual = createHash('sha256').update(await readFile(binary)).digest('hex');
+  if (actual !== identity.binarySha256) throw new Error(`Selected upstream-compatible runtime changed during runtime selection: ${actual}`);
+  const expectedHash = env.CTG_NATIVE_PTY_EXPECTED_SHA256;
+  if (expectedHash && actual !== expectedHash.toLowerCase()) throw new Error(`Explicit native PTY binary SHA-256 mismatch: ${actual}`);
+  const binarySha256 = actual;
+  return Object.freeze({ binary, identity, verified, binarySha256 });
 }
