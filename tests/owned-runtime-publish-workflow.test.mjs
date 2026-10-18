@@ -70,6 +70,17 @@ const validateBlock = extractRunBlock((_lines, line) => line.trim() === 'id: val
 const verifyBlock = extractRunBlock((_lines, line) => line.trim() === 'id: verify');
 const uploadBlock = extractRunBlock((_lines, line) => line.includes('name: Recheck immutable draft target and upload verified bytes without clobbering'));
 
+function workflowJob(name) {
+  const lines = workflow.split(/\r?\n/);
+  const start = lines.findIndex((line) => line === `  ${name}:`);
+  assert.notEqual(start, -1, `workflow job ${name} must exist`);
+  let end = lines.length;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (/^  [A-Za-z0-9_-]+:$/.test(lines[index])) { end = index; break; }
+  }
+  return lines.slice(start, end).join('\n');
+}
+
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
 }
@@ -343,6 +354,20 @@ test('owned-runtime publish workflow extracts executable YAML run blocks', () =>
   assert.match(verifyBlock, /candidate=verified/);
   assert.match(uploadBlock, /candidate\/opencode-\$key/);
   assert.doesNotMatch(uploadBlock, /candidate-bytes/);
+});
+
+test('draft metadata validation has scoped write capability; artifact mutation stays in publish job', () => {
+  const validation = workflowJob('validate-request');
+  const prebuild = workflowJob('prebuild');
+  const assembly = workflowJob('assemble-candidate');
+  const publish = workflowJob('publish-existing-draft');
+  assert.match(validation, /permissions:\n      contents: write/);
+  assert.match(validation, /gh release view "\$RELEASE_TAG".*--json isDraft/);
+  assert.doesNotMatch(validation, /gh release upload/);
+  assert.doesNotMatch(prebuild, /contents: write/);
+  assert.doesNotMatch(assembly, /contents: write/);
+  assert.match(publish, /contents: write/);
+  assert.match(uploadBlock, /gh release upload/);
 });
 
 test('review-branch prebuild source is exact dispatch SHA; publish validation is default-branch-only', { skip: requiresUbuntuWorkflowShell }, async (t) => {
