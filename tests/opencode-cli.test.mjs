@@ -1,7 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cliHelp, openCodeCliManifest, parseOpenCodeArgs, runOpenCodeCli } from '../lib/opencode/cli.mjs';
-import { createOpenCodeCliRuntime, headlessSucceeded, latestSessionForWorkspace, modelWithThinking, nativeJsonEvents, reconcileHeadlessResult, textParts } from '../lib/opencode/cli-runtime.mjs';
+import { createOpenCodeCliRuntime as createRuntime, headlessSucceeded, latestSessionForWorkspace, modelWithThinking, nativeJsonEvents, reconcileHeadlessResult, textParts } from '../lib/opencode/cli-runtime.mjs';
+
+// These are offline fixtures, including when they simulate an interactive TTY.
+// Never let a fixture URL reach the user's operating-system browser launcher.
+const createOpenCodeCliRuntime = options => createRuntime({ openBrowserImpl: async () => false, ...options });
 
 function ioCapture() {
   const output = { stdout: [], stderr: [] };
@@ -433,12 +437,13 @@ test('resumed native sessions merge explicit launcher options into their own wor
 
 test('native login uses OpenCode integration OAuth status and completion lifecycle', async () => {
   const calls = [];
+  const opened = [];
   const service = { url: 'http://127.0.0.1:1', headers: {} };
   const integration = {
     id: 'experiential-labs', name: 'Carthagent Ship',
     methods: [{ id: 'carthagent-device', type: 'oauth', label: 'Sign in with Carthagent Ship' }],
   };
-  const runtime = await createOpenCodeCliRuntime({ cwd: '/project', io: ioCapture().io, stdin: { isTTY: true }, stdout: { isTTY: true }, native: {
+  const runtime = await createOpenCodeCliRuntime({ cwd: '/project', io: ioCapture().io, stdin: { isTTY: true }, stdout: { isTTY: true }, openBrowserImpl: async url => { opened.push(url); return true; }, native: {
     runtime: {}, service: { ensureService: async () => service }, headless: {},
     clientFactory: async () => ({ integration: {
       list: async input => { calls.push(['list', input]); return { data: [integration] }; },
@@ -453,6 +458,7 @@ test('native login uses OpenCode integration OAuth status and completion lifecyc
     } }),
   } });
   assert.equal(await runtime.login(), 0);
+  assert.deepEqual(opened, ['https://auth.example/device']);
   assert.deepEqual(calls.map(([name]) => name), ['list', 'connect', 'status']);
   assert.equal(calls[1][1].methodID, 'carthagent-device');
   assert.deepEqual(calls[1][1].location, { directory: '/project' });
