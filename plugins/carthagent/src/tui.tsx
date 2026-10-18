@@ -11,6 +11,7 @@ import { findNativeResumeSession } from "./ui/resume-session.mjs";
 import { cliConfigDirectory, cliConfigPath, readCliConfig, writeNativeTheme } from "./ui/host-state.js";
 import { WorkspacePage } from "./ui/workspace.js";
 import { provisionNativeThemes } from "./ui/theme-provision.mjs";
+import { setSessionAutoCompaction } from "./ui/session-preferences.mjs";
 import { createNativeReviewConsumer, nativeReviewMode, sendNativeReviewKickoff, subscribeNativeReviewEvents } from "./ui/native-review.mjs";
 
 const THEMES = ["carthage", "opencode", "tokyonight", "nebula", "ember", "forest", "mono", "obsidian", "midnight", "solarized-dark", "nord", "contrast-dark", "okabe-dark", "paper", "daylight", "solarized-light", "contrast-light", "okabe-light", "solarized", "okabe", "contrast", "system"];
@@ -185,7 +186,12 @@ export default Plugin.define({
           return;
         case "autocompact":
           if (!sessionID) { toast("/autocompact requires an open session.", "warning"); return; }
-          toast("/autocompact is unavailable: OpenCode 2.0.32 exposes no per-session automatic-compaction policy in its native TUI plugin or session API. No UI-only setting was changed.", "warning");
+          if (arg && !["on", "off"].includes(arg.toLowerCase())) { toast("Usage: /autocompact [on|off]. Bare /autocompact toggles the selected session.", "warning"); return; }
+          {
+            const action = arg.toLowerCase() || "toggle";
+            const enabled = await setSessionAutoCompaction(context.client.session, sessionID, location, action as "on" | "off" | "toggle");
+            toast(`Automatic compaction ${enabled ? "enabled" : "disabled"} for this session.`, "success");
+          }
           return;
         case "review": {
           if (!sessionID) { toast("/review requires an open session.", "warning"); return; }
@@ -371,7 +377,10 @@ export default Plugin.define({
           return;
         }
         case "clear":
-          await context.ui.dialog.alert({ title: "Transcript clearing is not exposed to plugins", message: "OpenCode 2.0.32's session.revert.clear endpoint only clears a staged revert marker; it does not clear transcript messages. The native TUI plugin API has prompt.clear for the editor, but no transcript-view reset operation. This plugin will not delete durable session history or mislabel revert clearing as transcript clearing." });
+          if (!sessionID) { toast("/clear requires an open session.", "warning"); return; }
+          // Hand off to OpenCode's registered host action; it owns presentation
+          // state and guarantees the durable conversation is untouched.
+          context.keymap.dispatch("session.transcript.clear");
           return;
         case "abort":
           if (!sessionID) { toast("/abort requires an open session.", "warning"); return; }
