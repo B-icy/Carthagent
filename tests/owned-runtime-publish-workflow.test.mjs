@@ -81,6 +81,8 @@ function workflowJob(name) {
   return lines.slice(start, end).join('\n');
 }
 
+const combinedPatchPath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v1.patch';
+
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
 }
@@ -145,12 +147,13 @@ async function fixture(t) {
     mkdir(path.dirname(generator), { recursive: true }), mkdir(fakeBin), mkdir(capture),
   ]);
   await writeFile(path.join(ctg, 'package.json'), JSON.stringify({ name: 'fixture', version: releaseVersion }));
-  const patch = await readFile(path.join(root, 'docs/patches/opencode-v2.0.32-session-ui.patch'));
+  const patch = await readFile(path.join(root, combinedPatchPath));
   const patchSha256 = sha256(patch);
   await Promise.all([
     copyFile(path.join(root, 'script/ctg/build-owned-runtime.sh'), path.join(ctg, 'script/ctg/build-owned-runtime.sh')),
-    copyFile(path.join(root, 'docs/patches/opencode-v2.0.32-session-ui.patch'), path.join(ctg, 'docs/patches/opencode-v2.0.32-session-ui.patch')),
+    copyFile(path.join(root, combinedPatchPath), path.join(ctg, combinedPatchPath)),
   ]);
+  await copyFile(path.join(root, 'lib/opencode/runtime.mjs'), path.join(ctg, 'lib/opencode/runtime.mjs'));
 
   const manifest = {
     version: 1,
@@ -215,11 +218,13 @@ const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const entries = await readdir(directory);
 if(entries.length!==10 || names.some(n=>!entries.includes(n)||!entries.includes(n+'.build.json'))) throw new Error('expected exactly five runtime archive/build-record pairs');
 const recipe=await readFile(path.join(repo,'script/ctg/build-owned-runtime.sh'),'utf8');
-const patch=await readFile(path.join(repo,'docs/patches/opencode-v2.0.32-session-ui.patch'));
+const patch=await readFile(path.join(repo,${JSON.stringify(combinedPatchPath)}));
 const expected=recipe.match(/^EXPECTED_PATCH="([^"]+)"$/m)?.[1];
 if(!expected || sha(patch)!==expected) throw new Error('recipe patch digest mismatch');
-const manifest=JSON.parse(await readFile(path.join(repo,'lib/opencode/runtime-release.json'),'utf8'));
-if(manifest.releaseVersion!==version) throw new Error('release version mismatch');
+const runtimeSource=await readFile(path.join(repo,'lib/opencode/runtime.mjs'),'utf8');
+const runtimePatch=runtimeSource.match(/CTG_RUNTIME_PATCH_SHA256 = '([a-f0-9]{64})'/)?.[1];
+if(runtimePatch!==expected) throw new Error('fixture packaged runtime trust root patch digest mismatch');
+const manifest={version:1,releaseVersion:version,compatibilityVersion:'2.0.32',runtimeVersion:'0.0.0-ctg.2.0.32',sourceRevision:'${sourceCommit}',patchSha256:expected,lockSha256:'${lockSha256}',assets:Object.fromEntries(keys.map((key,i)=>[key,{name:names[i],archiveSha256:'0'.repeat(64),executableSha256:'0'.repeat(64)}]))};
 for(let i=0;i<names.length;i++) {
  const record=JSON.parse(await readFile(path.join(directory,names[i]+'.build.json'),'utf8'));
  if(record.target!==keys[i] || record.platform!==platforms[i] || record.arch!==arches[i] || record.sourceRevision!==manifest.sourceRevision || record.patchSha256!==expected || record.lockSha256!==manifest.lockSha256 || record.compatibilityVersion!==manifest.compatibilityVersion || record.runtimeVersion!==manifest.runtimeVersion) throw new Error('build record mismatch '+keys[i]);
@@ -368,6 +373,8 @@ test('draft metadata validation has scoped write capability; artifact mutation s
   assert.doesNotMatch(assembly, /contents: write/);
   assert.match(publish, /contents: write/);
   assert.match(uploadBlock, /gh release upload/);
+  assert.match(workflow, /cp ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v1\.patch opencode\/docs\/patches\//);
+  assert.match(workflow, /hash_file ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v1\.patch/);
 });
 
 test('review-branch prebuild source is exact dispatch SHA; publish validation is default-branch-only', { skip: requiresUbuntuWorkflowShell }, async (t) => {
