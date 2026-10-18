@@ -497,8 +497,9 @@ test('no-prompt interactive explicit model and thinking selection applies to fre
         calls.push(['create', body.model]);
         return { id: sessionID };
       } },
-      clientFactory: async () => ({ session: {
+      clientFactory: async () => ({ rpc: () => ({ health: async () => ({ capabilities: ['delivery.session-options.v1', 'delivery.budgets.v1'] }) }), session: {
         switchModel: async input => calls.push(['switchModel', input]),
+        get: async () => ({ id: sessionID, location: { directory: cwd }, metadata: {} }),
       } }),
     } });
 
@@ -513,6 +514,108 @@ test('no-prompt interactive explicit model and thinking selection applies to fre
       assert.deepEqual(calls, [['create', expectedModel], ['launch', sessionID]]);
     }
   }
+});
+
+test('resumed interactive model selection verifies workspace ownership before any session mutation or launch', async t => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-foreign-model-session-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const calls = [];
+  const runtime = await createOpenCodeCliRuntime({ cwd, stdout: { write() {} }, native: {
+    runtime: {},
+    service: {
+      ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }),
+      launchTui: () => { calls.push('launch'); return { once() { return this; }, kill() {} }; },
+    },
+      clientFactory: async () => ({ rpc: () => ({ health: async () => ({ capabilities: ['delivery.session-options.v1', 'delivery.budgets.v1'] }) }), session: {
+      get: async input => { calls.push(['get', input.sessionID]); return { id: input.sessionID, location: { directory: join(cwd, 'another-workspace') }, metadata: {} }; },
+      switchModel: async () => calls.push('switchModel'),
+      update: async () => calls.push('update'),
+    } }),
+  } });
+  await assert.rejects(runtime.run({
+    mode: 'interactive', options: { session: 'ses_foreign', model: 'fixture/explicit-model', maxTools: '3' }, prompt: '',
+  }), /another workspace/);
+  assert.deepEqual(calls, [['get', 'ses_foreign']], 'ownership is checked before switching models, updating metadata, or launching TUI');
+});
+
+test('interactive provider or thinking flags without a model fail instead of being silently ignored', async () => {
+  const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const root = mkdtempSync(join(tmpdir(), 'ctg-model-flags-no-default-'));
+  try {
+    const config = join(root, 'config.json');
+    writeFileSync(config, '{}');
+    const previousConfig = process.env.CARTHAGENT_CONFIG;
+    process.env.CARTHAGENT_CONFIG = config;
+    try {
+      for (const options of [{ provider: 'fixture' }, { thinking: 'high' }]) {
+        let touched = false;
+        const runtime = await createOpenCodeCliRuntime({ cwd: '/work/project', native: {
+          runtime: {}, service: { ensureService: async () => { touched = true; return {}; } },
+        } });
+        await assert.rejects(runtime.run({ mode: 'interactive', options, prompt: '' }), /require --model/);
+        assert.equal(touched, false);
+      }
+    } finally {
+      if (previousConfig === undefined) delete process.env.CARTHAGENT_CONFIG;
+      else process.env.CARTHAGENT_CONFIG = previousConfig;
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('interactive thinking-only selection resolves the configured default model and applies its variant', async t => {
+  const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-thinking-default-model-'));
+  const config = join(cwd, 'config.json');
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  writeFileSync(config, JSON.stringify({ model: 'configured-provider/configured-model' }));
+  const previousConfig = process.env.CARTHAGENT_CONFIG;
+  process.env.CARTHAGENT_CONFIG = config;
+  let createdModel;
+  try {
+    const runtime = await createOpenCodeCliRuntime({ cwd, stdout: { write() {} }, native: {
+      runtime: {},
+      service: {
+        ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }),
+        launchTui: (_service, _cwd, options) => { assert.equal(options.sessionID, 'ses_default_thinking'); return { once(event, callback) { if (event === 'exit') queueMicrotask(() => callback(0)); return this; }, kill() {} }; },
+      },
+      headless: { createSession: async (_service, _cwd, { body }) => { createdModel = body.model; return { id: 'ses_default_thinking' }; } },
+      clientFactory: async () => ({ session: {} }),
+    } });
+    assert.equal(await runtime.run({ mode: 'interactive', options: { thinking: 'high' }, prompt: '' }), 0);
+    assert.deepEqual(createdModel, { providerID: 'configured-provider', id: 'configured-model', variant: 'high' });
+  } finally {
+    if (previousConfig === undefined) delete process.env.CARTHAGENT_CONFIG;
+    else process.env.CARTHAGENT_CONFIG = previousConfig;
+  }
+});
+
+test('qualified model with explicit provider uses the provider override and unqualified model ID', async t => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-provider-model-override-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  let createdModel;
+  const runtime = await createOpenCodeCliRuntime({ cwd, stdout: { write() {} }, native: {
+    runtime: {},
+    service: {
+      ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }),
+      launchTui: (_service, _cwd, options) => { assert.equal(options.sessionID, 'ses_provider_override'); return { once(event, callback) { if (event === 'exit') queueMicrotask(() => callback(0)); return this; }, kill() {} }; },
+    },
+    headless: { createSession: async (_service, _cwd, { body }) => { createdModel = body.model; return { id: 'ses_provider_override' }; } },
+    clientFactory: async () => ({ session: {} }),
+  } });
+  assert.equal(await runtime.run({ mode: 'interactive', options: { provider: 'override-provider', model: 'original-provider/model-id' }, prompt: '' }), 0);
+  assert.deepEqual(createdModel, { providerID: 'override-provider', id: 'model-id' });
 });
 
 test('resumed interactive validator launch merges required checks with existing session metadata before prompting', async t => {

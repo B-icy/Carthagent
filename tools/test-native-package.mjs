@@ -55,6 +55,10 @@ try {
   const paths = packed[0].files.map((file) => file.path);
   assert.ok(paths.includes('plugins/carthagent/index.ts'), 'pack must include plugin server entrypoint');
   assert.ok(paths.includes('plugins/carthagent/tui.ts'), 'pack must include plugin TUI entrypoint');
+  assert.ok(paths.includes('tests/native-cli-host-smoke.mjs'), 'pack must include the production-backed native CLI smoke');
+  assert.ok(paths.includes('tests/fixtures/native-discovery-plugin/server.ts'), 'pack must include the exact project-discovery fixture required by the native CLI smoke');
+  assert.ok(paths.includes('tests/fixtures/archive-plugin/index.ts'), 'pack must retain the separately allowlisted archive fixture');
+  assert.ok(!paths.includes('tests/fixtures/plan-advisor-corpus.json'), 'pack must not broaden fixture inclusion beyond explicitly required package fixtures');
   assert.ok(!paths.some((path) => /(^|\/)node_modules(\/|$)/.test(path)), 'pack must not include node_modules');
   assert.ok(packed[0].size < 30_000_000, `unexpectedly large package tarball: ${packed[0].size} bytes`);
 

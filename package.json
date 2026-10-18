@@ -45,6 +45,7 @@
     "tests/*.mjs",
     "tests/*.py",
     "tests/fixtures/archive-plugin",
+    "tests/fixtures/native-discovery-plugin/server.ts",
     "tools",
     "vendor",
     "evaluate.mjs",
