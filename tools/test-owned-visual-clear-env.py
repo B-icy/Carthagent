@@ -36,6 +36,9 @@ class ChildEnvironmentTests(unittest.TestCase):
         mutated_api = [newest, {**oldest, 'text': 'changed prompt'}]
         self.assertNotEqual(MODEL.canonical_conversation(mutated_api),
                             MODEL.canonical_conversation(after_followup))
+        changed_id_api = [newest, {**oldest, 'id': 'msg_replaced'}]
+        self.assertNotEqual(MODEL.canonical_conversation(changed_id_api),
+                            MODEL.canonical_conversation(after_followup))
 
     def test_fixture_environment_only_inherits_explicit_platform_basics(self):
         ambient = {
