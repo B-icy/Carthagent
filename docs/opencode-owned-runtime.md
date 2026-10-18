@@ -93,17 +93,17 @@ installed release acceptance: the final acceptance also requires the owned
 host-controls test (`test-owned-host-controls.mjs`) and the glyph and
 clear/reopen probes from reviewed heads to be composed into the gate. Those
 additional controls/glyph/clear evidence gates remain pending; this workflow
-does not copy or run unreviewed probe drafts. The workflow has only
-`contents: read`: GitHub documents this
-permission for authenticated release-list reads. The metadata checks are GETs
-only. The acceptance step clears `GH_TOKEN` and passes `GITHUB_TOKEN` only as
-`CTG_RUNTIME_GITHUB_TOKEN` for asset reads. It never publishes the GitHub
-release or calls the control plane. It checks the same draft ID and tag target
-again after acceptance. GitHub's draft-visibility rule says draft releases are
-listed only to callers with push access; therefore the workflow run itself must
-confirm that the repository's built-in read token can see this draft. If GitHub
-returns no exact draft, the gate fails closed before acceptance; it does not
-fall back to wider write permission or another credential.
+does not copy or run unreviewed probe drafts. GitHub documents that only callers
+with push access receive draft releases from the release-list endpoint. The
+workflow therefore grants its job `contents: write`, the minimum `GITHUB_TOKEN`
+permission that provides the required push capability. This is a write-capable
+token, not a read-only token: the workflow deliberately uses it only for
+read-only GETs to inspect draft/release metadata and retrieve the runtime assets.
+There are no POST/PATCH/PUT/DELETE requests, release creation/publication or
+asset-upload commands, or control-plane calls in this gate. The acceptance step
+clears `GH_TOKEN` and passes the token only as `CTG_RUNTIME_GITHUB_TOKEN` for
+asset reads; checkout credentials are not persisted. The workflow checks the
+same draft ID and tag target again after acceptance.
 
 Only after that gate succeeds and the release owner approves should the release
 be published. The existing `Release` workflow is the post-publication gate: it

@@ -181,10 +181,13 @@ test('immediate pre-acceptance recheck pins the original SHA and release ID', as
   await assert.rejects(verifyDraftRuntimeGate({ phase: 'recheck', releaseTag: tag, expectedSha: sha, expectedReleaseId: 76, repo: 'B-icy/Carthagent', cwd: '/fixture', run }), /identity changed/);
 });
 
-test('draft workflow has read-only token limited to installed acceptance and no publishing actions', async () => {
+test('draft workflow grants required push capability but performs only read operations', async () => {
   const workflow = await readFile(new URL('../.github/workflows/accept-draft-release.yml', import.meta.url), 'utf8');
   assert.match(workflow, /permissions:\s*\n\s+contents:\s+read/);
-  assert.doesNotMatch(workflow, /contents:\s+write/);
+  assert.match(workflow, /jobs:[\s\S]*?permissions:\s*\n\s+contents:\s+write/);
+  assert.match(workflow, /draft releases only to callers with push access/i);
+  assert.match(workflow, /minimum GITHUB_TOKEN capability/i);
+  assert.match(workflow, /token only for GETs/i);
   const acceptance = workflow.match(/- name: Run the current full non-focused installed-package gate through the default resolver([\s\S]*?\n\s+run: npm run test:native-package)/)?.[0];
   assert.ok(acceptance);
   assert.match(acceptance, /CTG_REQUIRE_OWNED_RUNTIME:\s*['"]?1/);
@@ -192,6 +195,7 @@ test('draft workflow has read-only token limited to installed acceptance and no 
   assert.match(acceptance, /GH_TOKEN:\s*['"]{2}/);
   assert.match(workflow, /run: npm run test:native-package/);
   assert.doesNotMatch(workflow, /gh release (?:create|upload|edit)|releases\/assets|curl .*cli\/releases/);
+  assert.doesNotMatch(workflow, /gh api\s+(?:--[^\n]*\s+)?--method\s+(?:POST|PATCH|PUT|DELETE)|gh api\s+-X\s+(?:POST|PATCH|PUT|DELETE)/i);
   assert.match(workflow, /npm ci/);
   assert.match(workflow, /npm run quality/);
   assert.match(workflow, /verify-draft-runtime-gate\.mjs before/);
