@@ -158,6 +158,82 @@ test('execution.started does not use stale cached message state; inbox deliverie
   consumer.dispose();
 });
 
+test('terminal handling waits for exact inbox admission lookup before deciding loop suppression', async () => {
+  const persisted = new Set(['session-race']);
+  const kickoffs = [];
+  const handlers = new Map();
+  let resolveMessage;
+  const consumer = createNativeReviewConsumer({
+    mode: () => 'yes', diff: makeDiff(), offer: async () => assert.fail(),
+    kickoff: async (sessionID) => kickoffs.push(sessionID),
+    isLoopActive: (sessionID) => persisted.has(sessionID),
+    setLoopActive: (sessionID, active) => active ? persisted.add(sessionID) : persisted.delete(sessionID),
+  });
+  const cleanups = subscribeNativeReviewEvents(
+    { on(type, handler) { handlers.set(type, handler); return () => {}; } }, consumer, assert.fail,
+    async (_sessionID, _messageID, lookupSignal) => await new Promise((resolve) => {
+      resolveMessage = resolve;
+      lookupSignal.addEventListener('abort', () => resolve(undefined), { once: true });
+    }),
+  );
+  handlers.get('session.execution.started')(execution('run-race', 'session-race'));
+  const admission = handlers.get('session.inbox.delivered')({ data: { sessionID: 'session-race', inboxID: 'admitted-user' } });
+  await new Promise((resolve) => setImmediate(resolve));
+  const terminal = handlers.get('session.execution.succeeded')(execution('run-race', 'session-race'));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(kickoffs, [], 'success waits while admitted-message metadata is unresolved');
+  resolveMessage({ type: 'user', metadata: {} });
+  await admission;
+  await terminal;
+  assert.equal(kickoffs.length, 1, 'the admitted user prompt clears restored suppression before successful-run handling');
+  assert.equal(persisted.has('session-race'), true, 'the changed successful run starts its next review loop');
+  cleanups.forEach((cleanup) => cleanup());
+  consumer.dispose();
+});
+
+test('inbox lookup queue preserves event order, times out, and disposal cancels pending metadata lookup', async () => {
+  const loops = new Set(['session-ordered', 'session-disposed']);
+  const handlers = new Map();
+  const requested = [];
+  let resolveStale;
+  const consumer = createNativeReviewConsumer({
+    mode: () => 'no', diff: async () => [], offer: async () => {}, kickoff: async () => {},
+    isLoopActive: (sessionID) => loops.has(sessionID),
+    setLoopActive: (sessionID, active) => active ? loops.add(sessionID) : loops.delete(sessionID),
+  });
+  const cleanups = subscribeNativeReviewEvents(
+    { on(type, handler) { handlers.set(type, handler); return () => {}; } }, consumer, assert.fail,
+    async (_sessionID, messageID, signal) => {
+      requested.push(messageID);
+      if (messageID === 'stale-slow') return await new Promise((resolve) => { resolveStale = resolve; });
+      if (messageID === 'kickoff-slow') await new Promise((resolve) => setTimeout(resolve, 30));
+      if (messageID === 'pending') await new Promise((resolve) => setTimeout(resolve, 50));
+      signal.throwIfAborted();
+      return { type: 'user', metadata: messageID === 'kickoff-slow' ? { 'ctg.reviewKickoff': true } : {} };
+    },
+  );
+  handlers.get('session.inbox.delivered')({ data: { sessionID: 'session-ordered', inboxID: 'kickoff-slow' } });
+  handlers.get('session.inbox.delivered')({ data: { sessionID: 'session-ordered', inboxID: 'normal-next' } });
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.deepEqual(requested.slice(0, 2), ['kickoff-slow', 'normal-next']);
+  assert.equal(loops.has('session-ordered'), false, 'later normal prompt wins after earlier kickoff lookup completes');
+
+  const staleLookup = handlers.get('session.inbox.delivered')({ data: { sessionID: 'session-stale', inboxID: 'stale-slow' } });
+  await new Promise((resolve) => setImmediate(resolve));
+  consumer.setLoopActive('session-stale', true);
+  resolveStale({ type: 'user', metadata: {} });
+  await staleLookup;
+  assert.equal(loops.has('session-stale'), true, 'a lookup started before a newer loop generation cannot clear it');
+
+  const pendingLookup = handlers.get('session.inbox.delivered')({ data: { sessionID: 'session-disposed', inboxID: 'pending' } });
+  await new Promise((resolve) => setImmediate(resolve));
+  consumer.dispose();
+  await pendingLookup;
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(loops.has('session-disposed'), true, 'a lookup completing after disposal cannot mutate persisted state');
+  cleanups.forEach((cleanup) => cleanup());
+});
+
 test('failed/interrupted and unchanged executions do not launch a workflow', async () => {
   const starts = [];
   const consumer = createNativeReviewConsumer({
