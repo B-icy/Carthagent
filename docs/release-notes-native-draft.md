@@ -1,6 +1,7 @@
 # Draft release notes: native OpenCode migration
 
-> **UNRELEASED — draft only.** No version has been selected or published.
+> **UNRELEASED — draft only.** Planned version: **1.1.0**. No tag or release
+> has been published.
 > This document is not a release announcement and does not imply that the
 > native default switch or full product acceptance is complete.
 
@@ -38,15 +39,15 @@
 
 ## Install/update (for a future published release only)
 
-After a release owner selects, accepts, and publishes an actual version, the
+After the planned release passes acceptance and is published, the
 documented exact-tag npm installation form is:
 
 ```sh
 npm install -g --install-links=true github:B-icy/Carthagent#vX.Y.Z
 ```
 
-Replace the placeholder only with the real published release tag. No version
-or tag is chosen in this draft. The composed preview resolves the upstream
+Replace the placeholder only with the real published release tag. Version
+`1.1.0` is planned, but no final tag has been created. The composed preview resolves the upstream
 `@opencode/cli@2.0.32` dependency through Node's package resolver, including
 npm-hoisted layouts. This is not final owned-runtime acquisition or fresh
 installed-product acceptance: the preview dependency reports upstream-compatible
