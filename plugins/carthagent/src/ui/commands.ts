@@ -3,7 +3,7 @@ export type CommandId =
   | "help" | "resume" | "new" | "restart" | "theme" | "model" | "thinking"
   | "compact" | "autocompact" | "review" | "export" | "copy" | "stats"
   | "clear" | "abort" | "raw" | "guide" | "workflow" | "architecture" | "evidence"
-  | "account" | "usage" | "billing" | "logout-cloud" | "archive"
+  | "account" | "usage" | "billing" | "logout-cloud" | "archive" | "demo"
   | "ctg-workspace" | "ctg-open" | "ctg-preview" | "ctg-review" | "ctg-worktree" | "ctg-task";
 
 export interface CarthagentCommand {
@@ -42,6 +42,7 @@ export const COMMANDS: readonly CarthagentCommand[] = [
   { id: "billing", name: "billing", args: "[checkout|portal]", description: "Open Ship checkout or billing portal" },
   { id: "logout-cloud", name: "logout-cloud", args: "[session-id]", description: "Revoke a Ship session or sign out this profile" },
   { id: "archive", name: "archive", args: "[search <query>|read <id>|export <id>]", description: "Browse bounded read-only archived sessions" },
+  { id: "demo", name: "demo", description: "Run a scripted, provider-free delivery walkthrough" },
   { id: "ctg-workspace", name: "ctg-workspace", args: "[refresh]", description: "Browse and open local CTG workspace projects, tasks, and sessions" },
   { id: "ctg-open", name: "ctg-open", args: "[search]", description: "Search local CTG sessions and open one in native OpenCode" },
   { id: "ctg-preview", name: "ctg-preview", description: "Preview CTG delivery evidence for the selected session" },
