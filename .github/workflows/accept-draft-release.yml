@@ -14,6 +14,14 @@ permissions:
 jobs:
   accept-draft:
     runs-on: ubuntu-latest
+    # GitHub lists draft releases only to callers with push access. Contents
+    # write is therefore the minimum GITHUB_TOKEN capability that can see the
+    # draft metadata/assets. This workflow uses the token only for GETs and has
+    # no API/write, release-publish, upload, or control-plane operation.
+    # The token is passed to scripts only in the metadata checks and the
+    # installed resolver acceptance step; checkout credentials are not kept.
+    permissions:
+      contents: write
     outputs:
       tested_sha: ${{ steps.precheck.outputs.tested_sha }}
       release_id: ${{ steps.precheck.outputs.release_id }}
