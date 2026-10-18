@@ -10,6 +10,7 @@ import { Workspace, rpcEventOptions, sessionControls, workspaceClient } from "./
 import { cliConfigDirectory, cliConfigPath, readCliConfig, writeNativeTheme } from "./ui/host-state.js";
 import { WorkspacePage } from "./ui/workspace.js";
 import { provisionNativeThemes } from "./ui/theme-provision.mjs";
+import { createNativeReviewConsumer, subscribeNativeReviewEvents } from "./ui/native-review.mjs";
 
 const THEMES = ["carthage", "opencode", "tokyonight", "nebula", "ember", "forest", "mono", "obsidian", "midnight", "solarized-dark", "nord", "contrast-dark", "okabe-dark", "paper", "daylight", "solarized-light", "contrast-light", "okabe-light", "solarized", "okabe", "contrast", "system"];
 const OPENCODE_BUILTIN_THEMES = new Set(["opencode", "tokyonight"]);
@@ -21,6 +22,29 @@ export default Plugin.define({
     const cleanups = [unregister];
     const lifecycle = new AbortController();
     cleanups.push(() => lifecycle.abort());
+    const reviewLoop = { active: false };
+    const reviewConsumer = createNativeReviewConsumer({
+      mode: () => resolveReviewMode(undefined, loadCarthagentConfig()),
+      diff: async (sessionID: string) => await context.client.session.diff({ sessionID }, { signal: AbortSignal.timeout(15_000) }),
+      isLoopActive: () => reviewLoop.active,
+      offer: async ({ sessionID, writes, start }: { sessionID: string; writes: number; start: () => Promise<void> }) => {
+        const accepted = await context.ui.dialog.confirm({ title: `Review ${context.data.session.get(sessionID)?.title ?? sessionID}?`, message: `This successful run changed ${writes} file${writes === 1 ? "" : "s"}. Start the PR → fresh-context review → fixes workflow?`, label: { confirm: "Start review", cancel: "Not now" } });
+        if (accepted) await start();
+      },
+      startReview: async (reviewSessionID: string): Promise<string | undefined> => {
+        reviewLoop.active = true;
+        try {
+          const location = context.data.session.get(reviewSessionID)?.location ?? context.location ?? context.data.location.default();
+          const result = await workspaceClient(context, location).startReview({ sessionID: reviewSessionID }, AbortSignal.timeout(5 * 60_000));
+          if (result.sessionID) context.ui.router.navigate({ type: "session", sessionID: result.sessionID });
+          context.ui.toast.show({ title: "Independent review", message: `${result.status}\n${result.summary}`, variant: "info", sessionID: reviewSessionID });
+          return result.sessionID;
+        } finally {
+          reviewLoop.active = false;
+        }
+      },
+    });
+    cleanups.push(...subscribeNativeReviewEvents(context.data, reviewConsumer, (error: unknown) => context.ui.toast.show({ message: error instanceof Error ? error.message : String(error), variant: "error" })));
     const workspaceEvents = context.client.rpc(Workspace);
     cleanups.push(workspaceEvents.events.on("updated", (event) => {
       // Promise RPC exposes the server event envelope (including location)
@@ -160,6 +184,7 @@ export default Plugin.define({
           {
             const api = workspaceClient(context, location);
             const result = await api.startReview({ sessionID }, AbortSignal.timeout(5 * 60_000));
+            reviewConsumer.ignoreSession(result.sessionID);
             if (result.sessionID) context.ui.router.navigate({ type: "session", sessionID: result.sessionID });
             await context.ui.dialog.alert({ title: "Independent review", message: `${result.status}\n\n${result.summary}` });
           }
