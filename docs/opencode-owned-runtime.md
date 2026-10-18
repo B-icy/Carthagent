@@ -76,17 +76,20 @@ platform, executable checksum, and exact detached `--version` before launch.
 It does not search PATH or silently fall back when the opt-in is selected.
 
 Release sequencing is deliberately split across two manual workflows. First,
-build and review the immutable five-asset set, package the final trusted runtime
-manifest, tag the exact package commit, create a GitHub draft release, and upload
-the identical reviewed assets. Then run `Accept draft runtime release` for
-that exact tag. The final acceptance workflow must be dispatched from the
+build and review the immutable five-platform-archive set, package the final
+trusted runtime manifest, tag the exact package commit, create a GitHub draft
+release, and upload the identical reviewed release assets. The draft contains
+the five `opencode-*.tar.gz` archives plus exactly one `runtime-release.json`
+and one `runtime-release-SHA256SUMS.txt` combined checksum file (seven assets
+total), as uploaded by the approved publish workflow. Then run
+`Accept draft runtime release` for that exact tag. The final acceptance workflow must be dispatched from the
 approved `main` branch. Before checking out the release tag or executing any
 tag-sourced verifier, a trusted inline bootstrap reads `package.json` from
 `origin/main`, checks the exact version tag, and verifies that the peeled
 annotated or lightweight tag commit is an ancestor of `origin/main`. The same
 main/tag ancestry and exact-SHA relationship is checked again after acceptance.
-It requires the release to remain a draft with all five assets, runs `npm ci`
-and full `npm run quality`, and runs the current full,
+It requires the release to remain a draft with exactly those seven assets, runs
+`npm ci` and full `npm run quality`, and runs the current full,
 non-focused installed-package gate with `CTG_REQUIRE_OWNED_RUNTIME=1` and the
 normal default resolver. This existing gate is not, by itself, the final
 installed release acceptance: the final acceptance also requires the owned
@@ -108,7 +111,7 @@ same draft ID and tag target again after acceptance.
 Only after that gate succeeds and the release owner approves should the release
 be published. The existing `Release` workflow is the post-publication gate: it
 requires a published release, performs the full installed acceptance and
-five-asset manifest verification with `CTG_RUNTIME_GITHUB_TOKEN` explicitly
+five-platform-archive manifest verification with `CTG_RUNTIME_GITHUB_TOKEN` explicitly
 empty (proving the ordinary anonymous public resolver path), and only then
 publishes the control-plane manifest. Neither workflow creates a release,
 uploads assets, publishes a release, or dispatches another workflow. This

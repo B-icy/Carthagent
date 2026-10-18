@@ -10,6 +10,11 @@ export const REQUIRED_RUNTIME_ASSETS = Object.freeze([
   'opencode-darwin-arm64.tar.gz',
   'opencode-windows-x64.tar.gz',
 ]);
+export const REQUIRED_RELEASE_ASSETS = Object.freeze([
+  ...REQUIRED_RUNTIME_ASSETS,
+  'runtime-release.json',
+  'runtime-release-SHA256SUMS.txt',
+]);
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const apiRepository = 'B-icy/Carthagent';
@@ -62,12 +67,14 @@ export async function verifyDraftRuntimeGate({
 function assertRuntimeAssets(assets, tag) {
   if (!Array.isArray(assets)) throw new Error(`Draft release ${tag} has no asset list.`);
   const names = assets.map((asset) => asset?.name);
-  if (names.length !== REQUIRED_RUNTIME_ASSETS.length) {
-    throw new Error(`Draft release ${tag} must contain exactly the five reviewed runtime assets.`);
-  }
-  for (const name of REQUIRED_RUNTIME_ASSETS) {
+  for (const name of REQUIRED_RELEASE_ASSETS) {
     const count = names.filter((candidate) => candidate === name).length;
     if (count !== 1) throw new Error(`Draft release ${tag} must contain exactly one ${name} asset.`);
+  }
+  const unexpected = names.filter((name) => !REQUIRED_RELEASE_ASSETS.includes(name));
+  if (unexpected.length) throw new Error(`Draft release ${tag} contains unexpected assets: ${unexpected.join(', ')}.`);
+  if (names.length !== REQUIRED_RELEASE_ASSETS.length) {
+    throw new Error(`Draft release ${tag} must contain exactly the seven reviewed runtime release assets.`);
   }
 }
 

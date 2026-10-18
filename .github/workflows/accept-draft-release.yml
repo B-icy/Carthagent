@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Existing v<package-version> GitHub draft release with the five reviewed runtime assets
+        description: Existing v<package-version> draft with five runtime archives, runtime-release.json, and combined checksums
         required: true
         type: string
 
