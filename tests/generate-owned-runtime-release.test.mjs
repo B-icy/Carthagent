@@ -30,10 +30,12 @@ before(async () => {
     `EXPECTED_SOURCE="${sourceRevision}"`,
     `EXPECTED_LOCK="${lockSha256}"`,
     `EXPECTED_PATCH="${patchSha256}"`,
+    'patch_file="$ROOT/docs/patches/opencode-v2.0.32-session-ui-combined-v1.patch"',
     `OPENCODE_VERSION=${runtimeVersion} OPENCODE_CHANNEL=ctg.${compatibilityVersion}`,
     'bun run script/build.ts',
   ].join('\n'));
-  await writeFile(path.join(root, 'docs/patches/opencode-v2.0.32-session-ui.patch'), patchBytes);
+  await writeFile(path.join(root, 'docs/patches/opencode-v2.0.32-session-ui-combined-v1.patch'), patchBytes);
+  await writeFile(path.join(root, 'docs/patches/opencode-v2.0.32-session-ui.patch'), Buffer.from('preserved base patch'));
   await createAllFixtures();
 });
 
@@ -273,11 +275,58 @@ test('rejects a noncanonical release version and a recipe/patch mismatch', async
     await assert.rejects(generateOwnedRuntimeRelease({ releaseVersion: 'v9.8.7', assetsDirectory, repoRoot: root }), /without a v prefix/);
   });
   await t.test('patch bytes changed after recipe pin', async () => {
-    const patchPath = path.join(root, 'docs/patches/opencode-v2.0.32-session-ui.patch');
+    const patchPath = path.join(root, 'docs/patches/opencode-v2.0.32-session-ui-combined-v1.patch');
     const original = await readFile(patchPath);
     await writeFile(patchPath, Buffer.concat([original, Buffer.from('changed')]));
     try {
       await assert.rejects(generateOwnedRuntimeRelease({ releaseVersion, assetsDirectory, repoRoot: root }), /patch bytes do not match/);
     } finally { await writeFile(patchPath, original); }
+  });
+  await t.test('missing recipe-selected combined patch fails rather than falling back to preserved base patch', async () => {
+    const selectedPath = path.join(root, 'docs/patches/opencode-v2.0.32-session-ui-combined-v1.patch');
+    const original = await readFile(selectedPath);
+    await rm(selectedPath);
+    try {
+      await assert.rejects(generateOwnedRuntimeRelease({
+        releaseVersion, assetsDirectory, repoRoot: root,
+        outputPath: path.join(temp, 'missing-selected-patch.candidate'),
+      }), /ENOENT/);
+    } finally { await writeFile(selectedPath, original); }
+  });
+  await t.test('legacy recipe patch literal remains supported', async () => {
+    const recipePath = path.join(root, 'script/ctg/build-owned-runtime.sh');
+    const original = await readFile(recipePath, 'utf8');
+    await writeFile(recipePath, original.replace(
+      'opencode-v2.0.32-session-ui-combined-v1.patch',
+      'opencode-v2.0.32-session-ui.patch',
+    ));
+    // Keep the legacy selected patch authoritative and digest-pinned.
+    const legacyPatchPath = path.join(root, 'docs/patches/opencode-v2.0.32-session-ui.patch');
+    const legacyOriginal = await readFile(legacyPatchPath);
+    await writeFile(legacyPatchPath, patchBytes);
+    try {
+      const manifest = await generateOwnedRuntimeRelease({
+        releaseVersion, assetsDirectory, repoRoot: root,
+        outputPath: path.join(temp, 'legacy-recipe.candidate'),
+      });
+      assert.equal(manifest.patchSha256, patchSha256);
+    } finally {
+      await writeFile(recipePath, original);
+      await writeFile(legacyPatchPath, legacyOriginal);
+    }
+  });
+  await t.test('rejects noncanonical or escaping patch paths without evaluating recipe text', async () => {
+    const recipePath = path.join(root, 'script/ctg/build-owned-runtime.sh');
+    const original = await readFile(recipePath, 'utf8');
+    await writeFile(recipePath, original.replace(
+      'patch_file="$ROOT/docs/patches/opencode-v2.0.32-session-ui-combined-v1.patch"',
+      'patch_file="$ROOT/docs/patches/../patches/opencode-v2.0.32-session-ui.patch"',
+    ));
+    try {
+      await assert.rejects(generateOwnedRuntimeRelease({
+        releaseVersion, assetsDirectory, repoRoot: root,
+        outputPath: path.join(temp, 'escaping-patch.candidate'),
+      }), /canonical docs\/patches-relative path/);
+    } finally { await writeFile(recipePath, original); }
   });
 });
