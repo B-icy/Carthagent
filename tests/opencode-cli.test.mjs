@@ -529,7 +529,8 @@ test('resumed interactive model selection verifies workspace ownership before an
       ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }),
       launchTui: () => { calls.push('launch'); return { once() { return this; }, kill() {} }; },
     },
-      clientFactory: async () => ({ rpc: () => ({ health: async () => ({ capabilities: ['delivery.session-options.v1', 'delivery.budgets.v1'] }) }), session: {
+    headless: {},
+    clientFactory: async () => ({ rpc: () => ({ health: async () => ({ capabilities: ['delivery.session-options.v1', 'delivery.budgets.v1'] }) }), session: {
       get: async input => { calls.push(['get', input.sessionID]); return { id: input.sessionID, location: { directory: join(cwd, 'another-workspace') }, metadata: {} }; },
       switchModel: async () => calls.push('switchModel'),
       update: async () => calls.push('update'),
@@ -555,7 +556,7 @@ test('interactive provider or thinking flags without a model fail instead of bei
       for (const options of [{ provider: 'fixture' }, { thinking: 'high' }]) {
         let touched = false;
         const runtime = await createOpenCodeCliRuntime({ cwd: '/work/project', native: {
-          runtime: {}, service: { ensureService: async () => { touched = true; return {}; } },
+          runtime: {}, service: { ensureService: async () => { touched = true; return {}; } }, headless: {},
         } });
         await assert.rejects(runtime.run({ mode: 'interactive', options, prompt: '' }), /require --model/);
         assert.equal(touched, false);
