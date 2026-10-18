@@ -2,7 +2,9 @@
 export async function selectModelWithVariant({ model, variant, promptForVariant = false, chooseVariant, switchModel }) {
   const available = model.variants.map((item) => item.id);
   let selectedVariant = variant;
-  if (promptForVariant && available.length) {
+  // An explicit variant from `/model query variant` is authoritative; the
+  // nested picker is only for a model-only multi-result selection.
+  if (variant === undefined && promptForVariant && available.length) {
     selectedVariant = await chooseVariant(model);
     if (selectedVariant === undefined) return { status: "cancelled" };
   }
