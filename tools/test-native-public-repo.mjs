@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { withoutRuntimeGithubToken } from '../lib/environment.mjs';
 import { nativeFixture } from './native-fixture.mjs';
 import { runNativeEvaluation } from '../lib/opencode/evaluation.mjs';
+import { assertNativeShellResult } from './native-public-repo-shell-result.mjs';
 
 const repository = 'https://github.com/jonschlinkert/is-number.git';
 const commit = '98e8ff1da1a89f93d1397a24d7413ed15421c139';
@@ -41,15 +42,19 @@ const host = await nativeFixture({
     };
     const execution = code => dispatch('execute', { code });
     const shells = completed.filter(call => call.function?.name === 'shell');
-    const shell = () => dispatch('shell', { command: shells.length % 2 === 0 ? 'npm test -- --recursive test.js' : `${JSON.stringify(process.execPath)} --test ctg-bigint.test.cjs`, workdir: host.cwd });
+    const shell = () => {
+      const command = shells.length % 2 === 0 ? 'npm test -- --recursive test.js' : `${JSON.stringify(process.execPath)} --test ctg-bigint.test.cjs`;
+      dispatch('shell', { command: `${command}; ctg_status=$?; printf '\\nCTG_NATIVE_EXIT_STATUS=%s\\n' "$ctg_status"; exit "$ctg_status"`, workdir: host.cwd });
+    };
     if (!completed.length) return execution('const result = await search({query:"CTG delivery plan acceptance checks", namespace:"carthagent", limit:20}); return result');
     if (!did('delivery_plan')) return execution(`const result = await tools.carthagent["delivery_plan"]({goal:"Recognize bigint primitives in the pinned is-number package",verification:"required",assumptions:["Bigint primitives are numeric values and do not require coercion."],artifacts:["."],outputs:["index.js"],steps:[{id:"bigint",title:"Add bigint primitive support",dependsOn:[],checks:["package-tests","bigint-tests"]}],acceptance:[{requirement:"Bigint primitives are recognized while existing finite number and string behavior remains unchanged.",checks:["package-tests","bigint-tests"]}],checks:[{id:"package-tests",kind:"test",argv:["npm","test","--","--recursive","test.js"],timeoutSeconds:60},{id:"bigint-tests",kind:"test",argv:[${JSON.stringify(process.execPath)},"--test","ctg-bigint.test.cjs"],timeoutSeconds:30}]}); return {marker:"PUBLIC_REPO_PLAN",result}`);
     const planResult = completed.find(call => call.function?.name === 'execute' && code(call).includes('delivery_plan'))?.output ?? '';
     if (!tools.includes('shell')) throw Error(`Delivery plan did not unlock shell; plan response: ${planResult}`);
     if (shells.length < 2) return shell();
     if (shells.length === 2) {
-      if (!/111 passing/i.test(shells[0].output) || /\b(?:failing|failed)\s+[1-9]/i.test(shells[0].output)) throw Error(`Pinned package baseline suite must pass independently: ${shells[0].output}`);
-      if (!/exit(?:ed)? with code\s*[:=]?\s*1|exit code\s*[:=]?\s*1/i.test(shells[1].output)) throw Error(`Bigint regression contract must fail independently before edit: ${shells[1].output}`);
+      assertNativeShellResult(shells[0].output, { status: 0, passingTests: 111 });
+      assertNativeShellResult(shells[1].output, { status: 1 });
+      assert.match(shells[1].output, /\b(?:fail|not ok)\s+1\b/i, 'bigint regression must show its expected red assertion');
       if (!completed.some(call => call.function?.name === 'edit')) {
         if (!tools.includes('edit')) throw Error(`Plan did not unlock native edit; advertised: ${tools.join(', ')}`);
         dispatch('edit', { path: join(host.cwd, 'index.js'), oldString: "  if (typeof num === 'number') {\n    return num - num === 0;\n  }", newString: "  if (typeof num === 'bigint') {\n    return true;\n  }\n  if (typeof num === 'number') {\n    return num - num === 0;\n  }" });
@@ -58,8 +63,9 @@ const host = await nativeFixture({
       return shell();
     }
     if (shells.length < 4) return shell();
-    if (!/111 passing/i.test(shells[2].output) || /\b(?:failing|failed)\s+[1-9]/i.test(shells[2].output)) throw Error(`Pinned package suite must pass independently after edit: ${shells[2].output}`);
-    if (!/pass\s+1/i.test(shells[3].output)) throw Error(`Bigint regression must pass independently after edit: ${shells[3].output}`);
+    assertNativeShellResult(shells[2].output, { status: 0, passingTests: 111 });
+    assertNativeShellResult(shells[3].output, { status: 0 });
+    assert.match(shells[3].output, /pass\s+1\b/i, 'bigint regression must pass after edit');
     if (!did('delivery_check')) return execution('return await tools.carthagent["delivery_check"]({id:"all"})');
     if (!did('delivery_progress')) return execution('const result = await tools.carthagent["delivery_progress"]({step:"bigint",status:"done",note:"Pinned public package baseline test and bigint regression test pass after the native edit."}); return result');
     const review = [...execute].reverse().find(call => /delivery_review/.test(code(call)) && /inspect/.test(code(call)));
@@ -165,12 +171,12 @@ try {
   }
   const shellResults = events.filter(event => event.kind === 'result' && event.name === 'shell');
   assert.equal(shellResults.length, 4, 'native session must separately run package and bigint checks before and after edit');
-  assert.match(shellResults[0].output, /111 passing/i, 'package suite passes before edit');
-  assert.doesNotMatch(shellResults[0].output, /\b(?:failing|failed)\s+[1-9]/i);
-  assert.match(shellResults[1].output, /fail\s+1|not ok 1/i, 'bigint regression fails before edit');
-  assert.match(shellResults[2].output, /111 passing/i, 'package suite passes after edit');
-  assert.doesNotMatch(shellResults[2].output, /\b(?:failing|failed)\s+[1-9]/i);
-  assert.match(shellResults[3].output, /pass\s+1/i, 'bigint regression passes after edit');
+  assertNativeShellResult(shellResults[0].output, { status: 0, passingTests: 111 });
+  assertNativeShellResult(shellResults[1].output, { status: 1 });
+  assert.match(shellResults[1].output, /\b(?:fail|not ok)\s+1\b/i, 'bigint regression fails before edit');
+  assertNativeShellResult(shellResults[2].output, { status: 0, passingTests: 111 });
+  assertNativeShellResult(shellResults[3].output, { status: 0 });
+  assert.match(shellResults[3].output, /pass\s+1\b/i, 'bigint regression passes after edit');
   const plan = events.find(event => event.kind === 'result' && event.name === 'execute' && /plan\.d2|Contract accepted/i.test(event.output));
   assert.ok(plan, 'native production delivery plan must have a correlated tool result');
   assert.ok(events.some(event => event.kind === 'result' && event.name === 'edit'), 'native edit must have a correlated result');
@@ -208,7 +214,7 @@ try {
     const sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8', env: childEnv }).trim();
     if (/^[a-f0-9]{40,64}$/.test(sourceCommit)) harnessSourceIdentity = { kind: 'git-checkout', commit: sourceCommit };
   } catch { /* Installed package archives do not necessarily include .git. */ }
-  console.log(JSON.stringify({ harnessSourceIdentity, harnessSourceSha256: createHash('sha256').update(await readFile(new URL(import.meta.url))).digest('hex'), repository, commit, license, sourceBlobs: Object.fromEntries(['index.js', 'package.json', 'LICENSE', 'test.js'].map(file => [file, git('rev-parse', `${commit}:${file}`)])), baseline: '111 package tests passed; declared bigint contract failed', nativeEdit: 'bigint primitive branch added to index.js', postEdit: 'package suite plus bigint regression passed', dependencyInstall: 'npm install --ignore-scripts --no-audit --no-fund from fresh pinned clone; repository has no lockfile', nativeDelivery: 'plan/check/progress/review-record/finish exercised', verifiedFinish: { correlatedCallId: finishCall.id, result: finishPayload, retainedReportPath, persistedHandoffStatus: report.handoff?.status }, outcome: result.outcome, productiveTurns: result.productiveTurns, tools: result.tools, cost: result.cost, runtimeVersion: result.runtimeVersion, runtimeIdentity: host.runtimeIdentity, correlatedNativeEvidence, upstreamWrites: false }));
+  console.log(JSON.stringify({ harnessSourceIdentity, harnessSourceSha256: createHash('sha256').update(await readFile(new URL(import.meta.url))).digest('hex'), shellResultValidatorSha256: createHash('sha256').update(await readFile(new URL('./native-public-repo-shell-result.mjs', import.meta.url))).digest('hex'), repository, commit, license, sourceBlobs: Object.fromEntries(['index.js', 'package.json', 'LICENSE', 'test.js'].map(file => [file, git('rev-parse', `${commit}:${file}`)])), baseline: '111 package tests passed; declared bigint contract failed', nativeEdit: 'bigint primitive branch added to index.js', postEdit: 'package suite plus bigint regression passed', dependencyInstall: 'npm install --ignore-scripts --no-audit --no-fund from fresh pinned clone; repository has no lockfile', nativeDelivery: 'plan/check/progress/review-record/finish exercised', verifiedFinish: { correlatedCallId: finishCall.id, result: finishPayload, retainedReportPath, persistedHandoffStatus: report.handoff?.status }, outcome: result.outcome, productiveTurns: result.productiveTurns, tools: result.tools, cost: result.cost, runtimeVersion: result.runtimeVersion, runtimeIdentity: host.runtimeIdentity, correlatedNativeEvidence, upstreamWrites: false }));
 } catch (error) {
   console.error(JSON.stringify({ providerErrors: host.providerErrors.map(item => item.message), host: host.output }, null, 2));
   throw error;
