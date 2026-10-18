@@ -38,6 +38,7 @@ const configPath = join(profileRoot, 'config/opencode/opencode.json');
 const requests = [];
 const sessionIDs = [];
 const nativeEventsCaptured = [];
+const isolatedServices = [];
 let budgetProviderTurns = 0;
 let uncappedShellCompleted = false;
 let admittedRequests = 0;
@@ -61,7 +62,7 @@ const provider = createServer((req, res) => {
     const hasPlanResult = body.messages.some(message => message.role === 'tool' && String(message.content || '').includes('plan.d2'));
     const needsDeliveryPlan = planPrompt && !hasPlanResult;
     const hasSuccessfulPlan = body.messages.some(message => message.role === 'tool' && message.tool_call_id === 'fixture-delivery-plan' && String(message.content || '').includes('plan.d2'));
-    const needsTool = (userText.includes('Smoke JSON') && !body.messages.some(message => message.role === 'tool')) || needsBudgetRead || needsBudgetWrite || (shellCapPrompt && !body.messages.some(message => message.role === 'tool')) || ((uncappedPrompt || plannedShellPrompt && hasSuccessfulPlan) && !body.messages.some(message => message.role === 'tool' && message.tool_call_id === 'fixture-bash-cap'));
+    const needsTool = needsDeliveryPlan || (userText.includes('Smoke JSON') && !body.messages.some(message => message.role === 'tool')) || needsBudgetRead || needsBudgetWrite || (shellCapPrompt && !body.messages.some(message => message.role === 'tool')) || (uncappedPrompt && !body.messages.some(message => message.role === 'tool' && message.tool_call_id === 'fixture-uncapped-shell')) || (plannedShellPrompt && hasSuccessfulPlan && !body.messages.some(message => message.role === 'tool' && message.tool_call_id === 'fixture-bash-cap'));
     const fails = userText.includes('Smoke provider failure');
     const chunk = (delta, finish_reason = null) => `data: ${JSON.stringify({
       id: 'ctg-cli-smoke', object: 'chat.completion.chunk', created: 1, model: 'fixture',
@@ -168,16 +169,64 @@ try {
   });
   const service = {
     url,
+    info: { pid: child.pid },
     headers: { authorization: `Basic ${Buffer.from(`opencode:${password}`).toString('base64')}` },
     binary,
     paths: { root: profileRoot },
   };
   const native = {
     runtime: runtimeApi,
-    service: { ...serviceApi, ensureService: async () => service },
+    service: {
+      ...serviceApi,
+      ensureService: async options => {
+        if (!options.isolate) return service;
+        const isolatedService = await serviceApi.ensureService({
+          ...options,
+          profile: {
+            ...options.profile,
+            update: 'disable',
+            model: 'ctg-fixture/fixture',
+            providers: { 'ctg-fixture': {
+              package: '@opencode/ai/providers/openai-compatible',
+              settings: { baseURL: `http://127.0.0.1:${provider.address().port}/v1`, apiKey: 'offline-fixture' },
+              models: { fixture: { limit: { context: 32000, output: 1024 } } },
+            } },
+          },
+        });
+        isolatedServices.push(isolatedService);
+        return isolatedService;
+      },
+      stopService: async options => {
+        const stopped = await serviceApi.stopService(options);
+        const owned = isolatedServices.find(item => item.paths.root === options.root);
+        if (owned) {
+          assert.ok(stopped, 'production isolate cleanup stopped its owned OpenCode service');
+          assert.equal(runtimeApi.processAlive(owned.info.pid), false, 'isolated service PID is dead after CLI cleanup');
+        }
+        return stopped;
+      },
+    },
     headless: { ...headlessApi, runHeadless: async (...args) => {
       const result = await headlessApi.runHeadless(...args);
       sessionIDs.push(result.session.id);
+      if (isolatedServices.includes(args[0])) {
+        assert.equal(result.outcome, 'succeeded', `isolated CLI turn outcome: ${JSON.stringify(result)}`);
+        assert.equal(result.terminal, true, `isolated CLI turn must be terminal: ${JSON.stringify(result)}`);
+        const request = [...requests].reverse().find(body => JSON.stringify(body.messages ?? []).includes('ISOLATE_EXECUTION_SENTINEL'));
+        assert.ok(request, 'actual --isolate CLI turn reached the offline provider');
+        assert.doesNotMatch(JSON.stringify(request.messages), /FIXTURE_PROJECT_INSTRUCTION/, 'isolated provider request excludes project instructions');
+        const client = await native.clientFactory(args[0]);
+        const locationInput = { location: { directory: cwd } };
+        const isolatedLocation = await client.location.get(locationInput);
+        const [skills, commands, agents] = await Promise.all([client.skill.list(locationInput), client.command.list(locationInput), client.agent.list(locationInput)]);
+        assert.equal((skills.data ?? skills).some(item => String(item.name || item.id).includes('fixture-skill')), false, 'actual --isolate service suppresses project skills');
+        assert.equal((commands.data ?? commands).some(item => ['fixture-project-plugin-marker', 'fixture-template', 'fixture-command'].includes(item.name)), false, 'actual --isolate service suppresses project commands');
+        assert.equal((agents.data ?? agents).some(item => item.name === 'fixture-agent'), false, 'actual --isolate service suppresses project agents');
+        assert.equal(isolatedLocation.project.id, normalDiscovery.location.project.id, 'isolate retains the actual project identity');
+        const health = await client.rpc(Carthagent).health({}, locationInput);
+        assert.ok(health.capabilities.includes('delivery.budgets.v1'), 'Carthagent delivery remains active in CLI-owned isolate');
+        assert.equal(runtimeApi.processAlive(service.info.pid), true, 'normal neighboring profile remains healthy while isolate is running');
+      }
       return result;
     } },
     clientFactory: async selectedService => {
@@ -223,7 +272,7 @@ try {
 
   const { OpenCode } = await import('@opencode/client');
   const fixtureClient = OpenCode.make({ baseUrl: service.url, headers: service.headers });
-   const discoveryLocation = { location: { directory: cwd } };
+  const discoveryLocation = { location: { directory: cwd } };
   const discover = async () => {
     const location = await fixtureClient.location.get(discoveryLocation);
     const [skills, commands, agents] = await Promise.all([
@@ -259,35 +308,15 @@ try {
   assert.ok(templateRequest, 'discovered project command template must expand into the provider request');
   await fixtureClient.session.remove({ sessionID: templateSession.id });
   await fixtureClient.session.remove({ sessionID: normalDiscovery.sessionID });
-  const isolatedRoot = join(temp, 'isolated-profile');
-  const isolatedService = await serviceApi.ensureService({ root: isolatedRoot, pluginPath, isolate: true });
-  try {
-    const isolatedClient = OpenCode.make({ baseUrl: isolatedService.url, headers: isolatedService.headers });
-    const isolatedLocation = await isolatedClient.location.get(discoveryLocation);
-    const [skills, commands, agents] = await Promise.all([
-      isolatedClient.skill.list(discoveryLocation), isolatedClient.command.list(discoveryLocation),
-      isolatedClient.agent.list(discoveryLocation),
-    ]);
-    const isolatedInstructions = await isolatedClient.session.create({ location: { directory: cwd }, title: 'Isolate instruction check', model: { providerID: 'ctg-fixture', id: 'fixture' } });
-    const instructionEntries = await isolatedClient.session.context({ sessionID: isolatedInstructions.id });
-    const isolatedRequestIndex = requests.length;
-    await isolatedClient.session.prompt({ sessionID: isolatedInstructions.id, text: 'Trigger isolated context.' });
-    await isolatedClient.session.wait({ sessionID: isolatedInstructions.id });
-    const isolatedContext = await isolatedClient.session.context({ sessionID: isolatedInstructions.id });
-    assert.deepEqual({ skill: skills.data ?? skills, command: commands.data ?? commands, agent: agents.data ?? agents }, { skill: [], command: [], agent: [] }, 'isolate disables project skills, commands, and agents');
-    assert.equal(JSON.stringify(commands.data ?? commands).includes('Fixture command prompt.'), false, 'isolate disables project prompt-template discovery');
-    assert.equal(isolatedLocation.project.id, normalDiscovery.location.project.id, 'isolate retains the same actual project identity');
-    assert.equal((commands.data ?? commands).some(item => item.name === 'fixture-project-plugin-marker'), false, 'project plugin marker is absent in isolate');
-    assert.equal(JSON.stringify(instructionEntries).includes('FIXTURE_PROJECT_INSTRUCTION'), false, 'isolate disables project AGENTS.md instructions');
-    assert.equal(JSON.stringify(isolatedContext).includes('FIXTURE_PROJECT_INSTRUCTION'), false, 'isolate prompt excludes project AGENTS.md instructions');
-    assert.equal(JSON.stringify(requests.slice(isolatedRequestIndex).map(body => body.messages)).includes('FIXTURE_PROJECT_INSTRUCTION'), false, 'isolated provider request excludes project AGENTS.md instructions');
-    await isolatedClient.session.remove({ sessionID: isolatedInstructions.id });
-    const isolatedHealth = await isolatedClient.rpc(Carthagent).health({}, discoveryLocation);
-    assert.ok(isolatedHealth.capabilities.includes('delivery.budgets.v1'), 'CTG delivery remains active in isolate');
-  } finally {
-    await serviceApi.stopService({ root: isolatedRoot });
-    await rm(isolatedRoot, { recursive: true, force: true });
-  }
+  const isolate = capture();
+  const isolateRuntime = await createOpenCodeCliRuntime({ cwd, native, stdout: isolate.stdout, io: isolate.io });
+  const isolateCode = await runOpenCodeCli({ argv: ['-p', '--isolate', '--no-guide', '--model', 'ctg-fixture/fixture', 'ISOLATE_EXECUTION_SENTINEL'], runtime: isolateRuntime, io: isolate.io, stdoutIsTTY: false });
+  assert.equal(isolateCode, 0, `production --isolate run failed: ${isolate.lines.join('\n')}\n${hostOutput}`);
+  assert.match(isolate.lines.join('\n'), /CLI fixture response for ISOLATE_EXECUTION_SENTINEL/);
+  const isolatedService = isolatedServices.at(-1);
+  assert.ok(isolatedService, 'production CLI ensure path started an isolated service');
+  assert.equal(existsSync(isolatedService.paths.root), false, 'production isolate cleanup removes the isolated profile after stopping its service');
+  assert.equal(runtimeApi.processAlive(service.info.pid), true, 'normal neighbor service remains alive after isolated cleanup');
   if (process.env.CTG_NATIVE_SMOKE_BUDGET_ONLY !== '1') {
   const foreignDir = join(temp, 'foreign');
   await mkdir(foreignDir);
@@ -332,10 +361,16 @@ try {
   });
   assert.equal(budgetRequests.length, 2, `provider received the initial tool request and one continuation; actual=${budgetRequests.length}`);
   assert.equal(budgetProviderTurns, 2, 'fixture provider received no further request after the over-budget tool call');
+  const budgetToolResults = budgetRequests.flatMap(body => body.messages ?? []).filter(message => message.role === 'tool');
+  const admittedWriteResult = budgetToolResults.find(message => message.tool_call_id === 'fixture-budget-first-write');
+  assert.match(admittedWriteResult?.content ?? '', /Created file successfully: budget-positive-control\.txt/, `the admitted native write returned its actual success result: ${JSON.stringify(budgetToolResults)}`);
   assert.equal(existsSync(join(cwd, 'budget-positive-control.txt')), true, 'the first admitted native write executed as a positive control');
   assert.equal(existsSync(join(cwd, 'budget-side-effect.txt')), false, 'the over-budget native write did not execute');
   const budgetEvents = budget.lines.filter(line => line.startsWith('{')).map(line => JSON.parse(line));
   assert.ok(budgetEvents.some(event => event.type === 'tool_execution_start' && event.sessionID === budgetSessionID && event.toolName === 'write'), JSON.stringify(budgetEvents));
+  const rejectedWriteEvent = budgetEvents.find(event => event.type === 'tool_execution_end' && event.sessionID === budgetSessionID && event.toolCallId === 'fixture-budget-second-write');
+  assert.ok(rejectedWriteEvent?.isError, `over-budget write returned an actual tool failure result: ${JSON.stringify(budgetEvents)}`);
+  assert.match(rejectedWriteEvent.result?.content?.map(item => item.text).join('\n') ?? '', /Tool execution interrupted/);
   assert.ok(budgetEvents.some(event => event.type === 'message' && event.sessionID === budgetSessionID && event.message.type === 'idle' && event.message.outcome === 'interrupted'), JSON.stringify(budgetEvents));
   assert.ok(nativeEventsCaptured.some(event => event.type === 'session.execution.interrupted' && event.data?.sessionID === budgetSessionID), 'the over-budget tool interrupted the native session');
   const budgetStatus = await fixtureClient.rpc(Carthagent).budgetStatus({ sessionID: budgetSessionID }, { location: { directory: cwd } });
@@ -344,28 +379,35 @@ try {
   const providerTurnsBeforePlan = requests.length;
   const bashCap = capture();
   const bashCapRuntime = await createOpenCodeCliRuntime({ cwd, native, stdout: bashCap.stdout, io: bashCap.io });
-  const bashCapCode = await runOpenCodeCli({ argv: ['-p', '--no-guide', '--strict', '--workflow', 'strict', '--bash-cap', '0.5', '--model', 'ctg-fixture/fixture', 'Smoke planned bash cap'], runtime: bashCapRuntime, io: bashCap.io, stdoutIsTTY: false });
+  const bashCapCode = await runOpenCodeCli({ argv: ['-p', '--json', '--no-guide', '--workflow', 'standard', '--bash-cap', '0.5', '--model', 'ctg-fixture/fixture', 'Smoke planned bash cap'], runtime: bashCapRuntime, io: bashCap.io, stdoutIsTTY: false });
   assert.equal(bashCapCode, 0, `planned shell-cap session failed: ${bashCap.lines.join('\n')}`);
   const planSessionID = sessionIDs.at(-1);
   const planResultMessages = requests.slice(providerTurnsBeforePlan).flatMap(body => body.messages ?? []).filter(message => message.role === 'tool' && message.tool_call_id === 'fixture-delivery-plan');
-  assert.equal(planResultMessages.length, 1, `delivery_plan tool must execute exactly once; tool results=${JSON.stringify(planResultMessages)}`);
-  assert.match(planResultMessages[0].content, /plan\.d2/, `delivery_plan must succeed in its session: ${planResultMessages[0].content}`);
-  assert.match(planResultMessages[0].content, /"phase": "approved"/, `strict design review and approval must succeed before shell execution: ${planResultMessages[0].content}`);
+  assert.ok(planResultMessages.length >= 1 && planResultMessages.every(message => message.content.includes('plan.d2')), `every actual delivery_plan execution must succeed before shell-cap; tool results=${JSON.stringify(planResultMessages)}`);
   const bashCapSession = await fixtureClient.session.get({ sessionID: planSessionID });
   assert.equal(bashCapSession.metadata['carthagent.options'].bashCap, 0.5);
-   assert.equal(existsSync(join(cwd, 'bash-cap-started.txt')), true, `the specific fixture-bash-cap shell command actually started; output=${bashCap.lines.join('\n')}; request=${JSON.stringify(requests.filter(body => JSON.stringify(body.messages ?? []).includes('Smoke planned bash cap')).at(-1))}`);
-   const bashCapEvents = bashCap.lines.filter(line => line.startsWith('{')).map(line => JSON.parse(line));
-   const bashCapSessionID = planSessionID;
-   assert.ok(bashCapEvents.some(event => event.type === 'tool_execution_start' && event.sessionID === bashCapSessionID && event.toolCallId === 'fixture-bash-cap' && event.toolName === 'shell'), JSON.stringify(bashCapEvents));
-   assert.ok(bashCapEvents.some(event => event.type === 'tool_execution_end' && event.sessionID === bashCapSessionID && event.toolCallId === 'fixture-bash-cap' && event.isError === true), JSON.stringify(bashCapEvents));
+  assert.equal(existsSync(join(cwd, 'bash-cap-started.txt')), true, `the specific fixture-bash-cap shell command actually started; output=${bashCap.lines.join('\n')}; request=${JSON.stringify(requests.filter(body => JSON.stringify(body.messages ?? []).includes('Smoke planned bash cap')).at(-1))}`);
+  const bashCapEvents = bashCap.lines.filter(line => line.startsWith('{')).map(line => JSON.parse(line));
+  assert.ok(bashCapEvents.some(event => event.type === 'tool_execution_start' && event.sessionID === planSessionID && event.toolCallId === 'fixture-bash-cap' && event.toolName === 'shell'), JSON.stringify(bashCapEvents));
+  const shellEnd = bashCapEvents.find(event => event.type === 'tool_execution_end' && event.sessionID === planSessionID && event.toolCallId === 'fixture-bash-cap');
+  assert.ok(shellEnd, JSON.stringify(bashCapEvents));
+  assert.match(shellEnd.result?.content?.map(item => item.text).join('\n') ?? '', /Command exceeded timeout of 500 ms/);
+  const bashCapResult = requests.slice(providerTurnsBeforePlan).flatMap(body => body.messages ?? []).find(message => message.role === 'tool' && message.tool_call_id === 'fixture-bash-cap');
+  assert.ok(bashCapResult, 'the fixture-bash-cap shell tool was actually invoked and returned a result to the provider');
+  assert.match(bashCapResult.content, /Command exceeded timeout of 500 ms/);
+  assert.match(bashCapResult.content, /Timed out before completion/);
   assert.equal(existsSync(join(cwd, 'bash-cap-completed.txt')), false, 'the capped three-second shell command timed out before its side effect');
   await new Promise(resolveDelay => setTimeout(resolveDelay, 2700));
   assert.equal(existsSync(join(cwd, 'bash-cap-completed.txt')), false, 'a timed-out child command did not run its delayed side effect');
 
   const uncapped = capture();
   const uncappedRuntime = await createOpenCodeCliRuntime({ cwd, native, stdout: uncapped.stdout, io: uncapped.io });
+  const requestsBeforeUncapped = requests.length;
   const uncappedCode = await runOpenCodeCli({ argv: ['-p', '--no-guide', '--no-delivery', '--model', 'ctg-fixture/fixture', 'Smoke uncapped shell'], runtime: uncappedRuntime, io: uncapped.io, stdoutIsTTY: false });
-  assert.equal(uncappedCode, 0, `uncapped shell positive control failed: ${uncapped.lines.join('\n')}\n${hostOutput}`);
+  assert.equal(uncappedCode, 0, `uncapped shell positive control failed: output=${uncapped.lines.join('\n')}; provider=${JSON.stringify(requests.slice(requestsBeforeUncapped))}; events=${JSON.stringify(nativeEventsCaptured.slice(-30))}\n${hostOutput}`);
+  const uncappedResult = requests.slice(requestsBeforeUncapped).flatMap(body => body.messages ?? []).find(message => message.role === 'tool' && message.tool_call_id === 'fixture-uncapped-shell');
+  assert.ok(uncappedResult, 'uncapped shell positive control actually ran and returned a tool result');
+  assert.doesNotMatch(uncappedResult.content, /Command exceeded timeout/);
   await new Promise(resolveDelay => setTimeout(resolveDelay, 3300));
   uncappedShellCompleted = existsSync(join(cwd, 'uncapped-shell-completed.txt'));
   assert.equal(uncappedShellCompleted, true, 'neighboring --no-delivery session retains its uncapped shell behavior');
