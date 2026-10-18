@@ -28,7 +28,10 @@ function setup() {
   return { calls, ctx, cloud, handlers: createShipRpcHandlers(ctx, { cloudClient: cloud, cloudUrl: 'https://ship.example.test' }) };
 }
 
-const call = { signal: new AbortController().signal };
+const call = {
+  signal: new AbortController().signal,
+  error(code, message, data) { throw Object.assign(new Error(message), { code, data }); },
+};
 
 test('Ship account and billing RPCs use the active profile credential and injected cloud client', async () => {
   const { calls, handlers } = setup();
@@ -59,7 +62,7 @@ test('Ship logout revokes either one session or current token and removes curren
 test('Ship RPC requires its managed OAuth credential and honors cancellation before cloud traffic', async () => {
   const { ctx, calls, handlers } = setup();
   ctx.integration.connection.resolve = async () => ({ type: 'oauth', methodID: 'other', access: 'wrong' });
-  await assert.rejects(handlers.shipAccount({}, call), /active Carthagent Ship OAuth connection/);
+  await assert.rejects(handlers.shipAccount({}, call), { code: 'unauthenticated', message: 'An active Carthagent Ship OAuth connection is required.' });
   assert.equal(calls.some(([name]) => name === 'account'), false);
   const controller = new AbortController();
   controller.abort();
