@@ -945,6 +945,35 @@ test('native updater force-reinstalls only the canonical validated release tag o
   }]);
 });
 
+test('native serve child does not inherit runtime download tokens', async t => {
+  const { mkdtempSync, readFileSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const runtimeRoot = mkdtempSync(join(tmpdir(), 'ctg-serve-env-'));
+  t.after(() => rmSync(runtimeRoot, { recursive: true, force: true }));
+  const resultFile = join(runtimeRoot, 'result.json');
+  writeFileSync(join(runtimeRoot, 'server.mjs'), `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(resultFile)}, JSON.stringify({ workspace: process.env.CARTHAGENT_WORKSPACE, other: process.env.CTG_RUNTIME_OTHER, tokens: Object.keys(process.env).filter(key => key.toUpperCase() === 'CTG_RUNTIME_GITHUB_TOKEN') }));`);
+  const previous = Object.fromEntries(['CTG_RUNTIME_GITHUB_TOKEN', 'ctg_runtime_github_token', 'Ctg_Runtime_Github_Token', 'CTG_RUNTIME_OTHER'].map(key => [key, process.env[key]]));
+  Object.assign(process.env, {
+    CTG_RUNTIME_GITHUB_TOKEN: 'fake-uppercase-token',
+    ctg_runtime_github_token: 'fake-lowercase-token',
+    Ctg_Runtime_Github_Token: 'fake-mixedcase-token',
+    CTG_RUNTIME_OTHER: 'preserve-this-value',
+  });
+  try {
+    const runtime = await createOpenCodeCliRuntime({ cwd: '/workspace/fixture', native: { runtime: {}, service: {}, headless: {}, runtimeRoot } });
+    assert.equal(await runtime.command({ command: 'serve', args: [] }), 0);
+    assert.deepEqual(JSON.parse(readFileSync(resultFile, 'utf8')), {
+      workspace: '/workspace/fixture', other: 'preserve-this-value', tokens: [],
+    });
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('concrete headless runtime returns failure for failed native session outcome', async t => {
   const { mkdtempSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
