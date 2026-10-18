@@ -69,6 +69,31 @@ function extractRunBlock(selector) {
 const validateBlock = extractRunBlock((_lines, line) => line.trim() === 'id: validate');
 const verifyBlock = extractRunBlock((_lines, line) => line.trim() === 'id: verify');
 const uploadBlock = extractRunBlock((_lines, line) => line.includes('name: Recheck immutable draft target and upload verified bytes without clobbering'));
+const archiveBlock = extractRunBlock((_lines, line) => line.includes('name: Archive runtime bytes and write native build record'));
+
+test('native archive command uses a relative output path safe for Windows drive-letter workspaces', { skip: requiresUbuntuWorkflowShell }, async (t) => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'ctg-owned-runtime-archive-test-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const workspace = path.join(directory, 'D:', 'a', 'Carthagent');
+  await mkdir(path.join(workspace, 'candidate-assets'), { recursive: true });
+  await mkdir(path.join(workspace, 'opencode/packages/cli/dist-ctg/cli-windows-x64/bin'), { recursive: true });
+  await writeFile(path.join(workspace, 'opencode/packages/cli/dist-ctg/cli-windows-x64/bin/opencode.exe'), 'fixture-runtime');
+
+  const archiveLines = archiveBlock.split('\n').filter((line) => line.startsWith('archive=') || line.startsWith('COPYFILE_DISABLE=1 tar '));
+  assert.equal(archiveLines.length, 2, 'archive fixture must execute the archive path and tar command from the workflow block');
+  assert.equal(archiveLines[0], 'archive="candidate-assets/opencode-${TARGET_KEY}.tar.gz"');
+  assert.equal(archiveLines[1], 'COPYFILE_DISABLE=1 tar -C opencode/packages/cli/dist-ctg --format=ustar -czf "$archive" .');
+
+  const result = spawnSync('bash', ['-euo', 'pipefail', '-c', archiveLines.join('\n')], {
+    cwd: workspace,
+    env: { ...process.env, TARGET_KEY: 'windows-x64' },
+    encoding: 'utf8',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const archivePath = path.join(workspace, 'candidate-assets/opencode-windows-x64.tar.gz');
+  const entries = execFileSync('tar', ['-tzf', archivePath], { encoding: 'utf8' }).trim().split('\n');
+  assert.ok(entries.includes('./cli-windows-x64/bin/opencode.exe'));
+});
 
 function workflowJob(name) {
   const lines = workflow.split(/\r?\n/);
