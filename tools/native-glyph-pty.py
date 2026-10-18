@@ -15,8 +15,21 @@ import subprocess
 import tempfile
 import termios
 import time
+import importlib.util
+import sys
 
-from native_glyph_helpers import CHROME_PAIRS, USER_TEXT, GlyphScreen, assert_composer_payload, child_environment
+_helper_path = Path(__file__).with_name('native-glyph-helpers.py')
+_helper_spec = importlib.util.spec_from_file_location('native_glyph_helpers', _helper_path)
+if _helper_spec is None or _helper_spec.loader is None:
+    raise ImportError(f'Could not load native glyph helper module at {_helper_path}')
+_helpers = importlib.util.module_from_spec(_helper_spec)
+sys.modules[_helper_spec.name] = _helpers
+_helper_spec.loader.exec_module(_helpers)
+CHROME_PAIRS = _helpers.CHROME_PAIRS
+USER_TEXT = _helpers.USER_TEXT
+GlyphScreen = _helpers.GlyphScreen
+assert_composer_payload = _helpers.assert_composer_payload
+child_environment = _helpers.child_environment
 
 
 def run_mode(binary, mode, timeout):

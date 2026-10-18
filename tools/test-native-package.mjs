@@ -162,7 +162,7 @@ try {
   const probes = [];
   const acceptanceTests = [
     'test-owned-host-controls.mjs', 'test-native-glyph-pty.mjs',
-    'test-native-terminal-semantics-installed.mjs',
+    'test-native-terminal-semantics-installed.mjs', 'test-native-visual-clear-installed.mjs',
     'test-native-host.mjs', 'test-native-controls.mjs', 'test-native-outcomes.mjs',
     'test-native-product.mjs', 'test-native-runtime.mjs', 'test-native-tasks.mjs',
     'test-native-review.mjs', 'test-native-swe-host.mjs', 'test-native-pty.mjs',
@@ -180,7 +180,7 @@ try {
   for (const { test, scenario } of cases) {
     const identity = { test, ...(scenario ? { scenario } : {}), runtime: resolution.identity };
     const ownedProbe = ['test-owned-host-controls.mjs', 'test-native-glyph-pty.mjs',
-      'test-native-terminal-semantics-installed.mjs'].includes(test);
+      'test-native-terminal-semantics-installed.mjs', 'test-native-visual-clear-installed.mjs'].includes(test);
     if (ownedProbe && resolution.identity.kind !== 'ctg-owned') {
       const result = { ...identity, status: 'skipped', reason: 'owned-runtime probe is outside upstream-compatible preview scope' };
       probes.push(result);
