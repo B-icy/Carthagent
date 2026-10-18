@@ -145,6 +145,12 @@ jobs:
           repository: anomalyco/opencode
           ref: 843a6c514e606b436a7fe713422ace0a93ad3d61
           path: opencode
+        env:
+          # actions/checkout has no generic `config` input. Supply Git's supported
+          # config environment before its internal checkout materializes files.
+          GIT_CONFIG_COUNT: 1
+          GIT_CONFIG_KEY_0: core.autocrlf
+          GIT_CONFIG_VALUE_0: 'false'
       - uses: actions/checkout@v4
         with:
           repository: B-icy/Carthagent
@@ -157,11 +163,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # actions/checkout on Windows may materialize the upstream source as
-          # CRLF. This checkout is fresh and pristine; re-materialize every
-          # tracked source file as its committed bytes before applying the
-          # reviewed LF patch.
-          git -C opencode -c core.autocrlf=false checkout-index --force --all
+          # Persist the same checkout interpretation for the recipe's later
+          # git status checks in this isolated upstream clone.
+          git -C opencode config --local core.autocrlf false
           mkdir -p opencode/docs/patches opencode/script/ctg
           git -C ctg show HEAD:docs/patches/opencode-v2.0.32-session-ui-combined-v2.patch > opencode/docs/patches/opencode-v2.0.32-session-ui-combined-v2.patch
           git -C ctg show HEAD:script/ctg/build-owned-runtime.sh > opencode/script/ctg/build-owned-runtime.sh
