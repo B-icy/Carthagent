@@ -5,71 +5,25 @@ import importlib.util
 import json
 import os
 from pathlib import Path
-import pty
-import fcntl
-import select
 import signal
-import struct
-import subprocess
 import sys
-import termios
 import time
 
-_spec = importlib.util.spec_from_file_location(
-    'terminal_semantics', Path(__file__).with_name('native-terminal-semantics.py'))
-_module = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_module)
-Screen = _module.Screen
 
-
-SAFE_PARENT_ENV = ('PATH', 'LANG', 'LC_ALL')
-SAFE_WINDOWS_ENV = ('SystemRoot', 'WINDIR', 'COMSPEC', 'PATHEXT')
-TUI_ENV_KEYS = frozenset((*SAFE_PARENT_ENV, *SAFE_WINDOWS_ENV, 'HOME', 'USERPROFILE',
-    'APPDATA', 'LOCALAPPDATA', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME',
-    'XDG_CACHE_HOME', 'OPENCODE_TEST_HOME', 'OPENCODE_DB', 'OPENCODE_CONFIG',
-    'OPENCODE_CONFIG_DIR', 'OPENCODE_CONFIG_PROJECT_DISABLE',
-    'OPENCODE_DISABLE_MODELS_FETCH', 'OPENCODE_DISABLE_CLAUDE_CODE',
-    'OPENCODE_DISABLE_CLAUDE_CODE_SKILLS', 'OPENCODE_DISABLE_AUTOUPDATE',
-    'CTG_OPENCODE_HOME', 'TERM', 'COLORTERM', 'OPENCODE_PASSWORD',
-    'OPENCODE_SERVER_PASSWORD', 'OPENCODE_SERVER_USERNAME'))
-FIXTURE_ENV_KEYS = TUI_ENV_KEYS | frozenset((
-    'CTG_OWNED_OPENCODE_RUNTIME', 'CTG_TEST_RUNTIME_RELEASE_MANIFEST'))
-
-
-def filtered_parent_environment(source, home):
-    """Build a child baseline from a short allowlist, never ambient credentials."""
-    result = {key: source[key] for key in (*SAFE_PARENT_ENV, *SAFE_WINDOWS_ENV)
-              if key in source}
-    result['PATH'] = result.get('PATH', '/usr/bin:/bin')
-    result['LANG'] = result.get('LANG', 'C.UTF-8')
-    result['HOME'] = str(home)
-    result['USERPROFILE'] = str(home)
-    return result
-
-
-def fixture_environment(source, home, owned_root, release_manifest):
-    """Environment for fixture/preflight Node children; selectors are paths, not secrets."""
-    result = filtered_parent_environment(source, home)
-    result.update({
-        'CTG_OWNED_OPENCODE_RUNTIME': str(owned_root),
-        'CTG_TEST_RUNTIME_RELEASE_MANIFEST': str(release_manifest),
-        'XDG_CONFIG_HOME': str(Path(home) / 'config'),
-        'XDG_DATA_HOME': str(Path(home) / 'data'),
-        'XDG_STATE_HOME': str(Path(home) / 'state'),
-        'XDG_CACHE_HOME': str(Path(home) / 'cache'),
-    })
-    return result
-
-
-def assert_clean_child_environment(env, allowed=TUI_ENV_KEYS):
-    if any(key.casefold() == 'ctg_runtime_github_token' for key in env):
-        raise AssertionError('child environment contains reserved runtime download credential')
-    unexpected = sorted(set(env) - allowed)
-    if unexpected:
-        raise AssertionError(f'child environment contains non-allowlisted names: {unexpected}')
+_env_spec = importlib.util.spec_from_file_location(
+    'owned_visual_clear_env', Path(__file__).with_name('owned-visual-clear-env.py'))
+_env_module = importlib.util.module_from_spec(_env_spec)
+_env_spec.loader.exec_module(_env_module)
+SAFE_PARENT_ENV = _env_module.SAFE_PARENT_ENV
+TUI_ENV_KEYS = _env_module.TUI_ENV_KEYS
+FIXTURE_ENV_KEYS = _env_module.FIXTURE_ENV_KEYS
+fixture_environment = _env_module.fixture_environment
+assert_clean_child_environment = _env_module.assert_clean_child_environment
 
 
 def preflight(binary, owned_root, manifest, env):
+    import subprocess
+
     helper = Path(__file__).with_name('native-runtime-identity.mjs')
     script = r'''
 import { readFile } from 'node:fs/promises';
@@ -91,6 +45,8 @@ class Tui:
     active = set()
 
     def __init__(self, binary, fixture, session_id, env):
+        import subprocess
+
         self.master, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 36, 120, 0, 0))
         child_env = {**env, 'TERM': 'xterm-256color', 'COLORTERM': 'truecolor',
@@ -105,6 +61,8 @@ class Tui:
         self.active.add(self)
 
     def drain(self, seconds=.2):
+        import subprocess
+
         end = time.monotonic() + seconds
         while time.monotonic() < end:
             ready, _, _ = select.select([self.master], [], [], .05)
@@ -140,6 +98,8 @@ class Tui:
         os.write(self.master, b'\r')  # dispatch
 
     def stop(self):
+        import subprocess
+
         if self not in self.active:
             return
         if self.child.poll() is None:
@@ -154,6 +114,22 @@ class Tui:
 
 
 def main():
+    # PTY and terminal semantics are POSIX-only; importing this runner is safe
+    # on platforms that only execute its child-environment unit tests.
+    global pty, fcntl, select, struct, termios, Screen
+    import pty
+    import fcntl
+    import select
+    import struct
+    import termios
+    import subprocess
+
+    _spec = importlib.util.spec_from_file_location(
+        'terminal_semantics', Path(__file__).with_name('native-terminal-semantics.py'))
+    _module = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_module)
+    Screen = _module.Screen
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--binary', required=True)
     parser.add_argument('--owned-root', required=True)
