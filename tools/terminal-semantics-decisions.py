@@ -37,6 +37,11 @@ def rendered_fixture_row(line, fixture_response):
     return bool(response) and response in normalize(line)
 
 
+def rendered_fixture_body_row(line, fixture_response):
+    """Accept the rendered body, not a raw fixture echoed in a title/header."""
+    return rendered_fixture_row(line, fixture_response) and fixture_response not in line
+
+
 def active_session_prompt_ready(visible, staged_text):
     """Recognize the rendered active-session composer after home acceptance."""
     screen = visible.lower()

@@ -49,8 +49,8 @@ fixture='FINAL[SNIP]END'
 header=' • FINAL[SNIP]END                +'
 body='     FINALSNIPEND'
 other='     FINAL[WRONG]END'
-print(json.dumps([m.rendered_fixture_row(line, fixture) for line in (header, body, other)]))`);
-  assert.deepEqual(result, [true, true, false]);
+print(json.dumps([[m.rendered_fixture_row(line, fixture), m.rendered_fixture_body_row(line, fixture)] for line in (header, body, other)]))`);
+  assert.deepEqual(result, [[true, false], [true, true], [false, false]]);
 });
 
 test('active-session submit requires visible staged prompt and active session identity', () => {

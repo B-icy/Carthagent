@@ -34,6 +34,7 @@ _decision_spec.loader.exec_module(_decisions)
 picker_cancel_observation = _decisions.picker_cancel_observation
 is_focused_terminal_case = _decisions.is_focused_terminal_case
 rendered_fixture_row = _decisions.rendered_fixture_row
+rendered_fixture_body_row = _decisions.rendered_fixture_body_row
 active_session_prompt_ready = _decisions.active_session_prompt_ready
 
 
@@ -478,13 +479,12 @@ def main():
                 picker_cancel_passed = (not picker_started or
                                         result['checks'].get('pickerEscapeCancel', {}).get('status') == 'PASS')
                 ready_for_prompt = (((not focused_case) and picker_cancelled and picker_cancel_passed and elapsed > 5 and home_ready) or
-                                    (args.focused_host_roundtrip and elapsed > 2 and home_ready) or
+                                     (args.focused_host_roundtrip and elapsed > 2 and home_ready) or
                                     (layout_only and elapsed > 2 and home_ready))
                 if not prompt_entry_primed and not picker_only and ready_for_prompt:
-                    # Send a post-cancel Enter as an input-boundary/settle
-                    # action. Empty home submits may be ignored by the TUI;
-                    # this is not evidence that a session was created. Keep
-                    # the real submission assertion on the provider request.
+                    # Mark the transition boundary; do not use empty Enter as
+                    # proof of session creation. The staged prompt plus active
+                    # composer and provider request provide that evidence.
                     prompt_entry_primed = True
                     prompt_entry_primed_at = time.monotonic()
                 if (prompt_entry_primed and not sent and not picker_only and
@@ -538,6 +538,7 @@ def main():
                     {'row': index, 'text': line[:screen.columns],
                      'containsSelectionTarget': selection_target in line[:screen.columns],
                      'containsExactFixtureResponse': fixture_response in line[:screen.columns],
+                     'isRenderedBodyRow': rendered_fixture_body_row(line[:screen.columns], fixture_response),
                      'selectionModeCandidate': 'mouse up auto-copy'}
                     for index, line in enumerate(visible_lines, 1)
                     if rendered_fixture_row(line[:screen.columns], fixture_response) and
@@ -547,14 +548,9 @@ def main():
                 # or bottom after a narrow PTY resize. Coordinates below are
                 # still constrained to the exact visible response row/cells.
                 response_rows = [index for index, line in enumerate(visible_lines, 1)
-                                 if (rendered_fixture_row(line[:screen.columns], fixture_response) and
+                                 if (rendered_fixture_body_row(line[:screen.columns], fixture_response) and
                                      selection_target in line[:screen.columns] and
                                      1 <= index <= screen.rows)]
-                body_rows = [index for index in response_rows
-                             if not (fixture_response in visible_lines[index - 1][:screen.columns] and
-                                     'FINAL[' in visible_lines[index - 1][:screen.columns])]
-                if body_rows:
-                    response_rows = body_rows
                 candidate_signature = tuple((index, visible_lines[index - 1][:screen.columns])
                                             for index in response_rows)
                 if candidate_signature and candidate_signature == locals().get('last_response_row_signature'):
