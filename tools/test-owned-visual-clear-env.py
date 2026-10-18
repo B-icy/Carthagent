@@ -15,6 +15,13 @@ MODEL_SPEC.loader.exec_module(MODEL)
 
 
 class ChildEnvironmentTests(unittest.TestCase):
+    def test_latest_message_uses_newest_first_api_order_including_idle_events(self):
+        latest = {'id': 'msg_idle', 'type': 'idle'}
+        older = {'id': 'msg_user', 'type': 'user', 'text': 'prompt'}
+        self.assertEqual(MODEL.latest_message({'data': [latest, older]}), latest)
+        with self.assertRaisesRegex(ValueError, 'no messages'):
+            MODEL.latest_message({'data': []})
+
     def test_canonical_conversation_matches_newest_first_data_and_detects_mutation(self):
         oldest = {
             'id': 'msg_old', 'type': 'user', 'text': 'first exact prompt',
