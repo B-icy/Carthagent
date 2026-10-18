@@ -82,7 +82,8 @@
     "test:owned-opencode": "node tools/test-owned-opencode-runtime.mjs",
     "build": "npm run check && npm run typecheck",
     "test": "node --test tests/*.test.mjs",
-    "test:python": "node tools/test-python.mjs"
+    "test:python": "node tools/test-python.mjs",
+    "test:native-slash-commands": "node tools/test-native-slash-commands.mjs"
   },
   "dependencies": {
     "@opencode/cli": "2.0.32",
