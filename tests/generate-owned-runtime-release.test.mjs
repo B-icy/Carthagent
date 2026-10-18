@@ -329,4 +329,26 @@ test('rejects a noncanonical release version and a recipe/patch mismatch', async
       }), /canonical docs\/patches-relative path/);
     } finally { await writeFile(recipePath, original); }
   });
+  await t.test('rejects a second nonliteral patch_file assignment', async () => {
+    const recipePath = path.join(root, 'script/ctg/build-owned-runtime.sh');
+    const original = await readFile(recipePath, 'utf8');
+    await writeFile(recipePath, `${original}\npatch_file="${'${PATCH_FILE}'}"\n`);
+    try {
+      await assert.rejects(generateOwnedRuntimeRelease({
+        releaseVersion, assetsDirectory, repoRoot: root,
+        outputPath: path.join(temp, 'multiple-patch-assignments.candidate'),
+      }), /exactly one literal ROOT-relative patch_file/);
+    } finally { await writeFile(recipePath, original); }
+  });
+  await t.test('rejects a recipe with no selected patch instead of choosing a repository patch', async () => {
+    const recipePath = path.join(root, 'script/ctg/build-owned-runtime.sh');
+    const original = await readFile(recipePath, 'utf8');
+    await writeFile(recipePath, original.replace(/^patch_file=.*\n/m, ''));
+    try {
+      await assert.rejects(generateOwnedRuntimeRelease({
+        releaseVersion, assetsDirectory, repoRoot: root,
+        outputPath: path.join(temp, 'missing-patch-selection.candidate'),
+      }), /exactly one literal ROOT-relative patch_file/);
+    } finally { await writeFile(recipePath, original); }
+  });
 });
