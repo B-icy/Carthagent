@@ -10,6 +10,7 @@ export interface NativeReviewConsumerOptions {
   diff: (sessionID: string, signal?: AbortSignal) => Promise<unknown>;
   offer: (value: NativeReviewOffer) => Promise<unknown>;
   kickoff: (sessionID: string, signal?: AbortSignal) => Promise<unknown>;
+  latestUserMessage?: (sessionID: string) => { type?: string; metadata?: Record<string, unknown> } | undefined;
   isLoopActive?: (sessionID: string) => boolean;
   setLoopActive?: (sessionID: string, active: boolean) => void;
   signal?: AbortSignal;
@@ -19,7 +20,7 @@ export function sendNativeReviewKickoff(options: { client: any; sessionID: strin
 export function nativeReviewMode(session: any, config: any, explicitMode?: string): string;
 export function createNativeReviewConsumer(options: NativeReviewConsumerOptions): {
   setLoopActive(sessionID: string, active: boolean): void;
-  onPromptSubmitted(sessionID: string): void;
+  onUserPromptAdmitted(sessionID: string, message?: { type?: string; metadata?: Record<string, unknown> }): void;
   onStarted(event: any): void;
   onSucceeded(event: any): Promise<void>;
   onFailed(event: any): Promise<void>;
