@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { REQUIRED_RELEASE_ASSETS, verifyDraftRuntimeGate } from '../tools/verify-draft-runtime-gate.mjs';
 
 const { version } = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
@@ -98,28 +98,39 @@ test('requires the exact seven-asset producer contract: five archives, manifest,
 test('the workflow precheck command fails before acceptance for malformed tag, moved tag, or published release', async (t) => {
   const temp = await mkdtemp(path.join(tmpdir(), 'ctg-draft-gate-fake-gh-'));
   t.after(() => rm(temp, { recursive: true, force: true }));
-  const fakeGh = path.join(temp, 'gh');
   const requestsLog = path.join(temp, 'gh-requests');
   const releaseFile = path.join(temp, 'release.json');
   const targetFile = path.join(temp, 'target-sha');
+  const preloadFile = path.join(temp, 'fake-gh-preload.mjs');
   const currentSha = spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
   await writeFile(targetFile, currentSha);
   await writeFile(releaseFile, JSON.stringify(release));
-  await writeFile(fakeGh, `#!/usr/bin/env node
-const fs = await import('node:fs');
-const args = process.argv.slice(2);
-fs.appendFileSync(process.env.FAKE_GH_LOG, JSON.stringify(args) + '\\n');
-if (args.some(value => value.includes('/releases?per_page=100'))) console.log(JSON.stringify([[JSON.parse(fs.readFileSync(process.env.FAKE_RELEASE_JSON, 'utf8'))]]));
-else if (args.some(value => value.includes('/git/ref/tags/'))) console.log(JSON.stringify({object:{type:'commit',sha:fs.readFileSync(process.env.FAKE_TARGET_SHA,'utf8').trim()}}));
-else process.exit(2);
+  await writeFile(preloadFile, `
+import fs from 'node:fs';
+import childProcess from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
+const originalSpawnSync = childProcess.spawnSync;
+childProcess.spawnSync = function(command, args, options) {
+  if (command !== 'gh') return originalSpawnSync.call(this, command, args, options);
+  fs.appendFileSync(process.env.FAKE_GH_LOG, JSON.stringify(args) + '\\n');
+  let stdout;
+  if (args.some(value => value.includes('/releases?per_page=100'))) {
+    stdout = JSON.stringify([[JSON.parse(fs.readFileSync(process.env.FAKE_RELEASE_JSON, 'utf8'))]]);
+  } else if (args.some(value => value.includes('/git/ref/tags/'))) {
+    stdout = JSON.stringify({ object: { type: 'commit', sha: fs.readFileSync(process.env.FAKE_TARGET_SHA, 'utf8').trim() } });
+  } else {
+    return { status: 2, stdout: '', stderr: 'Unexpected fake GitHub API call', error: undefined };
+  }
+  return { status: 0, stdout, stderr: '', error: undefined };
+};
+syncBuiltinESMExports();
 `);
-  await chmod(fakeGh, 0o755);
   const tool = fileURLToPath(new URL('../tools/verify-draft-runtime-gate.mjs', import.meta.url));
   const invoke = (tagValue) => spawnSync(process.execPath, [tool, 'before', tagValue], {
     cwd: path.resolve('.'), encoding: 'utf8',
     env: {
       ...process.env,
-      PATH: `${temp}${path.delimiter}${process.env.PATH ?? ''}`,
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(preloadFile).href}`.trim(),
       GITHUB_REPOSITORY: 'B-icy/Carthagent', GITHUB_OUTPUT: path.join(temp, 'github-output'),
       FAKE_GH_LOG: requestsLog, FAKE_RELEASE_JSON: releaseFile, FAKE_TARGET_SHA: targetFile,
     },
@@ -142,7 +153,7 @@ else process.exit(2);
 });
 
 test('trusted inline bootstrap accepts a main tag and rejects non-main dispatch and a foreign tag', async (t) => {
-  const workflow = await readFile(new URL('../.github/workflows/accept-draft-release.yml', import.meta.url), 'utf8');
+  const workflow = (await readFile(new URL('../.github/workflows/accept-draft-release.yml', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
   const bootstrap = workflow.match(/- name: Require main dispatch and a release tag descended from origin\/main[\s\S]*?\n        run: \|\n((?:          .*\n)+)/)?.[1];
   const postcheck = workflow.match(/- name: Reverify release tag ancestry against approved main after acceptance[\s\S]*?\n        run: \|\n((?:          .*\n?)+?)(?=\n      - |\n\s*$)/)?.[1];
   assert.ok(bootstrap, 'trusted ancestry bootstrap block must be extractable');
@@ -169,14 +180,18 @@ test('trusted inline bootstrap accepts a main tag and rejects non-main dispatch 
   git(source, 'remote', 'add', 'origin', bare);
   git(source, 'push', 'origin', 'main', '--tags');
 
+  const bashPath = (value) => {
+    if (process.platform !== 'win32') return value;
+    return execFileSync('cygpath', ['-u', value], { encoding: 'utf8' }).trim();
+  };
   const invoke = (script, ref, expectedSha = '') => spawnSync('bash', ['-euo', 'pipefail', '-c', script], {
     cwd: source, encoding: 'utf8',
     env: {
       ...process.env,
       GITHUB_REF: ref,
-      GITHUB_OUTPUT: output,
+      GITHUB_OUTPUT: bashPath(output),
       RELEASE_TAG: fixtureTag,
-      TRUSTED_REPOSITORY_URL: bare,
+      TRUSTED_REPOSITORY_URL: bashPath(bare),
       EXPECTED_SHA: expectedSha,
     },
   });
@@ -249,12 +264,11 @@ test('draft workflow grants required push capability but performs only read oper
     'trusted inline ancestry bootstrap must run before release checkout and tag-sourced verifier');
   assert.match(workflow, /ref:\s*\$\{\{ steps\.trusted-ancestry\.outputs\.sha \}\}/,
     'checkout must use the trusted ancestry-checked SHA, not resolve the mutable tag again');
-  const docs = await readFile(new URL('../docs/opencode-owned-runtime.md', import.meta.url), 'utf8');
-  assert.match(docs, /not, by itself, the final\s+installed release acceptance/);
+  const docs = (await readFile(new URL('../docs/opencode-owned-runtime.md', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
+  assert.match(docs, /current full,\s+non-focused installed-package gate/);
   assert.match(docs, /exactly those seven assets/);
-  assert.match(docs, /test-owned-host-controls\.mjs/);
-  assert.match(docs, /glyph and\s+clear\/reopen probes from reviewed heads/);
-  assert.match(docs, /additional controls\/glyph\/clear evidence gates remain pending/);
+  assert.match(docs, /independently reviewed host-controls, glyph,\s+controlled-terminal semantics, and visual-clear\/reopen probes are now composed\s+into that gate/);
+  assert.match(docs, /Their live final-artifact results remain pending/);
 });
 
 test('published release workflow explicitly empties optional draft credentials for public acceptance', async () => {
