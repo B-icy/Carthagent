@@ -5,11 +5,11 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { REQUIRED_RUNTIME_ASSETS, verifyDraftRuntimeGate } from '../tools/verify-draft-runtime-gate.mjs';
+import { REQUIRED_RELEASE_ASSETS, verifyDraftRuntimeGate } from '../tools/verify-draft-runtime-gate.mjs';
 
 const tag = 'v1.0.3';
 const sha = 'a'.repeat(40);
-const release = { id: 77, tag_name: tag, draft: true, assets: REQUIRED_RUNTIME_ASSETS.map((name) => ({ name })) };
+const release = { id: 77, tag_name: tag, draft: true, assets: REQUIRED_RELEASE_ASSETS.map((name) => ({ name })) };
 
 function mockRun({ releaseValue = release, remoteSha = sha, checkoutSha = sha, annotated = false } = {}) {
   const calls = [];
@@ -55,6 +55,31 @@ test('rejects a published release before installed acceptance', async () => {
   const { run, calls } = mockRun({ releaseValue: { ...release, draft: false } });
   await assert.rejects(verifyDraftRuntimeGate({ phase: 'before', releaseTag: tag, repo: 'B-icy/Carthagent', run }), /must remain a draft/);
   assert.equal(calls.some(([, args]) => args?.[1]?.includes('/git/ref/')), false);
+});
+
+test('requires the exact seven-asset producer contract: five archives, manifest, and combined checksums', async () => {
+  const expectedAssets = [
+    'opencode-linux-x64.tar.gz',
+    'opencode-linux-arm64.tar.gz',
+    'opencode-darwin-x64.tar.gz',
+    'opencode-darwin-arm64.tar.gz',
+    'opencode-windows-x64.tar.gz',
+    'runtime-release.json',
+    'runtime-release-SHA256SUMS.txt',
+  ];
+  assert.deepEqual(REQUIRED_RELEASE_ASSETS, expectedAssets);
+  const result = await verifyDraftRuntimeGate({ phase: 'before', releaseTag: tag, repo: 'B-icy/Carthagent', cwd: '/fixture', run: mockRun().run });
+  assert.deepEqual(result, { releaseId: 77, sha, version: '1.0.3' });
+
+  for (const [label, assets, expected] of [
+    ['missing manifest', release.assets.filter(({ name }) => name !== 'runtime-release.json'), /exactly one runtime-release\.json asset/],
+    ['duplicate platform archive', [...release.assets, { name: REQUIRED_RELEASE_ASSETS[0] }], /exactly one opencode-linux-x64\.tar\.gz asset/],
+    ['unexpected extra asset', [...release.assets, { name: 'unreviewed-runtime.tar.gz' }], /unexpected assets: unreviewed-runtime\.tar\.gz/],
+    ['renamed checksum asset', release.assets.map((asset) => asset.name === 'runtime-release-SHA256SUMS.txt' ? { name: 'SHA256SUMS.txt' } : asset), /exactly one runtime-release-SHA256SUMS\.txt asset/],
+  ]) {
+    const { run } = mockRun({ releaseValue: { ...release, assets } });
+    await assert.rejects(verifyDraftRuntimeGate({ phase: 'before', releaseTag: tag, repo: 'B-icy/Carthagent', run }), expected, label);
+  }
 });
 
 test('the workflow precheck command fails before acceptance for malformed tag, moved tag, or published release', async (t) => {
@@ -211,6 +236,7 @@ test('draft workflow grants required push capability but performs only read oper
     'checkout must use the trusted ancestry-checked SHA, not resolve the mutable tag again');
   const docs = await readFile(new URL('../docs/opencode-owned-runtime.md', import.meta.url), 'utf8');
   assert.match(docs, /not, by itself, the final\s+installed release acceptance/);
+  assert.match(docs, /exactly those seven assets/);
   assert.match(docs, /test-owned-host-controls\.mjs/);
   assert.match(docs, /glyph and\s+clear\/reopen probes from reviewed heads/);
   assert.match(docs, /additional controls\/glyph\/clear evidence gates remain pending/);
