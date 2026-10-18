@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { tmpdir } from 'node:os';
+import os from 'node:os';
 import { basename, dirname, resolve } from 'node:path';
 import { runOfflineDemo } from '../lib/opencode/demo.mjs';
 
@@ -19,7 +19,7 @@ test('UI demo service executes the disposable Node tests and reports their real 
   assert.equal(invocation.argv[0], process.execPath);
   assert.deepEqual(invocation.argv.slice(1), ['--test', 'test/app.test.mjs']);
   assert.equal(invocation.options.timeoutSeconds, 30);
-  assert.equal(dirname(resolve(invocation.options.cwd)), resolve(tmpdir()));
+  assert.equal(dirname(resolve(invocation.options.cwd)), resolve(os.tmpdir()));
   assert.equal(basename(invocation.options.cwd).startsWith('carthagent-native-demo-'), true);
   assert.notEqual(resolve(invocation.options.cwd), resolve(process.cwd()), 'fixture runs in a disposable sandbox, not the repository');
   assert.equal('signal' in invocation.options, true);
