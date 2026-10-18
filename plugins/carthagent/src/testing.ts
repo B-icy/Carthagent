@@ -50,6 +50,7 @@ export async function setupNativeTestPlugin(context: Parameters<typeof registerS
       authStart: async () => { throw new Error('Device authorization is not available in the isolated delivery test plugin.'); },
       authCancel: async () => ({ cancelled: false }),
       shipAccount: async () => { throw new Error('Ship account access is not available in the isolated delivery test plugin.'); },
+      shipUsage: async () => { throw new Error('Ship usage access is not available in the isolated delivery test plugin.'); },
       shipBilling: async () => { throw new Error('Ship billing is not available in the isolated delivery test plugin.'); },
       shipLogout: async () => { throw new Error('Ship credential changes are not available in the isolated delivery test plugin.'); },
     });

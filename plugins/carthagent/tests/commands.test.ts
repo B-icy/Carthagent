@@ -13,12 +13,17 @@ test("Carthagent command manifest resolves visible CTG commands", () => {
   assert.equal(resolveCommand("/help")?.id, "help");
   assert.equal(resolveCommand("/ctg-help")?.id, "help");
   assert.deepEqual(COMMANDS.find((item) => item.id === "help")?.aliases, ["ctg-help"]);
+  assert.equal(COMMANDS.find((item) => item.id === "help")?.submitSlash, true);
   assert.equal(resolveCommand("/review")?.id, "review");
   assert.equal(resolveCommand("/review-mode")?.id, "review");
   for (const name of ["workflow", "architecture", "evidence"]) assert.equal(resolveCommand(name)?.hidden, undefined);
   for (const name of ["model", "compact", "autocompact", "abort", "clear"]) assert.equal(resolveCommand(name)?.id, name);
-  assert.deepEqual(matchCommand("/arch").map((item) => item.name), ["architecture"]);
+  assert.deepEqual(matchCommand("/arch").map((item) => item.name), ["architecture", "archive"]);
   assert.deepEqual(matchCommand("/rev status"), []);
+  for (const name of ["account", "usage", "billing", "logout-cloud", "archive", "demo"]) {
+    assert.ok(resolveCommand(`/${name}`), `/${name} must resolve to a registered handler`);
+  }
+  assert.equal(resolveCommand("/cloud")?.id, "account");
 });
 
 test("manifest prevents collisions with native OpenCode slash commands", () => {

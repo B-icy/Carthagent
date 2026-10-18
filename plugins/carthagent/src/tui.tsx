@@ -6,7 +6,8 @@ import { resolve } from "node:path";
 import { framePrompt } from "../../../lib/tui/framing.mjs";
 import { carthagentConfigPath, loadCarthagentConfig, resolveReviewMode, reviewKickoff, saveCarthagentConfig } from "../../../lib/review.mjs";
 import { COMMANDS, NATIVE_COMMAND_COLLISIONS } from "./ui/commands.js";
-import { Workspace, rpcEventOptions, sessionControls, workspaceClient } from "./ui/client.js";
+import { Workspace, rpcEventOptions, sessionControls, workspaceClient, shipClient, archiveClient, cloudAccountText, cloudUsageText, archiveItemText } from "./ui/client.js";
+import { findNativeResumeSession } from "./ui/resume-session.mjs";
 import { cliConfigDirectory, cliConfigPath, readCliConfig, writeNativeTheme } from "./ui/host-state.js";
 import { WorkspacePage } from "./ui/workspace.js";
 import { provisionNativeThemes } from "./ui/theme-provision.mjs";
@@ -67,7 +68,7 @@ export default Plugin.define({
           description: item.description,
           group: "Carthagent",
           palette: true as const,
-          slash: { name: item.name, ...(item.aliases ? { aliases: item.aliases } : {}), ...(item.args ? { arguments: true as const } : {}) },
+          slash: { name: item.name, ...(item.aliases ? { aliases: item.aliases } : {}), ...(item.args || item.submitSlash ? { arguments: true as const } : {}) },
           run: (input?: string) => {
             const report = (error: unknown) => context.ui.toast.show({ message: error instanceof Error ? error.message : String(error), variant: "error" });
             if (item.id === "restart" || item.id === "abort") {
@@ -94,11 +95,24 @@ export default Plugin.define({
           await context.ui.dialog.alert({ title: "Carthagent commands", message: COMMANDS.map((command) => `/${command.name}${command.args ? ` ${command.args}` : ""}${command.aliases?.length ? ` (${command.aliases.map((alias) => `/${alias}`).join(", ")})` : ""} — ${command.description}`).join("\n") + "\n\nCtrl+R sessions · Ctrl+T settings · Ctrl+N new session are native OpenCode actions." });
           return;
         case "resume": {
-          const sessions = context.data.session.list().filter((session) => !session.parentID);
-          const match = arg ? sessions.find((session) => session.id === arg || session.id.startsWith(arg.toLowerCase()) || (session.title ?? "").toLowerCase().includes(arg.toLowerCase())) : undefined;
+          const query = arg.toLowerCase();
+          const pageSize = 100;
+          const match = query ? await findNativeResumeSession({ query: arg, directory: location.directory, client: context.client }) : undefined;
           if (match) { context.ui.router.navigate({ type: "session", sessionID: match.id }); return; }
-          if (arg) { toast(`No local session matches “${arg}”.`, "warning"); return; }
-          const selected = await context.ui.dialog.select({ title: "Resume local session", options: sessions.map((s) => ({ title: s.title ?? s.id, value: s.id, description: s.id })) });
+          if (query) {
+            const archived = await archiveClient(context, location).search({ query: arg, limit: 1 }) as { total: number };
+            if (archived.total > 0) { toast(`“${arg}” matched ${archived.total} legacy archive result(s); archives are read-only and cannot be resumed. Use /archive search ${arg}.`, "warning"); return; }
+            toast(`No native session matches “${arg}” in ${context.ui.format.path(location.directory)}.`, "warning");
+            return;
+          }
+          let cursor: string | undefined;
+          const sessions: Array<{ id: string; title?: string; parentID?: string; time: { updated: number } }> = [];
+          do {
+            const page = await context.client.session.list({ limit: pageSize, order: "desc", directory: location.directory, ...(cursor ? { cursor } : {}) });
+            sessions.push(...page.data.filter((session) => !session.parentID));
+            cursor = page.cursor.next ?? undefined;
+          } while (cursor);
+          const selected = await context.ui.dialog.select({ title: `Resume native session · ${sessions.length} loaded`, options: sessions.map((session) => ({ title: session.title ?? session.id, value: session.id, description: `${new Date(session.time.updated).toLocaleString()} · ${session.id}` })) });
           if (selected) context.ui.router.navigate({ type: "session", sessionID: selected });
           return;
         }
@@ -262,6 +276,98 @@ export default Plugin.define({
           const hasCost = hasMessageCost || Number.isFinite(cachedCost) && cachedCost > 0;
           const hasTokens = assistants.some((message) => message.tokens !== undefined);
           await context.ui.dialog.alert({ title: "Session stats", message: `${session?.title ?? sessionID}\nMessages: ${messages.length} (${assistants.length} assistant)\nInput tokens: ${hasTokens ? totals.input : "not reported"}\nOutput tokens: ${hasTokens ? totals.output : "not reported"}\nReasoning tokens: ${hasTokens ? totals.reasoning : "not reported"}\nCache read/write: ${hasTokens ? `${totals.cacheRead} / ${totals.cacheWrite}` : "not reported"}\nCost: ${hasCost ? `$${totals.cost.toFixed(4)}` : "not reported"}` });
+          return;
+        }
+        case "account": {
+          const result = await shipClient(context, location).account() as { account: Record<string, unknown> };
+          await context.ui.dialog.alert({ title: "Carthagent Ship account", message: cloudAccountText(result.account) });
+          return;
+        }
+        case "usage": {
+          const [accountResult, usageResult] = await Promise.all([
+            shipClient(context, location).account() as Promise<{ account: Record<string, unknown> }>,
+            shipClient(context, location).usage({ limit: 50 }) as Promise<{ usage: Record<string, unknown> }>,
+          ]);
+          await context.ui.dialog.alert({ title: "Carthagent Ship usage", message: cloudUsageText(usageResult.usage, accountResult.account) });
+          return;
+        }
+        case "billing": {
+          const action = arg.toLowerCase() || "checkout";
+          if (!["checkout", "portal"].includes(action)) { toast("Usage: /billing [checkout|portal].", "warning"); return; }
+          const { url } = await shipClient(context, location).billing({ action: action as "checkout" | "portal" }) as { url: string };
+          const { openBrowser } = await import("../../../lib/cloud/client.mjs");
+          const opened = await openBrowser(url).catch(() => false);
+          await context.ui.dialog.alert({ title: action === "portal" ? "Ship billing portal" : "Ship checkout", message: `${opened ? "Opened in your browser." : "Open this URL in your browser:"}\n${url}` });
+          return;
+        }
+        case "logout-cloud": {
+          const session = arg || undefined;
+          const confirmed = await context.ui.dialog.confirm({ title: session ? "Revoke Ship session" : "Sign out of Carthagent Ship", message: session ? `Revoke Ship session ${session}?` : "Revoke the active Ship session and remove its OpenCode connection?" });
+          if (confirmed !== true) return;
+          await shipClient(context, location).logout(session ? { session } : {});
+          toast(session ? `Revoked Ship session ${session}.` : "Revoked and removed the active Carthagent Ship connection.", "success");
+          return;
+        }
+        case "archive": {
+          const [operation, ...rest] = arg.split(/\s+/).filter(Boolean);
+          const archive = archiveClient(context, location);
+          if (operation && !["list", "search", "read", "export"].includes(operation)) { toast("Usage: /archive [list|search <query>|read <id>|export <id>].", "warning"); return; }
+          if (operation === "search" && !rest.length) { toast("Usage: /archive search <query>.", "warning"); return; }
+          if (operation === "read" || operation === "export") {
+            const id = rest[0];
+            if (!id) { toast(`Usage: /archive ${operation} <id>.`, "warning"); return; }
+            if (operation === "read") {
+              const result = await archive.read({ id }) as { records: unknown[] };
+              const content = result.records.map((record: unknown) => JSON.stringify(record)).join("\n") || "Archive is empty.";
+              const pageSize = 24000;
+              for (let offset = 0; offset < content.length; offset += pageSize) {
+                const end = Math.min(offset + pageSize, content.length);
+                await context.ui.dialog.alert({ title: `Archived session ${id} · characters ${offset + 1}–${end} of ${content.length}`, message: content.slice(offset, end) });
+                if (end < content.length && await context.ui.dialog.confirm({ title: "Continue archived session?", message: `Show characters ${end + 1}–${Math.min(end + pageSize, content.length)} of ${content.length}?`, label: { confirm: "Continue", cancel: "Stop reading" } }) !== true) break;
+              }
+            } else {
+              const result = await archive.export({ id, format: "jsonl" }) as { content: string };
+              const path = resolve(location.directory, `${id.replace(/[^a-zA-Z0-9._-]/g, "_")}.jsonl`);
+              await writeFile(path, result.content, { encoding: "utf8", flag: "wx" });
+              toast(`Complete archive export (${Buffer.byteLength(result.content, "utf8")} bytes) saved to ${context.ui.format.path(path)}.`, "success");
+            }
+            return;
+          }
+          const query = operation === "search" ? rest.join(" ") : undefined;
+          let offset = 0;
+          const pageSize = 50;
+          while (true) {
+            const result = (query
+              ? await archive.search({ query, offset, limit: pageSize })
+              : await archive.list({ offset, limit: pageSize })) as { total: number; offset: number; limit: number; items: Array<Record<string, unknown>> };
+            const returned = result.items.length;
+            const first = returned ? result.offset + 1 : 0;
+            const last = result.offset + returned;
+            await context.ui.dialog.alert({
+              title: `${query ? "Archive search" : "Archived sessions"} · ${first}–${last} of ${result.total}`,
+              message: `${returned} item(s) returned on this page${result.total > returned ? `; ${result.total} total matches` : ""}.\n\n${result.items.map(archiveItemText).join("\n\n") || (query ? "No archived sessions matched." : "No archived sessions found.")}`,
+            });
+            if (!returned || last >= result.total) break;
+            const next = await context.ui.dialog.confirm({ title: "More archived sessions?", message: `Showing ${last} of ${result.total}. Load the next page?`, label: { confirm: "Next page", cancel: "Done" } });
+            if (next !== true) break;
+            offset += returned;
+          }
+          return;
+        }
+        case "demo": {
+          const { runOfflineDemo } = await import("../../../lib/opencode/demo.mjs");
+          const lines: string[] = [];
+          const demoIo = Object.assign(Object.create(console), {
+            log: (...values: unknown[]) => { lines.push(values.map(String).join(" ")); },
+            error: (...values: unknown[]) => { lines.push(values.map(String).join(" ")); },
+          }) as Console;
+          let exitCode: number;
+          try { exitCode = await runOfflineDemo({ io: demoIo, signal: lifecycle.signal }); }
+          catch (error) {
+            if (lifecycle.signal.aborted) return;
+            throw error;
+          }
+          await context.ui.dialog.alert({ title: exitCode === 130 ? "Carthagent offline demo · cancelled" : exitCode === 0 ? "Carthagent offline demo · fixture passed" : "Carthagent offline demo · fixture failed", message: `${lines.join("\n")}\n\nActual fixture exit status: ${exitCode}\nThis disposable fixture is not evidence about the current workspace.` });
           return;
         }
         case "clear":

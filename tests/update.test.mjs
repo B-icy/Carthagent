@@ -110,6 +110,22 @@ test('fetchLatestRelease falls back to GitHub when the manifest fails validation
   assert.equal(urls.length, 2);
 });
 
+test('fetchLatestRelease forwards cancellation and does not fall back after an abort', async () => {
+  const controller = new AbortController();
+  let calls = 0;
+  await assert.rejects(fetchLatestRelease({
+    cloudUrl: 'https://cloud.test',
+    signal: controller.signal,
+    fetchImpl: async (_url, options) => {
+      calls++;
+      assert.equal(options.signal.aborted, false);
+      controller.abort(new Error('cancelled'));
+      throw controller.signal.reason;
+    },
+  }), /cancelled/);
+  assert.equal(calls, 1, 'an aborted control-plane request must not trigger GitHub fallback');
+});
+
 // ---- latestReleaseCached
 
 test('latestReleaseCached fetches once, then serves the cache', () => withTempDir(async dir => {
