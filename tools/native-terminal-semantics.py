@@ -24,7 +24,15 @@ import tempfile
 import termios
 import threading
 import time
+import importlib.util
 from datetime import datetime, timezone
+
+_decision_path = Path(__file__).with_name('terminal-semantics-decisions.py')
+_decision_spec = importlib.util.spec_from_file_location('terminal_semantics_decisions', _decision_path)
+_decisions = importlib.util.module_from_spec(_decision_spec)
+_decision_spec.loader.exec_module(_decisions)
+picker_cancel_observation = _decisions.picker_cancel_observation
+is_focused_terminal_case = _decisions.is_focused_terminal_case
 
 
 class Provider(http.server.BaseHTTPRequestHandler):
@@ -195,30 +203,6 @@ class Screen:
 
     def visible(self):
         return '\n'.join(''.join(row).rstrip() for row in self.cells)
-
-
-def picker_cancel_observation(heading, visible, home_ready, home_before, provider_requests):
-    """Return a cancellation verdict only after overlay dismissal and home restoration."""
-    screen = visible.lower()
-    overlay_visible = (heading in screen or 'no matches' in screen or
-                       'open                       esc' in screen)
-    if overlay_visible or not home_ready:
-        return None
-    no_request = provider_requests == 0
-    return {
-        'status': 'PASS' if home_before and no_request else 'FAIL',
-        'pickerObserved': True,
-        'cancelKey': 'Escape',
-        'dismissed': True,
-        'composerRestored': True,
-        'providerRequestsBeforePrompt': provider_requests,
-        'noPromptProviderRequestBeforeAcceptance': no_request,
-    }
-
-
-def is_focused_terminal_case(focused_roundtrip, layout_regression):
-    """Focused transport modes skip picker setup; picker-only is interactive."""
-    return focused_roundtrip or layout_regression
 
 
 def controlled_terminal_model_fixture():
