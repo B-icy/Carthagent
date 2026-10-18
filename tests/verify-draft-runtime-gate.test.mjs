@@ -9,7 +9,16 @@ import { REQUIRED_RELEASE_ASSETS, verifyDraftRuntimeGate } from '../tools/verify
 
 const tag = 'v1.0.3';
 const sha = 'a'.repeat(40);
-const release = { id: 77, tag_name: tag, draft: true, assets: REQUIRED_RELEASE_ASSETS.map((name) => ({ name })) };
+const producerReleaseAssets = [
+  'opencode-linux-x64.tar.gz',
+  'opencode-linux-arm64.tar.gz',
+  'opencode-darwin-x64.tar.gz',
+  'opencode-darwin-arm64.tar.gz',
+  'opencode-windows-x64.tar.gz',
+  'runtime-release.json',
+  'runtime-release-SHA256SUMS.txt',
+].map((name) => ({ name }));
+const release = { id: 77, tag_name: tag, draft: true, assets: producerReleaseAssets };
 
 function mockRun({ releaseValue = release, remoteSha = sha, checkoutSha = sha, annotated = false } = {}) {
   const calls = [];
@@ -68,7 +77,10 @@ test('requires the exact seven-asset producer contract: five archives, manifest,
     'runtime-release-SHA256SUMS.txt',
   ];
   assert.deepEqual(REQUIRED_RELEASE_ASSETS, expectedAssets);
-  const result = await verifyDraftRuntimeGate({ phase: 'before', releaseTag: tag, repo: 'B-icy/Carthagent', cwd: '/fixture', run: mockRun().run });
+  const result = await verifyDraftRuntimeGate({
+    phase: 'before', releaseTag: tag, repo: 'B-icy/Carthagent', cwd: '/fixture',
+    run: mockRun({ releaseValue: { ...release, assets: expectedAssets.map((name) => ({ name })) } }).run,
+  });
   assert.deepEqual(result, { releaseId: 77, sha, version: '1.0.3' });
 
   for (const [label, assets, expected] of [
