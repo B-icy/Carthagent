@@ -20,12 +20,18 @@ separate combined candidate is recorded at
 `94a18eece950da260213e66168583f83e44923638f014efa2e58ff74f315bae7`; it adds
 the approved spinner test-isolation and real-provider theme proof patches. The
 candidate recipe and packaged runtime identity both pin this digest; the
-approved base recipe/runtime identity and base patch remain unchanged. Frozen
+historical base recipe/runtime identity remain recorded in Git, and the base
+patch remains unchanged. Frozen
 lockfile installation, TUI typecheck, and the exact combined glyph/keymap/theme/
 provider run passed (19 tests / 186 assertions in one Bun process with
 `--timeout 60000`). The publish-workflow fixture passed all 6 tests after
-updating its trust-root assertion. These checks are not independent source
-approval or build approval. The three standalone review patches remain
+updating its trust-root assertion. Independent source review subsequently
+approved exact head `70882269e25ebcb62c843f9265345342b9e6844d` and independently
+reproduced the frozen install, TUI typecheck, and all 19 tests / 186 assertions
+on the same patch. Parent composition at `2fbb60034c` preserves the exact
+recipe, patch, workflow and fixture bytes; 48 parent workflow/runtime/transport
+checks pass. The full Linux recipe build is authorized and in progress. These
+source checks do not establish final-artifact acceptance. The three standalone review patches remain
 separately published and unchanged. The base composition was
 applied to a clean detached upstream checkout and its reverse-application check
 and `git diff --check` pass. The glyph patch’s two `/help`-overlapping files
@@ -59,9 +65,10 @@ archive and stale annotated-tag cases both assert zero captured uploads. This is
 automated mocked workflow coverage, not a real dispatch or release. Although
 the fixture accepts a reviewed-branch prebuild SHA, GitHub only registers
 `workflow_dispatch` for a workflow file present on the default branch. This
-workflow is not yet registered there; a focused reviewed bootstrap merge on
-`main` is therefore required before a real prebuild dispatch can be attempted.
-Do not infer dispatch availability from these fixture results.
+workflow was subsequently registered by reviewed bootstrap #197, merged as
+`bd1292c8c4` after green CI. Parent dispatched real prebuild run `39089640210`
+against exact source `70882269e25ebcb62c843f9265345342b9e6844d` for planned
+version `1.1.0`. Its build results remain pending.
 
 This focused TUI candidate verification is not the parent repository's full
 quality run and does not include the separate native CLI test-browser isolation

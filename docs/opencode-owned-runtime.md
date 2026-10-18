@@ -28,12 +28,16 @@ override.
 - Candidate verification: Bun 1.4.2 frozen-lockfile install passed, TUI
   typecheck passed, and glyph/keymap/plugin-theme/real-provider-theme tests
   passed together (19 tests / 186 assertions, one process,
-  `--timeout 60000`). The workflow fixture passed 6/6 tests. This candidate is
-  awaiting independent review; no build or release is authorized yet.
-- Dispatch limitation: GitHub requires a `workflow_dispatch` workflow to be
-  present on the default branch. This workflow is not registered on `main`; a
-  separately reviewed bootstrap merge there is required before prebuild
-  dispatch. Fixture coverage does not prove dispatch availability.
+  `--timeout 60000`). Independent review approved exact head
+  `70882269e25ebcb62c843f9265345342b9e6844d` and reproduced the frozen install,
+  TUI typecheck, and all 19 tests / 186 assertions in one process. Parent
+  workflow/runtime/transport checks pass 48/48. The full Linux recipe build is
+  authorized and in progress; final artifact acceptance remains pending.
+- Workflow registration: independently and parent-approved bootstrap #197
+  passed CI and merged on `main` as `bd1292c8c4`. The workflow is registered;
+  actual prebuild run `39089640210` was dispatched at reviewed source
+  `70882269e25ebcb62c843f9265345342b9e6844d` for planned version `1.1.0`.
+  Build results and final installed acceptance remain pending.
 - Separate parent-quality follow-up: native CLI browser-launch isolation
   `d4983b57328a187e8be6bc0e2c6bd2dda7518920` is not part of this upstream source
   patch and must be integrated in its applicable parent branch before the
@@ -117,12 +121,10 @@ main/tag ancestry and exact-SHA relationship is checked again after acceptance.
 It requires the release to remain a draft with exactly those seven assets, runs
 `npm ci` and full `npm run quality`, and runs the current full,
 non-focused installed-package gate with `CTG_REQUIRE_OWNED_RUNTIME=1` and the
-normal default resolver. This existing gate is not, by itself, the final
-installed release acceptance: the final acceptance also requires the owned
-host-controls test (`test-owned-host-controls.mjs`) and the glyph and
-clear/reopen probes from reviewed heads to be composed into the gate. Those
-additional controls/glyph/clear evidence gates remain pending; this workflow
-does not copy or run unreviewed probe drafts. GitHub documents that only callers
+normal default resolver. The independently reviewed host-controls, glyph,
+controlled-terminal semantics, and visual-clear/reopen probes are now composed
+into that gate. Their live final-artifact results remain pending. GitHub
+documents that only callers
 with push access receive draft releases from the release-list endpoint. The
 workflow therefore grants its job `contents: write`, the minimum `GITHUB_TOKEN`
 permission that provides the required push capability. This is a write-capable
@@ -162,9 +164,10 @@ acceptance remains required after publication.
 ## Full-TUI glyph compatibility
 
 The approved glyph-v4 patch is composed into the reviewed `81e` base patch. A
-new combined candidate adds the separately approved spinner test-isolation
-follow-up and real-provider theme integration test; it is pending exact-digest
-combined-suite review and is not final build input. It adds
+combined candidate adds the separately approved spinner test-isolation
+follow-up and real-provider theme integration test. Exact-digest source review
+and independent combined-suite reproduction passed; the final build and live
+acceptance remain pending. The host patch adds
 a centralized host-chrome registry to the full TUI while preserving arbitrary
 user text. The glyph author reports independent source approval and 11 focused
 tests/146 assertions passing on the author worktree. This is source evidence,
