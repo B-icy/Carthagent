@@ -4,10 +4,10 @@ import importlib.util
 from pathlib import Path
 import unittest
 
-MODULE = Path(__file__).with_name('test-owned-visual-clear.py')
-SPEC = importlib.util.spec_from_file_location('owned_visual_clear', MODULE)
-PROBE = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(PROBE)
+MODULE = Path(__file__).with_name('owned-visual-clear-env.py')
+SPEC = importlib.util.spec_from_file_location('owned_visual_clear_env', MODULE)
+ENV = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(ENV)
 
 
 class ChildEnvironmentTests(unittest.TestCase):
@@ -23,7 +23,7 @@ class ChildEnvironmentTests(unittest.TestCase):
             'NODE_OPTIONS': '--require=/credential-stealing.js',
             'OPENCODE_CONFIG': '/real/user/profile.json',
         }
-        result = PROBE.fixture_environment(
+        result = ENV.fixture_environment(
             ambient, '/tmp/clear-test-home', '/tmp/owned-root', '/tmp/release.json')
         self.assertEqual(result['PATH'], ambient['PATH'])
         self.assertEqual(result['LANG'], ambient['LANG'])
@@ -36,17 +36,17 @@ class ChildEnvironmentTests(unittest.TestCase):
                           'OPENCODE_CONFIG'} & result.keys())
 
     def test_tui_allowlist_rejects_unknown_and_case_variant_reserved_credentials(self):
-        clean = PROBE.fixture_environment(
+        clean = ENV.fixture_environment(
             {'PATH': '/usr/bin', 'LANG': 'C.UTF-8'},
             '/tmp/clear-test-home', '/tmp/owned-root', '/tmp/release.json')
-        clean = {key: value for key, value in clean.items() if key in PROBE.TUI_ENV_KEYS}
+        clean = {key: value for key, value in clean.items() if key in ENV.TUI_ENV_KEYS}
         clean.update({'TERM': 'xterm-256color', 'OPENCODE_PASSWORD': 'FAKE_FIXTURE_PASSWORD'})
-        PROBE.assert_clean_child_environment(clean)
+        ENV.assert_clean_child_environment(clean)
 
         with self.assertRaisesRegex(AssertionError, 'non-allowlisted'):
-            PROBE.assert_clean_child_environment({**clean, 'AWS_SECRET_ACCESS_KEY': 'FAKE'})
+            ENV.assert_clean_child_environment({**clean, 'AWS_SECRET_ACCESS_KEY': 'FAKE'})
         with self.assertRaisesRegex(AssertionError, 'reserved runtime download'):
-            PROBE.assert_clean_child_environment({**clean, 'ctg_runtime_github_token': 'FAKE'})
+            ENV.assert_clean_child_environment({**clean, 'ctg_runtime_github_token': 'FAKE'})
 
     def test_node_helper_environment_does_not_forward_parent_credentials(self):
         fake_parent = {
@@ -57,9 +57,9 @@ class ChildEnvironmentTests(unittest.TestCase):
             'NPM_TOKEN': 'FAKE_NPM_TOKEN_FOR_TEST',
             'GH_TOKEN': 'FAKE_GH_TOKEN_FOR_TEST',
         }
-        child = PROBE.fixture_environment(
+        child = ENV.fixture_environment(
             fake_parent, '/tmp/isolated-home', '/tmp/owned', '/tmp/manifest.json')
-        self.assertEqual(set(child) - set(PROBE.SAFE_PARENT_ENV) - {
+        self.assertEqual(set(child) - set(ENV.SAFE_PARENT_ENV) - {
             'HOME', 'USERPROFILE', 'CTG_OWNED_OPENCODE_RUNTIME',
             'CTG_TEST_RUNTIME_RELEASE_MANIFEST', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME',
             'XDG_STATE_HOME', 'XDG_CACHE_HOME'}, set())
@@ -72,9 +72,9 @@ class ChildEnvironmentTests(unittest.TestCase):
             'AWS_ACCESS_KEY_ID': 'FAKE_AWS_ACCESS_KEY',
             'NODE_OPTIONS': '--require=fake-preload.js',
         }
-        child = PROBE.fixture_environment(
+        child = ENV.fixture_environment(
             ambient, '/tmp/isolated-home', '/tmp/owned', '/tmp/manifest.json')
-        PROBE.assert_clean_child_environment(child, PROBE.FIXTURE_ENV_KEYS)
+        ENV.assert_clean_child_environment(child, ENV.FIXTURE_ENV_KEYS)
         self.assertFalse(any(name.casefold() == 'ctg_runtime_github_token' for name in child))
         self.assertFalse({'GITHUB_TOKEN', 'AWS_ACCESS_KEY_ID', 'NODE_OPTIONS'} & child.keys())
 
