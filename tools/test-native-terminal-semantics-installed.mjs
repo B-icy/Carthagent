@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { resolveOpenCode, runtimeIdentity } from '../lib/opencode/runtime.mjs';
 import { loadNativeTestRuntime } from './native-runtime-identity.mjs';
 import { withoutRuntimeGithubToken } from './runtime-token-env.mjs';
+import { assertTerminalSemanticsProof, resolveInstalledRuntime } from './installed-runtime-contract.mjs';
 
 assert.equal(process.platform, 'linux', 'installed terminal-semantics acceptance is currently a Linux controlled-PTY claim');
 for (const key of Object.keys(process.env)) {
@@ -16,8 +17,7 @@ for (const key of Object.keys(process.env)) {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const manifestPath = join(root, 'lib/opencode/runtime-release.json');
 const manifest = JSON.parse(await (await import('node:fs/promises')).readFile(manifestPath, 'utf8'));
-const binary = await resolveOpenCode({ runtimeReleaseManifestPath: manifestPath });
-const identity = await runtimeIdentity(binary, { runtimeReleaseManifestPath: manifestPath });
+const { binary, identity } = await resolveInstalledRuntime(resolveOpenCode, runtimeIdentity, manifestPath);
 assert.equal(identity.kind, 'ctg-owned', 'terminal semantics acceptance requires default installed CTG-owned runtime');
 const verified = await loadNativeTestRuntime({
   binary, ownedRoot: dirname(dirname(dirname(binary))), expectedManifest: manifest,
@@ -35,9 +35,4 @@ if (result.stdout) process.stdout.write(result.stdout);
 if (result.stderr) process.stderr.write(result.stderr);
 assert.equal(result.status, 0, `controlled terminal semantics failed with status ${result.status}`);
 const proof = JSON.parse(result.stdout);
-assert.equal(proof.status, 'PASS', 'controlled terminal harness must complete every configured terminal check');
-assert.equal(resolve(proof.binaryResolvedPath), resolve(binary), 'PTY proof must identify the exact default-resolved runtime executable');
-assert.equal(proof.binarySha256, identity.binarySha256, 'PTY proof executable digest must match the trusted owned identity');
-assert.equal(proof.binaryVersion, `opencode v${manifest.runtimeVersion}`, 'PTY proof version must match the packaged runtime manifest');
-assert.equal(proof.physicalOSClipboardVerified, false, 'controlled terminal model is not a physical OS clipboard claim');
-assert.equal(proof.controlledHostClipboardModel, true);
+assertTerminalSemanticsProof(proof, { binary: resolve(binary), identity, manifest });
