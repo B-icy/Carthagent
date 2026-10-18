@@ -22,13 +22,18 @@ export default Plugin.define({
     const cleanups = [unregister];
     const lifecycle = new AbortController();
     cleanups.push(() => lifecycle.abort());
-    const reviewLoops = new Set<string>();
+    const [reviewLoopState, updateReviewLoopState] = context.storage.store("carthagent.native-review-loops", { initial: { sessions: [] as string[] } });
+    const reviewLoops = new Set<string>(reviewLoopState.sessions);
     const reviewConsumer = createNativeReviewConsumer({
       mode: (sessionID: string) => nativeReviewMode(context.data.session.get(sessionID), loadCarthagentConfig()),
-      diff: async (sessionID: string, signal?: AbortSignal) => await context.client.session.diff({ sessionID }, { signal: signal ?? AbortSignal.timeout(15_000) }),
+      diff: async (sessionID: string, signal?: AbortSignal) => await context.client.session.diff({ sessionID }, { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000) }),
       signal: lifecycle.signal,
       isLoopActive: (sessionID: string) => reviewLoops.has(sessionID),
-      setLoopActive: (sessionID: string, active: boolean) => { if (active) reviewLoops.add(sessionID); else reviewLoops.delete(sessionID); },
+      setLoopActive: (sessionID: string, active: boolean) => {
+        if (active) reviewLoops.add(sessionID);
+        else reviewLoops.delete(sessionID);
+        void updateReviewLoopState((state) => { state.sessions = [...reviewLoops]; });
+      },
       offer: async ({ sessionID, writes, start }: { sessionID: string; writes: number; start: () => Promise<boolean> }) => {
         const accepted = await context.ui.dialog.confirm({ title: `Review ${context.data.session.get(sessionID)?.title ?? sessionID}?`, message: `This successful run changed ${writes} file${writes === 1 ? "" : "s"}. Start the PR → fresh-context review → fixes workflow?`, label: { confirm: "Start review", cancel: "Not now" } });
         if (accepted) await start();
