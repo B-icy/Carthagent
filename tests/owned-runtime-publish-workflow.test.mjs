@@ -384,7 +384,8 @@ test('draft metadata validation has scoped write capability; artifact mutation s
     'both generation paths must extract exact committed candidate bytes at the pinned historical path');
   assert.match(workflow, /git -C ctg show HEAD:script\/ctg\/build-owned-runtime\.sh > opencode\/script\/ctg\/build-owned-runtime\.sh/);
   assert.match(workflow, /chmod \+x opencode\/script\/ctg\/build-owned-runtime\.sh/);
-  assert.match(workflow, /git -C opencode -c core\.autocrlf=false checkout-index --force --all/);
+  assert.match(workflow, /GIT_CONFIG_KEY_0:\s*core\.autocrlf[\s\S]*?GIT_CONFIG_VALUE_0:\s*'false'/);
+  assert.match(workflow, /git -C opencode config --local core\.autocrlf false/);
   assert.match(workflow, /patch_sha256="\$\(hash_file opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v2\.patch\)"/);
 });
 
