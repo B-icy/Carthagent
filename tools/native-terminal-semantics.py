@@ -24,7 +24,18 @@ import tempfile
 import termios
 import threading
 import time
+import importlib.util
 from datetime import datetime, timezone
+
+_decision_path = Path(__file__).with_name('terminal-semantics-decisions.py')
+_decision_spec = importlib.util.spec_from_file_location('terminal_semantics_decisions', _decision_path)
+_decisions = importlib.util.module_from_spec(_decision_spec)
+_decision_spec.loader.exec_module(_decisions)
+picker_cancel_observation = _decisions.picker_cancel_observation
+is_focused_terminal_case = _decisions.is_focused_terminal_case
+rendered_fixture_row = _decisions.rendered_fixture_row
+rendered_fixture_body_row = _decisions.rendered_fixture_body_row
+active_session_prompt_ready = _decisions.active_session_prompt_ready
 
 
 class Provider(http.server.BaseHTTPRequestHandler):
@@ -247,6 +258,10 @@ def sha256_file(path):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--binary', default=os.environ.get('CTG_OPENCODE_BIN'))
+    parser.add_argument('--expected-binary-sha256', required=True,
+                        help='independently trusted SHA-256 required before executing the native binary')
+    parser.add_argument('--expected-probe-sha256', required=True,
+                        help='expected digest of this exact Python probe source')
     parser.add_argument('--timeout', type=int, default=75)
     parser.add_argument('--host-model-only', action='store_true',
                         help='run controlled terminal-host fixture without launching OpenCode')
@@ -273,6 +288,12 @@ def main():
     if not os.path.isfile(binary):
         parser.error(f'native binary does not exist: {binary}')
     binary = os.path.realpath(binary)
+    binary_sha = sha256_file(binary)
+    if not re.fullmatch(r'[a-f0-9]{64}', args.expected_binary_sha256) or binary_sha != args.expected_binary_sha256:
+        parser.error(f'native binary SHA-256 mismatch: expected {args.expected_binary_sha256}, got {binary_sha}')
+    probe_sha = sha256_file(__file__)
+    if not re.fullmatch(r'[a-f0-9]{64}', args.expected_probe_sha256) or probe_sha != args.expected_probe_sha256:
+        parser.error(f'probe source SHA-256 mismatch: expected {args.expected_probe_sha256}, got {probe_sha}')
     binary_version = subprocess.run([binary, '--version'], capture_output=True, text=True, timeout=20)
     if binary_version.returncode != 0 or '2.0.32' not in (binary_version.stdout + binary_version.stderr):
         parser.error(f'owned executable must identify the OpenCode 2.0.32 line; got {binary_version.stdout.strip()!r}')
@@ -288,7 +309,6 @@ def main():
                                    capture_output=True, text=True).stdout.strip()
     source_commit = subprocess.run(['git', '-C', str(repo_root), 'rev-parse', 'HEAD'],
                                    capture_output=True, text=True).stdout.strip()
-    binary_sha = sha256_file(binary)
     result = {'startedAtUtc': datetime.now(timezone.utc).isoformat(),
               'case': ('focused-host-roundtrip' if args.focused_host_roundtrip else
                        'layout-regression' if args.assertion_regression_only else
@@ -296,7 +316,7 @@ def main():
               'binary': binary, 'binaryResolvedPath': os.path.realpath(binary),
               'binarySha256': binary_sha, 'buildHash': binary_sha,
               'binaryVersion': (binary_version.stdout + binary_version.stderr).strip(),
-              'probeSha256': sha256_file(__file__),
+              'probeSha256': probe_sha,
               'pluginSha256': sha256_file(repo_root / 'plugins' / 'carthagent' / 'src' / 'tui.tsx'),
               'sourceCommit': source_commit,
               'workingTreeDirty': bool(source_status),
@@ -322,6 +342,7 @@ def main():
             os.makedirs(path, exist_ok=True)
         with open(os.path.join(config, 'opencode.json'), 'w', encoding='utf8') as handle:
             json.dump({'update': 'disable', 'model': 'ctgfixture/fixture',
+                       'terminal': {'copy': 'select'},
                        'providers': {'ctgfixture': {'name': 'Offline Fixture',
                          'package': '@opencode/ai/providers/openai-compatible',
                          'settings': {'baseURL': f'http://127.0.0.1:{port}/v1'},
@@ -350,12 +371,19 @@ def main():
         picker_cancelled = False
         picker_home_before = False
         picker_home_restored = False
-        session_opened = False
-        session_open_at = None
+        prompt_entry_primed = False
+        prompt_entry_primed_at = None
+        session_transition_enter_sent = False
+        session_submission_enter_sent = False
         copy_invoked = False
         copy_confirmed = False
         selection_sent = False
         selection_confirmed = False
+        selection_diagnostics = {'mouseModeObserved': False, 'mouseTrackingModesObserved': [],
+                                 'terminalCopySetting': 'select (default on POSIX)',
+                                 'responseRowsObserved': [], 'gestureEventsSent': [],
+                                 'responseRowStableSamples': 0,
+                                 'submitInputTrace': []}
         selected_clipboard_count = 0
         copy_clipboard_count = 0
         auth_dismissed = False
@@ -364,7 +392,10 @@ def main():
         regression_case = args.assertion_regression_only
         picker_only = args.picker_regression_only
         layout_only = regression_case and not picker_only
-        focused_case = args.focused_host_roundtrip or regression_case or picker_only
+        # Picker regression is explicitly an interaction case: it must enter
+        # the same picker lifecycle as the full scenario, not the focused mode
+        # that suppresses picker opening.
+        focused_case = is_focused_terminal_case(args.focused_host_roundtrip, regression_case)
         resize_case = layout_only or (not focused_case and not args.picker_regression_only)
         exact = ('focused-host-request' if focused_case else
                  'native-pty: café 日本語 😀\n' + 'large-paste-λ-' * 1200 + '\nEND-PASTE-終')
@@ -398,7 +429,7 @@ def main():
                 onboarding_visible = ('connect opencode go' in visible or
                                       'connect an integration to' in visible or
                                       'send prompts' in visible)
-                if focused_case and not auth_dismissed and onboarding_visible:
+                if not auth_dismissed and onboarding_visible:
                     os.write(master, b'\x1b')
                     auth_dismissed = True
                     auth_dismissed_at = time.monotonic()
@@ -427,12 +458,13 @@ def main():
                         'cancelKey': 'Escape', 'providerRequestsBeforePrompt': len(Provider.received)}
                 if picker_cancelled and result['checks'].get('pickerEscapeCancel', {}).get('status') == 'PENDING':
                     if time.monotonic() - picker_cancelled_at > .5:
-                        current_screen = screen.visible().lower()
-                        still_open = (picker_heading in current_screen or 'no matches' in current_screen or
-                                      'open                       esc' in current_screen)
-                        picker_home_restored = ('ask anything' in current_screen or
-                                                'what is the tech' in current_screen)
-                        if still_open or not picker_home_restored:
+                        current_screen = screen.visible()
+                        picker_home_restored = ('ask anything' in current_screen.lower() or
+                                                'what is the tech' in current_screen.lower())
+                        cancellation = picker_cancel_observation(
+                            picker_heading, current_screen, picker_home_restored,
+                            picker_home_before, len(Provider.received))
+                        if cancellation is None:
                             # Picker search/filter dialogs can consume the
                             # first Escape to clear search. Keep the staged
                             # prompt out of that dialog and dismiss until the
@@ -440,13 +472,7 @@ def main():
                             os.write(master, b'\x1b')
                             picker_cancelled_at = time.monotonic()
                             continue
-                        no_provider_request = len(Provider.received) == 0
-                        result['checks']['pickerEscapeCancel'] = {
-                            'status': 'PASS' if picker_home_before and picker_home_restored and not still_open and no_provider_request else 'FAIL',
-                            'pickerObserved': True, 'cancelKey': 'Escape',
-                            'dismissed': not still_open, 'composerRestored': picker_home_restored,
-                            'providerRequestsBeforePrompt': len(Provider.received),
-                            'noPromptProviderRequestBeforeAcceptance': no_provider_request}
+                        result['checks']['pickerEscapeCancel'] = cancellation
                         if picker_only:
                             break
                 if picker_started and not picker_cancelled and time.monotonic() - picker_at > 3:
@@ -462,24 +488,16 @@ def main():
                 picker_cancel_passed = (not picker_started or
                                         result['checks'].get('pickerEscapeCancel', {}).get('status') == 'PASS')
                 ready_for_prompt = (((not focused_case) and picker_cancelled and picker_cancel_passed and elapsed > 5 and home_ready) or
-                                    (args.focused_host_roundtrip and elapsed > 2 and home_ready) or
+                                     (args.focused_host_roundtrip and elapsed > 2 and home_ready) or
                                     (layout_only and elapsed > 2 and home_ready))
-                if not session_opened and not picker_only and ready_for_prompt:
-                    # The home screen's first Enter creates/opens a session; it
-                    # does not submit text. Open it separately before staging
-                    # the test prompt so Escape/picker state cannot consume the
-                    # later Enter intended for submission.
-                    os.write(master, b'\r')
-                    session_opened = True
-                    session_open_at = time.monotonic()
-                    if focused_case and not args.assertion_regression_only:
-                        # The focused case runs the PTY asynchronously; give
-                        # the active-session transition a beat before the
-                        # bracketed paste, rather than sending the paste while
-                        # the home screen is still handling the Enter.
-                        time.sleep(.75)
-                if (session_opened and not sent and not picker_only and
-                        time.monotonic() - session_open_at > .75):
+                if not prompt_entry_primed and not picker_only and ready_for_prompt:
+                    # Mark the transition boundary; do not use empty Enter as
+                    # proof of session creation. The staged prompt plus active
+                    # composer and provider request provide that evidence.
+                    prompt_entry_primed = True
+                    prompt_entry_primed_at = time.monotonic()
+                if (prompt_entry_primed and not sent and not picker_only and
+                        time.monotonic() - prompt_entry_primed_at > .75):
                     # Narrow terminal stress is an actual resize on the PTY.
                     if resize_case:
                         fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', 12, 40, 0, 0))
@@ -489,23 +507,71 @@ def main():
                         resized = True
                         time.sleep(.25)
                     os.write(master, b'\x1b[200~' + payload + b'\x1b[201~')
+                    selection_diagnostics['submitInputTrace'].append({
+                        'action': 'bracketed-paste', 'bytes': len(payload),
+                        'visibleScreenTail': screen.visible()[-400:]})
                     sent = True
                     pasted_at = time.monotonic()
-                if sent and time.monotonic() - pasted_at > 1.5 and not Provider.received:
-                    # Submit only after the bracketed-paste event has been
-                    # delivered and the active session composer has settled.
+                if sent and not Provider.received and not session_transition_enter_sent and time.monotonic() - pasted_at > 1.5:
+                    # The first Enter accepts the staged home composer into an
+                    # active session on this route. It is not counted as a
+                    # provider submission; wait for visible active-session
+                    # composer evidence before sending the submit Enter.
                     os.write(master, b'\r')
-                    first_enter_at = time.monotonic()
-                    pasted_at = time.monotonic() + 1e6
+                    session_transition_enter_sent = True
+                    session_transition_sent_at = time.monotonic()
+                    selection_diagnostics['submitInputTrace'].append({
+                        'action': 'home-composer-enter', 'providerRequestsBefore': len(Provider.received),
+                        'stagedTextVisible': exact in screen.visible(),
+                        'visibleScreenTail': screen.visible()[-400:]})
+                session_prompt_ready = active_session_prompt_ready(screen.visible(), exact)
+                if (sent and not Provider.received and session_transition_enter_sent and
+                        not session_submission_enter_sent and session_prompt_ready):
+                    os.write(master, b'\r')
+                    session_submission_enter_sent = True
+                    selection_diagnostics['submitInputTrace'].append({
+                        'action': 'active-session-submit-enter', 'providerRequestsBefore': len(Provider.received),
+                        'activeSessionComposerObserved': session_prompt_ready,
+                        'visibleScreenTail': screen.visible()[-400:]})
                 if Provider.received and 'provider_received_at' not in locals():
                     provider_received_at = time.monotonic()
                 visible_lines = screen.visible().splitlines()
                 mouse_mode = (b'\x1b[?1000h' in output or b'\x1b[?1002h' in output or
                               b'\x1b[?1006h' in output)
+                selection_diagnostics['mouseModeObserved'] |= mouse_mode
+                observed_modes = re.findall(rb'\x1b\[\?(1000|1002|1003|1006)h', bytes(output))
+                selection_diagnostics['mouseTrackingModesObserved'] = sorted({
+                    *selection_diagnostics['mouseTrackingModesObserved'],
+                    *(mode.decode('ascii') for mode in observed_modes)})
+                selection_diagnostics['responseRowsObserved'] = [
+                    {'row': index, 'text': line[:screen.columns],
+                     'containsSelectionTarget': selection_target in line[:screen.columns],
+                     'containsExactFixtureResponse': fixture_response in line[:screen.columns],
+                     'isRenderedBodyRow': rendered_fixture_body_row(line[:screen.columns], fixture_response),
+                     'selectionModeCandidate': 'mouse up auto-copy'}
+                    for index, line in enumerate(visible_lines, 1)
+                    if rendered_fixture_row(line[:screen.columns], fixture_response) and
+                    selection_target in line[:screen.columns]]
+                # Use the current rendered screen bounds, not an assumed
+                # content band: the response can legitimately be near the top
+                # or bottom after a narrow PTY resize. Coordinates below are
+                # still constrained to the exact visible response row/cells.
                 response_rows = [index for index, line in enumerate(visible_lines, 1)
-                                 if ('FINAL' in line and selection_target in line and 'END' in line and
-                                     4 <= index <= screen.rows - 4)]
-                if (not selection_sent and response_rows and mouse_mode):
+                                 if (rendered_fixture_body_row(line[:screen.columns], fixture_response) and
+                                     selection_target in line[:screen.columns] and
+                                     1 <= index <= screen.rows)]
+                candidate_signature = tuple((index, visible_lines[index - 1][:screen.columns])
+                                            for index in response_rows)
+                if candidate_signature and candidate_signature == locals().get('last_response_row_signature'):
+                    selection_diagnostics['responseRowStableSamples'] += 1
+                elif candidate_signature:
+                    selection_diagnostics['responseRowStableSamples'] = 1
+                last_response_row_signature = candidate_signature
+                response_settled_for_selection = ('provider_received_at' in locals() and
+                                                   time.monotonic() - provider_received_at > 1.0)
+                if (not selection_sent and response_rows and mouse_mode and
+                        selection_diagnostics['responseRowStableSamples'] >= 4 and
+                        response_settled_for_selection):
                     target_row = response_rows[-1]
                     target_line = visible_lines[target_row - 1]
                     # Derive terminal cells from the original VT paint stream:
@@ -518,17 +584,33 @@ def main():
                     selected_clipboard_count = len(screen.clipboard_history)
                     selection_coordinates = {'startColumn': start_col, 'endColumn': end_col,
                                              'row': target_row, 'screenLine': target_line,
+                     'screenRows': screen.rows, 'screenColumns': screen.columns,
+                                             'stableRenderedResponseRow': True,
                                              'coordinateBasis': '1-based displayed terminal cells'}
                     # Send a real SGR press, held-button drag, and release as three
                     # separate PTY events, allowing the TUI event loop to process each.
-                    for event in (f'\x1b[<0;{start_col};{target_row}M',
-                                  f'\x1b[<32;{end_col};{target_row}M',
-                                  f'\x1b[<0;{end_col};{target_row}m'):
-                        os.write(master, event.encode())
+                    # In SGR mouse mode a drag motion event keeps button 1
+                    # held (button code 32 + left-button bit 0); release has
+                    # the final lowercase `m` event.
+                    gesture = (f'\x1b[<0;{start_col};{target_row}M',
+                               f'\x1b[<32;{end_col};{target_row}M',
+                               f'\x1b[<0;{end_col};{target_row}m')
+                    for event in gesture:
+                        encoded_event = event.encode()
+                        os.write(master, encoded_event)
+                        selection_diagnostics['gestureEventsSent'].append({
+                            'sgr': event.replace('\x1b', 'ESC'),
+                            'bytesWritten': len(encoded_event),
+                            'timeSinceResponseFirstVisibleMs': round((time.monotonic() - response_first_visible_at) * 1000)
+                            if 'response_first_visible_at' in locals() else None})
                         time.sleep(.12)
                     selection_sent = True
                     selection_sent_at = time.monotonic()
                 response_observed = fixture_response.encode() in output
+                if (any(rendered_fixture_row(line[:screen.columns], fixture_response)
+                        for line in screen.visible().splitlines()) and
+                        'response_first_visible_at' not in locals()):
+                    response_first_visible_at = time.monotonic()
                 response_settled = ('provider_received_at' in locals() and
                                     time.monotonic() - provider_received_at > 1.0)
                 selection_values_now = screen.clipboard_history[selected_clipboard_count:]
@@ -553,6 +635,8 @@ def main():
             if not Provider.received and not picker_only:
                 raise RuntimeError('loopback provider received no request; TUI may not have accepted prompt; '
                                    f'pickerStarted={picker_started}, pickerCancelled={picker_cancelled}, '
+                                   f'inputTrace={selection_diagnostics["submitInputTrace"]!r}, '
+                                   f'homeReady={home_ready}, sessionEntryPrimed={prompt_entry_primed}, '
                                    f'visible={screen.visible()[-1500:]!r}, transcript={bytes(output[-4000:])!r}')
             bodies = Provider.received
             if picker_only:
@@ -687,7 +771,11 @@ def main():
             except subprocess.TimeoutExpired:
                 exit_request_sent = True
                 os.killpg(child.pid, signal.SIGTERM)
-                child.wait(timeout=2)
+                try:
+                    child.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    os.killpg(child.pid, signal.SIGKILL)
+                    child.wait(timeout=2)
             exit_code = child.returncode
             # A PTY may still contain delayed teardown writes after child exit.
             # Drain to EOF, bounded, before judging title restoration.
@@ -748,6 +836,8 @@ def main():
                 'reason': ('Controlled host model accepted and queried OSC 52 containing only the exact selected substring; this is not physical OS clipboard proof' if selection_sent and selection_values == [selected_text] and selection_readback == selected_text
                            else 'Native selection gesture did not yield an exact selection OSC 52 update and modeled readback'),
                 'mouseReporting': mouse_mode, 'mouseDragSent': selection_sent,
+                'autoCopyExpected': True, 'manualCopyKeyTested': False,
+                'selectionDiagnostics': selection_diagnostics,
                 'fixtureResponseInCapturedPty': fixture_response.encode() in output,
                 'fixtureResponseInScreenModel': fixture_response in screen.visible(),
                 'screenExcerpt': screen.visible()[-500:],
