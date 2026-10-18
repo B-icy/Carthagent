@@ -24,6 +24,7 @@ _model_spec = importlib.util.spec_from_file_location(
 _model_module = importlib.util.module_from_spec(_model_spec)
 _model_spec.loader.exec_module(_model_module)
 canonical_conversation = _model_module.canonical_conversation
+latest_message = _model_module.latest_message
 
 
 def preflight(binary, owned_root, manifest, env):
@@ -53,7 +54,8 @@ class Tui:
         import subprocess
 
         self.master, slave = pty.openpty()
-        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 36, 120, 0, 0))
+        rows, columns = 60, 140
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', rows, columns, 0, 0))
         child_env = {**env, 'TERM': 'xterm-256color', 'COLORTERM': 'truecolor',
                      'OPENCODE_PASSWORD': fixture['password']}
         assert_clean_child_environment(child_env)
@@ -62,7 +64,7 @@ class Tui:
                                       env=child_env, stdin=slave, stdout=slave,
                                       stderr=slave, start_new_session=True)
         os.close(slave)
-        self.screen = Screen(rows=36, columns=120)
+        self.screen = Screen(rows=rows, columns=columns)
         self.active.add(self)
 
     def drain(self, seconds=.2):
@@ -160,9 +162,17 @@ def main():
     fixture_script = r'''
 const {nativeFixture}=await import((await import('node:url')).pathToFileURL(process.argv[1]));
 const host=await nativeFixture({plugin:null,verifyInventory:false,preserveTemp:true,
- respond(_body,res){res.writeHead(200,{'content-type':'text/event-stream','connection':'close'});
- const chunk=(delta,finish_reason=null)=>`data: ${JSON.stringify({id:'offline-clear',object:'chat.completion.chunk',created:1,model:'fixture',choices:[{index:0,delta,finish_reason}]})}\n\n`;
- res.end(chunk({role:'assistant',content:'CLEAR_FIXTURE_REPLY'})+chunk({},'stop')+'data: [DONE]\n\n');}});
+ respond(body,res){res.writeHead(200,{'content-type':'text/event-stream','connection':'close'});
+  const latestUser=[...(body.messages??[])].reverse().find(message=>message.role==='user');
+  const prompt=typeof latestUser?.content==='string'?latestUser.content:
+   (latestUser?.content??[]).map(part=>part.text??'').join(' ');
+  const reply=prompt.includes('VISUAL_CLEAR_CONTINUED_PROMPT')?
+   'CLEAR_FOLLOWUP_ASSISTANT_REPLY':
+   prompt.includes('CLEAR_SESSION_A_UNIQUE_MARKER')?'CLEAR_A_INITIAL_ASSISTANT_REPLY':
+   prompt.includes('UNCLEARED_CONTROL_OLD_MARKER')?'CLEAR_CONTROL_INITIAL_ASSISTANT_REPLY':
+   'CLEAR_NEIGHBOR_ASSISTANT_REPLY';
+  const chunk=(delta,finish_reason=null)=>`data: ${JSON.stringify({id:'offline-clear',object:'chat.completion.chunk',created:1,model:'fixture',choices:[{index:0,delta,finish_reason}]})}\n\n`;
+  res.end(chunk({role:'assistant',content:reply})+chunk({},'stop')+'data: [DONE]\n\n');}});
 try {
  const sessions={};
  for(const [key,marker] of [['a','CLEAR_SESSION_A_UNIQUE_MARKER'],['b','NEIGHBOR_SESSION_B_UNIQUE_MARKER'],['control','UNCLEARED_CONTROL_OLD_MARKER']]){
@@ -207,20 +217,27 @@ process.stdout.write(JSON.stringify(await c.message.list({sessionID:id},{signal:
                 else:previous=current;same=0
             raise AssertionError('durable message projection did not settle')
 
+        def durable_messages(session_id):
+            return stable(session_id)
+
         def durable_snapshot(session_id):
-            return canonical_conversation(conversation(stable(session_id)))
+            return canonical_conversation(conversation(durable_messages(session_id)))
 
         def wait_for_file_value(path, predicate, description, timeout=10):
             end = time.monotonic() + timeout
+            last_value = None
             while time.monotonic() < end:
                 try:
                     value = json.loads(path.read_text())
                 except (OSError, json.JSONDecodeError):
                     value = None
+                last_value = value
                 if value is not None and predicate(value):
                     return value
                 time.sleep(.05)
-            raise AssertionError(f'timed out waiting for persisted {description}')
+            raise AssertionError(
+                f'timed out waiting for persisted {description}; '
+                f'last state was {json.dumps(last_value, sort_keys=True)}')
 
         a,b,control=(fixture['sessions'][key] for key in ('a','b','control'))
         before_b=durable_snapshot(b['id'])
@@ -249,11 +266,14 @@ process.stdout.write(JSON.stringify(await c.message.list({sessionID:id},{signal:
 
         tui=Tui(binary,fixture,a['id'],env)
         tui.wait_for(lambda:a['marker'] in tui.screen.visible(),'A marker')
-        tui.wait_for(lambda:'CLEAR_FIXTURE_REPLY' in tui.screen.visible(),'A assistant reply')
-        before_a=durable_snapshot(a['id'])
-        cutoff_message = max(before_a, key=lambda item: item.get('time', {}).get('created', 0))
+        tui.wait_for(lambda:'CLEAR_A_INITIAL_ASSISTANT_REPLY' in tui.screen.visible(),'A initial assistant reply')
+        before_a_response=durable_messages(a['id'])
+        before_a=canonical_conversation(conversation(before_a_response))
+        cutoff_message=latest_message(before_a_response)
         tui.submit_slash('/clear')
-        tui.wait_for(lambda:a['marker'] not in tui.screen.visible() and 'CLEAR_FIXTURE_REPLY' not in tui.screen.visible(),'/clear visual removal')
+        tui.wait_for(lambda:a['marker'] not in tui.screen.visible() and
+                     'CLEAR_A_INITIAL_ASSISTANT_REPLY' not in tui.screen.visible(),
+                     '/clear visual removal')
         after_clear_durable = durable_snapshot(a['id'])
         if after_clear_durable != before_a:
             raise AssertionError('/clear changed durable conversational messages')
@@ -263,9 +283,10 @@ process.stdout.write(JSON.stringify(await c.message.list({sessionID:id},{signal:
         storage_path = storage_matches[0]
         state_after_clear = wait_for_file_value(storage_path,
             lambda state: state.get(a['id'], {}).get('before') == cutoff_message['id'],
-            'A transcript cutoff')
+            f'A transcript cutoff for session {a["id"]} at message {cutoff_message["id"]}')
         tui.submit('VISUAL_CLEAR_CONTINUED_PROMPT')
-        tui.wait_for(lambda:'CLEAR_FIXTURE_REPLY' in tui.screen.visible(),'follow-up reply')
+        tui.wait_for(lambda:'CLEAR_FOLLOWUP_ASSISTANT_REPLY' in tui.screen.visible(),
+                     'follow-up assistant reply')
         after_followup=durable_snapshot(a['id'])
         if len(after_followup)<=len(before_a) or not any(x.get('type')=='user' and x.get('text')=='VISUAL_CLEAR_CONTINUED_PROMPT' for x in after_followup):
             raise AssertionError('follow-up prompt was not durably submitted')
@@ -290,22 +311,29 @@ process.stdout.write(JSON.stringify(await c.message.list({sessionID:id},{signal:
                              'uncleared positive-control initial marker')
         control_tui.wait_for(lambda:'VISUAL_CLEAR_CONTINUED_PROMPT' in control_tui.screen.visible(),
                              'uncleared positive-control follow-up marker')
-        if 'CLEAR_FIXTURE_REPLY' not in control_tui.screen.visible():
-            raise AssertionError('uncleared control transcript did not fit the viewport')
+        control_tui.wait_for(lambda:'CLEAR_FOLLOWUP_ASSISTANT_REPLY' in control_tui.screen.visible(),
+                             'uncleared positive-control follow-up assistant reply')
         control_visible = control_tui.screen.visible()
-        if control['marker'] not in control_visible:
-            raise AssertionError('uncleared control old marker is not visible at initial PTY position')
+        if (control['marker'] not in control_visible or
+                'VISUAL_CLEAR_CONTINUED_PROMPT' not in control_visible or
+                'CLEAR_FOLLOWUP_ASSISTANT_REPLY' not in control_visible):
+            raise AssertionError('uncleared control old marker, new marker and assistant reply must all be visible')
         control_tui.stop()
 
         reopened=Tui(binary,fixture,a['id'],env)
         reopened.wait_for(lambda:'VISUAL_CLEAR_CONTINUED_PROMPT' in reopened.screen.visible(),
                           'post-clear marker visible after reopening A')
+        reopened.wait_for(lambda:'CLEAR_FOLLOWUP_ASSISTANT_REPLY' in reopened.screen.visible(),
+                          'post-clear assistant reply visible after reopening A')
         reopened_visible = reopened.screen.visible()
         if a['marker'] in reopened_visible:
             raise AssertionError('old A marker remains visible; transcript presentation cutoff was not restored')
-        if 'CLEAR_FIXTURE_REPLY' not in reopened_visible:
-            raise AssertionError('post-clear assistant reply is not visible after reopening A')
-        if control['marker'] not in control_visible or 'VISUAL_CLEAR_CONTINUED_PROMPT' not in control_visible:
+        if ('VISUAL_CLEAR_CONTINUED_PROMPT' not in reopened_visible or
+                'CLEAR_FOLLOWUP_ASSISTANT_REPLY' not in reopened_visible):
+            raise AssertionError('reopened A must show both the post-clear user prompt and assistant reply')
+        if (control['marker'] not in control_visible or
+                'VISUAL_CLEAR_CONTINUED_PROMPT' not in control_visible or
+                'CLEAR_FOLLOWUP_ASSISTANT_REPLY' not in control_visible):
             raise AssertionError('positive control did not show old and post-turn content at tested PTY position')
         reopened_durable = durable_snapshot(a['id'])
         if reopened_durable != after_followup:
@@ -320,10 +348,12 @@ process.stdout.write(JSON.stringify(await c.message.list({sessionID:id},{signal:
         result={'status':'PASS','scope':'Linux POSIX PTY; explicit trusted-preflighted owned staging artifact; offline loopback provider',
           'runtimeIdentity':identity,'sessionIDs':{'a':a['id'],'b':b['id']},
           'command':'native slash autocomplete selected /clear; Enter dispatched it',
-          'checks':{'A markers disappeared from parsed PTY screen':True,'A conversational message IDs/content unchanged by clear':True,
-           'follow-up prompt submitted and answered':True,'neighbor B unaffected':True,
-           'A old marker hidden while post-clear markers visible on reopen':True,
-           'uncleared same-length positive control shows old and new markers at same PTY size':True,
+          'checks':{'A initial user and assistant markers disappeared from parsed PTY screen':True,
+           'A conversational message IDs/content unchanged by clear':True,
+           'follow-up prompt submitted and unique assistant reply visibly rendered':True,
+           'neighbor B unaffected':True,
+           'A old marker hidden while post-clear user and assistant markers are visible on reopen':True,
+           'uncleared same-length positive control visibly shows old user, follow-up user, and follow-up assistant reply at same PTY size':True,
            'presentation cutoff ID persisted and unchanged across follow-up/reopen':True,
            'session.revert.clear used':False,
            'ambient credentials excluded by child environment allowlists':True},
