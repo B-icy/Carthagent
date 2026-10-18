@@ -2,10 +2,11 @@
 /** Build and install the published artifact in isolation, then exercise its owned host. */
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const temp = await mkdtemp(join(tmpdir(), 'ctg-native-package-'));
@@ -34,6 +35,46 @@ try {
   const version = run(binary, ['--version'], { cwd: install }).trim();
   assert.equal(version, 'opencode v2.0.32');
 
+  // Exercise the actual packed installation's default dependency discovery
+  // before setting the explicit override used by the host acceptance probes.
+  const installed = join(install, 'node_modules/carthagent');
+  const runtimeModule = join(installed, 'lib/opencode/runtime.mjs');
+  const runtimeRequire = createRequire(runtimeModule);
+  const runtime = await import(pathToFileURL(runtimeModule));
+  const previousBinary = process.env.CTG_OPENCODE_BIN;
+  const previousOwned = process.env.CTG_OWNED_OPENCODE_RUNTIME;
+  const previousHome = process.env.HOME;
+  const previousXdgConfig = process.env.XDG_CONFIG_HOME;
+  const previousXdgData = process.env.XDG_DATA_HOME;
+  const previousXdgState = process.env.XDG_STATE_HOME;
+  const previousXdgCache = process.env.XDG_CACHE_HOME;
+  delete process.env.CTG_OPENCODE_BIN;
+  delete process.env.CTG_OWNED_OPENCODE_RUNTIME;
+  process.env.HOME = join(temp, 'resolver-home');
+  process.env.XDG_CONFIG_HOME = join(temp, 'resolver-config');
+  process.env.XDG_DATA_HOME = join(temp, 'resolver-data');
+  process.env.XDG_STATE_HOME = join(temp, 'resolver-state');
+  process.env.XDG_CACHE_HOME = join(temp, 'resolver-cache');
+  try {
+    assert.equal(runtimeRequire.resolve('@opencode/cli/package.json'), join(install, 'node_modules/@opencode/cli/package.json'));
+    assert.equal(await runtime.resolveOpenCode(), binary, 'default resolver must find the hoisted package binary without overrides');
+  } finally {
+    if (previousBinary === undefined) delete process.env.CTG_OPENCODE_BIN;
+    else process.env.CTG_OPENCODE_BIN = previousBinary;
+    if (previousOwned === undefined) delete process.env.CTG_OWNED_OPENCODE_RUNTIME;
+    else process.env.CTG_OWNED_OPENCODE_RUNTIME = previousOwned;
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    if (previousXdgConfig === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = previousXdgConfig;
+    if (previousXdgData === undefined) delete process.env.XDG_DATA_HOME;
+    else process.env.XDG_DATA_HOME = previousXdgData;
+    if (previousXdgState === undefined) delete process.env.XDG_STATE_HOME;
+    else process.env.XDG_STATE_HOME = previousXdgState;
+    if (previousXdgCache === undefined) delete process.env.XDG_CACHE_HOME;
+    else process.env.XDG_CACHE_HOME = previousXdgCache;
+  }
+
   const env = {
     ...process.env,
     CTG_OPENCODE_BIN: binary,
@@ -45,7 +86,6 @@ try {
     XDG_STATE_HOME: join(temp, 'state'),
     XDG_CACHE_HOME: join(temp, 'cache'),
   };
-  const installed = join(install, 'node_modules/carthagent');
   // The product entrypoint is intentionally parent-composed. Build a disposable
   // host entrypoint that composes the package's exported native integration.
   const installedPlugin = join(installed, '.ctg-production-plugin');

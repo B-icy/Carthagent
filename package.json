@@ -28,6 +28,7 @@
   "files": [
     "bin",
     "docs",
+    "script/ctg/build-owned-runtime.sh",
     "extensions",
     "guidance",
     "lib",
@@ -66,6 +67,7 @@
     "test:native-controls": "node tools/test-native-controls.mjs",
     "test:native-outcomes": "node tools/test-native-outcomes.mjs",
     "test:native-pty": "node tools/test-native-pty.mjs",
+    "test:owned-opencode": "node tools/test-owned-opencode-runtime.mjs",
     "build": "npm run check && npm run typecheck",
     "test": "node --test tests/*.test.mjs",
     "test:python": "node tools/test-python.mjs"

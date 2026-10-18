@@ -6,7 +6,7 @@ import { getEventListeners } from 'node:events';
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { nativeCommandConfig } from '../lib/opencode/compatibility.mjs';
-import { provisionRuntime, resolveOpenCode, runtimeEnvironment, runtimePaths, withFileLock, workspaceEnvironment } from '../lib/opencode/runtime.mjs';
+import { CTG_RUNTIME_LOCK_SHA256, CTG_RUNTIME_PATCH_SHA256, CTG_RUNTIME_SOURCE, CTG_RUNTIME_VERSION, OPENCODE_VERSION, provisionRuntime, readRuntimeReleaseManifest, resolveOpenCode, resolveOwnedOpenCode, resolvePathCommand, runtimeEnvironment, runtimeIdentity, runtimePaths, withFileLock, workspaceEnvironment } from '../lib/opencode/runtime.mjs';
 import { cancelSession, createSession, ensureService, getSession, launchTui, promptSession, serviceRequest, sessionMessages, setSessionEnvironment, stopService } from '../lib/opencode/service.mjs';
 import { runHeadless } from '../lib/opencode/headless.mjs';
 
@@ -183,6 +183,160 @@ test('native API requests preserve structured responses and reject status failur
   } finally { globalThis.fetch = original; }
 });
 
+test('default packaged OpenCode resolves through Node package exports when hoisted beside CTG', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-hoisted-resolution-'));
+  const packageRoot = path.join(root, 'node_modules', 'carthagent');
+  const dependencyRoot = path.join(root, 'node_modules', '@opencode', 'cli');
+  try {
+    await mkdir(path.join(packageRoot, 'lib', 'opencode'), { recursive: true });
+    await mkdir(path.join(dependencyRoot, 'bin'), { recursive: true });
+    const runtime = await readFile(new URL('../lib/opencode/runtime.mjs', import.meta.url), 'utf8');
+    const artifactModule = await readFile(new URL('../lib/opencode/runtime-artifact.mjs', import.meta.url), 'utf8');
+    await writeFile(path.join(packageRoot, 'lib', 'opencode', 'runtime.mjs'), runtime);
+    await writeFile(path.join(packageRoot, 'lib', 'opencode', 'runtime-artifact.mjs'), artifactModule);
+    await writeFile(path.join(packageRoot, 'package.json'), JSON.stringify({ name: 'carthagent', version: '1.0.0', type: 'module' }));
+    await writeFile(path.join(dependencyRoot, 'package.json'), JSON.stringify({ name: '@opencode/cli', bin: { opencode: './bin/opencode.exe' }, version: OPENCODE_VERSION }));
+    const binary = path.join(dependencyRoot, 'bin', 'opencode.exe');
+    await writeFile(binary, 'hoisted package fixture');
+    const { pathToFileURL } = await import('node:url');
+    const imported = await import(`${pathToFileURL(path.join(packageRoot, 'lib/opencode/runtime.mjs')).href}?test=${Date.now()}`);
+    const spawnImpl = (_command, _args, options) => {
+      const child = spawn(process.execPath, ['-e', `process.stdout.write('opencode v${OPENCODE_VERSION}')`], options);
+      return child;
+    };
+    assert.equal(await imported.resolveOpenCode({ spawnImpl }), binary);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('packaged release manifest automatically acquires the pinned owned runtime and binds identity', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-release-manifest-'));
+  const artifact = path.join(root, 'cache', `${process.platform}-${process.arch}`);
+  const manifestPath = path.join(root, 'runtime-release.json');
+  const hostPlatform = process.platform === 'win32' ? 'windows' : process.platform;
+  const target = `${hostPlatform}-${process.arch}`;
+  const binary = path.join(artifact, `cli-${target}`, 'bin', process.platform === 'win32' ? 'opencode.exe' : 'opencode');
+  const { createHash } = await import('node:crypto');
+  const packageMetadata = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+  const binaryBytes = Buffer.from('pinned acquired executable');
+  const binaryHash = createHash('sha256').update(binaryBytes).digest('hex');
+  const platformKeys = ['linux-x64', 'linux-arm64', 'darwin-x64', 'darwin-arm64', 'windows-x64'];
+  const assets = Object.fromEntries(platformKeys.map((key) => [key, {
+    name: `opencode-${key}.tar.gz`, archiveSha256: 'a'.repeat(64), executableSha256: key === target ? binaryHash : 'b'.repeat(64),
+  }]));
+  const release = {
+    version: 1, releaseVersion: packageMetadata.version, compatibilityVersion: OPENCODE_VERSION,
+    runtimeVersion: CTG_RUNTIME_VERSION, sourceRevision: CTG_RUNTIME_SOURCE,
+    patchSha256: CTG_RUNTIME_PATCH_SHA256, lockSha256: CTG_RUNTIME_LOCK_SHA256, assets,
+  };
+  try {
+    await mkdir(path.dirname(binary), { recursive: true });
+    await writeFile(binary, binaryBytes, { mode: 0o755 });
+    await writeFile(path.join(artifact, 'ctg-runtime.json'), JSON.stringify({
+      owner: 'Carthagent', sourceRepository: 'https://github.com/anomalyco/opencode',
+      sourceRevision: CTG_RUNTIME_SOURCE, lockSha256: CTG_RUNTIME_LOCK_SHA256,
+      patchSha256: CTG_RUNTIME_PATCH_SHA256, compatibilityVersion: OPENCODE_VERSION,
+      runtimeVersion: CTG_RUNTIME_VERSION, channel: `ctg.${OPENCODE_VERSION}`,
+      platform: target, webUI: false,
+    }));
+    await writeFile(path.join(artifact, 'SHA256SUMS'), `${binaryHash}  cli-${target}/bin/${process.platform === 'win32' ? 'opencode.exe' : 'opencode'}\n`);
+    await writeFile(manifestPath, JSON.stringify(release));
+    const calls = [];
+    const spawnImpl = (command, args, options) => spawn(process.execPath, ['-e', `process.stdout.write('opencode v${CTG_RUNTIME_VERSION}')`], options);
+    const options = {
+      runtimeReleaseManifestPath: manifestPath,
+      runtimeCacheRoot: path.join(root, 'owned-cache'),
+      runtimeReleaseBaseUrl: `https://example.test/releases/v${packageMetadata.version}`,
+      acquireOwnedRuntime: async (input) => {
+        calls.push(input);
+        const currentHash = createHash('sha256').update(await readFile(binary)).digest('hex');
+        if (currentHash !== input.expectedExecutableSha256) throw new Error('pinned executable SHA-256 mismatch');
+        return artifact;
+      },
+      spawnImpl,
+    };
+    const resolved = await resolveOpenCode(options);
+    assert.equal(resolved, binary);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].releaseVersion, packageMetadata.version);
+    assert.equal(calls[0].expectedArchiveSha256, assets[target].archiveSha256);
+    assert.equal(calls[0].expectedExecutableSha256, assets[target].executableSha256);
+    assert.equal(calls[0].expectedChannel, `ctg.${OPENCODE_VERSION}`);
+    // Production ensureService resolves and identifies with one shared options
+    // object; automatic selection identity is kept separate from the explicit
+    // developer-preview ownedRuntime selector.
+    const identity = await runtimeIdentity(resolved, options);
+    assert.equal(identity.kind, 'ctg-owned');
+    assert.equal(identity.patchSha256, CTG_RUNTIME_PATCH_SHA256);
+    assert.equal(options.ownedRuntime, undefined);
+
+    // A second resolution with the same options cannot trust the mutable
+    // adjacent SHA256SUMS as the release digest; the pinned manifest digest is
+    // checked again before returning the cached executable.
+    const tamperedBytes = Buffer.from('tampered executable');
+    const tamperedHash = createHash('sha256').update(tamperedBytes).digest('hex');
+    await writeFile(binary, tamperedBytes, { mode: 0o755 });
+    await writeFile(path.join(artifact, 'SHA256SUMS'), `${tamperedHash}  cli-${target}/bin/${process.platform === 'win32' ? 'opencode.exe' : 'opencode'}\n`);
+    await assert.rejects(resolveOpenCode(options), /pinned executable SHA-256 mismatch/);
+    assert.equal(calls.length, 2);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('present but invalid runtime release manifest fails closed instead of selecting package CLI', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-invalid-release-manifest-'));
+  const manifestPath = path.join(root, 'runtime-release.json');
+  try {
+    await writeFile(manifestPath, JSON.stringify({ version: 1, releaseVersion: '1.2.3', assets: {} }));
+    await assert.rejects(resolveOpenCode({ runtimeReleaseManifestPath: manifestPath }), /Invalid or incompatible CTG OpenCode release manifest/);
+    await assert.rejects(readRuntimeReleaseManifest(manifestPath), /Invalid or incompatible CTG OpenCode release manifest/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('incomplete release platform matrix fails closed without acquisition', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-unsupported-release-target-'));
+  const manifestPath = path.join(root, 'runtime-release.json');
+  const packageMetadata = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+  const keys = ['linux-x64', 'linux-arm64', 'darwin-x64', 'darwin-arm64', 'windows-x64'];
+  const assets = Object.fromEntries(keys.map((key) => [key, {
+    name: `opencode-${key}.tar.gz`, archiveSha256: 'a'.repeat(64), executableSha256: 'b'.repeat(64),
+  }]));
+  delete assets[`${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch}`];
+  try {
+    await writeFile(manifestPath, JSON.stringify({
+      version: 1, releaseVersion: packageMetadata.version,
+      compatibilityVersion: OPENCODE_VERSION, runtimeVersion: CTG_RUNTIME_VERSION,
+      sourceRevision: CTG_RUNTIME_SOURCE, patchSha256: CTG_RUNTIME_PATCH_SHA256,
+      lockSha256: CTG_RUNTIME_LOCK_SHA256, assets,
+    }));
+    let acquired = false;
+    await assert.rejects(resolveOpenCode({
+      runtimeReleaseManifestPath: manifestPath,
+      acquireOwnedRuntime: async () => { acquired = true; throw new Error('must not acquire'); },
+    }), /Invalid or incompatible CTG OpenCode release manifest/);
+    assert.equal(acquired, false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('missing runtime release manifest keeps the developer-preview package resolver available', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-missing-release-manifest-'));
+  const packageRoot = path.join(root, 'node_modules', 'carthagent');
+  const dependencyRoot = path.join(root, 'node_modules', '@opencode', 'cli');
+  try {
+    await mkdir(path.join(packageRoot, 'lib', 'opencode'), { recursive: true });
+    await mkdir(path.join(dependencyRoot, 'bin'), { recursive: true });
+    for (const name of ['runtime.mjs', 'runtime-artifact.mjs']) {
+      await writeFile(path.join(packageRoot, 'lib', 'opencode', name), await readFile(new URL(`../lib/opencode/${name}`, import.meta.url), 'utf8'));
+    }
+    await writeFile(path.join(packageRoot, 'package.json'), JSON.stringify({ name: 'carthagent', version: '1.0.0', type: 'module' }));
+    await writeFile(path.join(dependencyRoot, 'package.json'), JSON.stringify({ name: '@opencode/cli', version: OPENCODE_VERSION, bin: { opencode: './bin/opencode' } }));
+    const binary = path.join(dependencyRoot, 'bin', 'opencode');
+    await writeFile(binary, 'preview fixture');
+    const { pathToFileURL } = await import('node:url');
+    const imported = await import(`${pathToFileURL(path.join(packageRoot, 'lib/opencode/runtime.mjs')).href}?missing=${Date.now()}`);
+    const spawnImpl = (_command, _args, options) => spawn(process.execPath, ['-e', `process.stdout.write('opencode v${OPENCODE_VERSION}')`], options);
+    assert.equal(await imported.resolveOpenCode({ spawnImpl }), binary);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test('session API helpers use the v2 envelope, prompt payload, and endpoint contracts', async () => {
   const original = globalThis.fetch;
   const calls = [];
@@ -250,6 +404,134 @@ test('a live registered process is retained when health inspection fails', async
   } finally { globalThis.fetch = original; await rm(root, { recursive: true, force: true }); }
 });
 
+test('runtime identity binds compatibility services to the exact executable path and digest', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-runtime-identity-'));
+  const first = path.join(root, 'first');
+  const second = path.join(root, 'second');
+  try {
+    await writeFile(first, 'same compatibility version');
+    await writeFile(second, 'same compatibility version, different executable bytes');
+    const firstIdentity = await runtimeIdentity(first, { binary: first });
+    const secondIdentity = await runtimeIdentity(second, { binary: second });
+    assert.equal(firstIdentity.kind, 'upstream-compatible');
+    assert.equal(firstIdentity.version, OPENCODE_VERSION);
+    assert.notEqual(firstIdentity.binaryPath, secondIdentity.binaryPath);
+    assert.notEqual(firstIdentity.binarySha256, secondIdentity.binarySha256);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('PATH-selected commands resolve to a concrete executable identity', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-path-identity-'));
+  const bin = path.join(root, 'bin');
+  const executable = path.join(bin, 'opencode');
+  const script = path.join(root, 'version.cjs');
+  try {
+    await mkdir(bin, { recursive: true });
+    await writeFile(script, `console.log('opencode v2.0.32')`);
+    await writeFile(executable, `#!/usr/bin/env node\nrequire(${JSON.stringify(script)})\n`, { mode: 0o755 });
+    const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH ?? ''}` };
+    const resolved = await resolveOpenCode({ binary: 'opencode', env });
+    assert.equal(resolved, executable);
+    const identity = await runtimeIdentity('opencode', { binary: 'opencode', env });
+    assert.equal(identity.binaryPath, executable);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('Windows PATH lookup does not append PATHEXT to an already suffixed executable', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-win-path-'));
+  const bin = path.join(root, 'bin');
+  try {
+    await mkdir(bin);
+    const executable = path.join(bin, 'foo.exe');
+    await writeFile(executable, 'fixture');
+    const extensionless = path.join(bin, 'foo.COM');
+    await writeFile(extensionless, 'fixture');
+    assert.equal(resolvePathCommand('foo.exe', { PATH: bin, PATHEXT: '.COM;.EXE;.CMD' }, 'win32'), executable);
+    assert.equal(resolvePathCommand('foo', { PATH: bin, PATHEXT: '.COM;.EXE;.CMD' }, 'win32'), extensionless);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('ensureService rejects normal/owned selector switches without stopping the registered process', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-runtime-selector-switch-'));
+  const artifact = path.join(root, 'owned-artifact');
+  const binary = path.join(root, 'upstream-opencode');
+  const ownedPlatform = `${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch}`;
+  const artifactPlatform = ownedPlatform;
+  const ownedBinary = path.join(artifact, `cli-${artifactPlatform}`, 'bin', process.platform === 'win32' ? 'opencode.exe' : 'opencode');
+  const script = path.join(root, 'fixture-runtime.cjs');
+  const originalFetch = globalThis.fetch;
+  let registeredProcess;
+  try {
+    await writeFile(script, `if (process.argv[3] === '--version') console.log(process.argv[2].includes('owned-artifact') ? 'opencode v${CTG_RUNTIME_VERSION}' : 'opencode v2.0.32');\n`);
+    await writeFile(binary, 'upstream executable fixture');
+    await mkdir(path.dirname(ownedBinary), { recursive: true });
+    await writeFile(ownedBinary, 'owned executable fixture');
+    const { createHash } = await import('node:crypto');
+    const ownedHash = createHash('sha256').update(await readFile(ownedBinary)).digest('hex');
+    await writeFile(path.join(artifact, 'SHA256SUMS'), `${ownedHash}  cli-${artifactPlatform}/bin/${process.platform === 'win32' ? 'opencode.exe' : 'opencode'}\n`);
+    await writeFile(path.join(artifact, 'ctg-runtime.json'), JSON.stringify({
+      owner: 'Carthagent', sourceRepository: 'https://github.com/anomalyco/opencode',
+      sourceRevision: CTG_RUNTIME_SOURCE, lockSha256: CTG_RUNTIME_LOCK_SHA256, patchSha256: CTG_RUNTIME_PATCH_SHA256,
+      compatibilityVersion: OPENCODE_VERSION, runtimeVersion: CTG_RUNTIME_VERSION, channel: 'ctg.2.0.32', platform: ownedPlatform, webUI: false,
+    }));
+    const spawnImpl = (command, args, options) => spawn(process.execPath, [script, command, ...args], options);
+    const upstream = await runtimeIdentity(binary, { binary });
+    const owned = await runtimeIdentity(ownedBinary, { ownedRuntime: artifact });
+    const paths = runtimePaths({ root: path.join(root, 'profile') });
+    await mkdir(path.dirname(paths.serviceFile), { recursive: true });
+    registeredProcess = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+    await new Promise((resolve, reject) => {
+      registeredProcess.once('spawn', resolve);
+      registeredProcess.once('error', reject);
+    });
+    const registered = { id: 'existing', pid: registeredProcess.pid, url: 'http://127.0.0.1:4567', password: 'fixture', version: upstream.version, runtimeIdentity: upstream };
+    await writeFile(paths.serviceFile, JSON.stringify(registered));
+    globalThis.fetch = async () => new Response(JSON.stringify({ data: { version: upstream.version, pid: registeredProcess.pid } }));
+    for (const selected of [
+      { root: paths.root, ownedRuntime: artifact, spawnImpl },
+      { root: paths.root, binary: path.join(root, 'same-version-different-binary'), spawnImpl },
+    ]) {
+      if (selected.binary) await writeFile(selected.binary, 'different upstream executable fixture');
+      await assert.rejects(ensureService(selected), /already running runtime .* selected .* active service was left running/);
+      assert.deepEqual(JSON.parse(await readFile(paths.serviceFile, 'utf8')), registered);
+    }
+    const ownedRecord = { ...registered, version: owned.version, runtimeIdentity: owned };
+    await writeFile(paths.serviceFile, JSON.stringify(ownedRecord));
+    globalThis.fetch = async () => new Response(JSON.stringify({ data: { version: owned.version, pid: registeredProcess.pid, capabilities: { shellOrigin: true } } }));
+    await assert.rejects(ensureService({ root: paths.root, ownedRuntime: artifact, binary, spawnImpl }), /already running runtime .* selected .* active service was left running/);
+    assert.deepEqual(JSON.parse(await readFile(paths.serviceFile, 'utf8')), ownedRecord);
+    await writeFile(paths.serviceFile, JSON.stringify(ownedRecord));
+    globalThis.fetch = async () => new Response(JSON.stringify({ data: { version: owned.version, pid: registeredProcess.pid, capabilities: { shellOrigin: true } } }));
+    await assert.rejects(ensureService({ root: paths.root, binary, spawnImpl }), /already running runtime .* selected .* active service was left running/);
+    assert.deepEqual(JSON.parse(await readFile(paths.serviceFile, 'utf8')), ownedRecord);
+
+    // A selector mismatch must leave the registered process alive.
+    assert.equal(registeredProcess.exitCode, null);
+    assert.deepEqual(JSON.parse(await readFile(paths.serviceFile, 'utf8')), ownedRecord);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (registeredProcess?.exitCode === null) registeredProcess.kill('SIGKILL');
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('dead mismatched registration is cleaned before a replacement service starts', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-dead-registration-'));
+  const paths = runtimePaths({ root });
+  const script = path.join(root, 'server.cjs');
+  try {
+    await writeFile(script, `if (process.argv[2] === '--version') { console.log('2.0.32'); process.exit(0); }\nconst http=require('node:http');const s=http.createServer((q,r)=>{if(q.url==='/api/info'){r.setHeader('content-type','application/json');r.end(JSON.stringify({version:'2.0.32',pid:process.pid}));return}r.statusCode=404;r.end()});s.listen(Number(process.argv[process.argv.indexOf('--port')+1]),'127.0.0.1',()=>console.log('server listening on http://127.0.0.1:'+s.address().port));`);
+    await mkdir(path.dirname(paths.serviceFile), { recursive: true });
+    await writeFile(paths.serviceFile, JSON.stringify({ id: 'dead-legacy', pid: 2_000_000_000, url: 'http://127.0.0.1:1', version: '2.0.32' }));
+    const spawnImpl = (command, args, options) => spawn(process.execPath, [script, ...args], options);
+    const service = await ensureService({ root, binary: process.execPath, spawnImpl, startupTimeout: 5000 });
+    assert.equal(service.info.runtimeIdentity.kind, 'upstream-compatible');
+    assert.equal(service.info.pid, service.pid);
+    assert.notEqual(service.pid, 2_000_000_000);
+    await stopService({ root });
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test('ensure and stop serialize on the same lifecycle lock', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-lifecycle-race-'));
   const script = path.join(root, 'fake-opencode.cjs');
@@ -272,6 +554,40 @@ test('ensure and stop serialize on the same lifecycle lock', async () => {
 
 test('an explicitly selected unusable OpenCode binary does not fall back', async () => {
   await assert.rejects(resolveOpenCode({ binary: '/missing/ctg-opencode' }), /ENOENT|not found/i);
+});
+
+test('owned runtime resolver requires pinned manifest, native platform, checksum, and detached version', async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-owned-runtime-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const platform = `${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch}`;
+  const artifactPlatform = platform;
+  const executable = path.join(root, `cli-${artifactPlatform}`, 'bin', process.platform === 'win32' ? 'opencode.exe' : 'opencode');
+  await mkdir(path.dirname(executable), { recursive: true });
+  const fake = path.join(root, 'fixture-runtime.cjs');
+  await writeFile(fake, `if (process.argv[2] === '--version') console.log('opencode v${CTG_RUNTIME_VERSION}'); else process.exit(1);\n`);
+  await writeFile(executable, 'fixture');
+  const { createHash } = await import('node:crypto');
+  const checksum = createHash('sha256').update(await readFile(executable)).digest('hex');
+  const manifest = {
+    owner: 'Carthagent', sourceRepository: 'https://github.com/anomalyco/opencode',
+    sourceRevision: CTG_RUNTIME_SOURCE, lockSha256: CTG_RUNTIME_LOCK_SHA256, patchSha256: CTG_RUNTIME_PATCH_SHA256,
+    compatibilityVersion: OPENCODE_VERSION, runtimeVersion: CTG_RUNTIME_VERSION,
+    channel: 'ctg.2.0.32', platform, webUI: false,
+  };
+  await writeFile(path.join(root, 'ctg-runtime.json'), `${JSON.stringify(manifest)}\n`);
+  await writeFile(path.join(root, 'SHA256SUMS'), `${checksum}  cli-${artifactPlatform}/bin/${process.platform === 'win32' ? 'opencode.exe' : 'opencode'}\n`);
+  const spawnImpl = (command, args, options) => spawn(process.execPath, [fake, ...args], options);
+  assert.equal(await resolveOwnedOpenCode(root, { spawnImpl }), executable);
+  await writeFile(executable, 'modified', { mode: 0o755 });
+  await assert.rejects(resolveOwnedOpenCode(root, { spawnImpl }), /SHA-256 mismatch/);
+  await writeFile(executable, 'fixture');
+  await writeFile(path.join(root, 'SHA256SUMS'), `${checksum}  cli-${artifactPlatform}/bin/not-opencode\n`);
+  await assert.rejects(resolveOwnedOpenCode(root, { spawnImpl }), /checksum does not list/);
+  await writeFile(path.join(root, 'SHA256SUMS'), `${checksum}  cli-${artifactPlatform}/bin/${process.platform === 'win32' ? 'opencode.exe' : 'opencode'}\n`);
+  await writeFile(path.join(root, 'ctg-runtime.json'), `${JSON.stringify({ ...manifest, sourceRevision: 'unpinned' })}\n`);
+  await assert.rejects(resolveOwnedOpenCode(root, { spawnImpl }), /not compatible/);
+  await writeFile(path.join(root, 'ctg-runtime.json'), `${JSON.stringify({ ...manifest, platform: 'other-platform' })}\n`);
+  await assert.rejects(resolveOwnedOpenCode(root, { spawnImpl }), /does not match this host/);
 });
 
 test('headless runner passes workspace environment and returns assistant content and status', async () => {
