@@ -40,6 +40,7 @@ jobs:
     # capability on the validation job only; prebuild jobs stay read-only, and
     # actual release uploads remain isolated to publish-existing-draft.
     permissions:
+      actions: read
       contents: write
     outputs:
       mode: ${{ steps.validate.outputs.mode }}

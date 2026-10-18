@@ -361,7 +361,7 @@ test('draft metadata validation has scoped write capability; artifact mutation s
   const prebuild = workflowJob('prebuild');
   const assembly = workflowJob('assemble-candidate');
   const publish = workflowJob('publish-existing-draft');
-  assert.match(validation, /permissions:\n      contents: write/);
+  assert.match(validation, /permissions:\n      actions: read\n      contents: write/);
   assert.match(validation, /gh release view "\$RELEASE_TAG".*--json isDraft/);
   assert.doesNotMatch(validation, /gh release upload/);
   assert.doesNotMatch(prebuild, /contents: write/);
