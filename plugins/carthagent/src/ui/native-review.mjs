@@ -19,12 +19,22 @@ export function createNativeReviewConsumer({ mode, diff, offer, kickoff, isLoopA
   const admitted = new Set();
   const pending = new Set();
   const loopSessions = new Set();
+  const admissionTails = new Map();
+  const loopGenerations = new Map();
+  const admissionAbort = new AbortController();
   let sequence = 0;
   let disposed = false;
 
   async function finish(sessionID, succeeded) {
     const run = runs.get(sessionID);
-    if (!run || run.finished || disposed) return;
+    if (!run || disposed) return;
+    // Inbox delivery follows execution.started and precedes the terminal event.
+    // Wait for the exact delivered message lookup before deciding whether the
+    // restored review loop still suppresses this run.
+    const admissionTail = admissionTails.get(sessionID);
+    try { await admissionTail; } catch {}
+    if (admissionTails.get(sessionID) === admissionTail) admissionTails.delete(sessionID);
+    if (disposed || runs.get(sessionID) !== run || run.finished) return;
     run.finished = true;
     if (!succeeded || signal?.aborted || loopSessions.has(sessionID) || isLoopActive(sessionID)) return;
 
@@ -75,14 +85,18 @@ export function createNativeReviewConsumer({ mode, diff, offer, kickoff, isLoopA
   }
 
   return {
-    onUserPromptAdmitted(sessionID, message) {
+    onUserPromptAdmitted(sessionID, message, expectedGeneration) {
       if (!sessionID || message?.type !== "user" || message.metadata?.["ctg.reviewKickoff"] === true) return;
+      if (expectedGeneration !== undefined && (loopGenerations.get(sessionID) ?? 0) !== expectedGeneration) return;
       loopSessions.delete(sessionID);
       if (isLoopActive(sessionID)) setLoopActive(sessionID, false);
     },
     setLoopActive(sessionID, active) {
       if (!sessionID) return;
-      if (active) loopSessions.add(sessionID);
+      if (active) {
+        loopSessions.add(sessionID);
+        loopGenerations.set(sessionID, (loopGenerations.get(sessionID) ?? 0) + 1);
+      }
       else loopSessions.delete(sessionID);
       setLoopActive(sessionID, active);
     },
@@ -102,7 +116,27 @@ export function createNativeReviewConsumer({ mode, diff, offer, kickoff, isLoopA
       if (!sessionID || disposed) return;
       this.onUserPromptAdmitted(sessionID, message);
     },
-    dispose() { disposed = true; runs.clear(); pending.clear(); },
+    enqueueInboxDelivery(event, getMessage) {
+      const sessionID = event?.data?.sessionID;
+      const messageID = event?.data?.inboxID;
+      if (!sessionID || !messageID || disposed) return Promise.resolve();
+      const expectedGeneration = loopGenerations.get(sessionID) ?? 0;
+      const previous = admissionTails.get(sessionID) ?? Promise.resolve();
+      const current = previous.catch(() => {}).then(async () => {
+        if (disposed) return;
+        const timeout = AbortSignal.timeout(5_000);
+        const lookupSignal = signal ? AbortSignal.any([signal, admissionAbort.signal, timeout]) : AbortSignal.any([admissionAbort.signal, timeout]);
+        lookupSignal.throwIfAborted();
+        const message = await Promise.race([
+          getMessage(sessionID, messageID, lookupSignal),
+          new Promise((resolve) => lookupSignal.addEventListener("abort", () => resolve(undefined), { once: true })),
+        ]);
+        if (!disposed && !lookupSignal.aborted) this.onUserPromptAdmitted(sessionID, message, expectedGeneration);
+      });
+      admissionTails.set(sessionID, current);
+      return current;
+    },
+    dispose() { disposed = true; admissionAbort.abort(); admissionTails.clear(); runs.clear(); pending.clear(); },
   };
 }
 
@@ -110,14 +144,11 @@ export function createNativeReviewConsumer({ mode, diff, offer, kickoff, isLoopA
 export function subscribeNativeReviewEvents(data, consumer, onError = (_error) => {}, getMessage = async () => undefined) {
   return [
     data.on("session.inbox.delivered", (event) => {
-      const sessionID = event?.data?.sessionID;
-      const messageID = event?.data?.inboxID;
-      if (!sessionID || !messageID) return;
-      void getMessage(sessionID, messageID).then((message) => consumer.onInboxDelivered(event, message)).catch(onError);
+      return consumer.enqueueInboxDelivery(event, getMessage).catch(onError);
     }),
     data.on("session.execution.started", (event) => consumer.onStarted(event)),
-    data.on("session.execution.succeeded", (event) => { void consumer.onSucceeded(event).catch(onError); }),
-    data.on("session.execution.failed", (event) => { void consumer.onFailed(event).catch(onError); }),
-    data.on("session.execution.interrupted", (event) => { void consumer.onInterrupted(event).catch(onError); }),
+    data.on("session.execution.succeeded", (event) => consumer.onSucceeded(event).catch(onError)),
+    data.on("session.execution.failed", (event) => consumer.onFailed(event).catch(onError)),
+    data.on("session.execution.interrupted", (event) => consumer.onInterrupted(event).catch(onError)),
   ];
 }

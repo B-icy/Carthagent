@@ -25,6 +25,7 @@ export function createNativeReviewConsumer(options: NativeReviewConsumerOptions)
   onSucceeded(event: any): Promise<void>;
   onFailed(event: any): Promise<void>;
   onInterrupted(event: any): Promise<void>;
+  enqueueInboxDelivery(event: any, getMessage: (sessionID: string, messageID: string, signal: AbortSignal) => Promise<{ type?: string; metadata?: Record<string, unknown> } | undefined>): Promise<void>;
   dispose(): void;
 };
-export function subscribeNativeReviewEvents(data: any, consumer: ReturnType<typeof createNativeReviewConsumer>, onError?: (error: unknown) => void, getMessage?: (sessionID: string, messageID: string) => Promise<{ type?: string; metadata?: Record<string, unknown> } | undefined>): Array<() => void>;
+export function subscribeNativeReviewEvents(data: any, consumer: ReturnType<typeof createNativeReviewConsumer>, onError?: (error: unknown) => void, getMessage?: (sessionID: string, messageID: string, signal: AbortSignal) => Promise<{ type?: string; metadata?: Record<string, unknown> } | undefined>): Array<() => void>;

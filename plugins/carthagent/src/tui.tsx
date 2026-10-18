@@ -45,7 +45,7 @@ export default Plugin.define({
       context.data,
       reviewConsumer,
       (error: unknown) => context.ui.toast.show({ message: error instanceof Error ? error.message : String(error), variant: "error" }),
-      async (sessionID: string, messageID: string) => await context.client.session.message.get({ sessionID, messageID }),
+      async (sessionID: string, messageID: string, signal?: AbortSignal) => await context.client.session.message.get({ sessionID, messageID }, { signal }),
     ));
     const workspaceEvents = context.client.rpc(Workspace);
     cleanups.push(workspaceEvents.events.on("updated", (event) => {
