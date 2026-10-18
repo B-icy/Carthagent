@@ -4,8 +4,7 @@ import type { ConnectionInfo } from '@opencode/client';
 
 type ShipContext = Pick<Context, 'integration'>;
 type ActiveCredential = Extract<ConnectionInfo, { type: 'credential' }>;
-
-type CloudClientPort = Pick<CloudClient, 'account' | 'checkout' | 'portal' | 'revokeCurrent' | 'revokeSession'>;
+type CloudClientPort = Pick<CloudClient, 'account' | 'usage' | 'checkout' | 'portal' | 'revokeCurrent' | 'revokeSession'>;
 
 /** Create profile-scoped Ship RPC handlers; injection keeps cloud behavior testable offline. */
 export function createShipRpcHandlers(ctx: ShipContext, options: {
@@ -30,6 +29,13 @@ export function createShipRpcHandlers(ctx: ShipContext, options: {
       try { ({ token } = await access()); }
       catch { return call.error('unauthenticated', 'An active Carthagent Ship OAuth connection is required.', {}); }
       return { account: await cloud.account({ accessToken: token, signal: call.signal }) };
+    },
+    shipUsage: async (input: unknown, call: { signal: AbortSignal }) => {
+      call.signal.throwIfAborted();
+      const { token } = await access();
+      const requested = (input as { limit?: number }).limit ?? 50;
+      if (!Number.isSafeInteger(requested) || requested < 1 || requested > 200) throw new Error('Ship usage limit must be between 1 and 200.');
+      return { usage: await cloud.usage({ accessToken: token, limit: requested, signal: call.signal } as Parameters<CloudClient['usage']>[0]) };
     },
     shipBilling: async (input: unknown, call: import('@opencode/plugin/promise/rpc').RpcCallContext<typeof import('../rpc').Carthagent.methods.shipBilling>) => {
       call.signal.throwIfAborted();
@@ -56,6 +62,7 @@ export function createShipRpcHandlers(ctx: ShipContext, options: {
         return { revoked: true };
       }
       await cloud.revokeCurrent({ accessToken: token, signal: call.signal });
+      await ctx.integration.transform((editor) => editor.remove(active.id));
       return { revoked: true, credentialID: active.id };
     },
   };
