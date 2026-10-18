@@ -2,9 +2,10 @@
 
 `lib/opencode/cli.mjs` is the compatibility boundary for the `ctg` command
 surface. It parses aliases and flags, chooses interactive vs headless execution,
-and dispatches to `lib/opencode/cli-runtime.mjs`. `bin/ctg.mjs` selects this route
-only with `CTG_NATIVE=1`; the existing CLI remains the default until integration
-gates pass.
+and dispatches to `lib/opencode/cli-runtime.mjs`. `bin/ctg.mjs` uses this native
+route by default. The standalone help and version commands remain metadata-only
+and do not start OpenCode or contact a provider. Legacy Pi session data is
+read-only archive material; the launcher does not fall back to Pi for execution.
 
 ## Runtime integration port
 
@@ -97,6 +98,6 @@ login/account/billing.
   implies worktree creation.
 - Help/output and domain exit behavior remain the CLI contract. PI session
   stores are archive-only and are not read or continued by this adapter.
-- Activation is intentionally staged: `CTG_NATIVE=1` is opt-in; changing the
-  default still requires parent integration to verify service/auth/model/review
-  behavior, package installation, and no supported default Pi execution path.
+- `CTG_NATIVE` is not an activation switch. All operational commands use native
+  OpenCode dispatch; legacy engine modules remain available to independent
+  library/workflow callers, not as a launcher fallback.

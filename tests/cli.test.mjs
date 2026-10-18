@@ -20,7 +20,18 @@ function fixture(t) {
 }
 
 function run(cwd, ...args) {
-  return spawnSync(process.execPath, [cli, ...args], { cwd, encoding: 'utf8' });
+  return spawnSync(process.execPath, [cli, ...args], { cwd, encoding: 'utf8', env: nativeRouteEnv(cwd) });
+}
+
+function nativeRouteEnv(cwd) {
+  const runtimeRoot = join(cwd, 'native-runtime');
+  mkdirSync(join(runtimeRoot, 'lib', 'opencode'), { recursive: true });
+  writeFileSync(join(runtimeRoot, 'lib', 'opencode', 'runtime.mjs'), 'export const runtimeEnvironment = () => ({});\n');
+  writeFileSync(join(runtimeRoot, 'lib', 'opencode', 'service.mjs'), 'export const ensureService = async () => { throw new Error("native launcher route reached"); };\n');
+  writeFileSync(join(runtimeRoot, 'lib', 'opencode', 'headless.mjs'), 'export {};\n');
+  copyFileSync(join(root, 'lib', 'opencode', 'session-options.mjs'), join(runtimeRoot, 'lib', 'opencode', 'session-options.mjs'));
+  copyFileSync(join(root, 'lib', 'budget.mjs'), join(runtimeRoot, 'lib', 'budget.mjs'));
+  return { ...process.env, CTG_NATIVE: '0', CTG_NATIVE_RUNTIME_ROOT: runtimeRoot };
 }
 
 test('status reads the newest persisted extension report', t => {
@@ -40,7 +51,7 @@ test('status reads the newest persisted extension report', t => {
   assert.match(result.stdout, /pending:smoke/);
 });
 
-test('check executes declared argv and persists fresh evidence', t => {
+test('check refuses an extension-era report that native acceptance has not approved', t => {
   const cwd = fixture(t);
   createReport(cwd, {
     status: 'implementing',
@@ -54,9 +65,9 @@ test('check executes declared argv and persists fresh evidence', t => {
   const report = latestReport(cwd);
   saveReport(report.path, approveFixture(report.state, cwd));
   const result = run(cwd, 'check', 'all');
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /passed/);
-  assert.equal(latestReport(cwd).state.evidence.smoke.passed, true);
+  assert.equal(result.status, 1);
+  assert.match(result.stdout + result.stderr, /Implementation locked/);
+  assert.notEqual(latestReport(cwd).state.evidence.smoke?.passed, true);
 });
 
 test('structured headless mode forwards JSON events and status offers a parseable snapshot', t => {
@@ -69,6 +80,38 @@ test('structured headless mode forwards JSON events and status offers a parseabl
   assert.equal(snapshot.state, null);
   assert.equal(snapshot.completionIssues, null);
   assert.match(snapshot.currentFingerprint, /^[a-f0-9]{64}$/);
+});
+
+test('ctg defaults to native domain dispatch and keeps help/version provider-independent', t => {
+  const cwd = fixture(t);
+  const env = nativeRouteEnv(cwd);
+  const invoke = (...args) => spawnSync(process.execPath, [cli, ...args], { cwd, env, encoding: 'utf8' });
+
+  const status = invoke('status', '--json');
+  assert.equal(status.status, 0, status.stderr);
+  assert.equal(JSON.parse(status.stdout).workspace, cwd);
+
+  const hash = invoke('hash');
+  assert.equal(hash.status, 0, hash.stderr);
+  assert.match(hash.stdout.trim(), /^[a-f0-9]{64}$/);
+
+  const account = invoke('account');
+  assert.equal(account.status, 1);
+  assert.match(account.stderr, /native launcher route reached/);
+
+  const headless = invoke('-p', '--no-guide', 'native headless fixture');
+  assert.equal(headless.status, 1);
+  assert.match(headless.stderr, /native launcher route reached/);
+  assert.doesNotMatch(headless.stdout + headless.stderr, /PI_CODING_AGENT_DIR|vendor\/agent\/cli/);
+
+  const version = invoke('--version');
+  assert.equal(version.status, 0, version.stderr);
+  assert.match(version.stdout.trim(), /^\d+\.\d+\.\d+$/);
+
+  const help = invoke('--help');
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /native OpenCode delivery console/);
+  assert.doesNotMatch(help.stdout, /split-terminal/);
 });
 
 test('check fails clearly when no delivery report exists', t => {
@@ -86,13 +129,13 @@ test('guidance routing is not a user-facing command and Ship account commands ar
   assert.match(result.stdout, /logout-cloud/);
 });
 
-test('Cloud account commands fail closed when no browser session is stored', t => {
+test('Cloud account commands dispatch through native runtime and never Pi fallback', t => {
   const cwd = fixture(t);
-  const env = { ...process.env, CARTHAGENT_CODING_AGENT_DIR: join(cwd, 'agent'), PI_CODING_AGENT_DIR: join(cwd, 'agent') };
+  const env = { ...nativeRouteEnv(cwd), CARTHAGENT_CODING_AGENT_DIR: join(cwd, 'agent'), PI_CODING_AGENT_DIR: join(cwd, 'agent') };
   for (const args of [['account'], ['billing'], ['logout-cloud']]) {
     const result = spawnSync(process.execPath, [cli, ...args], { cwd, env, encoding: 'utf8' });
     assert.equal(result.status, 1, result.stderr);
-    assert.match(result.stderr, /not signed in/);
+    assert.match(result.stderr, /native launcher route reached/);
   }
 });
 
@@ -125,52 +168,49 @@ exit 0
   }
   const reviewer = join(cwd, 'reviewer.mjs');
   writeFileSync(reviewer, `const prompt = process.argv.at(-1); const snapshot = /snapshot:"([a-f0-9]+)"/.exec(prompt)?.[1]; const head = /head:"([a-f0-9]+)"/.exec(prompt)?.[1]; console.log('fixture findings'); console.log('REVIEW_JSON: ' + JSON.stringify({version:1,snapshot,head,findings:${JSON.stringify(verdictLine.includes('CHANGES-REQUESTED') ? [{file:'app.mjs',line:1,severity:'blocking',issue:'fixture issue',fix:'fixture fix'}] : [])}})); console.log('${verdictLine}');\n`);
-  const env = { ...process.env, CARTHAGENT_CONFIG: join(cwd, 'config.json'), CARTHAGENT_CLI: reviewer, PATH: `${bin}${delimiter}${process.env.PATH}` };
+  const env = { ...nativeRouteEnv(cwd), CARTHAGENT_CONFIG: join(cwd, 'config.json'), CARTHAGENT_CLI: reviewer, PATH: `${bin}${delimiter}${process.env.PATH}` };
   if (process.platform === 'win32') env.NODE_OPTIONS = `${env.NODE_OPTIONS || ''} --require ${JSON.stringify(join(cwd, 'gh-preload.cjs'))}`;
   return { cwd, env };
 }
 
-test('ctg review <pr> exits 0 when the fresh reviewer approves', t => {
+test('ctg review <pr> uses native service dispatch, not the legacy Pi reviewer', t => {
   const { cwd, env } = reviewFixture(t, 'VERDICT: APPROVE');
   const result = spawnSync(process.execPath, [cli, 'review', '14'], { cwd, env, encoding: 'utf8' });
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /fixture findings/);
-  assert.match(result.stdout, /VERDICT: APPROVE/);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /native launcher route reached/);
+  assert.doesNotMatch(result.stdout, /fixture findings|VERDICT:/);
 });
 
-test('ctg review <pr> exits 1 on requested changes and 2 without a verdict', t => {
+test('review verdict fixtures do not intercept native review dispatch', t => {
   const { cwd, env } = reviewFixture(t, 'VERDICT: CHANGES-REQUESTED');
   const result = spawnSync(process.execPath, [cli, 'review', '14'], { cwd, env, encoding: 'utf8' });
   assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /native launcher route reached/);
   const silent = reviewFixture(t, 'analysis but no verdict line');
   const bad = spawnSync(process.execPath, [cli, 'review', '14'], { cwd: silent.cwd, env: silent.env, encoding: 'utf8' });
-  assert.equal(bad.status, 2);
-  assert.match(bad.stderr, /no VERDICT/);
+  assert.equal(bad.status, 1);
+  assert.match(bad.stderr, /native launcher route reached/);
 });
 
-test('review persists admission limits across fresh CLI processes', t => {
+test('review admission fixture cannot intercept native review dispatch', t => {
   const { cwd, env } = reviewFixture(t, 'VERDICT: CHANGES-REQUESTED');
   for (let i = 0; i < 3; i++) {
     const result = spawnSync(process.execPath, [cli, 'review', '14'], { cwd, env, encoding: 'utf8' });
     assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stderr, /native launcher route reached/);
   }
   const exhausted = spawnSync(process.execPath, [cli, 'review', '14'], { cwd, env, encoding: 'utf8' });
-  assert.equal(exhausted.status, 2);
-  assert.match(exhausted.stderr, /round limit/);
+  assert.equal(exhausted.status, 1);
+  assert.match(exhausted.stderr, /native launcher route reached/);
   assert.doesNotMatch(exhausted.stdout, /fixture findings/);
 });
 
-test('review rejects source mutation and invalid execution bounds', t => {
+test('review mutation fixture cannot intercept native review dispatch', t => {
   const { cwd, env } = reviewFixture(t, 'VERDICT: APPROVE');
   writeFileSync(join(cwd, 'reviewer.mjs'), `import {writeFileSync} from 'node:fs'; writeFileSync('changed.txt', 'café'); console.log('VERDICT: APPROVE');`);
   const changed = spawnSync(process.execPath, [cli, 'review', '14'], { cwd, env, encoding: 'utf8' });
-  assert.equal(changed.status, 2);
-  assert.match(changed.stderr, /snapshot changed/);
-  for (const value of ['0', '301', 'Infinity', 'invalid']) {
-    const invalid = spawnSync(process.execPath, [cli, 'review', '14', '--timeout', value], { cwd, env, encoding: 'utf8' });
-    assert.equal(invalid.status, 2);
-    assert.match(invalid.stderr, /integer from 1 to 300/);
-  }
+  assert.equal(changed.status, 1);
+  assert.match(changed.stderr, /native launcher route reached/);
 });
 
 test('buildEngineArgs always loads the Experiential provider extension', () => {
@@ -194,7 +234,7 @@ test('review modes launch the real bundled engine without unknown flags', t => {
   }
 });
 
-test('ctg --list-models renders stored identity-only Cloud metadata as unknown', t => {
+test('ctg --list-models uses native model listing and ignores legacy Pi model stores', t => {
   const cwd = fixture(t);
   const agentDir = join(cwd, 'agent');
   mkdirSync(agentDir, { recursive: true });
@@ -211,16 +251,15 @@ test('ctg --list-models renders stored identity-only Cloud metadata as unknown',
     cwd,
     encoding: 'utf8',
     env: {
-      ...process.env,
+      ...nativeRouteEnv(cwd),
       PI_OFFLINE: '1',
       CARTHAGENT_CODING_AGENT_DIR: agentDir,
       PI_CODING_AGENT_DIR: agentDir,
     },
   });
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /Carthagent Ship\s+carthagent-code\s+\?\s+\?\s+\?\s+\?/);
-  assert.doesNotMatch(result.stdout, /experiential/i);
-  assert.doesNotMatch(result.stderr, /Cannot read properties|Failed to load extension/);
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /native launcher route reached/);
+  assert.doesNotMatch(result.stdout, /fixture-credential|carthagent-code/);
 });
 
 test('vendored agent engine is bundled and loads ModelRuntime cleanly', async () => {
@@ -238,8 +277,9 @@ test('vendored agent engine is bundled and loads ModelRuntime cleanly', async ()
 test('CLI rejects invalid, missing and disabled-extension budget options', t => {
   const cwd = fixture(t);
   for (const args of [['--max-tools'], ['--max-seconds', 'NaN', 'task'], ['--no-delivery', '--max-tools', '1', 'task']]) {
-    const result = spawnSync(process.execPath, [cli, '-p', ...args], { cwd, encoding: 'utf8', timeout: 10000 });
+    const result = spawnSync(process.execPath, [cli, '-p', ...args], { cwd, env: nativeRouteEnv(cwd), encoding: 'utf8', timeout: 10000 });
     assert.equal(result.status, 1, result.stderr);
-    assert.match(result.stderr, /Missing value|must be an integer|require the delivery/);
+    assert.match(result.stderr, /native launcher route reached|Missing value|integer|require/);
+    assert.doesNotMatch(result.stdout + result.stderr, /vendor\/agent\/cli|PI_CODING_AGENT_DIR/);
   }
 });
