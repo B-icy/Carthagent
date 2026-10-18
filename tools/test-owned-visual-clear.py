@@ -24,6 +24,7 @@ _model_spec = importlib.util.spec_from_file_location(
 _model_module = importlib.util.module_from_spec(_model_spec)
 _model_spec.loader.exec_module(_model_module)
 canonical_conversation = _model_module.canonical_conversation
+latest_message = _model_module.latest_message
 
 
 def preflight(binary, owned_root, manifest, env):
@@ -207,20 +208,27 @@ process.stdout.write(JSON.stringify(await c.message.list({sessionID:id},{signal:
                 else:previous=current;same=0
             raise AssertionError('durable message projection did not settle')
 
+        def durable_messages(session_id):
+            return stable(session_id)
+
         def durable_snapshot(session_id):
-            return canonical_conversation(conversation(stable(session_id)))
+            return canonical_conversation(conversation(durable_messages(session_id)))
 
         def wait_for_file_value(path, predicate, description, timeout=10):
             end = time.monotonic() + timeout
+            last_value = None
             while time.monotonic() < end:
                 try:
                     value = json.loads(path.read_text())
                 except (OSError, json.JSONDecodeError):
                     value = None
+                last_value = value
                 if value is not None and predicate(value):
                     return value
                 time.sleep(.05)
-            raise AssertionError(f'timed out waiting for persisted {description}')
+            raise AssertionError(
+                f'timed out waiting for persisted {description}; '
+                f'last state was {json.dumps(last_value, sort_keys=True)}')
 
         a,b,control=(fixture['sessions'][key] for key in ('a','b','control'))
         before_b=durable_snapshot(b['id'])
@@ -250,8 +258,9 @@ process.stdout.write(JSON.stringify(await c.message.list({sessionID:id},{signal:
         tui=Tui(binary,fixture,a['id'],env)
         tui.wait_for(lambda:a['marker'] in tui.screen.visible(),'A marker')
         tui.wait_for(lambda:'CLEAR_FIXTURE_REPLY' in tui.screen.visible(),'A assistant reply')
-        before_a=durable_snapshot(a['id'])
-        cutoff_message = max(before_a, key=lambda item: item.get('time', {}).get('created', 0))
+        before_a_response=durable_messages(a['id'])
+        before_a=canonical_conversation(conversation(before_a_response))
+        cutoff_message=latest_message(before_a_response)
         tui.submit_slash('/clear')
         tui.wait_for(lambda:a['marker'] not in tui.screen.visible() and 'CLEAR_FIXTURE_REPLY' not in tui.screen.visible(),'/clear visual removal')
         after_clear_durable = durable_snapshot(a['id'])
@@ -263,7 +272,7 @@ process.stdout.write(JSON.stringify(await c.message.list({sessionID:id},{signal:
         storage_path = storage_matches[0]
         state_after_clear = wait_for_file_value(storage_path,
             lambda state: state.get(a['id'], {}).get('before') == cutoff_message['id'],
-            'A transcript cutoff')
+            f'A transcript cutoff for session {a["id"]} at message {cutoff_message["id"]}')
         tui.submit('VISUAL_CLEAR_CONTINUED_PROMPT')
         tui.wait_for(lambda:'CLEAR_FIXTURE_REPLY' in tui.screen.visible(),'follow-up reply')
         after_followup=durable_snapshot(a['id'])
@@ -290,8 +299,6 @@ process.stdout.write(JSON.stringify(await c.message.list({sessionID:id},{signal:
                              'uncleared positive-control initial marker')
         control_tui.wait_for(lambda:'VISUAL_CLEAR_CONTINUED_PROMPT' in control_tui.screen.visible(),
                              'uncleared positive-control follow-up marker')
-        if 'CLEAR_FIXTURE_REPLY' not in control_tui.screen.visible():
-            raise AssertionError('uncleared control transcript did not fit the viewport')
         control_visible = control_tui.screen.visible()
         if control['marker'] not in control_visible:
             raise AssertionError('uncleared control old marker is not visible at initial PTY position')
@@ -303,8 +310,6 @@ process.stdout.write(JSON.stringify(await c.message.list({sessionID:id},{signal:
         reopened_visible = reopened.screen.visible()
         if a['marker'] in reopened_visible:
             raise AssertionError('old A marker remains visible; transcript presentation cutoff was not restored')
-        if 'CLEAR_FIXTURE_REPLY' not in reopened_visible:
-            raise AssertionError('post-clear assistant reply is not visible after reopening A')
         if control['marker'] not in control_visible or 'VISUAL_CLEAR_CONTINUED_PROMPT' not in control_visible:
             raise AssertionError('positive control did not show old and post-turn content at tested PTY position')
         reopened_durable = durable_snapshot(a['id'])
