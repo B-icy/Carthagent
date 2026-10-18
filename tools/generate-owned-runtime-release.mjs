@@ -4,6 +4,7 @@ import { link, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { readPinnedOwnedRuntimeInputs } from './pinned-owned-runtime-inputs.mjs';
 
 export const REQUIRED_RUNTIME_TARGETS = Object.freeze({
   'linux-x64': ['linux', 'x64', 'opencode-linux-x64.tar.gz', 'cli-linux-x64/bin/opencode'],
@@ -133,22 +134,16 @@ function validateReleaseVersion(value) {
 
 async function readPinnedBuildInputs(repoRoot) {
   const recipePath = path.join(repoRoot, 'script/ctg/build-owned-runtime.sh');
-  const patchPath = path.join(repoRoot, 'docs/patches/opencode-v2.0.32-session-ui.patch');
   const recipe = await readFile(recipePath, 'utf8');
-  const patch = await readFile(patchPath);
-  const constant = (name) => {
-    const match = recipe.match(new RegExp(`^${name}="([^"]+)"$`, 'm'));
-    if (!match) throw new Error(`Build recipe is missing pinned ${name}`);
-    return match[1];
-  };
+  const pinnedInputs = await readPinnedOwnedRuntimeInputs(repoRoot);
   const runtime = recipe.match(/OPENCODE_VERSION=([^\s]+)\s+OPENCODE_CHANNEL=ctg\.([^\s]+)/);
   if (!runtime || runtime[2] !== runtime[1].replace(/^0\.0\.0-ctg\./, '')) {
     throw new Error('Build recipe must pin a matching CTG compatibility/runtime version');
   }
   const provenance = {
-    sourceRevision: constant('EXPECTED_SOURCE'),
-    lockSha256: constant('EXPECTED_LOCK').toLowerCase(),
-    patchSha256: constant('EXPECTED_PATCH').toLowerCase(),
+    sourceRevision: pinnedInputs.sourceRevision,
+    lockSha256: pinnedInputs.lockSha256,
+    patchSha256: pinnedInputs.patchSha256,
     compatibilityVersion: runtime[2],
     runtimeVersion: runtime[1],
   };
@@ -156,7 +151,6 @@ async function readPinnedBuildInputs(repoRoot) {
   for (const field of ['lockSha256', 'patchSha256']) {
     if (!/^[a-f0-9]{64}$/.test(provenance[field])) throw new Error(`Build recipe ${field} is not a SHA-256 digest`);
   }
-  if (sha256(patch) !== provenance.patchSha256) throw new Error('Pinned patch bytes do not match the build recipe');
   return provenance;
 }
 

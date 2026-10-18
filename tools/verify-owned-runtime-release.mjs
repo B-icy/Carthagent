@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises';
-import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createRuntimeGithubFetch } from '../lib/opencode/runtime-github-transport.mjs';
+import { readPinnedOwnedRuntimeInputs } from './pinned-owned-runtime-inputs.mjs';
 
 export const REQUIRED_RUNTIME_TARGETS = Object.freeze({
   'linux-x64': ['linux', 'x64', 'opencode-linux-x64.tar.gz'],
@@ -105,15 +105,10 @@ export function validateRuntimeReleaseManifest(value, releaseVersion) {
 
 /** Bind trusted artifact provenance to the exact recipe and patch in the tagged tree. */
 export async function validateRuntimeBuildInputs(value, repoRoot) {
-  const recipe = await readFile(path.join(repoRoot, 'script/ctg/build-owned-runtime.sh'), 'utf8');
-  for (const [field, recipeKey] of [['sourceRevision', 'EXPECTED_SOURCE'], ['patchSha256', 'EXPECTED_PATCH'], ['lockSha256', 'EXPECTED_LOCK']]) {
-    if (!recipe.includes(`${recipeKey}="${value[field]}"`)) {
+  const pinnedInputs = await readPinnedOwnedRuntimeInputs(repoRoot);
+  for (const field of ['sourceRevision', 'patchSha256', 'lockSha256']) {
+    if (pinnedInputs[field] !== value[field].toLowerCase()) {
       throw new Error(`Runtime ${field} does not match the tagged build recipe`);
     }
-  }
-  const patch = await readFile(path.join(repoRoot, 'docs/patches/opencode-v2.0.32-session-ui.patch'));
-  const actualPatchSha = createHash('sha256').update(patch).digest('hex');
-  if (actualPatchSha !== value.patchSha256.toLowerCase()) {
-    throw new Error('Runtime patch SHA-256 does not match the tagged patch');
   }
 }

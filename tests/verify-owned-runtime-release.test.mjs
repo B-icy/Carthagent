@@ -272,6 +272,46 @@ test('production acquisition rejects an embedded channel mismatch against the pi
   }), /channel mismatch/);
 });
 
+test('verifier pins the recipe-selected combined patch rather than the preserved base patch', async () => {
+  const { root, manifestPath, manifest } = await fixture();
+  const calls = [];
+  await verifyOwnedRuntimeRelease({
+    releaseVersion: manifest.releaseVersion, manifestPath,
+    assetsBaseUrl: 'https://example.test/release', repoRoot: root,
+    acquireRuntime: async (options) => { calls.push(options); return '/verified'; },
+  });
+  assert.equal(calls.length, 5);
+  assert.equal(calls[0].expectedPatchSha256, manifest.patchSha256);
+});
+
+test('verifier rejects missing or tampered recipe-selected patch before acquiring assets', async (t) => {
+  await t.test('missing selected patch does not fall back to preserved base', async () => {
+    const { root, manifestPath, manifest } = await fixture();
+    await rm(path.join(root, 'docs/patches/opencode-v2.0.32-session-ui-combined-v1.patch'));
+    let calls = 0;
+    await assert.rejects(verifyOwnedRuntimeRelease({
+      releaseVersion: manifest.releaseVersion, manifestPath,
+      assetsBaseUrl: 'https://example.test/release', repoRoot: root,
+      acquireRuntime: async () => { calls += 1; return '/verified'; },
+    }), /ENOENT/);
+    assert.equal(calls, 0);
+  });
+  await t.test('tampered selected patch fails its recipe digest', async () => {
+    const { root, manifestPath, manifest } = await fixture();
+    await writeFile(
+      path.join(root, 'docs/patches/opencode-v2.0.32-session-ui-combined-v1.patch'),
+      'tampered combined patch',
+    );
+    let calls = 0;
+    await assert.rejects(verifyOwnedRuntimeRelease({
+      releaseVersion: manifest.releaseVersion, manifestPath,
+      assetsBaseUrl: 'https://example.test/release', repoRoot: root,
+      acquireRuntime: async () => { calls += 1; return '/verified'; },
+    }), /Pinned patch bytes do not match the build recipe/);
+    assert.equal(calls, 0);
+  });
+});
+
 async function fixture() {
   const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-runtime-release-manifest-'));
   roots.push(root);
@@ -283,8 +323,10 @@ async function fixture() {
   const lockSha256 = 'b'.repeat(64);
   await writeFile(path.join(root, 'script/ctg/build-owned-runtime.sh'), [
     `EXPECTED_SOURCE="${sourceRevision}"`, `EXPECTED_PATCH="${patchSha256}"`, `EXPECTED_LOCK="${lockSha256}"`,
+    'patch_file="$ROOT/docs/patches/opencode-v2.0.32-session-ui-combined-v1.patch"',
   ].join('\n'));
-  await writeFile(path.join(root, 'docs/patches/opencode-v2.0.32-session-ui.patch'), patch);
+  await writeFile(path.join(root, 'docs/patches/opencode-v2.0.32-session-ui-combined-v1.patch'), patch);
+  await writeFile(path.join(root, 'docs/patches/opencode-v2.0.32-session-ui.patch'), Buffer.from('preserved base patch with different bytes'));
   const manifest = {
     version: 1,
     releaseVersion: '9.8.7',
