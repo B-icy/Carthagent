@@ -33,6 +33,8 @@ _decisions = importlib.util.module_from_spec(_decision_spec)
 _decision_spec.loader.exec_module(_decisions)
 picker_cancel_observation = _decisions.picker_cancel_observation
 is_focused_terminal_case = _decisions.is_focused_terminal_case
+rendered_fixture_row = _decisions.rendered_fixture_row
+active_session_prompt_ready = _decisions.active_session_prompt_ready
 
 
 class Provider(http.server.BaseHTTPRequestHandler):
@@ -361,6 +363,8 @@ def main():
         picker_home_restored = False
         prompt_entry_primed = False
         prompt_entry_primed_at = None
+        session_transition_enter_sent = False
+        session_submission_enter_sent = False
         copy_invoked = False
         copy_confirmed = False
         selection_sent = False
@@ -499,30 +503,27 @@ def main():
                         'visibleScreenTail': screen.visible()[-400:]})
                     sent = True
                     pasted_at = time.monotonic()
-                if sent and time.monotonic() - pasted_at > 1.5 and not Provider.received:
-                    # Submit one discrete Enter after the bracketed paste.
+                if sent and not Provider.received and not session_transition_enter_sent and time.monotonic() - pasted_at > 1.5:
+                    # The first Enter accepts the staged home composer into an
+                    # active session on this route. It is not counted as a
+                    # provider submission; wait for visible active-session
+                    # composer evidence before sending the submit Enter.
                     os.write(master, b'\r')
+                    session_transition_enter_sent = True
+                    session_transition_sent_at = time.monotonic()
                     selection_diagnostics['submitInputTrace'].append({
-                        'action': 'submit-enter', 'providerRequestsBefore': len(Provider.received),
+                        'action': 'home-composer-enter', 'providerRequestsBefore': len(Provider.received),
+                        'stagedTextVisible': exact in screen.visible(),
                         'visibleScreenTail': screen.visible()[-400:]})
-                    first_enter_at = time.monotonic()
-                    pasted_at = time.monotonic() + 1e6
-                if (sent and not Provider.received and 'first_enter_at' in locals() and
-                        'second_submit_enter_sent' not in locals() and
-                        time.monotonic() - first_enter_at > 2.0):
-                    # A paste can be staged while the TUI is still on its
-                    # welcome composer. If the first Enter only commits that
-                    # composer transition, retry once; the provider request is
-                    # the acceptance proof, and the guard prevents repeated
-                    # Enter events or intentional duplicate submissions.
-                    # Record the stalled submission rather than injecting a
-                    # second Enter blindly. In particular, a second Enter
-                    # after an accepted-but-not-yet-observed request can submit
-                    # the same prompt twice.
+                session_prompt_ready = active_session_prompt_ready(screen.visible(), exact)
+                if (sent and not Provider.received and session_transition_enter_sent and
+                        not session_submission_enter_sent and session_prompt_ready):
+                    os.write(master, b'\r')
+                    session_submission_enter_sent = True
                     selection_diagnostics['submitInputTrace'].append({
-                        'action': 'submit-still-pending', 'providerRequests': len(Provider.received),
+                        'action': 'active-session-submit-enter', 'providerRequestsBefore': len(Provider.received),
+                        'activeSessionComposerObserved': session_prompt_ready,
                         'visibleScreenTail': screen.visible()[-400:]})
-                    second_submit_enter_sent = True
                 if Provider.received and 'provider_received_at' not in locals():
                     provider_received_at = time.monotonic()
                 visible_lines = screen.visible().splitlines()
@@ -539,15 +540,21 @@ def main():
                      'containsExactFixtureResponse': fixture_response in line[:screen.columns],
                      'selectionModeCandidate': 'mouse up auto-copy'}
                     for index, line in enumerate(visible_lines, 1)
-                    if 'FINAL' in line and selection_target in line and 'END' in line]
+                    if rendered_fixture_row(line[:screen.columns], fixture_response) and
+                    selection_target in line[:screen.columns]]
                 # Use the current rendered screen bounds, not an assumed
                 # content band: the response can legitimately be near the top
                 # or bottom after a narrow PTY resize. Coordinates below are
                 # still constrained to the exact visible response row/cells.
                 response_rows = [index for index, line in enumerate(visible_lines, 1)
-                                 if ('FINALSNIPEND' in line[:screen.columns] and
+                                 if (rendered_fixture_row(line[:screen.columns], fixture_response) and
                                      selection_target in line[:screen.columns] and
                                      1 <= index <= screen.rows)]
+                body_rows = [index for index in response_rows
+                             if not (fixture_response in visible_lines[index - 1][:screen.columns] and
+                                     'FINAL[' in visible_lines[index - 1][:screen.columns])]
+                if body_rows:
+                    response_rows = body_rows
                 candidate_signature = tuple((index, visible_lines[index - 1][:screen.columns])
                                             for index in response_rows)
                 if candidate_signature and candidate_signature == locals().get('last_response_row_signature'):
@@ -595,7 +602,9 @@ def main():
                     selection_sent = True
                     selection_sent_at = time.monotonic()
                 response_observed = fixture_response.encode() in output
-                if ('FINALSNIPEND' in screen.visible() and 'response_first_visible_at' not in locals()):
+                if (any(rendered_fixture_row(line[:screen.columns], fixture_response)
+                        for line in screen.visible().splitlines()) and
+                        'response_first_visible_at' not in locals()):
                     response_first_visible_at = time.monotonic()
                 response_settled = ('provider_received_at' in locals() and
                                     time.monotonic() - provider_received_at > 1.0)
@@ -757,7 +766,11 @@ def main():
             except subprocess.TimeoutExpired:
                 exit_request_sent = True
                 os.killpg(child.pid, signal.SIGTERM)
-                child.wait(timeout=2)
+                try:
+                    child.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    os.killpg(child.pid, signal.SIGKILL)
+                    child.wait(timeout=2)
             exit_code = child.returncode
             # A PTY may still contain delayed teardown writes after child exit.
             # Drain to EOF, bounded, before judging title restoration.

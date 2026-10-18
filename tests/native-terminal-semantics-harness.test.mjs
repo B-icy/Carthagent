@@ -42,6 +42,29 @@ print(json.dumps({'stillOpen': m.picker_cancel_observation(h, overlay, True, Tru
   assert.equal(result.valid.composerRestored, true);
 });
 
+test('rendered fixture matching accepts bracket-stripped body and bracketed header text', () => {
+  const result = python(`import importlib.util, json
+s=importlib.util.spec_from_file_location('decisions','tools/terminal-semantics-decisions.py'); m=importlib.util.module_from_spec(s); s.loader.exec_module(m)
+fixture='FINAL[SNIP]END'
+header=' • FINAL[SNIP]END                +'
+body='     FINALSNIPEND'
+other='     FINAL[WRONG]END'
+print(json.dumps([m.rendered_fixture_row(line, fixture) for line in (header, body, other)]))`);
+  assert.deepEqual(result, [true, true, false]);
+});
+
+test('active-session submit requires visible staged prompt and active session identity', () => {
+  const result = python(`import importlib.util, json
+s=importlib.util.spec_from_file_location('decisions','tools/terminal-semantics-decisions.py'); m=importlib.util.module_from_spec(s); s.loader.exec_module(m)
+text='focused-host-request'
+home='Ask anything '+text
+active='┃ '+text+'\\n┃ Build · Offline fixture ctgfixture'
+no_text='┃ Build · Offline fixture Offline Fixture'
+weak='┃ '+text+'\\n┃ Build · Offline fixture Offline Fixture'
+print(json.dumps([m.active_session_prompt_ready(x,text) for x in (home,active,no_text,weak)]))`);
+  assert.deepEqual(result, [false, true, false, false]);
+});
+
 test('terminal semantics reports clipboard/title proof as controlled-host modeling, not OS claims', () => {
   assert.match(source, /'physicalOSClipboardVerified': False/);
   assert.match(source, /terminal-semantics-decisions\.py/);

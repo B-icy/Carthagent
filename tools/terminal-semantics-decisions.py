@@ -23,3 +23,23 @@ def picker_cancel_observation(heading, visible, home_ready, home_before, provide
 def is_focused_terminal_case(focused_roundtrip, layout_regression):
     """Focused transport modes skip picker setup; picker-only is interactive."""
     return focused_roundtrip or layout_regression
+
+
+def rendered_fixture_row(line, fixture_response):
+    """Match the exact fixture after normalizing Markdown link delimiters.
+
+    OpenCode renders `[text]` as `text` in the message body, while the session
+    title can still contain the original brackets. This accepts both renderings
+    without guessing the response text or requiring a particular screen row.
+    """
+    normalize = lambda value: value.replace('[', '').replace(']', '')
+    response = normalize(fixture_response)
+    return bool(response) and response in normalize(line)
+
+
+def active_session_prompt_ready(visible, staged_text):
+    """Recognize the rendered active-session composer after home acceptance."""
+    screen = visible.lower()
+    return (bool(staged_text) and staged_text.lower() in screen and
+            'build · offline fixture ctgfixture' in screen and
+            'ask anything' not in screen and 'what is the tech' not in screen)
