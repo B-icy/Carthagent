@@ -283,6 +283,7 @@ async function fixture() {
   const lockSha256 = 'b'.repeat(64);
   await writeFile(path.join(root, 'script/ctg/build-owned-runtime.sh'), [
     `EXPECTED_SOURCE="${sourceRevision}"`, `EXPECTED_PATCH="${patchSha256}"`, `EXPECTED_LOCK="${lockSha256}"`,
+    'patch_file="$ROOT/docs/patches/opencode-v2.0.32-session-ui.patch"',
   ].join('\n'));
   await writeFile(path.join(root, 'docs/patches/opencode-v2.0.32-session-ui.patch'), patch);
   const manifest = {

@@ -142,9 +142,10 @@ async function readPinnedBuildInputs(repoRoot) {
   // Read the reviewed literal selected by the build recipe, not a separately
   // hard-coded patch name. Accept only a canonical docs/patches-relative path;
   // the recipe is data here and is never evaluated as shell code.
-  const patchFileMatches = [...recipe.matchAll(/^patch_file="\$ROOT\/([^"\r\n]+)"$/gm)];
-  if (patchFileMatches.length !== 1) throw new Error('Build recipe must contain exactly one literal ROOT-relative patch_file');
-  const patchFileMatch = patchFileMatches[0];
+  const patchAssignments = [...recipe.matchAll(/^\s*patch_file\s*=.*$/gm)];
+  if (patchAssignments.length !== 1) throw new Error('Build recipe must contain exactly one literal ROOT-relative patch_file');
+  const patchFileMatch = patchAssignments[0][0].match(/^\s*patch_file="\$ROOT\/([^"\r\n]+)"\s*$/);
+  if (!patchFileMatch) throw new Error('Build recipe patch_file must be a literal ROOT-relative path');
   const patchFile = patchFileMatch[1];
   if (!patchFile.startsWith('docs/patches/')
     || patchFile.includes('\\')
