@@ -324,6 +324,22 @@ export default Plugin.define({
           }
           return;
         }
+        case "demo": {
+          const { runOfflineDemo } = await import("../../../lib/opencode/demo.mjs");
+          const lines: string[] = [];
+          const demoIo = Object.assign(Object.create(console), {
+            log: (...values: unknown[]) => { lines.push(values.map(String).join(" ")); },
+            error: (...values: unknown[]) => { lines.push(values.map(String).join(" ")); },
+          }) as Console;
+          let exitCode: number;
+          try { exitCode = await runOfflineDemo({ io: demoIo, signal: lifecycle.signal }); }
+          catch (error) {
+            if (lifecycle.signal.aborted) return;
+            throw error;
+          }
+          await context.ui.dialog.alert({ title: exitCode === 130 ? "Carthagent offline demo · cancelled" : exitCode === 0 ? "Carthagent offline demo · fixture passed" : "Carthagent offline demo · fixture failed", message: `${lines.join("\n")}\n\nActual fixture exit status: ${exitCode}\nThis disposable fixture is not evidence about the current workspace.` });
+          return;
+        }
         case "clear":
           await context.ui.dialog.alert({ title: "Transcript clearing is not exposed to plugins", message: "OpenCode 2.0.32's session.revert.clear endpoint only clears a staged revert marker; it does not clear transcript messages. The native TUI plugin API has prompt.clear for the editor, but no transcript-view reset operation. This plugin will not delete durable session history or mislabel revert clearing as transcript clearing." });
           return;
