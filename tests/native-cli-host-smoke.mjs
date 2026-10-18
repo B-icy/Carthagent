@@ -248,6 +248,33 @@ try {
     const lines = [];
     return { lines, stdout: { write: text => lines.push(String(text)) }, io: { log: text => lines.push(String(text)), error: text => lines.push(`ERR:${text}`) } };
   };
+  // Exercise the public process entrypoint, not only adapter registration.
+  // This subprocess attaches to this disposable host and local fixture provider.
+  const launcherEnv = {
+    ...process.env,
+    ...env,
+    CTG_NATIVE_RUNTIME_ROOT: runtimeRoot,
+    CTG_NATIVE_PLUGIN_PATH: pluginPath,
+    CTG_OPENCODE_HOME: profileRoot,
+    CTG_OPENCODE_BIN: binary,
+  };
+  const processResult = await new Promise((resolveProcess, rejectProcess) => {
+    const processRun = spawn(process.execPath, [join(packageRoot, 'bin/ctg.mjs'), '-p', '--no-guide', '--model', 'ctg-fixture/fixture', 'Smoke public CLI process route'], {
+      cwd,
+      env: launcherEnv,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let output = '';
+    processRun.stdout.on('data', chunk => { output += chunk; });
+    processRun.stderr.on('data', chunk => { output += chunk; });
+    processRun.once('error', rejectProcess);
+    processRun.once('exit', code => resolveProcess({ code: code ?? 1, output }));
+  });
+  assert.equal(processResult.code, 0, `public CLI process route failed: ${processResult.output}\n${hostOutput}`);
+  assert.match(processResult.output, /CLI fixture response for Smoke public CLI process route/);
+  assert.ok(requests.some(body => JSON.stringify(body.messages ?? []).includes('Smoke public CLI process route')),
+    'public ctg process reached the local native fixture provider');
+
   const print = capture();
   const printRuntime = await createOpenCodeCliRuntime({ cwd, native, stdout: print.stdout, io: print.io });
   if (process.env.CTG_NATIVE_SMOKE_BUDGET_ONLY !== '1') {
