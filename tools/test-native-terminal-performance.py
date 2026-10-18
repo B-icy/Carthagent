@@ -7,21 +7,17 @@ Startup and initial warm-up are excluded from latency samples.
 """
 import argparse
 import datetime
-import fcntl
 import hashlib
 import json
 import os
 import pathlib
-import pty
 import re
 import signal
 import select
 import shutil
-import struct
 import subprocess
 import tempfile
 import threading
-import termios
 import time
 
 SAMPLES = 30
@@ -402,6 +398,13 @@ def main():
     else:
         cwd = root / "project"
         startup_session = None
+    # Keep pure screen/editor/workspace helpers importable on Windows. The
+    # real probe remains POSIX-only and loads its PTY APIs only when executing.
+    import fcntl
+    import pty
+    import struct
+    import termios
+
     master, slave = pty.openpty()
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 36, 120, 0, 0))
     command = [binary, "--standalone"]
