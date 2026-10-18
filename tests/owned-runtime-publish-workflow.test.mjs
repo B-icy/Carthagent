@@ -81,7 +81,7 @@ function workflowJob(name) {
   return lines.slice(start, end).join('\n');
 }
 
-const combinedPatchPath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v1.patch';
+const combinedPatchPath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v2.patch';
 
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
@@ -283,7 +283,8 @@ console.log(v);
 }
 
 function envFor(f, overrides = {}) {
-  const nodeDir = path.dirname(process.execPath);
+  const nodeExecPath = process.env.CTG_WORKFLOW_TEST_NODE ?? process.execPath;
+  const nodeDir = path.dirname(nodeExecPath);
   return {
     PATH: `${f.fakeBin}:${nodeDir}:/usr/bin:/bin`,
     NODE_PATH: '',
@@ -374,9 +375,9 @@ test('draft metadata validation has scoped write capability; artifact mutation s
   assert.doesNotMatch(assembly, /contents: write/);
   assert.match(publish, /contents: write/);
   assert.match(uploadBlock, /gh release upload/);
-  assert.match(workflow, /cp ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v1\.patch opencode\/docs\/patches\//);
-  assert.match(workflow, /hash_file ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v1\.patch/);
-  assert.equal((workflow.match(/cp ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v1\.patch ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui\.patch/g) ?? []).length, 2,
+  assert.match(workflow, /cp ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v2\.patch opencode\/docs\/patches\//);
+  assert.match(workflow, /hash_file ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v2\.patch/);
+  assert.equal((workflow.match(/cp ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v2\.patch ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui\.patch/g) ?? []).length, 2,
     'both generation paths must adapt the pinned historical recipe path to the exact reviewed candidate bytes');
 });
 

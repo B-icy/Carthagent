@@ -23,21 +23,21 @@ override.
 
 - Upstream: `https://github.com/anomalyco/opencode`
 - Tag/revision: `v2.0.32` / `843a6c514e606b436a7fe713422ace0a93ad3d61`
-- CTG patch candidate: `docs/patches/opencode-v2.0.32-session-ui-combined-v1.patch` (approved session/runtime + `/help` + live-theme + glyph-v4, spinner test-isolation fix, real-provider theme integration proof)
-- Candidate patch SHA-256: `94a18eece950da260213e66168583f83e44923638f014efa2e58ff74f315bae7`
+- CTG patch candidate: `docs/patches/opencode-v2.0.32-session-ui-combined-v2.patch` (approved session/runtime + `/help` + live-theme + glyph-v4, spinner test-isolation fix, real-provider theme integration proof, runtime-resolved glyph separators)
+- Candidate patch SHA-256: `f66c58da6c4b1b16f0e6888866503c17d968bf95282fad87e00be40e184eb8ce`
 - Candidate verification: Bun 1.4.2 frozen-lockfile install passed, TUI
   typecheck passed, and glyph/keymap/plugin-theme/real-provider-theme tests
-  passed together (19 tests / 186 assertions, one process,
-  `--timeout 60000`). Independent review approved exact head
-  `70882269e25ebcb62c843f9265345342b9e6844d` and reproduced the frozen install,
-  TUI typecheck, and all 19 tests / 186 assertions in one process. Parent
-  workflow/runtime/transport checks pass 48/48. The full Linux recipe build is
-  authorized and in progress; final artifact acceptance remains pending.
+  passed together (19 tests / 188 assertions, one process,
+  `--timeout 60000`). Independent review approved exact corrected head
+  `0e38142bff30ca2a8b2a66394e5055d541fce489`, including the canonical
+  Windows-style checkout-to-recipe handoff and dirty-input rejection.
+  Final five-platform build and installed-artifact acceptance remain pending.
 - Workflow registration: independently and parent-approved bootstrap #197
   passed CI and merged on `main` as `bd1292c8c4`. The workflow is registered;
   actual prebuild run `39089640210` was dispatched at reviewed source
   `70882269e25ebcb62c843f9265345342b9e6844d` for planned version `1.1.0`.
-  Build results and final installed acceptance remain pending.
+  That first run produced Darwin archives but failed the other three targets.
+  No complete five-platform candidate exists yet.
 - Separate parent-quality follow-up: native CLI browser-launch isolation
   `d4983b57328a187e8be6bc0e2c6bd2dda7518920` is not part of this upstream source
   patch and must be integrated in its applicable parent branch before the

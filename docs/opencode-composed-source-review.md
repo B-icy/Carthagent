@@ -16,22 +16,20 @@ The approved base combined source patch is
 `docs/patches/opencode-v2.0.32-session-ui.patch`; its SHA-256 is
 `81e86a4c139e02ebd077e1b635a62ea804ec60b6ae20100893cb6d9f73b06d62`. A
 separate combined candidate is recorded at
-`docs/patches/opencode-v2.0.32-session-ui-combined-v1.patch` with SHA-256
-`94a18eece950da260213e66168583f83e44923638f014efa2e58ff74f315bae7`; it adds
+`docs/patches/opencode-v2.0.32-session-ui-combined-v2.patch` with SHA-256
+`f66c58da6c4b1b16f0e6888866503c17d968bf95282fad87e00be40e184eb8ce`; it adds
 the approved spinner test-isolation and real-provider theme proof patches. The
 candidate recipe and packaged runtime identity both pin this digest; the
 historical base recipe/runtime identity remain recorded in Git, and the base
 patch remains unchanged. Frozen
 lockfile installation, TUI typecheck, and the exact combined glyph/keymap/theme/
-provider run passed (19 tests / 186 assertions in one Bun process with
-`--timeout 60000`). The publish-workflow fixture passed all 6 tests after
-updating its trust-root assertion. Independent source review subsequently
-approved exact head `70882269e25ebcb62c843f9265345342b9e6844d` and independently
-reproduced the frozen install, TUI typecheck, and all 19 tests / 186 assertions
-on the same patch. Parent composition at `2fbb60034c` preserves the exact
-recipe, patch, workflow and fixture bytes; 48 parent workflow/runtime/transport
-checks pass. The full Linux recipe build is authorized and in progress. These
-source checks do not establish final-artifact acceptance. The three standalone review patches remain
+provider run passed (19 tests / 188 assertions in one Bun process with
+`--timeout 60000`). The workflow fixture passed all 6 tests with Node 26 after
+updating its patch-path assertion. Independent review approved corrected head
+`0e38142bff30ca2a8b2a66394e5055d541fce489`, including an isolated Windows-style
+checkout-to-recipe handoff reaching Bun installation and dirty-input rejection.
+These source checks do not establish final-artifact acceptance. The three
+standalone review patches remain
 separately published and unchanged. The base composition was
 applied to a clean detached upstream checkout and its reverse-application check
 and `git diff --check` pass. The glyph patch’s two `/help`-overlapping files
@@ -44,8 +42,10 @@ source approval (11 tests / 146 assertions), `/help` keymap suite (5/5), and
 live-theme focused tests/typecheck. These do not approve the combined patch and
 do not substitute for an independent composition review. This is a source-review
 checkpoint only: do not build until the exact combined patch is independently
-approved. Final binary, theme PTY, glyph matrix, `/help`, and title restoration
-proofs remain outstanding for the composed source.
+approved. The previous v1 patch was built on Linux x64 before the Linux runner
+marquee assertion was corrected; that binary is historical and is not an
+artifact for this v2 digest. Final v2 binaries and cross-platform prebuilds,
+theme PTY, glyph matrix, `/help`, and title restoration proofs remain outstanding.
 
 The unrelated draft-release asset transport design is intentionally not
 implemented by this composition. A separate review must decide whether a
