@@ -14,7 +14,7 @@ export function nativeReviewMode(session, config, explicitMode) {
 
 /** Correlate host executions and admit one current-run kickoff per session. */
 /** @param {{ mode: (sessionID: string) => string, diff: (sessionID: string, signal?: AbortSignal) => Promise<unknown>, offer: (value: { sessionID: string; runKey: string; writes: number; start: () => Promise<boolean> }) => Promise<unknown>, kickoff: (sessionID: string, signal?: AbortSignal) => Promise<unknown>, isLoopActive?: (sessionID: string) => boolean, setLoopActive?: (sessionID: string, active: boolean) => void, signal?: AbortSignal }} options */
-export function createNativeReviewConsumer({ mode, diff, offer, kickoff, latestUserMessage = () => undefined, isLoopActive = () => false, setLoopActive = () => {}, signal }) {
+export function createNativeReviewConsumer({ mode, diff, offer, kickoff, isLoopActive = () => false, setLoopActive = () => {}, signal }) {
   const runs = new Map();
   const admitted = new Set();
   const pending = new Set();
@@ -75,7 +75,7 @@ export function createNativeReviewConsumer({ mode, diff, offer, kickoff, latestU
   }
 
   return {
-    onUserPromptAdmitted(sessionID, message = latestUserMessage(sessionID)) {
+    onUserPromptAdmitted(sessionID, message) {
       if (!sessionID || message?.type !== "user" || message.metadata?.["ctg.reviewKickoff"] === true) return;
       loopSessions.delete(sessionID);
       if (isLoopActive(sessionID)) setLoopActive(sessionID, false);
@@ -89,10 +89,6 @@ export function createNativeReviewConsumer({ mode, diff, offer, kickoff, latestU
     onStarted(event) {
       const sessionID = event?.data?.sessionID;
       if (!sessionID || disposed) return;
-      // The host emits execution.started only after it admits a prompt. The
-      // message store distinguishes a real user turn from the review kickoff
-      // that this consumer injected (including after plugin state is restored).
-      this.onUserPromptAdmitted(sessionID);
       const id = event.id ?? `${event.created ?? Date.now()}-${++sequence}`;
       // A rejection is handled here, not left as an unhandled promise if the run fails.
       const baseline = Promise.resolve().then(() => diff(sessionID, signal)).catch(() => undefined);
@@ -101,13 +97,24 @@ export function createNativeReviewConsumer({ mode, diff, offer, kickoff, latestU
     onSucceeded(event) { return finish(event?.data?.sessionID, true); },
     onFailed(event) { return finish(event?.data?.sessionID, false); },
     onInterrupted(event) { return finish(event?.data?.sessionID, false); },
+    onInboxDelivered(event, message) {
+      const sessionID = event?.data?.sessionID;
+      if (!sessionID || disposed) return;
+      this.onUserPromptAdmitted(sessionID, message);
+    },
     dispose() { disposed = true; runs.clear(); pending.clear(); },
   };
 }
 
-/** Wire host execution lifecycle; returned disposers belong to plugin setup. */
-export function subscribeNativeReviewEvents(data, consumer, onError = (_error) => {}) {
+/** Wire host admission and execution events; returned disposers belong to plugin setup. */
+export function subscribeNativeReviewEvents(data, consumer, onError = (_error) => {}, getMessage = async () => undefined) {
   return [
+    data.on("session.inbox.delivered", (event) => {
+      const sessionID = event?.data?.sessionID;
+      const messageID = event?.data?.inboxID;
+      if (!sessionID || !messageID) return;
+      void getMessage(sessionID, messageID).then((message) => consumer.onInboxDelivered(event, message)).catch(onError);
+    }),
     data.on("session.execution.started", (event) => consumer.onStarted(event)),
     data.on("session.execution.succeeded", (event) => { void consumer.onSucceeded(event).catch(onError); }),
     data.on("session.execution.failed", (event) => { void consumer.onFailed(event).catch(onError); }),
