@@ -3,7 +3,9 @@
 > **UNRELEASED — draft only.** Planned version: **1.1.0**. No tag or release
 > has been published.
 > This document is not a release announcement and does not imply that the
-> native default switch or full product acceptance is complete.
+> native default switch or full product acceptance is complete. The packaged
+> five-platform runtime manifest is a reviewed candidate; publishing assets
+> and passing release gates are still pending.
 
 ## Proposed highlights (subject to acceptance)
 
@@ -20,9 +22,11 @@
 
 ## Migration and compatibility notes
 
-- Native execution remains opt-in with `CTG_NATIVE=1` until the migration's
-  acceptance gates are approved. Without the variable, the existing CLI remains
-  the default. Do not set it persistently unless that routing is intentional.
+- In this candidate, native execution remains opt-in with `CTG_NATIVE=1`.
+  Without the variable, the existing CLI remains the default. Making native
+  execution the default is pending UI tests and the remaining migration and
+  release acceptance gates; do not set the variable persistently unless that
+  routing is intentional.
 - The native runtime uses the package-owned OpenCode 2.0.32 executable and CTG's
   isolated profile. It does not update or reuse regular OpenCode installations
   or credentials.
@@ -47,13 +51,15 @@ npm install -g --install-links=true github:B-icy/Carthagent#vX.Y.Z
 ```
 
 Replace the placeholder only with the real published release tag. Version
-`1.1.0` is planned, but no final tag has been created. The composed preview resolves the upstream
-`@opencode/cli@2.0.32` dependency through Node's package resolver, including
-npm-hoisted layouts. This is not final owned-runtime acquisition or fresh
-installed-product acceptance: the preview dependency reports upstream-compatible
-version `2.0.32`, distinct from CTG's owned runtime identity
-`0.0.0-ctg.2.0.32`. Platform artifacts, final manifest/acquisition, performance,
-and full installed acceptance remain open in the
+`1.1.0` is planned, but no final tag has been created. This candidate packages
+the reviewed immutable owned-runtime manifest for five platforms, pinned to
+OpenCode source revision `843a6c514e606b436a7fe713422ace0a93ad3d61` and runtime
+identity `0.0.0-ctg.2.0.32`. The assets still need to accompany a draft release
+and pass final release verification and installed acceptance. The composed
+preview resolves upstream `@opencode/cli@2.0.32` through Node's package resolver,
+including npm-hoisted layouts; that preview dependency is distinct from CTG's
+owned runtime identity. Performance, UI tests, native-default acceptance, and
+full installed acceptance remain open in the
 [migration ledger](opencode-migration.md#delivery-ledger).
 The shared native update operation supports npm-installed packages and clean
 source clones: for a clone it fetches the selected origin tag into a private ref
