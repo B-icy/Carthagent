@@ -8,9 +8,35 @@ MODULE = Path(__file__).with_name('owned-visual-clear-env.py')
 SPEC = importlib.util.spec_from_file_location('owned_visual_clear_env', MODULE)
 ENV = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(ENV)
+MODEL_PATH = Path(__file__).with_name('owned-visual-clear-model.py')
+MODEL_SPEC = importlib.util.spec_from_file_location('owned_visual_clear_model', MODEL_PATH)
+MODEL = importlib.util.module_from_spec(MODEL_SPEC)
+MODEL_SPEC.loader.exec_module(MODEL)
 
 
 class ChildEnvironmentTests(unittest.TestCase):
+    def test_canonical_conversation_matches_newest_first_data_and_detects_mutation(self):
+        oldest = {
+            'id': 'msg_old', 'type': 'user', 'text': 'first exact prompt',
+            'time': {'created': 1},
+        }
+        newest = {
+            'id': 'msg_new', 'type': 'assistant', 'text': 'second exact reply',
+            'time': {'created': 2},
+        }
+        after_followup = [oldest, newest]
+        # The API's newest-first ordering must compare equal to the same durable
+        # transcript captured in a different order, retaining exact message data.
+        newest_first_api = [newest, oldest]
+        self.assertEqual(MODEL.canonical_conversation(newest_first_api),
+                         MODEL.canonical_conversation(after_followup))
+        self.assertEqual(MODEL.canonical_conversation(newest_first_api),
+                         MODEL.canonical_conversation([oldest, newest]))
+
+        mutated_api = [newest, {**oldest, 'text': 'changed prompt'}]
+        self.assertNotEqual(MODEL.canonical_conversation(mutated_api),
+                            MODEL.canonical_conversation(after_followup))
+
     def test_fixture_environment_only_inherits_explicit_platform_basics(self):
         ambient = {
             'PATH': '/trusted/test/path',
