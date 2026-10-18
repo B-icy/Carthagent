@@ -11,8 +11,16 @@ export function nativePtySmokeArgs({ root, binary, plugin, selection, probe }) {
   for (const next of probe.next ?? []) args.push('--after-command', next.command, '--after-expect', next.expect);
   if (probe.dismissCompletion) args.push('--dismiss-completion');
   if (probe.postSubmitMarker) args.push('--post-submit-marker', probe.postSubmitMarker);
+  if (probe.capture) args.push('--capture', probe.capture);
   if (probe.color) args.push('--expect-color', probe.color);
   if (probe.initialTheme) args.push('--initial-theme', probe.initialTheme);
+  if (probe.nodeExecutable) args.push('--node-executable', probe.nodeExecutable);
+  if (probe.commandArgs) args.push('--command-args', probe.commandArgs);
+  if (probe.expectedTheme) args.push('--expect-theme', probe.expectedTheme);
+  if (probe.expectStartupColor) args.push('--expect-startup-color');
+  if (probe.writeInitialTheme) args.push('--write-initial-theme');
+  if (probe.stateDir) args.push('--state-dir', probe.stateDir);
+  if (probe.reuseState) args.push('--reuse-state');
   args.push('--expected-sha256', selection.binarySha256);
   return args;
 }

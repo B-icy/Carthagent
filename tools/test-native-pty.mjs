@@ -25,7 +25,7 @@ const binary = selection.binary;
 const plugin = resolve(process.argv[2] ?? resolve(root, 'plugins/carthagent'));
 const probes = [
   { command: '/ctg-status', expect: 'OpenCode 2.0.32' },
-  { command: '/ctg-workspace', expect: 'CARTHAGENT', dismissCompletion: true },
+  { command: '/ctg-workspace', expect: 'Workspace native sessions', postSubmitMarker: 'Workspace native sessions', dismissCompletion: true },
   { command: '/help', expect: 'Carthagent commands', postSubmitMarker: '(/ctg-help)', dismissCompletion: true },
   { command: '/ctg-help', expect: 'Carthagent commands', dismissCompletion: true },
   { command: '/compact', expect: '/compact requires an open session.', secondEnter: true, dismissCompletion: true },

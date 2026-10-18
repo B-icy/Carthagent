@@ -24,7 +24,7 @@ test('installed PTY invocation carries an independently resolved upstream digest
   const args = nativePtySmokeArgs({
     root: '/package', binary, plugin: '/package/plugins/carthagent',
     selection,
-    probe: { command: '/ctg-status', expect: 'OpenCode 2.0.32', initialTheme: 'carthage', color: '213,175,102', dismissCompletion: true, postSubmitMarker: 'restart' },
+    probe: { command: '/theme', commandArgs: 'carthage', expect: 'Theme saved', initialTheme: 'opencode', color: '213,175,102', dismissCompletion: true, postSubmitMarker: 'restart', capture: '/tmp/pty.raw', nodeExecutable: '/usr/bin/node', expectedTheme: 'carthage', expectStartupColor: true, writeInitialTheme: true, stateDir: '/tmp/theme-state', reuseState: true },
   });
   const digestArg = args.indexOf('--expected-sha256');
   assert.notEqual(digestArg, -1, 'upstream-compatible binaries must receive the digest argument too');
@@ -32,6 +32,11 @@ test('installed PTY invocation carries an independently resolved upstream digest
   assert.ok(args.includes('--initial-theme') && args.includes('carthage'));
   assert.ok(args.includes('--expect-color') && args.includes('213,175,102'));
   assert.ok(args.includes('--dismiss-completion') && args.includes('--post-submit-marker') && args.includes('restart'));
+  assert.equal(args[args.indexOf('--capture') + 1], '/tmp/pty.raw');
+  for (const [flag, value] of [['--node-executable', '/usr/bin/node'], ['--command-args', 'carthage'], ['--expect-theme', 'carthage'], ['--state-dir', '/tmp/theme-state']]) {
+    assert.equal(args[args.indexOf(flag) + 1], value, `${flag} value is preserved`);
+  }
+  assert.ok(args.includes('--expect-startup-color') && args.includes('--write-initial-theme') && args.includes('--reuse-state'));
   const actual = createHash('sha256').update(await readFile(args[args.indexOf('--binary') + 1])).digest('hex');
   assert.equal(actual, args[digestArg + 1], 'Python entrypoint is given the exact digest verified by runtime selection');
 });
@@ -60,7 +65,14 @@ test('invocation helper fails closed if the selected runtime omitted the digest'
   assert.throws(() => nativePtySmokeArgs({ root: '/package', binary: '/bin/opencode', plugin: '/plugin', selection: {}, probe: { command: '/ctg-status', expect: 'OpenCode' } }), /missing its independently verified/);
 });
 
-test('Python digest preflight rejects changed bytes before executing the selected binary', async () => {
+const pythonForPtyTest = process.env.PYTHON || (process.platform === 'win32' ? 'python.exe' : 'python3');
+const pythonPtyBoundarySkip = process.platform === 'win32'
+  ? 'The Python PTY preflight imports Unix-only fcntl; native PTY acceptance is Unix-only.'
+  : spawnSync(pythonForPtyTest, ['--version'], { stdio: 'ignore' }).error
+    ? `Python interpreter ${pythonForPtyTest} is unavailable.`
+    : false;
+
+test('Python digest preflight rejects changed bytes before executing the selected binary', { skip: pythonPtyBoundarySkip }, async () => {
   const directory = await mkdtemp(join(tmpdir(), 'ctg-pty-preflight-'));
   const binary = join(directory, 'binary');
   const marker = join(directory, 'launched');
@@ -68,7 +80,7 @@ test('Python digest preflight rejects changed bytes before executing the selecte
   try {
     await writeFile(binary, `#!/bin/sh\ntouch ${JSON.stringify(marker)}\n`);
     await chmod(binary, 0o755);
-    const result = spawnSync('python3', [python, '--binary', binary, '--expected-sha256', '0'.repeat(64)], { encoding: 'utf8' });
+    const result = spawnSync(pythonForPtyTest, [python, '--binary', binary, '--expected-sha256', '0'.repeat(64)], { encoding: 'utf8' });
     assert.equal(result.status, 2, result.stderr);
     assert.match(result.stderr, /SHA-256 changed before PTY execution/);
     await assert.rejects(access(marker), { code: 'ENOENT' }, 'digest mismatch must be rejected before native binary launch');
