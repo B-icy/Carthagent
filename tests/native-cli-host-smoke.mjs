@@ -54,9 +54,14 @@ const provider = createServer((req, res) => {
     const budgetPrompt = userText.includes('Smoke budget enforcement');
     const shellCapPrompt = userText.includes('Smoke bash cap');
     const uncappedPrompt = userText.includes('Smoke uncapped shell');
+    const planPrompt = userText.includes('Smoke planned bash cap');
+    const plannedShellPrompt = userText.includes('Smoke planned bash cap');
     const needsBudgetRead = budgetPrompt && budgetProviderTurns++ === 0;
     const needsBudgetWrite = budgetPrompt && !needsBudgetRead && budgetProviderTurns === 2;
-    const needsTool = (userText.includes('Smoke JSON') && !body.messages.some(message => message.role === 'tool')) || needsBudgetRead || needsBudgetWrite || ((shellCapPrompt || uncappedPrompt) && !body.messages.some(message => message.role === 'tool'));
+    const hasPlanResult = body.messages.some(message => message.role === 'tool' && String(message.content || '').includes('plan.d2'));
+    const needsDeliveryPlan = planPrompt && !hasPlanResult;
+    const hasSuccessfulPlan = body.messages.some(message => message.role === 'tool' && message.tool_call_id === 'fixture-delivery-plan' && String(message.content || '').includes('plan.d2'));
+    const needsTool = (userText.includes('Smoke JSON') && !body.messages.some(message => message.role === 'tool')) || needsBudgetRead || needsBudgetWrite || (shellCapPrompt && !body.messages.some(message => message.role === 'tool')) || ((uncappedPrompt || plannedShellPrompt && hasSuccessfulPlan) && !body.messages.some(message => message.role === 'tool' && message.tool_call_id === 'fixture-bash-cap'));
     const fails = userText.includes('Smoke provider failure');
     const chunk = (delta, finish_reason = null) => `data: ${JSON.stringify({
       id: 'ctg-cli-smoke', object: 'chat.completion.chunk', created: 1, model: 'fixture',
@@ -71,8 +76,10 @@ const provider = createServer((req, res) => {
     }
     res.writeHead(200, { 'content-type': 'text/event-stream' });
     if (needsTool) {
-      const toolCall = shellCapPrompt || uncappedPrompt
-        ? { index: 0, id: shellCapPrompt ? 'fixture-bash-cap' : 'fixture-uncapped-shell', type: 'function', function: { name: 'shell', arguments: JSON.stringify({ command: `sleep 3; touch ${shellCapPrompt ? join(cwd, 'bash-cap-completed.txt') : join(cwd, 'uncapped-shell-completed.txt')}`, timeout: 0 }) } }
+      const toolCall = needsDeliveryPlan
+        ? { index: 0, id: 'fixture-delivery-plan', type: 'function', function: { name: 'execute', arguments: JSON.stringify({ code: `return await tools.carthagent["delivery_plan"]({goal:"Verify planned bash timeout enforcement without modifying product files.",assumptions:["The production delivery plugin governs shell execution."],artifacts:["."],steps:[{id:"verify-shell-cap",title:"Run the planned shell-cap smoke",dependsOn:[],checks:["shell-cap-smoke"]}],verification:"required",acceptance:[{requirement:"The planned shell command starts and is terminated by its session bash cap before the delayed side effect." ,checks:["shell-cap-smoke"]}],checks:[{id:"shell-cap-smoke",kind:"test",argv:[${JSON.stringify(process.execPath)},"--version"],timeoutSeconds:10}]})` }) } }
+        : shellCapPrompt || uncappedPrompt || plannedShellPrompt
+        ? { index: 0, id: shellCapPrompt || plannedShellPrompt ? 'fixture-bash-cap' : 'fixture-uncapped-shell', type: 'function', function: { name: 'shell', arguments: JSON.stringify({ command: shellCapPrompt || plannedShellPrompt ? `touch ${join(cwd, 'bash-cap-started.txt')}; sleep 3; touch ${join(cwd, 'bash-cap-completed.txt')}` : `sleep 3; touch ${join(cwd, 'uncapped-shell-completed.txt')}`, timeout: 0 }) } }
         : needsBudgetWrite
         ? { index: 0, id: 'fixture-budget-second-write', type: 'function', function: { name: 'write', arguments: JSON.stringify({ path: join(cwd, 'budget-side-effect.txt'), content: 'over-budget write must not happen\n' }) } }
         : budgetPrompt
@@ -334,12 +341,23 @@ try {
   const budgetStatus = await fixtureClient.rpc(Carthagent).budgetStatus({ sessionID: budgetSessionID }, { location: { directory: cwd } });
   assert.deepEqual({ tools: budgetStatus.tools, maxTools: budgetStatus.maxTools, stopped: budgetStatus.stopped }, { tools: 1, maxTools: 1, stopped: 'tool-calls' });
 
+  const providerTurnsBeforePlan = requests.length;
   const bashCap = capture();
   const bashCapRuntime = await createOpenCodeCliRuntime({ cwd, native, stdout: bashCap.stdout, io: bashCap.io });
-  const bashCapCode = await runOpenCodeCli({ argv: ['-p', '--no-guide', '--bash-cap', '0.5', '--model', 'ctg-fixture/fixture', 'Smoke bash cap'], runtime: bashCapRuntime, io: bashCap.io, stdoutIsTTY: false });
-  assert.equal(bashCapCode, 0, `bash-cap session failed: ${bashCap.lines.join('\n')}\n${hostOutput}`);
-  const bashCapSession = await fixtureClient.session.get({ sessionID: sessionIDs.at(-1) });
+  const bashCapCode = await runOpenCodeCli({ argv: ['-p', '--no-guide', '--strict', '--workflow', 'strict', '--bash-cap', '0.5', '--model', 'ctg-fixture/fixture', 'Smoke planned bash cap'], runtime: bashCapRuntime, io: bashCap.io, stdoutIsTTY: false });
+  assert.equal(bashCapCode, 0, `planned shell-cap session failed: ${bashCap.lines.join('\n')}`);
+  const planSessionID = sessionIDs.at(-1);
+  const planResultMessages = requests.slice(providerTurnsBeforePlan).flatMap(body => body.messages ?? []).filter(message => message.role === 'tool' && message.tool_call_id === 'fixture-delivery-plan');
+  assert.equal(planResultMessages.length, 1, `delivery_plan tool must execute exactly once; tool results=${JSON.stringify(planResultMessages)}`);
+  assert.match(planResultMessages[0].content, /plan\.d2/, `delivery_plan must succeed in its session: ${planResultMessages[0].content}`);
+  assert.match(planResultMessages[0].content, /"phase": "approved"/, `strict design review and approval must succeed before shell execution: ${planResultMessages[0].content}`);
+  const bashCapSession = await fixtureClient.session.get({ sessionID: planSessionID });
   assert.equal(bashCapSession.metadata['carthagent.options'].bashCap, 0.5);
+   assert.equal(existsSync(join(cwd, 'bash-cap-started.txt')), true, `the specific fixture-bash-cap shell command actually started; output=${bashCap.lines.join('\n')}; request=${JSON.stringify(requests.filter(body => JSON.stringify(body.messages ?? []).includes('Smoke planned bash cap')).at(-1))}`);
+   const bashCapEvents = bashCap.lines.filter(line => line.startsWith('{')).map(line => JSON.parse(line));
+   const bashCapSessionID = planSessionID;
+   assert.ok(bashCapEvents.some(event => event.type === 'tool_execution_start' && event.sessionID === bashCapSessionID && event.toolCallId === 'fixture-bash-cap' && event.toolName === 'shell'), JSON.stringify(bashCapEvents));
+   assert.ok(bashCapEvents.some(event => event.type === 'tool_execution_end' && event.sessionID === bashCapSessionID && event.toolCallId === 'fixture-bash-cap' && event.isError === true), JSON.stringify(bashCapEvents));
   assert.equal(existsSync(join(cwd, 'bash-cap-completed.txt')), false, 'the capped three-second shell command timed out before its side effect');
   await new Promise(resolveDelay => setTimeout(resolveDelay, 2700));
   assert.equal(existsSync(join(cwd, 'bash-cap-completed.txt')), false, 'a timed-out child command did not run its delayed side effect');
