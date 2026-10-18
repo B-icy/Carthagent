@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "releaseVersion": "1.1.0",
+  "compatibilityVersion": "2.0.32",
+  "runtimeVersion": "0.0.0-ctg.2.0.32",
+  "sourceRevision": "843a6c514e606b436a7fe713422ace0a93ad3d61",
+  "patchSha256": "f66c58da6c4b1b16f0e6888866503c17d968bf95282fad87e00be40e184eb8ce",
+  "lockSha256": "9d78379cd264584a495440a217b9d2ecab524c9a56f7f8b4b5bed3926daa330d",
+  "assets": {
+    "linux-x64": {
+      "name": "opencode-linux-x64.tar.gz",
+      "archiveSha256": "b6bb2b59f0fa2c67759d9b00f4597a5a1f6232c67d6b985bc82f08d1e2545fe4",
+      "executableSha256": "e9af36982c82a38666450376ebc80026348269bce1663163f3043a99bc70303c"
+    },
+    "linux-arm64": {
+      "name": "opencode-linux-arm64.tar.gz",
+      "archiveSha256": "9e2a02888fa0daa3caa36973c331dd406d52c758508557555acf283438b3131d",
+      "executableSha256": "84ef4d118f918a8f1c30f3d6a44864362e321551020219085c73954d95fbf2fb"
+    },
+    "darwin-x64": {
+      "name": "opencode-darwin-x64.tar.gz",
+      "archiveSha256": "293a36045be724705816d042fa815a43cf6d7afb10424467470901d9e70b19d2",
+      "executableSha256": "ef991a00658394a668efae6436ca36e239b893a4b069a94d034a74263d8c558f"
+    },
+    "darwin-arm64": {
+      "name": "opencode-darwin-arm64.tar.gz",
+      "archiveSha256": "1f1bf5252d9f0977d6e906cc0d67145d1ff65c2dde28b8a70bad30fae86843bc",
+      "executableSha256": "cf3ab0b8ba2c8cc9b0cb8ff48a026cf39ed9a128c07a8778c816ff8806f07de8"
+    },
+    "windows-x64": {
+      "name": "opencode-windows-x64.tar.gz",
+      "archiveSha256": "b99551704adea06b02927b468881f7a5a664a97d30eb1a224c6e28c72bc2e503",
+      "executableSha256": "543a48282b220b1e7dd129af308cf34e5631979e1e96cb3ebffa180037f7faaf"
+    }
+  }
+}
