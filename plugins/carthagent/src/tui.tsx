@@ -9,6 +9,7 @@ import { COMMANDS, NATIVE_COMMAND_COLLISIONS } from "./ui/commands.js";
 import { Workspace, rpcEventOptions, sessionControls, workspaceClient, shipClient, archiveClient, cloudAccountText, cloudUsageText, archiveItemText } from "./ui/client.js";
 import { cliConfigDirectory, cliConfigPath, readCliConfig, writeNativeTheme } from "./ui/host-state.js";
 import { WorkspacePage } from "./ui/workspace.js";
+import { findNativeResumeSession } from "./ui/resume-session.mjs";
 
 const THEMES = ["carthage", "opencode", "tokyonight", "nebula", "ember", "forest", "mono", "obsidian", "midnight", "solarized-dark", "nord", "contrast-dark", "okabe-dark", "paper", "daylight", "solarized-light", "contrast-light", "okabe-light", "solarized", "okabe", "contrast", "system"];
 const OPENCODE_BUILTIN_THEMES = new Set(["opencode", "tokyonight"]);
@@ -69,14 +70,7 @@ export default Plugin.define({
         case "resume": {
           const query = arg.toLowerCase();
           const pageSize = 100;
-          let cursor: string | undefined;
-          const sessions: Array<{ id: string; title?: string; parentID?: string; time: { updated: number } }> = [];
-          do {
-            const page = await context.client.session.list({ limit: pageSize, order: "desc", directory: location.directory, ...(cursor ? { cursor } : {}), ...(query ? { search: arg } : {}) });
-            sessions.push(...page.data.filter((session) => !session.parentID));
-            cursor = page.cursor.next ?? undefined;
-          } while (cursor);
-          const match = query ? sessions.find((session) => session.id === arg || session.id.startsWith(query) || (session.title ?? "").toLowerCase().includes(query)) : undefined;
+          const match = query ? await findNativeResumeSession({ query: arg, directory: location.directory, client: context.client }) : undefined;
           if (match) { context.ui.router.navigate({ type: "session", sessionID: match.id }); return; }
           if (query) {
             const archived = await archiveClient(context, location).search({ query: arg, limit: 1 }) as { total: number };
@@ -84,6 +78,13 @@ export default Plugin.define({
             toast(`No native session matches “${arg}” in ${context.ui.format.path(location.directory)}.`, "warning");
             return;
           }
+          let cursor: string | undefined;
+          const sessions: Array<{ id: string; title?: string; parentID?: string; time: { updated: number } }> = [];
+          do {
+            const page = await context.client.session.list({ limit: pageSize, order: "desc", directory: location.directory, ...(cursor ? { cursor } : {}) });
+            sessions.push(...page.data.filter((session) => !session.parentID));
+            cursor = page.cursor.next ?? undefined;
+          } while (cursor);
           const selected = await context.ui.dialog.select({ title: `Resume native session · ${sessions.length} loaded`, options: sessions.map((session) => ({ title: session.title ?? session.id, value: session.id, description: `${new Date(session.time.updated).toLocaleString()} · ${session.id}` })) });
           if (selected) context.ui.router.navigate({ type: "session", sessionID: selected });
           return;
@@ -376,10 +377,11 @@ export default Plugin.define({
           }) as Console;
           const runtime = await createOpenCodeCliRuntime({ cwd: location.directory, io: updaterIo });
           try {
-            const exitCode = await runtime.command({ command: "update", args: [ ...(checkOnly ? ["--check"] : []), ...(option === "force" ? ["--force"] : []) ] });
+            const exitCode = await runtime.command({ command: "update", args: [ ...(checkOnly ? ["--check"] : []), ...(option === "force" ? ["--force"] : []) ], signal: lifecycle.signal });
             const message = `${lines.join("\n") || (exitCode === 0 ? "Update command completed without status output." : "Update command returned no output.")}\n\nExit status: ${exitCode}${!checkOnly && exitCode === 0 ? "\nRestart the native CLI to load the installed package." : ""}`;
             await context.ui.dialog.alert({ title: checkOnly ? "Carthagent update check" : exitCode === 0 ? "Carthagent update complete" : "Carthagent update failed", message });
           } catch (error) {
+            if (lifecycle.signal.aborted) return;
             await context.ui.dialog.alert({ title: "Carthagent update failed", message: `${lines.join("\n")}\n\n${error instanceof Error ? error.message : String(error)}\n\nNo success is reported.` });
           }
           return;

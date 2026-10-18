@@ -1,7 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cliHelp, openCodeCliManifest, parseOpenCodeArgs, runOpenCodeCli } from '../lib/opencode/cli.mjs';
-import { createOpenCodeCliRuntime, headlessSucceeded, latestSessionForWorkspace, modelWithThinking, nativeJsonEvents, reconcileHeadlessResult, textParts } from '../lib/opencode/cli-runtime.mjs';
+import { createOpenCodeCliRuntime as createRuntime, headlessSucceeded, latestSessionForWorkspace, modelWithThinking, nativeJsonEvents, reconcileHeadlessResult, textParts } from '../lib/opencode/cli-runtime.mjs';
+
+// These are offline fixtures, including when they simulate an interactive TTY.
+// Never let a fixture URL reach the user's operating-system browser launcher.
+const createOpenCodeCliRuntime = options => createRuntime({ openBrowserImpl: async () => false, ...options });
 
 function ioCapture() {
   const output = { stdout: [], stderr: [] };
@@ -433,12 +437,13 @@ test('resumed native sessions merge explicit launcher options into their own wor
 
 test('native login uses OpenCode integration OAuth status and completion lifecycle', async () => {
   const calls = [];
+  const opened = [];
   const service = { url: 'http://127.0.0.1:1', headers: {} };
   const integration = {
     id: 'experiential-labs', name: 'Carthagent Ship',
     methods: [{ id: 'carthagent-device', type: 'oauth', label: 'Sign in with Carthagent Ship' }],
   };
-  const runtime = await createOpenCodeCliRuntime({ cwd: '/project', io: ioCapture().io, stdin: { isTTY: true }, stdout: { isTTY: true }, native: {
+  const runtime = await createOpenCodeCliRuntime({ cwd: '/project', io: ioCapture().io, stdin: { isTTY: true }, stdout: { isTTY: true }, openBrowserImpl: async url => { opened.push(url); return true; }, native: {
     runtime: {}, service: { ensureService: async () => service }, headless: {},
     clientFactory: async () => ({ integration: {
       list: async input => { calls.push(['list', input]); return { data: [integration] }; },
@@ -453,6 +458,7 @@ test('native login uses OpenCode integration OAuth status and completion lifecyc
     } }),
   } });
   assert.equal(await runtime.login(), 0);
+  assert.deepEqual(opened, ['https://auth.example/device']);
   assert.deepEqual(calls.map(([name]) => name), ['list', 'connect', 'status']);
   assert.equal(calls[1][1].methodID, 'carthagent-device');
   assert.deepEqual(calls[1][1].location, { directory: '/project' });
@@ -730,14 +736,15 @@ test('native update installs the validated package spec, and fails closed for so
   const cloneCalls = [];
   const cloneRuntime = await createOpenCodeCliRuntime({ cwd: '/package/root', native: {
     runtime: {}, service: {}, headless: {}, packageRoot: '/package/root',
-    updateApi: {
-      fetchLatestRelease: async () => ({ release: { version: '1.0.4', minNode: '18.0.0', installSpec: 'github:B-icy/Carthagent#v1.0.4' } }),
-      packageVersion: () => '1.0.3', compareVersions: (left, right) => left.localeCompare(right, undefined, { numeric: true }), detectInstallMethod: () => 'clone',
-    },
+      updateApi: {
+        fetchLatestRelease: async () => ({ release: { version: '1.0.4', minNode: '18.0.0', installSpec: 'github:B-icy/Carthagent#v1.0.4' } }),
+        packageVersion: () => '1.0.3', compareVersions: (left, right) => left.localeCompare(right, undefined, { numeric: true }), detectInstallMethod: () => 'clone',
+      },
+      runCommand: async (...args) => { cloneCalls.push(args); return { code: 0, output: '', timedOut: false, cancelled: false }; },
     runCommand: async (...args) => { cloneCalls.push(args); return { code: 0, output: '', timedOut: false, cancelled: false }; },
   } });
   await assert.rejects(cloneRuntime.command({ command: 'update', args: [] }), /refuses to checkout a release/);
-  assert.deepEqual(cloneCalls, [[['git', 'status', '--porcelain'], { cwd: '/package/root', timeoutSeconds: 30 }]]);
+  assert.deepEqual(cloneCalls, []);
 });
 
 test('native update check reports an available release without invoking the installer', async () => {
@@ -754,6 +761,21 @@ test('native update check reports an available release without invoking the inst
   assert.equal(await runtime.command({ command: 'update', args: ['--check'] }), 0);
   assert.match(output.output.stdout[0], /1\.0\.4 is available/);
   assert.deepEqual(calls, []);
+});
+
+test('native update passes lifecycle cancellation through release resolution and install commands', async () => {
+  const controller = new AbortController();
+  const seen = [];
+  const runtime = await createOpenCodeCliRuntime({ cwd: '/package/root', native: {
+    runtime: {}, service: {}, headless: {}, packageRoot: '/package/root',
+    updateApi: {
+      fetchLatestRelease: async ({ signal }) => { seen.push(['fetch', signal]); return { release: { version: '1.0.4', tag: 'v1.0.4', minNode: '18.0.0' } }; },
+      packageVersion: () => '1.0.3', detectInstallMethod: () => 'npm',
+    },
+    runCommand: async (_argv, options) => { seen.push(['command', options.signal]); return { code: 0, output: '' }; },
+  } });
+  assert.equal(await runtime.command({ command: 'update', args: [], signal: controller.signal }), 0);
+  assert.deepEqual(seen.map(([kind, signal]) => [kind, signal === controller.signal]), [['fetch', true], ['command', true]]);
 });
 
 test('native updater rejects an independently supplied release ref even with --force', async () => {

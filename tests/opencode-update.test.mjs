@@ -205,6 +205,33 @@ test('zero exit code with timeout or cancellation is failure and prevents later 
   }
 });
 
+test('an already-aborted lifecycle never checks releases or starts an installer', async () => {
+  const controller = new AbortController();
+  controller.abort(new Error('plugin disposed'));
+  let fetched = false;
+  let installed = false;
+  await assert.rejects(runNativeUpdate({
+    signal: controller.signal,
+    fetchLatestRelease: async () => { fetched = true; return { release }; },
+    detectInstallMethod: () => 'npm',
+    runCommand: async () => { installed = true; return { code: 0, output: '' }; },
+  }), /plugin disposed/);
+  assert.equal(fetched, false);
+  assert.equal(installed, false);
+});
+
+test('runUpdateCommand kills the updater process tree when its host lifecycle aborts', async () => {
+  const controller = new AbortController();
+  const pending = (await import('../lib/opencode/update.mjs')).runUpdateCommand(
+    [process.execPath, '-e', 'setTimeout(() => {}, 30000)'],
+    { cwd: process.cwd(), timeoutSeconds: 60, signal: controller.signal },
+  );
+  setTimeout(() => controller.abort(new Error('plugin disposed')), 40).unref?.();
+  const result = await pending;
+  assert.equal(result.cancelled, true);
+  assert.notEqual(result.code, 0);
+});
+
 test('a successful code with a timed-out global-install retry remains a failure', async () => {
   const calls = [];
   let attempt = 0;
