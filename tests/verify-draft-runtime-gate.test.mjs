@@ -7,7 +7,8 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { REQUIRED_RELEASE_ASSETS, verifyDraftRuntimeGate } from '../tools/verify-draft-runtime-gate.mjs';
 
-const tag = 'v1.0.3';
+const { version } = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+const tag = `v${version}`;
 const sha = 'a'.repeat(40);
 const producerReleaseAssets = [
   'opencode-linux-x64.tar.gz',
@@ -37,7 +38,7 @@ function mockRun({ releaseValue = release, remoteSha = sha, checkoutSha = sha, a
 test('accepts only the exact draft and returns its release ID and pinned commit', async () => {
   const { run, calls } = mockRun();
   const result = await verifyDraftRuntimeGate({ phase: 'before', releaseTag: tag, repo: 'B-icy/Carthagent', cwd: '/fixture', run });
-  assert.deepEqual(result, { releaseId: 77, sha, version: '1.0.3' });
+  assert.deepEqual(result, { releaseId: 77, sha, version });
   assert.equal(calls.filter(([command]) => command === 'gh').length, 2);
 });
 
@@ -50,7 +51,7 @@ test('resolves an annotated tag object to the exact commit before acceptance', a
 
 test('rejects a malformed tag before invoking git or GitHub', async () => {
   const { run, calls } = mockRun();
-  await assert.rejects(verifyDraftRuntimeGate({ phase: 'before', releaseTag: 'v1.0.2', repo: 'B-icy/Carthagent', run }), /must be exactly/);
+  await assert.rejects(verifyDraftRuntimeGate({ phase: 'before', releaseTag: `not-${tag}`, repo: 'B-icy/Carthagent', run }), /must be exactly/);
   assert.equal(calls.length, 0);
 });
 
@@ -81,7 +82,7 @@ test('requires the exact seven-asset producer contract: five archives, manifest,
     phase: 'before', releaseTag: tag, repo: 'B-icy/Carthagent', cwd: '/fixture',
     run: mockRun({ releaseValue: { ...release, assets: expectedAssets.map((name) => ({ name })) } }).run,
   });
-  assert.deepEqual(result, { releaseId: 77, sha, version: '1.0.3' });
+  assert.deepEqual(result, { releaseId: 77, sha, version });
 
   for (const [label, assets, expected] of [
     ['missing manifest', release.assets.filter(({ name }) => name !== 'runtime-release.json'), /exactly one runtime-release\.json asset/],
@@ -152,16 +153,18 @@ test('trusted inline bootstrap accepts a main tag and rejects non-main dispatch 
   const source = path.join(temp, 'source');
   const bare = path.join(temp, 'origin.git');
   const output = path.join(temp, 'github-output');
+  const fixtureVersion = '1.0.3';
+  const fixtureTag = `v${fixtureVersion}`;
   await mkdir(source);
   const git = (cwd, ...args) => execFileSync('git', args, { cwd, stdio: 'pipe' }).toString().trim();
   git(source, 'init', '-b', 'main');
   git(source, 'config', 'user.email', 'gate-fixture@example.invalid');
   git(source, 'config', 'user.name', 'Gate Fixture');
-  await writeFile(path.join(source, 'package.json'), JSON.stringify({ version: '1.0.3' }));
+  await writeFile(path.join(source, 'package.json'), JSON.stringify({ version: fixtureVersion }));
   git(source, 'add', 'package.json');
   git(source, 'commit', '-m', 'approved main release commit');
   const approvedSha = git(source, 'rev-parse', 'HEAD');
-  git(source, 'tag', '-a', 'v1.0.3', '-m', 'approved annotated draft release', approvedSha);
+  git(source, 'tag', '-a', fixtureTag, '-m', 'approved annotated draft release', approvedSha);
   execFileSync('git', ['init', '--bare', bare], { stdio: 'pipe' });
   git(source, 'remote', 'add', 'origin', bare);
   git(source, 'push', 'origin', 'main', '--tags');
@@ -172,7 +175,7 @@ test('trusted inline bootstrap accepts a main tag and rejects non-main dispatch 
       ...process.env,
       GITHUB_REF: ref,
       GITHUB_OUTPUT: output,
-      RELEASE_TAG: tag,
+      RELEASE_TAG: fixtureTag,
       TRUSTED_REPOSITORY_URL: bare,
       EXPECTED_SHA: expectedSha,
     },
@@ -188,8 +191,8 @@ test('trusted inline bootstrap accepts a main tag and rejects non-main dispatch 
   await writeFile(path.join(source, 'foreign.txt'), 'not in main');
   git(source, 'add', 'foreign.txt');
   git(source, 'commit', '-m', 'unapproved foreign release commit');
-  git(source, 'tag', '-f', 'v1.0.3', 'HEAD');
-  git(source, 'push', 'origin', '+refs/tags/v1.0.3:refs/tags/v1.0.3');
+  git(source, 'tag', '-f', fixtureTag, 'HEAD');
+  git(source, 'push', 'origin', `+refs/tags/${fixtureTag}:refs/tags/${fixtureTag}`);
   const rejectedForeign = invoke(bootstrap, 'refs/heads/main');
   assert.equal(rejectedForeign.status, 1, rejectedForeign.stderr);
   assert.match(rejectedForeign.stderr, /must point to a commit descended from approved origin\/main/);
@@ -201,7 +204,7 @@ test('trusted inline bootstrap accepts a main tag and rejects non-main dispatch 
 test('post-check requires the same release ID and the pre-acceptance tested SHA', async () => {
   const { run: goodRun } = mockRun();
   assert.deepEqual(await verifyDraftRuntimeGate({ phase: 'after', releaseTag: tag, expectedSha: sha, expectedReleaseId: 77, repo: 'B-icy/Carthagent', cwd: '/fixture', run: goodRun }), {
-    releaseId: 77, sha, version: '1.0.3',
+    releaseId: 77, sha, version,
   });
   const { run: movedRun } = mockRun({ remoteSha: 'b'.repeat(40) });
   await assert.rejects(verifyDraftRuntimeGate({ phase: 'after', releaseTag: tag, expectedSha: sha, expectedReleaseId: 77, repo: 'B-icy/Carthagent', cwd: '/fixture', run: movedRun }), /but this checkout is/);
@@ -212,7 +215,7 @@ test('post-check requires the same release ID and the pre-acceptance tested SHA'
 test('immediate pre-acceptance recheck pins the original SHA and release ID', async () => {
   const { run } = mockRun();
   assert.deepEqual(await verifyDraftRuntimeGate({ phase: 'recheck', releaseTag: tag, expectedSha: sha, expectedReleaseId: 77, repo: 'B-icy/Carthagent', cwd: '/fixture', run }), {
-    releaseId: 77, sha, version: '1.0.3',
+    releaseId: 77, sha, version,
   });
   await assert.rejects(verifyDraftRuntimeGate({ phase: 'recheck', releaseTag: tag, expectedSha: 'b'.repeat(40), expectedReleaseId: 77, repo: 'B-icy/Carthagent', cwd: '/fixture', run }), /changed during acceptance/);
   await assert.rejects(verifyDraftRuntimeGate({ phase: 'recheck', releaseTag: tag, expectedSha: sha, expectedReleaseId: 76, repo: 'B-icy/Carthagent', cwd: '/fixture', run }), /identity changed/);
