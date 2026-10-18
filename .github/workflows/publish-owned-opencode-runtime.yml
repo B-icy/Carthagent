@@ -36,6 +36,11 @@ concurrency:
 jobs:
   validate-request:
     runs-on: ubuntu-latest
+    # gh release view for an existing draft requires contents:write. Keep this
+    # capability on the validation job only; prebuild jobs stay read-only, and
+    # actual release uploads remain isolated to publish-existing-draft.
+    permissions:
+      contents: write
     outputs:
       mode: ${{ steps.validate.outputs.mode }}
       release_version: ${{ steps.validate.outputs.release_version }}
