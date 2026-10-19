@@ -24,6 +24,7 @@ import { beginReview, parseFindings } from '../lib/review-state.mjs';
 import { latestReport, saveReport } from '../lib/reports.mjs';
 import { normalizeReviewMode, resolveReviewMode, loadCarthagentConfig, saveCarthagentConfig, carthagentConfigPath, reviewerPrompt, parseVerdict, resolveStickyDefaults } from '../lib/review.mjs';
 import { compareVersions, fetchLatestRelease, detectInstallMethod, cleanStaleGlobalInstall } from '../lib/update.mjs';
+import { parseUpdateOptions, readUpdateChannel, writeUpdateChannel } from '../lib/update-channel.mjs';
 import { acceptanceReviewerPrompt } from '../lib/acceptance-review.mjs';
 
 // Ensure Carthagent operates completely isolated in its own agent directory (~/.carthagent/agent)
@@ -74,7 +75,7 @@ function printHelp() {
   \x1b[32meval\x1b[0m [args...]         Run evaluation harness (evaluate.mjs)
   \x1b[32mreview\x1b[0m                Show self-review default · \x1b[32mreview\x1b[0m ask|yes|no sets it
   \x1b[32mreview\x1b[0m <pr>           Run a fresh-context review of a pull request
-  \x1b[32mupdate\x1b[0m [--check]        Update Carthagent to the latest release
+  \x1b[32mupdate\x1b[0m [--check] [--channel stable|beta|experimental]  Update or switch channels
   \x1b[32mhelp\x1b[0m, \x1b[32m--help\x1b[0m, \x1b[32m-h\x1b[0m       Display this help message
 
 \x1b[1mTUI OPTIONS:\x1b[0m
@@ -567,15 +568,16 @@ async function runReview(prRef, rest) {
  * tagged `github:` npm install otherwise.
  */
 async function handleUpdate(args) {
-  let checkOnly = false, force = false;
-  for (const arg of args) {
-    if (arg === '--check') checkOnly = true;
-    else if (arg === '--force') force = true;
-    else { console.error(`\x1b[31mUnknown update option:\x1b[0m ${arg}`); process.exit(2); }
-  }
-  let latest;
-  try { latest = (await fetchLatestRelease()).release; }
-  catch (error) { console.error(`\x1b[31mCannot resolve the latest release:\x1b[0m ${error.message}`); process.exit(2); }
+  let options, channel, latest;
+  try {
+    options = parseUpdateOptions(args);
+    channel = options.channel ?? readUpdateChannel();
+    latest = (await fetchLatestRelease({ channel })).release;
+  } catch (error) { console.error(error.message); process.exitCode = 2; return; }
+  const { checkOnly, force } = options;
+  const remember = () => { if (options.channel !== null) writeUpdateChannel(channel); };
+  const target = `ctg update${options.channel === null ? '' : ` --channel ${channel}`}`;
+  console.log(`Update channel: ${channel}${channel === 'stable' ? '' : ' — prerelease software may be unstable'}`);
   // npm is a .cmd shim on Windows and cannot spawn with shell:false — run it via cmd.exe.
   const npmStep = npmArgs => process.platform === 'win32' ? ['cmd.exe', '/d', '/s', '/c', 'npm', ...npmArgs] : ['npm', ...npmArgs];
   const runStep = async step => {
@@ -610,10 +612,10 @@ async function handleUpdate(args) {
     process.exit(1);
   }
   const delta = compareVersions(version, latest.version);
-  if (delta === 0 && !force) { console.log(`\x1b[32mCarthagent ${version} is already the latest release.\x1b[0m`); return; }
-  if (delta > 0 && !force) { console.log(`\x1b[33mInstalled ${version} is ahead of latest release ${latest.version} — pass --force to reinstall anyway.\x1b[0m`); return; }
+  if (delta === 0 && !force) { if (!checkOnly) remember(); console.log(`\x1b[32mCarthagent ${version} is already the latest release.\x1b[0m`); return; }
+  if (delta > 0 && !force && options.channel === null) { console.log(`\x1b[33mInstalled ${version} is ahead of latest release ${latest.version} — pass --force to reinstall anyway.\x1b[0m`); return; }
   if (checkOnly) {
-    console.log(`\x1b[33mCarthagent ${latest.version} is available${latest.note ? ` — ${latest.note}` : ''}\x1b[0m (installed: ${version}) — run \x1b[36mctg update\x1b[0m`);
+    console.log(`\x1b[33mCarthagent ${latest.version} is available${latest.note ? ` — ${latest.note}` : ''}\x1b[0m (installed: ${version}) — run \x1b[36m${target}\x1b[0m`);
     return;
   }
   const method = detectInstallMethod(root);
@@ -629,6 +631,7 @@ async function handleUpdate(args) {
   } else {
     await npmInstallStep({ argv: npmStep(['install', '-g', '--install-links=true', latest.installSpec]), label: `npm install ${latest.installSpec}`, timeout: 600 });
   }
+  remember();
   console.log(`\x1b[32mCarthagent updated to ${latest.version}.\x1b[0m Restart any running console to pick it up.`);
 }
 

@@ -16,11 +16,13 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - run: node tools/verify-release-version.mjs "$GITHUB_REF_NAME"
       - run: npm ci
       - run: npm run quality
       - run: npm run test:native-package
 
   publish-release-manifest:
+    if: ${{ !contains(github.ref_name, '-') }}
     needs: verify-release
     runs-on: ubuntu-latest
     steps:
