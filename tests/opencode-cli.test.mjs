@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { basename, dirname, join } from 'node:path';
 import { cliHelp, openCodeCliManifest, parseOpenCodeArgs, runOpenCodeCli } from '../lib/opencode/cli.mjs';
 import { createOpenCodeCliRuntime as createRuntime, headlessSucceeded, latestSessionForWorkspace, modelWithThinking, nativeJsonEvents, reconcileHeadlessResult, textParts } from '../lib/opencode/cli-runtime.mjs';
 
@@ -687,7 +688,8 @@ test('native --isolate starts a clean CTG profile without inheriting the regular
     clientFactory: async () => ({ session: { create: async () => ({ id: 'ses_isolated' }) } }),
   } });
   assert.equal(await runtime.run({ mode: 'interactive', options: { isolate: true }, prompt: '' }), 0);
-  assert.match(calls[0].root, /^\/private\/profile\/isolated\/[0-9a-f-]+$/);
+  assert.equal(dirname(calls[0].root), join('/private/profile', 'isolated'));
+  assert.match(basename(calls[0].root), /^[0-9a-f-]+$/);
   assert.equal(calls[0].isolate, true);
   assert.match(calls[0].pluginPath, /plugins[\\/]carthagent$/);
   assert.equal(calls[1].workspace, '/work/project');

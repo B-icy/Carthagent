@@ -42,6 +42,7 @@ def main():
     parser.add_argument('--capture', help='Save the full raw PTY transcript for diagnosis')
     parser.add_argument('--expect-color', help='Require a truecolor ANSI RGB sequence after the command, e.g. 230,196,128')
     parser.add_argument('--initial-theme', help='Select a provisioned native theme before launching the TUI')
+    parser.add_argument('--expect-theme', help='Verify the persisted native theme after command dispatch')
     parser.add_argument('--ready', help='Wait for this marker before typing')
     parser.add_argument('--confirm', action='store_true', help='Wait for command submission and confirmation handling to settle')
     parser.add_argument('--second-enter', action='store_true', help='Wait for command submission and confirmation handling to settle')
@@ -63,6 +64,12 @@ def main():
             (root / name).mkdir(parents=True, exist_ok=True)
         (root / 'config/opencode/opencode.json').write_text(json.dumps({
             'plugins': [str(pathlib.Path(args.plugin).resolve())], 'update': 'disable',
+            'model': 'ctg-pty/fixture',
+            'providers': {'ctg-pty': {
+                'package': '@opencode/ai/providers/openai-compatible',
+                'settings': {'baseURL': 'http://127.0.0.1:1/v1', 'apiKey': 'offline-fixture'},
+                'models': {'fixture': {'limit': {'context': 32000, 'output': 1024}}},
+            }},
         }))
         # Mirror the launcher contract: custom themes are installed before the
         # native TUI scans its profile. Installing from inside the running TUI
@@ -83,6 +90,8 @@ def main():
             'OPENCODE_CONFIG_DIR': str(root / 'config/opencode'),
             'OPENCODE_DB': str(root / 'database.sqlite'),
             'OPENCODE_CONFIG_PROJECT_DISABLE': 'true',
+            'OPENCODE_DISABLE_MODELS_FETCH': 'true',
+            'OPENCODE_DISABLE_AUTOUPDATE': 'true',
         })
         master, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 36, 120, 0, 0))
@@ -177,6 +186,9 @@ def main():
                 command_submitted = submitted and (confirmation_complete or not (args.confirm or args.second_enter))
                 result_output = command_submitted and expected_output.encode() in output and (not args.post_submit_marker or args.post_submit_marker.encode() in output)
                 if result_output:
+                    if args.expect_theme:
+                        theme_config = json.loads((root / 'config/opencode/cli.json').read_text())
+                        assert theme_config['theme']['name'] == args.expect_theme, theme_config
                     if b'runtime unavailable' in output or b'No matching commands' in output:
                         raise RuntimeError('Command was unavailable or its RPC failed')
                     if args.expect_color and args.initial_theme:

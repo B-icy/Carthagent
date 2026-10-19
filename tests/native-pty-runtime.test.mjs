@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { resolve } from 'node:path';
 import { selectNativePtyRuntime } from '../tools/native-pty-runtime.mjs';
 
 test('injected owned artifact is independently preflighted before production runtime resolution', async () => {
@@ -21,7 +22,7 @@ test('injected owned artifact is independently preflighted before production run
     identityTools,
   }), /trusted digest mismatch/);
   assert.deepEqual(calls.map(([operation]) => operation), ['preflight']);
-  assert.equal(calls[0][1].ownedRoot, '/fixture/owned');
+  assert.equal(calls[0][1].ownedRoot, resolve('/fixture/owned'));
   assert.equal(calls[0][1].expectedManifestPath, '/trusted/release.json');
 });
 

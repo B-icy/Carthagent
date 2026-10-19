@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { aggregateConditionExit, assertCompletePluginSource, assertDependencyPackageIdentity, assertPluginCondition, assertPluginImportDependencies, assertSelectedSourceHead, assertSnapshotProvenance, resolveFixtureSourceRoot, verifySnapshotIdentity, isPathWithinRoot } from '../tools/native-paired-guards.mjs';
+import { aggregateConditionExit, assertCompletePluginSource, assertWorkspacePluginResolution, assertDependencyPackageIdentity, assertPluginCondition, assertPluginImportDependencies, assertSelectedSourceHead, assertSnapshotProvenance, resolveFixtureSourceRoot, verifySnapshotIdentity, isPathWithinRoot } from '../tools/native-paired-guards.mjs';
 
 function shellPath(path) {
   return process.platform === 'win32'
@@ -19,6 +19,16 @@ function testBash() {
   if (process.platform !== 'win32') return 'bash';
   return execFileSync('where.exe', ['bash.exe'], { encoding: 'utf8' }).split(/\r?\n/).find(Boolean);
 }
+
+test('plugin identity accepts npm hoisting but rejects a shadow workspace dependency', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'native-hoisted-plugin-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, 'plugins/carthagent'), { recursive: true });
+  await mkdir(join(root, 'node_modules/@opencode/plugin'), { recursive: true });
+  assert.equal(assertWorkspacePluginResolution(root), true);
+  await mkdir(join(root, 'plugins/carthagent/node_modules/@opencode/plugin'), { recursive: true });
+  assert.throws(() => assertWorkspacePluginResolution(root), /dependency identity mismatch/);
+});
 
 test('paired CTG fixture fails closed unless inventory says active', () => {
   assert.deepEqual(assertPluginCondition([{ id: 'carthagent', state: { status: 'active' } }], true),

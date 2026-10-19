@@ -1,6 +1,7 @@
 /** Fail-closed checks shared by paired native performance fixtures. */
 import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, readlinkSync, statSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { dirname, resolve, join, extname } from 'node:path';
 
@@ -20,9 +21,10 @@ export function assertCompletePluginSource(sourceRoot) {
 
 export function assertWorkspacePluginResolution(sourceRoot) {
   const root = resolve(sourceRoot);
-  const physicalPlugin = resolve(root, 'plugins/carthagent/node_modules/@opencode/plugin');
+  const searchPaths = createRequire(join(root, 'plugins/carthagent/package.json')).resolve.paths('@opencode/plugin') ?? [];
+  const physicalPlugin = searchPaths.map(directory => join(directory, '@opencode/plugin')).find(directory => existsSync(directory));
   const expectedPlugin = resolve(root, 'node_modules/@opencode/plugin');
-  if (!existsSync(physicalPlugin) || !existsSync(expectedPlugin) || realpathSync(physicalPlugin) !== realpathSync(expectedPlugin)) {
+  if (!physicalPlugin || !existsSync(expectedPlugin) || realpathSync(physicalPlugin) !== realpathSync(expectedPlugin)) {
     throw new Error(`Plugin workspace dependency identity mismatch: ${physicalPlugin} does not resolve to ${expectedPlugin}`);
   }
   return true;

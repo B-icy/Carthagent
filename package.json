@@ -83,7 +83,9 @@
     "build": "npm run check && npm run typecheck",
     "test": "node --test tests/*.test.mjs",
     "test:python": "node tools/test-python.mjs",
-    "test:native-slash-commands": "node tools/test-native-slash-commands.mjs"
+    "test:native-slash-commands": "node tools/test-native-slash-commands.mjs",
+    "manual:prepare": "node tools/prepare-native-manual.mjs",
+    "manual:run": "node tools/native-manual.mjs"
   },
   "dependencies": {
     "@opencode/cli": "2.0.32",

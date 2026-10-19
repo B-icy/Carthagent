@@ -76,9 +76,9 @@ test("native CLI theme write preserves unrelated cli.json settings", async () =>
     assert.deepEqual(config.theme, { name: "carthage", mode: "dark" });
     assert.deepEqual(config.session, { thinking: "show" });
     assert.equal(config.custom, true);
-    assert.equal(cliConfigPath({ XDG_CONFIG_HOME: "/tmp/profile" }, "/home/test"), "/tmp/profile/opencode/cli.json");
+    assert.equal(cliConfigPath({ XDG_CONFIG_HOME: "/tmp/profile" }, "/home/test"), join("/tmp/profile", "opencode", "cli.json"));
     assert.equal(cliConfigDirectory({ OPENCODE_CONFIG_DIR: "/tmp/opencode-profile" }), "/tmp/opencode-profile");
-    assert.equal(cliConfigDirectory({ XDG_CONFIG_HOME: "/tmp/profile" }, "/home/test"), "/tmp/profile/opencode");
+    assert.equal(cliConfigDirectory({ XDG_CONFIG_HOME: "/tmp/profile" }, "/home/test"), join("/tmp/profile", "opencode"));
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
