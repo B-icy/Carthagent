@@ -47,6 +47,30 @@ npm ci && npm install -g .    # gives you `ctg`; or run `node bin/ctg.mjs`
 
 `ctg update` resolves the latest release (the Carthagent control plane first, GitHub releases as fallback) and reinstalls it the way you installed: checkout the tag + `npm ci` in a clone install, or `npm install -g --install-links=true github:B-icy/Carthagent#<tag>` for a `github:` install. `ctg update --check` reports without installing. The console also prints a notice once a day when a newer release exists — set `CARTHAGENT_NO_UPDATE_CHECK=1` to opt out.
 
+Starting with 1.0.7, update channels are an explicit opt-in:
+
+```sh
+ctg update --channel experimental --check  # preview; installs/persists nothing
+ctg update --channel experimental          # install and remember the experimental channel
+ctg update --channel beta                  # stable + beta/RC releases only
+ctg update --channel stable                # leave previews; downgrade to stable if necessary
+ctg update                                # follow the channel you last installed successfully
+```
+
+Stable is the default and never selects a prerelease, even if a remote manifest
+mislabels it. Beta accepts published `-beta` and `-rc` tags; experimental also
+accepts alpha, preview, and other published prerelease tags. Both opt-in channels
+include stable releases. Selection uses semantic version order, not release date;
+drafts are never installable. Prereleases are read directly from GitHub and never
+advance the stable control-plane pointer.
+
+A successful explicit switch is saved in `~/.carthagent/update-channel.json`;
+`--check` and failed installs do not change it. `CARTHAGENT_UPDATE_CHANNEL_FILE`
+can isolate this preference for testing. `--channel stable` explicitly authorizes
+a downgrade, so recovery from an experimental build does not require `--force`.
+Your sessions and provider credentials are not deleted by switching channels.
+Experimental software may still contain bugs; read its release notes first.
+
 **Releasing:** bump `version` in `package.json` and `package-lock.json`, merge, then tag `vX.Y.Z` on main and push. The `Release` workflow publishes the manifest to the control plane (`POST /v1/cli/releases`), making the tag resolvable by `ctg update` and the dashboard badge. It needs the `CARTHAGENT_CLI_RELEASE_TOKEN` repository secret set to the backend's `CARTHAGENT_CLI_RELEASE_ADMIN_TOKEN`; `CARTHAGENT_CLOUD_URL` can override the API origin as a repository variable.
 
 ## Connect a provider
