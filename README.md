@@ -49,6 +49,32 @@ Replace `vX.Y.Z` with a version that has actually been published. npm 11 require
 
 `ctg update --check` checks for a published release without installing. The regular CLI is still the default, and its updater can update a clean source clone. The native updater differs: it refuses to check out a release into any active source clone, including a clean one; it installs package releases only from an npm installation. Preserve local changes and use the manual exact-tag checkout procedure in the [native upgrade guide](docs/native-upgrade.md) when updating a development checkout. Do not treat this documentation change as a release: version selection, publishing, and tagging happen separately after product acceptance. See the [UNRELEASED draft notes](docs/release-notes-native-draft.md).
 
+## Update channels
+
+Starting with 1.0.7, update channels are an explicit opt-in:
+
+```sh
+ctg update --channel experimental --check  # preview; installs/persists nothing
+ctg update --channel experimental          # install and remember the experimental channel
+ctg update --channel beta                  # stable + beta/RC releases only
+ctg update --channel stable                # leave previews; downgrade to stable if necessary
+ctg update                                # follow the channel you last installed successfully
+```
+
+Stable is the default and never selects a prerelease, even if a remote manifest
+mislabels it. Beta accepts published `-beta` and `-rc` tags; experimental also
+accepts alpha, preview, and other published prerelease tags. Both opt-in channels
+include stable releases. Selection uses semantic version order, not release date;
+drafts are never installable. Prereleases are read directly from GitHub and never
+advance the stable control-plane pointer.
+
+A successful explicit switch is saved in `~/.carthagent/update-channel.json`;
+`--check` and failed installs do not change it. `CARTHAGENT_UPDATE_CHANNEL_FILE`
+can isolate this preference for testing. `--channel stable` explicitly authorizes
+a downgrade, so recovery from an experimental build does not require `--force`.
+Your sessions and provider credentials are not deleted by switching channels.
+Experimental software may still contain bugs; read its release notes first.
+
 ## Regular CLI
 
 Without `CTG_NATIVE=1`, `ctg` continues to launch the existing split-terminal CLI and its existing Carthagent agent profile. This behavior remains the default for now. Its data and provider setup are distinct from the native preview described above.

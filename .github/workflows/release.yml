@@ -41,6 +41,7 @@ jobs:
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
   publish-release-manifest:
+    if: ${{ !contains(inputs.release_tag, '-') }}
     needs: verify-release
     runs-on: ubuntu-latest
     steps:
