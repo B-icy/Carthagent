@@ -11,6 +11,7 @@ import { OpenCode } from '@opencode/client';
 import { resolveOpenCode, runtimeIdentity as getRuntimeIdentity } from '../lib/opencode/runtime.mjs';
 import { createNativeFixture, toolCall, assistantText } from './native-fixture.mjs';
 import { loadNativeTestRuntime, preflightNativeTestRuntimeArtifact } from './native-runtime-identity.mjs';
+import { waitForPluginActive } from './native-plugin-readiness.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const plugin = resolve(process.argv[2] ?? join(root, 'plugins/carthagent'));
@@ -169,18 +170,11 @@ export default { id: 'carthagent', async setup(context) {
   const unauthorized = await fetch(`${endpoint}/api/info`, { signal: request.signal });
   assert.equal(unauthorized.status, 401);
   await client.session.create({ location: { directory: cwd }, title: 'CTG host smoke' }, request);
-  let plugins;
-  const deadline = Date.now() + 15_000;
-  do {
-    plugins = await client.plugin.list({ location: { directory: cwd } }, request);
-    if (plugins.data.some((entry) => entry.id === 'carthagent')) break;
-    await new Promise((done) => setTimeout(done, 200));
-  } while (Date.now() < deadline);
-  const nativePlugin = plugins.data.find((entry) => entry.id === 'carthagent');
-  const archivePlugin = plugins.data.find((entry) => entry.id === 'ctg-archive-fixture');
-  assert.ok(nativePlugin, 'Carthagent plugin must become visible');
-  assert.equal(nativePlugin.state.status, 'active');
-  assert.equal(archivePlugin?.state.status, 'active', 'archive registration fixture must become visible');
+  const location = { directory: cwd };
+  const listPlugins = async (timeoutMs) => client.plugin.list({ location }, { signal: AbortSignal.timeout(timeoutMs) });
+  const readinessOptions = { listPlugins, timeoutMs: 15_000, hostOutput: () => output };
+  const nativePlugin = await waitForPluginActive('carthagent', readinessOptions);
+  await waitForPluginActive('ctg-archive-fixture', readinessOptions);
   const health = await client.rpc.call({
     rpcID: 'carthagent', method: 'health', input: {}, location: { directory: cwd },
   }, request);
