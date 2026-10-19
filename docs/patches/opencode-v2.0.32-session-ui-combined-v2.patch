@@ -4653,7 +4653,7 @@ index 09b3806..5fc5dd5 100644
  function takeStart(value: string, maxWidth: number) {
 diff --git a/packages/tui/src/ui/glyphs.ts b/packages/tui/src/ui/glyphs.ts
 new file mode 100644
-index 0000000..23e8a11
+index 0000000..5b0493b
 --- /dev/null
 +++ b/packages/tui/src/ui/glyphs.ts
 @@ -0,0 +1,188 @@
@@ -4841,9 +4841,9 @@ index 0000000..23e8a11
 +} as const
 +
 +export const ASCII_LOGO = {
-+  left: ["                   ", " O P E N C O D E  ", " O P E N C O D E  ", " O P E N C O D E  "],
-+  right: ["                   ", " O P E N C O D E  ", " O P E N C O D E  ", " O P E N C O D E  "],
-+  compact: ["    ", " OC ", " OC ", " OC "],
++  left: ["                   ", " C A R T H ", " C A R T H ", " C A R T H "],
++  right: ["                   ", " A G E N T ", " A G E N T ", " A G E N T "],
++  compact: ["    ", " CTG ", " CTG ", " CTG "],
 +} as const
 diff --git a/packages/tui/src/ui/spinner.ts b/packages/tui/src/ui/spinner.ts
 index c185ea7..83aa3e9 100644
@@ -5398,13 +5398,14 @@ index b53525d..5fd351a 100644
    await using state = await tmpdir()
 diff --git a/packages/tui/test/ctg-branding.test.ts b/packages/tui/test/ctg-branding.test.ts
 new file mode 100644
-index 0000000..232a223
+index 0000000..ef50416
 --- /dev/null
 +++ b/packages/tui/test/ctg-branding.test.ts
-@@ -0,0 +1,26 @@
+@@ -0,0 +1,33 @@
 +import { expect, test } from "bun:test"
 +import { PRODUCT_NAME, productTerminalTitle } from "../src/product"
 +import { logo, go } from "../src/logo"
++import { ASCII_LOGO } from "../src/ui/glyphs"
 +
 +test("Carthagent owns home, session, plugin and compact terminal titles", () => {
 +  expect(PRODUCT_NAME).toBe("Carthagent")
@@ -5427,6 +5428,12 @@ index 0000000..232a223
 +  expect(logo.left.slice(1).every(line => line.length > 0)).toBe(true)
 +  expect(logo.right.slice(1).every(line => line.length > 0)).toBe(true)
 +  expect(go.right.slice(1)).toContain("CTG")
++})
++
++
++test("ASCII and compact startup wordmarks do not retain upstream branding", () => {
++  expect((ASCII_LOGO.left[1] + ASCII_LOGO.right[1]).replaceAll(" ", "")).toBe("CARTHAGENT")
++  expect(ASCII_LOGO.compact[1].trim()).toBe("CTG")
 +})
 diff --git a/packages/tui/test/fixture/tui-client.ts b/packages/tui/test/fixture/tui-client.ts
 index 9accc15..b9729bf 100644

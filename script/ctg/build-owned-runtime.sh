@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 EXPECTED_SOURCE="843a6c514e606b436a7fe713422ace0a93ad3d61"
 EXPECTED_LOCK="9d78379cd264584a495440a217b9d2ecab524c9a56f7f8b4b5bed3926daa330d"
-EXPECTED_PATCH="4a238a0cc3cde2b5b262ad7f836891056b54fe567f440482d42370061271c46e"
+EXPECTED_PATCH="37c59f1e5166dd4f60f6356570a1c3f4812325f9b8362eb1256a3e7603a2ea1c"
 TARGET="${1:-opencode-linux-x64}"
 HOST_PLATFORM="$(node -p 'process.platform')"
 HOST_ARCH="$(node -p 'process.arch')"

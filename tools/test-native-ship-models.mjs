@@ -2,14 +2,14 @@
 import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { promisify } from 'node:util';
 import { OpenCode } from '@opencode/client';
-import { resolveOpenCode } from '../lib/opencode/runtime.mjs';
+import { resolveOpenCode, runtimePaths } from '../lib/opencode/runtime.mjs';
 import { preflightNativeTestRuntimeArtifact } from './native-runtime-identity.mjs';
 
 const root = resolve(import.meta.dirname, '..');
@@ -60,19 +60,24 @@ try {
     OPENCODE_CONFIG_PROJECT_DISABLE: 'true', OPENCODE_DB: join(temp, 'database.sqlite'),
     OPENCODE_SERVER_PASSWORD: password, CARTHAGENT_CLOUD_URL: `http://127.0.0.1:${cloud.address().port}`,
   });
-  child = spawn(binary, ['serve', '--hostname', '127.0.0.1', '--port', '0', '--print-logs'], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
-  const endpoint = await new Promise((resolveEndpoint, reject) => {
-    const timer = setTimeout(() => reject(Error('Native Ship fixture host startup timed out')), 30_000);
-    const collect = chunk => {
-      output = (output + String(chunk)).slice(-16384);
-      const found = output.match(/http:\/\/127\.0\.0\.1:\d+/)?.[0];
-      if (found) { clearTimeout(timer); resolveEndpoint(found); }
-    };
-    child.stdout.on('data', collect); child.stderr.on('data', collect);
-    child.once('error', error => { clearTimeout(timer); reject(error); });
-    child.once('exit', code => { clearTimeout(timer); reject(Error(`Native Ship fixture exited ${code}`)); });
-  });
-  const client = OpenCode.make({ baseUrl: endpoint, headers: { authorization: `Basic ${Buffer.from(`opencode:${password}`).toString('base64')}` } });
+  async function startHost() {
+    output = '';
+    child = spawn(binary, ['serve', '--hostname', '127.0.0.1', '--port', '0', '--print-logs'], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const endpoint = await new Promise((resolveEndpoint, reject) => {
+      const timer = setTimeout(() => reject(Error('Native Ship fixture host startup timed out')), 30_000);
+      const collect = chunk => {
+        output = (output + String(chunk)).slice(-16384);
+        const found = output.match(/http:\/\/127\.0\.0\.1:\d+/)?.[0];
+        if (found) { clearTimeout(timer); resolveEndpoint(found); }
+      };
+      child.stdout.on('data', collect); child.stderr.on('data', collect);
+      child.once('error', error => { clearTimeout(timer); reject(error); });
+      child.once('exit', code => { clearTimeout(timer); reject(Error(`Native Ship fixture exited ${code}`)); });
+    });
+    const client = OpenCode.make({ baseUrl: endpoint, headers: { authorization: `Basic ${Buffer.from(`opencode:${password}`).toString('base64')}` } });
+    return { client, endpoint };
+  }
+  const { client, endpoint } = await startHost();
   const location = { directory: cwd };
   const request = { signal: AbortSignal.timeout(30_000) };
   const startedAt = Date.now();
@@ -110,6 +115,23 @@ try {
   assert.deepEqual(integrations.data.map(item => item.id).sort(), ['anthropic', 'experiential-labs', 'google', 'openai', 'xai'], 'Login must contain only the curated major integrations');
   const providers = (await client.provider.list({ location }, request)).data;
   assert.ok(!providers.some(provider => /^opencode(?:-|$)/.test(provider.id)), 'The upstream provider must not be available');
+  const paths = runtimePaths({ root: temp });
+  const credentialBeforeStop = (await client.credential.list(request)).find(entry => entry.integrationID === ship.id);
+  assert.ok(credentialBeforeStop?.active, 'Ship must have a persisted active credential');
+  const info = await client.server.info(request);
+  assert.equal(info.pid, child.pid);
+  await mkdir(join(temp, 'state/opencode'), { recursive: true });
+  await writeFile(paths.serviceFile, JSON.stringify({ id: 'ship-model-regression', pid: child.pid, url: endpoint, password, runtimeIdentity: { version: info.version } }), { mode: 0o600 });
+  const closed = once(child, 'close');
+  const stopped = await promisify(execFile)(process.execPath, [join(root, 'bin/ctg.mjs'), 'native', 'service', 'stop'], { cwd, env: { ...env, CTG_OPENCODE_HOME: temp }, timeout: 15000 });
+  assert.match(stopped.stdout, /Stopped the registered native service/);
+  await closed;
+  const restarted = await startHost();
+  const credentialAfterStop = (await restarted.client.credential.list(request)).find(entry => entry.id === credentialBeforeStop.id);
+  assert.deepEqual(credentialAfterStop, credentialBeforeStop, 'Explicit service stop must preserve the active authenticated credential across restart');
+  assert.ok((await readFile(join(temp, 'database.sqlite'))).length > 0, 'Explicit service stop must preserve the native database');
+  console.log('Explicit native service stop preserved credentials and database.');
+
 } finally {
   if (child && child.exitCode === null && child.signalCode === null) {
     const closed = once(child, 'close');

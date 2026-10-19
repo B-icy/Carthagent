@@ -93,7 +93,7 @@ def run_mode(binary, mode, timeout):
             if mode == 'ascii':
                 if '█▀▀' in chrome_region or '▀▀▀' in chrome_region:
                     raise AssertionError(f'ASCII startup logo still contains Unicode block-art chrome; screen={visible[-1200:]!r}')
-                if 'OPEN CODE' not in chrome_region and 'O P E N C O D E' not in chrome_region:
+                if 'CARTHAGENT' not in chrome_region.replace(' ', ''):
                     raise AssertionError(f'ASCII startup logo alternative not observed; screen={visible[-1200:]!r}')
             else:
                 if '█▀▀' not in chrome_region:
