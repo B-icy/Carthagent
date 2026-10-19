@@ -98,7 +98,13 @@ def run_mode(binary, mode, timeout):
             else:
                 if '█▀▀' not in chrome_region:
                     raise AssertionError(f'Unicode startup logo not observed; screen={visible[-1200:]!r}')
-            return {'mode': mode, 'homeObserved': home_seen, 'composerPayloadExact': True,
+            if 'Carthagent' not in screen.title_updates:
+                raise AssertionError(f'{mode}: Carthagent terminal title not observed: {screen.title_updates!r}')
+            if any('opencode' in title.lower() for title in screen.title_updates):
+                raise AssertionError(f'{mode}: upstream terminal title remains: {screen.title_updates!r}')
+            if 'opencode' in chrome_region.lower():
+                raise AssertionError(f'{mode}: upstream branding remains on the home screen')
+            return {'mode': mode, 'homeObserved': home_seen, 'terminalTitles': screen.title_updates, 'composerPayloadExact': True,
                     'composerRow': composer_row,
                     'userText': USER_TEXT, 'hostChrome': chrome, 'screen': visible,
                     'ptyOutputSha256': hashlib.sha256(raw).hexdigest(), 'ptyOutputBytes': len(raw)}

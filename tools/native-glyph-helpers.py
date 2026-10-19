@@ -8,7 +8,7 @@ from pathlib import Path
 
 USER_MARKER = 'CTG_GLYPH_PAYLOAD'
 USER_TEXT = USER_MARKER + ' 漢字 café → • − …'
-CHROME_PAIRS = [('█▀▀', 'O P E N C O D E')]
+CHROME_PAIRS = [('█▀▀', 'C A R T H')]
 
 
 class GlyphScreen:
@@ -22,6 +22,7 @@ class GlyphScreen:
         self.csi = ''
         self.osc = ''
         self.osc_escape = False
+        self.title_updates = []
         self.decoder = codecs.getincrementaldecoder('utf8')('replace')
         self.wrapCount = 0
 
@@ -35,6 +36,9 @@ class GlyphScreen:
         for char in self.decoder.decode(data):
             if self.mode == 'osc':
                 if char == '\x07' or (self.osc_escape and char == '\\'):
+                    command, _, title = self.osc.partition(';')
+                    if command in ('0', '2'):
+                        self.title_updates.append(title)
                     self.osc = ''
                     self.mode = 'text'
                 elif char != '\x1b':

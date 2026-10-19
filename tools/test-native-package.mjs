@@ -167,7 +167,7 @@ try {
   const acceptanceTests = [
     'test-owned-host-controls.mjs', 'test-native-glyph-pty.mjs',
     'test-native-terminal-semantics-installed.mjs', 'test-native-visual-clear-installed.mjs',
-    'test-native-host.mjs', 'test-native-controls.mjs', 'test-native-outcomes.mjs',
+    'test-native-host.mjs', 'test-native-ship-models.mjs', 'test-native-controls.mjs', 'test-native-outcomes.mjs',
     'test-native-product.mjs', 'test-native-runtime.mjs', 'test-native-tasks.mjs',
     'test-native-review.mjs', 'test-native-swe-host.mjs', 'test-native-pty.mjs',
     'test-native-evaluation.mjs', 'test-native-swe.mjs',

@@ -90,3 +90,18 @@ print('PASS')`], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /PASS/);
 });
+
+
+test('glyph screen records fragmented OSC titles for final-binary branding assertions', { skip: skipPython }, () => {
+  const result = spawnSync(python, ['-c', `import importlib.util
+spec=importlib.util.spec_from_file_location('helpers', ${JSON.stringify(helpers)})
+module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+screen=module.GlyphScreen()
+for chunk in [b'\\x1b]2;Cart', b'hagent\\x07', b'\\x1b]0;CTG | Ship\\x1b', b'\\\\']:
+  screen.feed(chunk)
+assert screen.title_updates == ['Carthagent', 'CTG | Ship'], screen.title_updates
+assert screen.visible().strip() == ''
+print('PASS')`], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /PASS/);
+});
