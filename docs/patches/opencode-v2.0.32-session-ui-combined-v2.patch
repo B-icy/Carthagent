@@ -939,7 +939,7 @@ index 0000000..2f742d7
 +  }).pipe(Effect.scoped),
 +)
 diff --git a/packages/tui/src/app.tsx b/packages/tui/src/app.tsx
-index 88939eb..f1a599c 100644
+index 88939eb..6bd3c57 100644
 --- a/packages/tui/src/app.tsx
 +++ b/packages/tui/src/app.tsx
 @@ -1,7 +1,9 @@
@@ -948,7 +948,7 @@ index 88939eb..f1a599c 100644
  import path from "path"
  import { render, useRenderer, useTerminalDimensions } from "@opentui/solid"
  import { registerOpencodeSpinner } from "./component/register-spinner"
-+import { chromeEllipsis, chromeLabel } from "./ui/glyphs"
++import { chromeLabel } from "./ui/glyphs"
  import { Effect, Latch } from "effect"
  import { Service, type Endpoint } from "@opencode/client/effect/service"
  import { OpenCode, type SessionInfo } from "@opencode/client"
