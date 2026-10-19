@@ -22,16 +22,18 @@ export async function runManualKit(
   const record = JSON.parse(
     await readFile(join(kit, 'manual-kit.json'), 'utf8'),
   );
+  const manifestPath = join(root, 'lib/opencode/runtime-release.json');
+  const manifestBytes = await readFile(manifestPath);
+  const releaseVersion = JSON.parse(manifestBytes).releaseVersion;
   const target = `${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch}`;
   if (
     record.version !== 1 ||
     record.target !== target ||
-    record.runtime !== `runtimes/1.1.0/${target}`
+    record.runtime !== `runtimes/${releaseVersion}/${target}`
   )
     throw Error(
       'Kit platform/layout does not match this machine; prepare a new native kit',
     );
-  const manifestPath = join(root, 'lib/opencode/runtime-release.json');
   if (
     createHash('sha256')
       .update(await readFile(manifestPath))

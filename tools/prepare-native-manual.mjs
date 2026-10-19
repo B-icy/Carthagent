@@ -15,7 +15,7 @@ import { createManualProjects } from './native-manual-projects.mjs';
 const root = resolve(import.meta.dirname, '..');
 export const MANUAL_RUNTIME_RUN = '39097969783';
 const manifestSha256 =
-  '925399a2ad6ce111d046ab0159e2e4777ff27c403cf06a526e058a9cc3dd080b';
+  '35620283defa2a3dfea637314e1a4454b6e1d16a8342cc06290255ac0b50ee37';
 
 export async function prepareManualKit(
   directory,

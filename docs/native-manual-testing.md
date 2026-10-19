@@ -1,17 +1,20 @@
 # Native OpenCode manual-test candidate
 
-This is an opt-in development candidate, not a published 1.1.0 release. Do not use
-`ctg update`, install it globally, or replace your existing OpenCode binary to test
-it. The runner uses a separately verified owned binary and isolated profiles.
-Agent/tool execution is **not an OS sandbox**. Start with these disposable projects.
+This is a GitHub experimental prerelease, not a stable 1.1.0 release. Install it
+only through explicit `ctg update --channel experimental` after the stable updater
+bootstrap. The regular OpenCode installation is never replaced. Native launch
+remains explicit (`ctg native`); the fixture runner below uses a separately
+verified owned binary and isolated profiles. Agent/tool execution is **not an OS
+sandbox**. Start with these disposable projects.
 
 ## 1. Get the candidate source
 
-Use the source bundle supplied with this handoff, not the unchanged remote product
-branch. The local branch is `manual/opencode-test-candidate`.
+For the published preview, use `ctg update --channel experimental` after installing
+the stable 1.0.7 updater. Launch the native interface explicitly with `ctg native`.
+For the fixture generator, check out its exact source tag:
 
 ```sh
-git -c core.autocrlf=false clone -c core.autocrlf=false --branch manual/opencode-test-candidate ./carthagent-opencode-manual.bundle ctg-native-manual
+git -c core.autocrlf=false clone -c core.autocrlf=false --branch v1.1.0-preview.1 https://github.com/B-icy/Carthagent.git ctg-native-manual
 cd ctg-native-manual
 npm ci
 ```
@@ -144,7 +147,7 @@ kit manifest hash, and executable SHA-256 from `manual-kit.json`.
   controlled paired performance acceptance remain manual/release gates.
 - Linux automated success does not establish macOS/Windows native UI acceptance.
 - GitHub draft/public release installation is not tested by this development
-  override. The normal 1.1.0 download URL is not published. Do not run the final
+  override. Use the v1.1.0-preview.1 assets, not the unshipped v1.1.0 stable tag. Do not run the final
   release/package gate and mistake a missing asset for a manual-kit setup failure.
 
 ## 5. Explicit live-provider testing
@@ -200,7 +203,7 @@ candidate checkout and test kit after saving wanted work; no global binary chang
 POSIX example (adjust paths; do not export these persistently):
 
 ```sh
-export CTG_OWNED_OPENCODE_RUNTIME="$(pwd)/../ctg-manual-kit/runtimes/1.1.0/linux-x64"
+export CTG_OWNED_OPENCODE_RUNTIME="$(pwd)/../ctg-manual-kit/runtimes/1.1.0-preview.1/linux-x64"
 export CTG_TEST_RUNTIME_RELEASE_MANIFEST="$(pwd)/lib/opencode/runtime-release.json"
 node tools/test-native-swe-host.mjs
 node tools/test-native-public-repo.mjs

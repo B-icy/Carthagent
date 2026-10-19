@@ -27,6 +27,11 @@ import { compareVersions, fetchLatestRelease, detectInstallMethod, cleanStaleGlo
 import { parseUpdateOptions, readUpdateChannel, writeUpdateChannel } from '../lib/update-channel.mjs';
 import { acceptanceReviewerPrompt } from '../lib/acceptance-review.mjs';
 
+if (process.argv[2] === 'native') {
+  process.env.CTG_NATIVE = '1';
+  process.argv.splice(2, 1);
+}
+
 // Ensure Carthagent operates completely isolated in its own agent directory (~/.carthagent/agent)
 // so it NEVER touches, reads, or piggybacks on any existing ~/.pi/agent installation.
 const defaultAgentDir = process.env.CARTHAGENT_AGENT_DIR || process.env.CARTHAGENT_CODING_AGENT_DIR || join(os.homedir(), '.carthagent', 'agent');
@@ -77,6 +82,7 @@ function printHelp() {
   \x1b[32meval\x1b[0m [args...]         Run evaluation harness (evaluate.mjs)
   \x1b[32mreview\x1b[0m                Show self-review default · \x1b[32mreview\x1b[0m ask|yes|no sets it
   \x1b[32mreview\x1b[0m <pr>           Run a fresh-context review of a pull request
+  \x1b[32mnative\x1b[0m                 Launch the opt-in native OpenCode preview
   \x1b[32mupdate\x1b[0m [--check] [--channel stable|beta|experimental]  Update or switch channels
   \x1b[32mhelp\x1b[0m, \x1b[32m--help\x1b[0m, \x1b[32m-h\x1b[0m       Display this help message
 

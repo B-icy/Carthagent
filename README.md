@@ -11,8 +11,8 @@ Carthagent is a delivery-focused AI coding console and CLI built on a bundled de
 The native OpenCode interface is currently an **opt-in preview**, not the default `ctg` experience. The regular CLI remains the default until the installed-product acceptance gates are complete. To try the native route in a checkout with its dependencies installed:
 
 ```sh
-CTG_NATIVE=1 node bin/ctg.mjs
-CTG_NATIVE=1 node bin/ctg.mjs --help
+ctg native
+ctg native --help
 ```
 
 Do not set `CTG_NATIVE=1` globally if you intend to keep using the regular CLI. The native route launches the package-owned, pinned OpenCode 2.0.32 runtime and uses a separate Carthagent-owned profile beneath `~/.carthagent/opencode/` (override with `CTG_OPENCODE_HOME`). Its config, database, sessions, auth, state, and cache are separate from regular OpenCode. It does not install, upgrade, or reuse regular OpenCode credentials. Project files and native task metadata/worktrees are separate again: task records live in each project’s `.harness/opencode-tasks.json`.
@@ -77,7 +77,7 @@ Experimental software may still contain bugs; read its release notes first.
 
 ## Regular CLI
 
-Without `CTG_NATIVE=1`, `ctg` continues to launch the existing split-terminal CLI and its existing Carthagent agent profile. This behavior remains the default for now. Its data and provider setup are distinct from the native preview described above.
+Without `ctg native` or `CTG_NATIVE=1`, `ctg` continues to launch the existing split-terminal CLI and its existing Carthagent agent profile. This behavior remains the default for now. Its data and provider setup are distinct from the native preview described above.
 
 ## Delivery engine and existing CLI
 

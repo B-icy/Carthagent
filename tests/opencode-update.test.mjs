@@ -1,9 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
+import { fileURLToPath } from 'node:url';
+import { readUpdateChannel, writeUpdateChannel } from '../lib/update-channel.mjs';
 import { npmUpdateArgv, runNativeUpdate } from '../lib/opencode/update.mjs';
 
 const release = { version: '1.2.0', tag: 'v1.2.0', installSpec: 'github:B-icy/Carthagent#v1.2.0', minNode: '22.19.0' };
@@ -402,3 +406,23 @@ test('runNativeUpdate passes npm operations through the Windows cmd shim', async
     'cmd.exe', '/d', '/s', '/c', 'npm', 'install', '-g', '--install-links=true', release.installSpec,
   ]);
 });
+
+
+test('explicit native command previews stable rollback without acquiring a runtime or saving a preference', () => tempDir(async dir => {
+  const env = { ...process.env, CARTHAGENT_UPDATE_CHANNEL_FILE: join(dir, 'channel.json'), CARTHAGENT_CODING_AGENT_DIR: join(dir, 'agent'), CTG_OPENCODE_HOME: join(dir, 'native') };
+  delete env.CTG_NATIVE;
+  writeUpdateChannel('experimental', env);
+  const server = createServer((_req, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ version: '1.0.7', tag: 'v1.0.7' })); });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  try {
+    env.CARTHAGENT_CLOUD_URL = `http://127.0.0.1:${server.address().port}`;
+    const child = spawn(process.execPath, [fileURLToPath(new URL('../bin/ctg.mjs', import.meta.url)), 'native', 'update', '--channel', 'stable', '--check'], { env, cwd: dir, stdio: ['ignore', 'pipe', 'pipe'] });
+    let output = ''; child.stdout.on('data', data => output += data); child.stderr.on('data', data => output += data);
+    const [code] = await once(child, 'close');
+    assert.equal(code, 0, output);
+    assert.match(output, /1\.0\.7.*available/);
+    assert.match(output, /--channel stable/);
+    assert.equal(readUpdateChannel(env), 'experimental');
+  } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+}));
