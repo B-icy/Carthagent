@@ -788,7 +788,7 @@ test('native login cancellation maps to 130 and attempts to cancel the pending h
   const runtime = await createOpenCodeCliRuntime({ cwd: '/project', io: { log: text => lines.push(text), error: text => lines.push(text) }, stdin: { isTTY: true }, stdout: { isTTY: true }, native: {
     runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) }, headless: {},
     clientFactory: async () => ({ integration: {
-      list: async () => ({ data: [{ id: 'provider', name: 'Provider', methods: [{ id: 'device', type: 'oauth', label: 'Device' }] }] }),
+      list: async () => ({ data: [{ id: 'anthropic', name: 'Provider', methods: [{ id: 'device', type: 'oauth', label: 'Device' }] }] }),
       oauth: {
         connect: async () => ({ data: { attemptID: 'attempt-cancel', url: 'https://auth.example', instructions: 'Approve', mode: 'auto', time: { expires: Date.now() + 60_000 } } }),
         status: async (_input, { signal }) => new Promise((_resolve, reject) => {
@@ -813,7 +813,7 @@ test('native login honors an already-delivered SIGINT without starting an authen
   const runtime = await createOpenCodeCliRuntime({ cwd: '/project', io: ioCapture().io, stdin: { isTTY: true }, stdout: { isTTY: true }, native: {
     runtime: {}, service: { ensureService: async () => { process.emit('SIGINT'); return { url: 'http://127.0.0.1:1', headers: {} }; } }, headless: {},
     clientFactory: async () => ({ integration: {
-      list: async () => ({ data: [{ id: 'provider', name: 'Provider', methods: [{ id: 'device', type: 'oauth', label: 'Device' }] }] }),
+      list: async () => ({ data: [{ id: 'anthropic', name: 'Provider', methods: [{ id: 'device', type: 'oauth', label: 'Device' }] }] }),
       oauth: {
         connect: async () => { calls.push('connect'); throw new Error('must not connect'); },
         status: async () => { calls.push('status'); },
@@ -834,7 +834,7 @@ test('native login cancels an OAuth attempt returned after SIGINT during connect
   const runtime = await createOpenCodeCliRuntime({ cwd: '/project', io: ioCapture().io, stdin: { isTTY: true }, stdout: { isTTY: true }, native: {
     runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) }, headless: {},
     clientFactory: async () => ({ integration: {
-      list: async () => ({ data: [{ id: 'provider', name: 'Provider', methods: [{ id: 'oauth', type: 'oauth', label: 'OAuth' }] }] }),
+      list: async () => ({ data: [{ id: 'anthropic', name: 'Provider', methods: [{ id: 'oauth', type: 'oauth', label: 'OAuth' }] }] }),
       oauth: {
         connect: async () => { calls.push('connect'); connectReady(); return connectResponse; },
         status: async () => { calls.push('status'); return { data: { status: 'pending' } }; },
@@ -862,7 +862,7 @@ test('native login abort closes an in-flight ordinary OAuth form prompt', async 
   }), native: {
     runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) }, headless: {},
     clientFactory: async () => ({ integration: {
-      list: async () => ({ data: [{ id: 'provider', name: 'Provider', methods: [{ id: 'oauth', type: 'oauth', label: 'OAuth', form: [{ key: 'tenant', type: 'string', title: 'Tenant', required: true }] }] }] }),
+      list: async () => ({ data: [{ id: 'anthropic', name: 'Provider', methods: [{ id: 'oauth', type: 'oauth', label: 'OAuth', form: [{ key: 'tenant', type: 'string', title: 'Tenant', required: true }] }] }] }),
       oauth: {
         connect: async () => { throw Error('connect must not run'); },
         status: async () => ({ data: { status: 'pending' } }),
@@ -896,11 +896,11 @@ test('native API-key login masks secrets; OAuth form input is masked and hidden 
   const keyRuntime = await createOpenCodeCliRuntime({ cwd: '/project', io: ioCapture().io, stdin: keyInput, stdout: { isTTY: true, write: value => keyDisplayed.push(String(value)) }, native: {
     runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) }, headless: {},
     clientFactory: async () => ({ integration: {
-      list: async () => ({ data: [{ id: 'key-provider', name: 'Key Provider', methods: [{ id: 'api-key', type: 'key', label: 'API key' }] }] }),
+      list: async () => ({ data: [{ id: 'anthropic', name: 'Key Provider', methods: [{ id: 'api-key', type: 'key', label: 'API key' }] }] }),
       connect: { key: async input => keyCalls.push(input) },
     } }),
   } });
-  const keyLogin = keyRuntime.login({ args: ['key-provider', 'key'] });
+  const keyLogin = keyRuntime.login({ args: ['anthropic', 'key'] });
   await new Promise(resolve => setTimeout(resolve, 0));
   keyInput.emit('data', 'fake-test-api-key\r');
   assert.equal(await keyLogin, 0);
@@ -914,7 +914,7 @@ test('native API-key login masks secrets; OAuth form input is masked and hidden 
   const oauthRuntime = await createOpenCodeCliRuntime({ cwd: '/project', io: ioCapture().io, stdin: fakeInput, stdout: fakeOutput, native: {
     runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) }, headless: {},
     clientFactory: async () => ({ integration: {
-      list: async () => ({ data: [{ id: 'oauth-provider', name: 'OAuth Provider', methods: [{
+      list: async () => ({ data: [{ id: 'anthropic', name: 'OAuth Provider', methods: [{
         id: 'oauth', type: 'oauth', label: 'OAuth', form: [
           { key: 'client_secret', type: 'string', title: 'Client secret', required: true },
           { key: 'scope', type: 'string', title: 'Scope', default: 'default-scope', hidden: true },
@@ -929,7 +929,7 @@ test('native API-key login masks secrets; OAuth form input is masked and hidden 
       },
     } }),
   } });
-  const login = oauthRuntime.login({ args: ['oauth-provider'] });
+  const login = oauthRuntime.login({ args: ['anthropic'] });
   await new Promise(resolve => setTimeout(resolve, 0));
   fakeInput.emit('data', 'sensitive-value\r');
   await login;
@@ -1032,7 +1032,7 @@ test('OAuth forms honor conditional fields, defaults, validation, and typed sele
   const injectedRuntime = await createOpenCodeCliRuntime({ cwd: '/project', io: ioCapture().io, stdin: input, stdout: fakeStdout, readlineFactory, native: {
     runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) }, headless: {},
     clientFactory: async () => ({ integration: {
-      list: async () => ({ data: [{ id: 'forms', name: 'Forms', methods: [{ id: 'oauth', type: 'oauth', label: 'OAuth', form: [
+      list: async () => ({ data: [{ id: 'anthropic', name: 'Forms', methods: [{ id: 'oauth', type: 'oauth', label: 'OAuth', form: [
         { key: 'mode', type: 'string', title: 'Mode', required: true, options: [{ value: 'standard', label: 'Standard' }, { value: 'advanced', label: 'Advanced' }] },
         { key: 'count', type: 'integer', title: 'Count', required: true, minimum: 1, maximum: 5, default: 4, when: [{ key: 'mode', op: 'eq', value: 'standard' }] },
         { key: 'enabled', type: 'boolean', title: 'Enabled', default: true },
@@ -1044,7 +1044,7 @@ test('OAuth forms honor conditional fields, defaults, validation, and typed sele
       },
     } }),
   } });
-  await injectedRuntime.login({ args: ['forms'] });
+  await injectedRuntime.login({ args: ['anthropic'] });
   assert.deepEqual(calls[0], { mode: 'standard', count: 4, enabled: true, features: ['alpha', 'beta'] });
   assert.equal(promptIndex, 4);
 });
@@ -1055,14 +1055,14 @@ test('OAuth optional boolean fields keep their native default when left blank', 
   const runtime = await createOpenCodeCliRuntime({ cwd: '/project', io: output.io, stdin: { isTTY: true }, stdout: { isTTY: true, write() {} }, readlineFactory: () => ({ close() {}, question: async () => '' }), native: {
     runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) }, headless: {},
     clientFactory: async () => ({ integration: {
-      list: async () => ({ data: [{ id: 'bool', name: 'Boolean', methods: [{ id: 'oauth', type: 'oauth', label: 'OAuth', form: [{ key: 'enabled', type: 'boolean', default: true }] }] }] }),
+      list: async () => ({ data: [{ id: 'anthropic', name: 'Boolean', methods: [{ id: 'oauth', type: 'oauth', label: 'OAuth', form: [{ key: 'enabled', type: 'boolean', default: true }] }] }] }),
       oauth: {
-        connect: async input => { calls.push(input.answer); return { data: { attemptID: 'bool', mode: 'auto', url: 'https://auth.example', instructions: 'approve', time: { expires: Date.now() + 1000 } } }; },
+        connect: async input => { calls.push(input.answer); return { data: { attemptID: 'anthropic', mode: 'auto', url: 'https://auth.example', instructions: 'approve', time: { expires: Date.now() + 1000 } } }; },
         status: async () => ({ data: { status: 'complete' } }),
       },
     } }),
   } });
-  await runtime.login({ args: ['bool'] });
+  await runtime.login({ args: ['anthropic'] });
   assert.deepEqual(calls, [{ enabled: true }]);
 });
 
@@ -1295,7 +1295,7 @@ test('concrete native runtime uses OpenCode service/headless/model APIs and real
   assert.equal(await runtime.run({ mode: 'headless', options: { prompt: 'Do a task' }, prompt: 'Do a task' }), 0);
   assert.equal(output.at(-1), 'native answer\n');
   assert.equal(await runtime.listModels({ query: 'claude' }), 1);
-  assert.match(output.at(-1), /anthropic\s+claude-fixture\s+100\s+10/);
+  assert.match(output.at(-1), /Claude \/ Anthropic\s+claude-fixture\s+100\s+10/);
   assert.equal(await runtime.run({ mode: 'interactive', options: {}, prompt: undefined }), 0);
   assert.ok(events.some(entry => entry[0] === 'service'));
   assert.ok(events.some(entry => entry[0] === 'headless' && entry[3] === 'Do a task'));

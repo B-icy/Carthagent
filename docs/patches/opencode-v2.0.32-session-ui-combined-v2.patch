@@ -1,5 +1,345 @@
+diff --git a/packages/cli/src/acp/error.ts b/packages/cli/src/acp/error.ts
+index ef26f0e..ab4bcca 100644
+--- a/packages/cli/src/acp/error.ts
++++ b/packages/cli/src/acp/error.ts
+@@ -125,7 +125,7 @@ export function toRequestError(error: Error): RequestError {
+         error.safeMessage,
+       )
+     case "ACPServerUnavailableError":
+-      return RequestError.internalError({ errorName: "ServerUnavailable" }, "OpenCode server is unavailable")
++      return RequestError.internalError({ errorName: "ServerUnavailable" }, "Carthagent server is unavailable")
+   }
+   const exhaustive: never = error
+   return exhaustive
+diff --git a/packages/cli/src/acp/service.ts b/packages/cli/src/acp/service.ts
+index 4e10bea..666003e 100644
+--- a/packages/cli/src/acp/service.ts
++++ b/packages/cli/src/acp/service.ts
+@@ -113,7 +113,7 @@ export function make(input: {
+       }
+       if (params.clientCapabilities?._meta?.["terminal-auth"] === true) {
+         authMethod._meta = {
+-          "terminal-auth": { command: "opencode", args: ["auth", "login"], label: "OpenCode Login" },
++          "terminal-auth": { command: "opencode", args: ["auth", "login"], label: "Carthagent Login" },
+         }
+       }
+       return {
+@@ -126,7 +126,7 @@ export function make(input: {
+           _meta: { [ACPCapabilities.ChildSessionUpdates]: true },
+         },
+         authMethods: [authMethod],
+-        agentInfo: { name: "OpenCode", version: OPENCODE_VERSION },
++        agentInfo: { name: "Carthagent", version: OPENCODE_VERSION },
+       }
+     }),
+     authenticate: Effect.fnUntraced(function* (params) {
+diff --git a/packages/cli/src/acp/translate.ts b/packages/cli/src/acp/translate.ts
+index c6960b4..1952956 100644
+--- a/packages/cli/src/acp/translate.ts
++++ b/packages/cli/src/acp/translate.ts
+@@ -139,7 +139,7 @@ export function failure(state: TurnState) {
+   if (error?.type === "provider.auth") return new ACPError.AuthRequiredError()
+   if (error && error.type !== "aborted" && error.type !== "provider.content-filter") {
+     return new ACPError.ServiceFailureError({
+-      safeMessage: error.message || "OpenCode prompt failed",
++      safeMessage: error.message || "Carthagent prompt failed",
+       service: "session",
+       errorName: error.type,
+     })
+diff --git a/packages/cli/src/commands/commands.ts b/packages/cli/src/commands/commands.ts
+index ba3454b..b0570da 100644
+--- a/packages/cli/src/commands/commands.ts
++++ b/packages/cli/src/commands/commands.ts
+@@ -36,12 +36,12 @@ const PermissionParams = {
+ }
+ 
+ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME : "opencode", {
+-  description: "OpenCode command line interface",
++  description: "Carthagent command line interface",
+   params: {
+     ...ServerParams,
+     ...PermissionParams,
+     directory: Argument.String("directory").pipe(
+-      Argument.withDescription("Directory to start OpenCode in"),
++      Argument.withDescription("Directory to start Carthagent in"),
+       Argument.optional,
+     ),
+     continue: Flag.Boolean("continue").pipe(
+@@ -58,7 +58,7 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
+   },
+   commands: [
+     Spec.make("upgrade", {
+-      description: "Upgrade OpenCode to the latest or a specific version",
++      description: "Upgrade Carthagent to the latest or a specific version",
+       aliases: ["update"],
+       params: {
+         target: Argument.String("target").pipe(
+@@ -73,7 +73,7 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
+       },
+     }),
+     Spec.make("uninstall", {
+-      description: "Uninstall OpenCode, keeping session data, configuration, and state",
++      description: "Uninstall Carthagent, keeping session data, configuration, and state",
+       params: {
+         dryRun: Flag.Boolean("dry-run").pipe(
+           Flag.withDescription("Show what would be removed without removing"),
+@@ -374,7 +374,7 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
+       },
+     }),
+     Spec.make("run", {
+-      description: "Run OpenCode with a message",
++      description: "Run Carthagent with a message",
+       params: {
+         ...ServerParams,
+         message: Argument.String("message").pipe(
+diff --git a/packages/cli/src/commands/handlers/default.ts b/packages/cli/src/commands/handlers/default.ts
+index cbf9d43..27bf13f 100644
+--- a/packages/cli/src/commands/handlers/default.ts
++++ b/packages/cli/src/commands/handlers/default.ts
+@@ -47,7 +47,7 @@ export default Runtime.handler(Commands, (input) =>
+       },
+     }).pipe(
+       Effect.tapError(() =>
+-        Effect.promise(() => preflight.fail("OpenCode update could not start the new background service")),
++        Effect.promise(() => preflight.fail("Carthagent update could not start the new background service")),
+       ),
+     )
+     const session = Option.getOrUndefined(input.session)
+diff --git a/packages/cli/src/commands/handlers/pair.ts b/packages/cli/src/commands/handlers/pair.ts
+index f1f0a4b..4a19363 100644
+--- a/packages/cli/src/commands/handlers/pair.ts
++++ b/packages/cli/src/commands/handlers/pair.ts
+@@ -70,7 +70,7 @@ export default Runtime.handler(
+ )
+ 
+ export const remoteWarning = [
+-  "This will expose your OpenCode server to the internet.",
++  "This will expose your Carthagent server to the internet.",
+   "Traffic is end-to-end encrypted, and access requires your server password.",
+   "To pair locally instead, run `opencode pair` without the --remote flag.",
+ ].join(EOL)
+diff --git a/packages/cli/src/commands/handlers/uninstall.ts b/packages/cli/src/commands/handlers/uninstall.ts
+index 7f6393c..5011bf3 100644
+--- a/packages/cli/src/commands/handlers/uninstall.ts
++++ b/packages/cli/src/commands/handlers/uninstall.ts
+@@ -14,7 +14,7 @@ import { errorMessage } from "../../util/error"
+ export default Runtime.handler(
+   Commands.commands.uninstall,
+   Effect.fn("cli.uninstall")(function* (input) {
+-    intro("Uninstall OpenCode")
++    intro("Uninstall Carthagent")
+     const fs = yield* FileSystem.FileSystem
+     const global = yield* Global.Service
+     const updater = yield* Updater.Service
+@@ -29,7 +29,7 @@ export default Runtime.handler(
+     const shell = method === "curl" ? yield* shellConfigs(global.home) : []
+ 
+     log.info(`Installation method: ${method ?? "unknown"}`)
+-    log.message("The following global files will be removed (shared by OpenCode versions and channels):")
++    log.message("The following global files will be removed (shared by Carthagent versions and channels):")
+     if (yield* fs.exists(global.cache)) log.info(`  Cache: ${global.cache}`)
+     services.forEach((name) =>
+       log.info(`  Stop background service and persistent terminals: ${path.join(global.state, name)}`),
+diff --git a/packages/cli/src/commands/handlers/upgrade.ts b/packages/cli/src/commands/handlers/upgrade.ts
+index af7c221..cfbf0ae 100644
+--- a/packages/cli/src/commands/handlers/upgrade.ts
++++ b/packages/cli/src/commands/handlers/upgrade.ts
+@@ -16,14 +16,14 @@ export default Runtime.handler(
+       const method = Option.getOrUndefined(input.method) ?? (yield* updater.method())
+       if (!method)
+         return yield* Effect.fail(
+-          new Error("Could not detect the installation method. Pass --method to choose how to upgrade OpenCode."),
++          new Error("Could not detect the installation method. Pass --method to choose how to upgrade Carthagent."),
+         )
+ 
+       log.info(`Using method: ${method}`)
+       const target = Option.getOrUndefined(input.target) ?? (yield* updater.latest(method))
+       const version = target.trim().replace(/^v/, "")
+       if (version === OPENCODE_VERSION) {
+-        log.warn(`OpenCode upgrade skipped: ${version} is already installed`)
++        log.warn(`Carthagent upgrade skipped: ${version} is already installed`)
+         outro("Done")
+         return
+       }
+diff --git a/packages/cli/src/services/update-preflight.tsx b/packages/cli/src/services/update-preflight.tsx
+index f5e76d9..403033b 100644
+--- a/packages/cli/src/services/update-preflight.tsx
++++ b/packages/cli/src/services/update-preflight.tsx
+@@ -22,7 +22,7 @@ import {
+   untrack,
+ } from "solid-js"
+ 
+-const stages = ["Keeping your session safe", "Starting the new background service", "Loading OpenCode"] as const
++const stages = ["Keeping your session safe", "Starting the new background service", "Loading Carthagent"] as const
+ const stageFloor = 480
+ const transitionDuration = 420
+ const completionHold = 650
+@@ -325,7 +325,7 @@ function UpdateFooter(props: {
+   const statusSweep = createSweep()
+   const runningHeader = () =>
+     phrase(
+-      ["OpenCode", colors.muted, true],
++      ["Carthagent", colors.muted, true],
+       ["is updating", colors.muted],
+       ...(props.from
+         ? ([
+@@ -337,11 +337,11 @@ function UpdateFooter(props: {
+       [OPENCODE_VERSION, colors.accent],
+     )
+   const completedHeader = phrase(
+-    ["OpenCode", colors.muted, true],
++    ["Carthagent", colors.muted, true],
+     ["updated to", colors.muted],
+     [OPENCODE_VERSION, colors.accent],
+   )
+-  const pausedHeader = phrase(["OpenCode", colors.muted, true], ["update paused", colors.muted])
++  const pausedHeader = phrase(["Carthagent", colors.muted, true], ["update paused", colors.muted])
+   const outcomeStatus = () =>
+     props.outcome() === "success"
+       ? [...styled("✓", colors.success), ...styled(" Ready", colors.text)]
+diff --git a/packages/cli/src/services/updater.ts b/packages/cli/src/services/updater.ts
+index 736e8f8..1dcc099 100644
+--- a/packages/cli/src/services/updater.ts
++++ b/packages/cli/src/services/updater.ts
+@@ -46,7 +46,7 @@ const decodeVpPackages = Schema.decodeUnknownOption(
+ )
+ 
+ const installNames: Record<Method, string> = {
+-  curl: "The OpenCode installer",
++  curl: "The Carthagent installer",
+   npm: "npm",
+   pnpm: "pnpm",
+   bun: "Bun",
+@@ -56,7 +56,7 @@ const installNames: Record<Method, string> = {
+   winget: "WinGet",
+ }
+ 
+-const wingetPackage = "Anomaly.OpenCode"
++const wingetPackage = "Anomaly.Carthagent"
+ const wingetArgs = [
+   "--id",
+   wingetPackage,
+@@ -204,8 +204,8 @@ const make = Effect.gen(function* () {
+     if (bash && (yield* fs.exists(bash).pipe(Effect.orElseSucceed(() => false)))) return bash
+     return yield* Effect.fail(
+       new UpgradeError({
+-        title: "Git Bash is required to update OpenCode",
+-        detail: "The OpenCode installer runs with Git Bash on Windows, and it was not found.",
++        title: "Git Bash is required to update Carthagent",
++        detail: "The Carthagent installer runs with Git Bash on Windows, and it was not found.",
+         retry: "Install Git for Windows or set OPENCODE_GIT_BASH_PATH, then run opencode upgrade again.",
+       }),
+     )
+@@ -289,7 +289,7 @@ const make = Effect.gen(function* () {
+       catch: (cause) =>
+         new UpgradeError(
+           {
+-            title: "Could not check for OpenCode updates",
++            title: "Could not check for Carthagent updates",
+             detail: errorDetail(cause),
+             retry: "Check your network, then run opencode upgrade again.",
+           },
+@@ -299,7 +299,7 @@ const make = Effect.gen(function* () {
+     if (!response.ok)
+       return yield* Effect.fail(
+         new UpgradeError({
+-          title: "Could not check for OpenCode updates",
++          title: "Could not check for Carthagent updates",
+           detail: `The update service returned HTTP ${response.status}.`,
+           retry: "Try again in a few minutes.",
+         }),
+@@ -310,7 +310,7 @@ const make = Effect.gen(function* () {
+         catch: (cause) =>
+           new UpgradeError(
+             {
+-              title: "Could not read the OpenCode update information",
++              title: "Could not read the Carthagent update information",
+               detail: errorDetail(cause),
+               retry: "Try again in a few minutes.",
+             },
+@@ -322,7 +322,7 @@ const make = Effect.gen(function* () {
+     if (!version || !packageName)
+       return yield* Effect.fail(
+         new UpgradeError({
+-          title: "Could not read the OpenCode update information",
++          title: "Could not read the Carthagent update information",
+           detail: "The update service returned incomplete release information.",
+           retry: "Try again in a few minutes.",
+         }),
+@@ -335,7 +335,7 @@ const make = Effect.gen(function* () {
+     const failure = (detail: string, cause?: unknown) =>
+       new UpgradeError(
+         {
+-          title: "Could not check for OpenCode updates",
++          title: "Could not check for Carthagent updates",
+           detail,
+           command: ["winget", "search", ...wingetArgs].join(" "),
+           retry: "Fix the issue above, then run opencode upgrade again.",
+@@ -398,7 +398,7 @@ const make = Effect.gen(function* () {
+     const failure = (detail: string, cause?: unknown) =>
+       new UpgradeError(
+         {
+-          title: input.title ?? `${installNames[input.method]} could not install OpenCode`,
++          title: input.title ?? `${installNames[input.method]} could not install Carthagent`,
+           detail,
+           command: (input.displayCommand ?? input.command).join(" "),
+           retry: input.retry ?? "Fix the issue above, then run opencode upgrade again.",
+@@ -481,7 +481,7 @@ const make = Effect.gen(function* () {
+             method,
+             command: ["curl", "-fsSL", "-o", installer, "https://opencode.ai/v2/install"],
+             displayCommand: ["curl", "-fsSL", "https://opencode.ai/v2/install"],
+-            title: "Could not download the OpenCode installer",
++            title: "Could not download the Carthagent installer",
+             retry: "Check your network, then run opencode upgrade again.",
+           })
+           return yield* retaining(
+@@ -490,7 +490,7 @@ const make = Effect.gen(function* () {
+               method,
+               command: [bash, installer, "--version", version, "--no-modify-path"],
+               displayCommand: ["opencode", "upgrade", version, "--method", "curl"],
+-              title: "The OpenCode installer failed",
++              title: "The Carthagent installer failed",
+             }),
+           )
+         }
+@@ -519,7 +519,7 @@ const make = Effect.gen(function* () {
+           ? cause
+           : new UpgradeError(
+               {
+-                title: "Could not prepare the OpenCode upgrade",
++                title: "Could not prepare the Carthagent upgrade",
+                 detail: errorDetail(cause),
+                 retry: "Fix the issue above, then run opencode upgrade again.",
+               },
+@@ -556,7 +556,7 @@ const make = Effect.gen(function* () {
+       yield* Effect.logInfo("update check done", { action: "up-to-date" })
+       return undefined
+     }
+-    yield* Effect.logInfo("OpenCode update available", { current, latest: version, action: next })
++    yield* Effect.logInfo("Carthagent update available", { current, latest: version, action: next })
+     return { policy, version }
+   })
+ 
+@@ -569,7 +569,7 @@ const make = Effect.gen(function* () {
+     const current = yield* Ref.get(installedVersion)
+     yield* upgrade(detected, version)
+     yield* Ref.set(installedVersion, version)
+-    yield* Effect.logInfo("updated OpenCode", { from: current, to: version, method: detected })
++    yield* Effect.logInfo("updated Carthagent", { from: current, to: version, method: detected })
+     return true
+   })
+ 
+@@ -586,7 +586,7 @@ const make = Effect.gen(function* () {
+     if (OPENCODE_LOCAL)
+       return {
+         type: "unavailable" as const,
+-        message: "This build runs from a source checkout. Use an installed OpenCode release to check for updates.",
++        message: "This build runs from a source checkout. Use an installed Carthagent release to check for updates.",
+       }
+     const detected = yield* method()
+     if (!detected)
 diff --git a/packages/client/src/effect/api/api.ts b/packages/client/src/effect/api/api.ts
-index 4580c6bbfe..0f289bfc19 100644
+index 4580c6b..0f289bf 100644
 --- a/packages/client/src/effect/api/api.ts
 +++ b/packages/client/src/effect/api/api.ts
 @@ -48,7 +48,9 @@ export type ServerInfoOutput = {
@@ -14,7 +354,7 @@ index 4580c6bbfe..0f289bfc19 100644
  export type ServerInfoOperation<E = never> = () => Effect.Effect<ServerInfoOutput, E>
  
 diff --git a/packages/client/src/promise/generated/types.ts b/packages/client/src/promise/generated/types.ts
-index 96ba475e5b..6b08478c30 100644
+index 96ba475..6b08478 100644
 --- a/packages/client/src/promise/generated/types.ts
 +++ b/packages/client/src/promise/generated/types.ts
 @@ -5,7 +5,7 @@ export type ServerInfo = {
@@ -27,7 +367,7 @@ index 96ba475e5b..6b08478c30 100644
  
  export type PairingCode = { code: string; expires_in: number }
 diff --git a/packages/core/src/codemode/tool.ts b/packages/core/src/codemode/tool.ts
-index ef0d5d635b..346cc6872c 100644
+index ef0d5d6..346cc68 100644
 --- a/packages/core/src/codemode/tool.ts
 +++ b/packages/core/src/codemode/tool.ts
 @@ -92,7 +92,7 @@ export const create = (
@@ -40,7 +380,7 @@ index ef0d5d635b..346cc6872c 100644
                  typeof executed.content === "string"
                    ? [{ type: "text" as const, text: executed.content }]
 diff --git a/packages/core/src/session/compaction.ts b/packages/core/src/session/compaction.ts
-index 3cb5279029..602114bb6b 100644
+index 3cb5279..602114b 100644
 --- a/packages/core/src/session/compaction.ts
 +++ b/packages/core/src/session/compaction.ts
 @@ -205,9 +205,10 @@ export const layer = Layer.effect(
@@ -56,7 +396,7 @@ index 3cb5279029..602114bb6b 100644
          return { status: "skipped" }
        const native = context.model.compaction?.type === "native"
 diff --git a/packages/core/src/session/session.ts b/packages/core/src/session/session.ts
-index 3cd130086d..7d82de812f 100644
+index 3cd1300..7d82de8 100644
 --- a/packages/core/src/session/session.ts
 +++ b/packages/core/src/session/session.ts
 @@ -178,12 +178,17 @@ export const make = Effect.fn("Session.make")(function* () {
@@ -80,7 +420,7 @@ index 3cd130086d..7d82de812f 100644
          Effect.tapError((error) =>
            synthetic(sessionID, {
 diff --git a/packages/core/src/session/shell.ts b/packages/core/src/session/shell.ts
-index b4e2a1a7d3..ee9f13eb83 100644
+index b4e2a1a..ee9f13e 100644
 --- a/packages/core/src/session/shell.ts
 +++ b/packages/core/src/session/shell.ts
 @@ -7,14 +7,24 @@ import { Plugin } from "../plugin/service.js"
@@ -111,7 +451,7 @@ index b4e2a1a7d3..ee9f13eb83 100644
    // Keep completion tied to the original shell even if the Session moves.
    return {
 diff --git a/packages/core/src/shell.ts b/packages/core/src/shell.ts
-index e1d1017bea..91b3d07726 100644
+index e1d1017..91b3d07 100644
 --- a/packages/core/src/shell.ts
 +++ b/packages/core/src/shell.ts
 @@ -15,7 +15,7 @@ import { FileRetention } from "./file-retention.js"
@@ -169,7 +509,7 @@ index e1d1017bea..91b3d07726 100644
        })
  
 diff --git a/packages/core/src/tool/plugin/shell.ts b/packages/core/src/tool/plugin/shell.ts
-index af454a7d63..df3f45c793 100644
+index af454a7..df3f45c 100644
 --- a/packages/core/src/tool/plugin/shell.ts
 +++ b/packages/core/src/tool/plugin/shell.ts
 @@ -206,7 +206,11 @@ export const Plugin = {
@@ -186,7 +526,7 @@ index af454a7d63..df3f45c793 100644
                  (invocation) =>
                    Effect.gen(function* () {
 diff --git a/packages/core/test/plugin-failure.test.ts b/packages/core/test/plugin-failure.test.ts
-index a800b5d857..5d05c4efef 100644
+index a800b5d..5d05c4e 100644
 --- a/packages/core/test/plugin-failure.test.ts
 +++ b/packages/core/test/plugin-failure.test.ts
 @@ -48,6 +48,9 @@ it.live("removes a failed plugin's hooks and RPC handlers without affecting heal
@@ -200,7 +540,7 @@ index a800b5d857..5d05c4efef 100644
      yield* trigger
      expect(invoked).toEqual(["broken", "healthy"])
 diff --git a/packages/core/test/session-compaction.test.ts b/packages/core/test/session-compaction.test.ts
-index 1361a0bb7f..1cca9b38b1 100644
+index 1361a0b..1cca9b3 100644
 --- a/packages/core/test/session-compaction.test.ts
 +++ b/packages/core/test/session-compaction.test.ts
 @@ -205,6 +205,39 @@ it.effect("auto compaction estimates current content against the buffered prompt
@@ -244,7 +584,7 @@ index 1361a0bb7f..1cca9b38b1 100644
      const inputLimited = { context: 400_000, input: 272_000, output: 128_000 }
      expect(yield* due(input(244_799, inputLimited))).toBe(false)
 diff --git a/packages/core/test/shell-retention.test.ts b/packages/core/test/shell-retention.test.ts
-index 3f776e4bb2..12df1e0dac 100644
+index 3f776e4..12df1e0 100644
 --- a/packages/core/test/shell-retention.test.ts
 +++ b/packages/core/test/shell-retention.test.ts
 @@ -8,14 +8,90 @@ import { Environment } from "@opencode/core/environment/index"
@@ -339,7 +679,7 @@ index 3f776e4bb2..12df1e0dac 100644
    Effect.gen(function* () {
      const completions = yield* Queue.unbounded<Effect.Effect<void>>()
 diff --git a/packages/plugin/src/effect/shell.ts b/packages/plugin/src/effect/shell.ts
-index d0e6ae71ed..74a3b04c86 100644
+index d0e6ae7..74a3b04 100644
 --- a/packages/plugin/src/effect/shell.ts
 +++ b/packages/plugin/src/effect/shell.ts
 @@ -6,10 +6,28 @@ export interface ShellCreateBefore {
@@ -372,7 +712,7 @@ index d0e6ae71ed..74a3b04c86 100644
  
  export interface ShellDomain {
 diff --git a/packages/plugin/src/promise/shell.ts b/packages/plugin/src/promise/shell.ts
-index d0e6ae71ed..74a3b04c86 100644
+index d0e6ae7..74a3b04 100644
 --- a/packages/plugin/src/promise/shell.ts
 +++ b/packages/plugin/src/promise/shell.ts
 @@ -6,10 +6,28 @@ export interface ShellCreateBefore {
@@ -405,7 +745,7 @@ index d0e6ae71ed..74a3b04c86 100644
  
  export interface ShellDomain {
 diff --git a/packages/plugin/src/tui/context.ts b/packages/plugin/src/tui/context.ts
-index fe641b39d5..00220c21cb 100644
+index fe641b3..00220c2 100644
 --- a/packages/plugin/src/tui/context.ts
 +++ b/packages/plugin/src/tui/context.ts
 @@ -196,6 +196,8 @@ export interface SlotMap {
@@ -445,7 +785,7 @@ index fe641b39d5..00220c21cb 100644
 +  }
  }
 diff --git a/packages/protocol/src/groups/server.ts b/packages/protocol/src/groups/server.ts
-index 4b4cab189b..e010fc1792 100644
+index 4b4cab1..e010fc1 100644
 --- a/packages/protocol/src/groups/server.ts
 +++ b/packages/protocol/src/groups/server.ts
 @@ -14,6 +14,7 @@ export const ServerInfo = Schema.Struct({
@@ -457,7 +797,7 @@ index 4b4cab189b..e010fc1792 100644
    ),
  }).annotate({ identifier: "ServerInfo" })
 diff --git a/packages/protocol/src/groups/session.ts b/packages/protocol/src/groups/session.ts
-index a9ee5069e5..03fb9d39a3 100644
+index a9ee506..03fb9d3 100644
 --- a/packages/protocol/src/groups/session.ts
 +++ b/packages/protocol/src/groups/session.ts
 @@ -489,10 +489,9 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
@@ -475,7 +815,7 @@ index a9ee5069e5..03fb9d39a3 100644
          ),
      )
 diff --git a/packages/schema/src/tool.ts b/packages/schema/src/tool.ts
-index 06dec1c0c5..a515a736b4 100644
+index 06dec1c..a515a73 100644
 --- a/packages/schema/src/tool.ts
 +++ b/packages/schema/src/tool.ts
 @@ -16,6 +16,8 @@ export interface Context {
@@ -488,7 +828,7 @@ index 06dec1c0c5..a515a736b4 100644
  }
  
 diff --git a/packages/server/src/handlers/server.ts b/packages/server/src/handlers/server.ts
-index d85594b38d..e618d00406 100644
+index d85594b..e618d00 100644
 --- a/packages/server/src/handlers/server.ts
 +++ b/packages/server/src/handlers/server.ts
 @@ -17,12 +17,18 @@ export const ServerHandler = HttpApiBuilder.group(Api, "server.server", (handler
@@ -512,7 +852,7 @@ index d85594b38d..e618d00406 100644
          }),
        )
 diff --git a/packages/server/src/handlers/session.ts b/packages/server/src/handlers/session.ts
-index dd85c2f4ff..930d684d69 100644
+index dd85c2f..930d684 100644
 --- a/packages/server/src/handlers/session.ts
 +++ b/packages/server/src/handlers/session.ts
 @@ -25,6 +25,7 @@ import {
@@ -539,7 +879,7 @@ index dd85c2f4ff..930d684d69 100644
            return HttpApiSchema.NoContent.make()
          }),
 diff --git a/packages/server/src/handlers/shell.ts b/packages/server/src/handlers/shell.ts
-index 6b08faf807..8a1c8fc566 100644
+index 6b08faf..8a1c8fc 100644
 --- a/packages/server/src/handlers/shell.ts
 +++ b/packages/server/src/handlers/shell.ts
 @@ -21,8 +21,14 @@ export const ShellHandler = HttpApiBuilder.group(Api, "server.shell", (handlers)
@@ -560,7 +900,7 @@ index 6b08faf807..8a1c8fc566 100644
        )
 diff --git a/packages/server/test/shell-provenance.test.ts b/packages/server/test/shell-provenance.test.ts
 new file mode 100644
-index 0000000000..2f742d73f3
+index 0000000..2f742d7
 --- /dev/null
 +++ b/packages/server/test/shell-provenance.test.ts
 @@ -0,0 +1,34 @@
@@ -599,10 +939,12 @@ index 0000000000..2f742d73f3
 +  }).pipe(Effect.scoped),
 +)
 diff --git a/packages/tui/src/app.tsx b/packages/tui/src/app.tsx
-index 88939ebc85..ce493ec31f 100644
+index 88939eb..f1a599c 100644
 --- a/packages/tui/src/app.tsx
 +++ b/packages/tui/src/app.tsx
-@@ -2,6 +2,7 @@ import { existsSync } from "fs"
+@@ -1,7 +1,9 @@
++import { productTerminalTitle } from "./product"
+ import { existsSync } from "fs"
  import path from "path"
  import { render, useRenderer, useTerminalDimensions } from "@opentui/solid"
  import { registerOpencodeSpinner } from "./component/register-spinner"
@@ -610,7 +952,7 @@ index 88939ebc85..ce493ec31f 100644
  import { Effect, Latch } from "effect"
  import { Service, type Endpoint } from "@opencode/client/effect/service"
  import { OpenCode, type SessionInfo } from "@opencode/client"
-@@ -95,13 +96,19 @@ import { Config, ConfigProvider, useConfig } from "./config"
+@@ -95,13 +97,19 @@ import { Config, ConfigProvider, useConfig } from "./config"
  import { newSessionLocation } from "./config/new-session-location"
  import { UpdateNotificationProvider, useUpdateNotification, type UpdateSource } from "./context/update-notification"
  import { PluginProvider, usePlugin, type PackageSource } from "./plugin/context"
@@ -631,7 +973,7 @@ index 88939ebc85..ce493ec31f 100644
  import { cliErrorMessage, errorFormat } from "./util/error"
  import { AttentionProvider } from "./context/attention"
  import { StorageProvider, useStorage } from "./context/storage"
-@@ -252,6 +259,8 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
+@@ -252,6 +260,8 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
        const renderer = yield* Effect.gen(function* () {
          if (handoff) {
            handoff.renderer.useMouse = options.useMouse
@@ -640,7 +982,7 @@ index 88939ebc85..ce493ec31f 100644
            return yield* Effect.acquireRelease(Effect.succeed(handoff.renderer), (renderer) =>
              Effect.sync(() => destroyRenderer(renderer)),
            )
-@@ -260,13 +269,24 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
+@@ -260,13 +270,24 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
            const { Drive } = yield* Effect.promise(() => import("@opencode/simulation/frontend"))
            return yield* Drive.create(options, input.app.version)
          }
@@ -667,7 +1009,7 @@ index 88939ebc85..ce493ec31f 100644
        })
        renderer.setMaxListeners(15)
        const clipboard = yield* Effect.acquireRelease(
-@@ -380,8 +400,9 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
+@@ -380,8 +401,9 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                                <PermissionProvider>
                                                  <DataProvider directory={directory}>
                                                    <LocationProvider>
@@ -679,7 +1021,7 @@ index 88939ebc85..ce493ec31f 100644
                                                          <ThemeProvider
                                                            mode={mode}
                                                            source={createThemeSource(global.config)}
-@@ -416,8 +437,9 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
+@@ -416,8 +438,9 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                                              </PromptStashProvider>
                                                            </LocalProvider>
                                                          </ThemeProvider>
@@ -691,16 +1033,35 @@ index 88939ebc85..ce493ec31f 100644
                                                    </LocationProvider>
                                                  </DataProvider>
                                                </PermissionProvider>
-@@ -618,7 +640,7 @@ function App() {
+@@ -607,23 +630,23 @@ function App() {
+     if (!terminalTitleEnabled()) return
+ 
+     if (route.data.type === "home") {
+-      renderer.setTerminalTitle("OpenCode")
++      renderer.setTerminalTitle(productTerminalTitle())
+       return
+     }
+ 
+     if (route.data.type === "session") {
+       const title = session?.title
+       if (!title || isFallbackTitle(title)) {
+-        renderer.setTerminalTitle("OpenCode")
++        renderer.setTerminalTitle(productTerminalTitle())
          return
        }
  
 -      renderer.setTerminalTitle(`OC | ${title.length > 40 ? title.slice(0, 37) + "…" : title}`)
-+      renderer.setTerminalTitle(`OC | ${title.length > 40 ? title.slice(0, 37) + chromeEllipsis() : title}`)
++      renderer.setTerminalTitle(productTerminalTitle(title))
        return
      }
  
-@@ -767,7 +789,6 @@ function App() {
+     if (route.data.type === "plugin") {
+-      renderer.setTerminalTitle(`OC | ${route.data.name}`)
++      renderer.setTerminalTitle(productTerminalTitle(route.data.name))
+     }
+   })
+ 
+@@ -767,7 +790,6 @@ function App() {
          name: "session.clear",
          title: "Clear session",
          category: "Session",
@@ -708,7 +1069,16 @@ index 88939ebc85..ce493ec31f 100644
          run: () => {
            const model = local.model.current()
            const agent = local.agent.current()
-@@ -1046,7 +1067,7 @@ function App() {
+@@ -1020,7 +1042,7 @@ function App() {
+         ? [
+             {
+               name: "opencode.update",
+-              title: "Update OpenCode",
++              title: "Update Carthagent",
+               slash: { name: "update" },
+               run: () => updater.open?.("manual"),
+               category: "System",
+@@ -1046,7 +1068,7 @@ function App() {
                  const restart = client.restart
                  if (!restart) return
                  dialog.clear()
@@ -717,7 +1087,7 @@ index 88939ebc85..ce493ec31f 100644
                  // restart resolves once the replacement service is healthy; the
                  // event stream reattaches through the reconnect loop.
                  await restart()
-@@ -1063,7 +1084,7 @@ function App() {
+@@ -1063,7 +1085,7 @@ function App() {
          slash: { name: "reload" },
          run: async () => {
            dialog.clear()
@@ -726,8 +1096,30 @@ index 88939ebc85..ce493ec31f 100644
            await client.api.location
              .reload()
              .then(() => {
+@@ -1126,7 +1148,7 @@ function App() {
+         name: "docs.open",
+         title: "Open docs",
+         run: () => {
+-          openUrl("https://opencode.ai/docs").catch(() => {})
++          openUrl("https://github.com/B-icy/Carthagent#readme").catch(() => {})
+           dialog.clear()
+         },
+         category: "System",
+diff --git a/packages/tui/src/attention.ts b/packages/tui/src/attention.ts
+index 544668d..fa02896 100644
+--- a/packages/tui/src/attention.ts
++++ b/packages/tui/src/attention.ts
+@@ -32,7 +32,7 @@ type AttentionHost = Attention & {
+   dispose(): void
+ }
+ 
+-const DEFAULT_TITLE = "OpenCode"
++const DEFAULT_TITLE = "Carthagent"
+ const TITLE_LIMIT = 80
+ const MESSAGE_LIMIT = 240
+ const BUILTIN_SOUNDS: Record<AttentionSoundName, string> = {
 diff --git a/packages/tui/src/component/command-palette.tsx b/packages/tui/src/component/command-palette.tsx
-index 4f46db3253..51390b70b5 100644
+index 4f46db3..51390b7 100644
 --- a/packages/tui/src/component/command-palette.tsx
 +++ b/packages/tui/src/component/command-palette.tsx
 @@ -3,6 +3,7 @@ import { DialogSelect, type DialogSelectRef } from "../ui/dialog-select"
@@ -757,7 +1149,7 @@ index 4f46db3253..51390b70b5 100644
      onSelect: (dialog: DialogContext) => {
        dialog.replace(() => <DialogConfig current={settingID(setting)} />)
 diff --git a/packages/tui/src/component/devtools-bar.tsx b/packages/tui/src/component/devtools-bar.tsx
-index 10af2019d6..259b561364 100644
+index 10af201..259b561 100644
 --- a/packages/tui/src/component/devtools-bar.tsx
 +++ b/packages/tui/src/component/devtools-bar.tsx
 @@ -17,6 +17,7 @@ import { useDialog } from "../ui/dialog"
@@ -809,7 +1201,7 @@ index 10af2019d6..259b561364 100644
  
  export function brailleGraph(values: readonly number[], width = graphWidth) {
 diff --git a/packages/tui/src/component/dialog-config.tsx b/packages/tui/src/component/dialog-config.tsx
-index f2e3f28b83..2e0d04234e 100644
+index f2e3f28..2e0d042 100644
 --- a/packages/tui/src/component/dialog-config.tsx
 +++ b/packages/tui/src/component/dialog-config.tsx
 @@ -2,6 +2,7 @@ import { createMemo, createSignal } from "solid-js"
@@ -830,7 +1222,7 @@ index f2e3f28b83..2e0d04234e 100644
          {
            bind: "left",
 diff --git a/packages/tui/src/component/dialog-debug.tsx b/packages/tui/src/component/dialog-debug.tsx
-index 546f47c56c..1c1d4b81ab 100644
+index 546f47c..1c1d4b8 100644
 --- a/packages/tui/src/component/dialog-debug.tsx
 +++ b/packages/tui/src/component/dialog-debug.tsx
 @@ -9,6 +9,7 @@ import { useToast } from "../ui/toast"
@@ -851,7 +1243,7 @@ index 546f47c56c..1c1d4b81ab 100644
      color: copied() ? theme.text.feedback.success.base : undefined,
      onTrigger: copy,
 diff --git a/packages/tui/src/component/dialog-error-details.tsx b/packages/tui/src/component/dialog-error-details.tsx
-index fe8f122903..ff8d521c99 100644
+index fe8f122..ff8d521 100644
 --- a/packages/tui/src/component/dialog-error-details.tsx
 +++ b/packages/tui/src/component/dialog-error-details.tsx
 @@ -11,6 +11,7 @@ import { useTheme } from "../context/theme"
@@ -883,7 +1275,7 @@ index fe8f122903..ff8d521c99 100644
        <scrollbox
          ref={(element: ScrollBoxRenderable) => (scroll = element)}
 diff --git a/packages/tui/src/component/dialog-experiments.tsx b/packages/tui/src/component/dialog-experiments.tsx
-index a8830000f8..db00317858 100644
+index a883000..db00317 100644
 --- a/packages/tui/src/component/dialog-experiments.tsx
 +++ b/packages/tui/src/component/dialog-experiments.tsx
 @@ -3,6 +3,7 @@ import { useConfig, useNewDesigns } from "../config"
@@ -908,7 +1300,7 @@ index a8830000f8..db00317858 100644
          experiments.length > 0
            ? [
 diff --git a/packages/tui/src/component/dialog-highlights.tsx b/packages/tui/src/component/dialog-highlights.tsx
-index d11506eae7..b04827d3b4 100644
+index d11506e..b04827d 100644
 --- a/packages/tui/src/component/dialog-highlights.tsx
 +++ b/packages/tui/src/component/dialog-highlights.tsx
 @@ -6,6 +6,7 @@ import { Keymap } from "../context/keymap"
@@ -929,7 +1321,7 @@ index d11506eae7..b04827d3b4 100644
              paddingLeft={3}
              paddingRight={3}
 diff --git a/packages/tui/src/component/dialog-image-preview.tsx b/packages/tui/src/component/dialog-image-preview.tsx
-index f2bdd1d9e1..ae7811480e 100644
+index f2bdd1d..ae78114 100644
 --- a/packages/tui/src/component/dialog-image-preview.tsx
 +++ b/packages/tui/src/component/dialog-image-preview.tsx
 @@ -2,6 +2,7 @@ import { useTerminalDimensions } from "@opentui/solid"
@@ -968,7 +1360,7 @@ index f2bdd1d9e1..ae7811480e 100644
          </box>
        }
 diff --git a/packages/tui/src/component/dialog-integration.tsx b/packages/tui/src/component/dialog-integration.tsx
-index 183e8df3af..b346ae6183 100644
+index 183e8df..b346ae6 100644
 --- a/packages/tui/src/component/dialog-integration.tsx
 +++ b/packages/tui/src/component/dialog-integration.tsx
 @@ -33,6 +33,7 @@ import {
@@ -1068,7 +1460,7 @@ index 183e8df3af..b346ae6183 100644
        )
        void openUrl(field.url).then(
 diff --git a/packages/tui/src/component/dialog-mcp.tsx b/packages/tui/src/component/dialog-mcp.tsx
-index 68e3778b42..aa0582b778 100644
+index 68e3778..aa0582b 100644
 --- a/packages/tui/src/component/dialog-mcp.tsx
 +++ b/packages/tui/src/component/dialog-mcp.tsx
 @@ -5,6 +5,7 @@ import { pipe, sortBy } from "remeda"
@@ -1104,7 +1496,7 @@ index 68e3778b42..aa0582b778 100644
  
  export function DialogMcp(props: { initialServer?: string; details?: boolean } = {}) {
 diff --git a/packages/tui/src/component/dialog-open.tsx b/packages/tui/src/component/dialog-open.tsx
-index f6d6412c18..ddab0c6ff5 100644
+index f6d6412..ddab0c6 100644
 --- a/packages/tui/src/component/dialog-open.tsx
 +++ b/packages/tui/src/component/dialog-open.tsx
 @@ -23,6 +23,7 @@ import { withTimestampedFallback } from "@opencode/util/session-title-fallback"
@@ -1215,7 +1607,7 @@ index f6d6412c18..ddab0c6ff5 100644
            onConfirm={(value) => {
              const id = projectID()!
 diff --git a/packages/tui/src/component/dialog-pair.tsx b/packages/tui/src/component/dialog-pair.tsx
-index 0bc0ce44b4..5e9d875450 100644
+index 0bc0ce4..3909a59 100644
 --- a/packages/tui/src/component/dialog-pair.tsx
 +++ b/packages/tui/src/component/dialog-pair.tsx
 @@ -7,6 +7,7 @@ import { useTheme } from "../context/theme"
@@ -1226,6 +1618,15 @@ index 0bc0ce44b4..5e9d875450 100644
  
  export function DialogPair() {
    const client = useClient()
+@@ -68,7 +69,7 @@ export function DialogPair() {
+           </box>
+           <Show when={value.loopback}>
+             <text fg={theme.text.muted} wrapMode="word">
+-              Run `opencode service set hostname 0.0.0.0` to access the service remotely.
++              Remote access requires an explicitly configured Carthagent service hostname.
+             </text>
+           </Show>
+         </box>
 @@ -91,7 +92,7 @@ export function DialogPair() {
        <Show
          when={loadError()}
@@ -1236,7 +1637,7 @@ index 0bc0ce44b4..5e9d875450 100644
                when={dimensions().height >= 36}
                fallback={
 diff --git a/packages/tui/src/component/dialog-session-list.tsx b/packages/tui/src/component/dialog-session-list.tsx
-index d5fb5ac4f9..5a59c28473 100644
+index d5fb5ac..5a59c28 100644
 --- a/packages/tui/src/component/dialog-session-list.tsx
 +++ b/packages/tui/src/component/dialog-session-list.tsx
 @@ -23,6 +23,7 @@ import { useConfig, useNewDesigns } from "../config"
@@ -1282,7 +1683,7 @@ index d5fb5ac4f9..5a59c28473 100644
    const prefix = first.slice(0, -1)
    if (first.endsWith("1") && last === `${prefix}9`) return `${prefix}1-9`
 diff --git a/packages/tui/src/component/dialog-shell-output.tsx b/packages/tui/src/component/dialog-shell-output.tsx
-index 42f0c98d1b..4ba60790d2 100644
+index 42f0c98..4ba6079 100644
 --- a/packages/tui/src/component/dialog-shell-output.tsx
 +++ b/packages/tui/src/component/dialog-shell-output.tsx
 @@ -7,9 +7,14 @@ import { useClient } from "../context/client"
@@ -1346,7 +1747,7 @@ index 42f0c98d1b..4ba60790d2 100644
            </text>
          </scrollbox>
 diff --git a/packages/tui/src/component/dialog-skill.tsx b/packages/tui/src/component/dialog-skill.tsx
-index 5e45e628b1..6d3d8ebb6c 100644
+index 5e45e62..6d3d8eb 100644
 --- a/packages/tui/src/component/dialog-skill.tsx
 +++ b/packages/tui/src/component/dialog-skill.tsx
 @@ -6,6 +6,7 @@ import { useTheme } from "../context/theme"
@@ -1367,7 +1768,7 @@ index 5e45e628b1..6d3d8ebb6c 100644
            </Match>
          </Switch>
 diff --git a/packages/tui/src/component/dialog-stash.tsx b/packages/tui/src/component/dialog-stash.tsx
-index 4113c7fd96..f80c7e9f35 100644
+index 4113c7f..f80c7e9 100644
 --- a/packages/tui/src/component/dialog-stash.tsx
 +++ b/packages/tui/src/component/dialog-stash.tsx
 @@ -5,6 +5,7 @@ import { Locale } from "../util/locale"
@@ -1388,7 +1789,7 @@ index 4113c7fd96..f80c7e9f35 100644
  
  export function DialogStash(props: { onSelect: (entry: StashEntry) => void }) {
 diff --git a/packages/tui/src/component/dialog-status.tsx b/packages/tui/src/component/dialog-status.tsx
-index f94f906cdf..2495eaf55b 100644
+index f94f906..2495eaf 100644
 --- a/packages/tui/src/component/dialog-status.tsx
 +++ b/packages/tui/src/component/dialog-status.tsx
 @@ -2,6 +2,7 @@ import { useTheme } from "../context/theme"
@@ -1408,8 +1809,21 @@ index f94f906cdf..2495eaf55b 100644
                  </text>
                  <text fg={theme.text.base} wrapMode="word">
                    <b>{item.name}</b>{" "}
+diff --git a/packages/tui/src/component/dialog-theme-list.tsx b/packages/tui/src/component/dialog-theme-list.tsx
+index 382373f..9ef7277 100644
+--- a/packages/tui/src/component/dialog-theme-list.tsx
++++ b/packages/tui/src/component/dialog-theme-list.tsx
+@@ -8,7 +8,7 @@ export function DialogThemeList() {
+   const options = Object.keys(themes.all())
+     .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
+     .map((value) => ({
+-      title: value,
++      title: value === "opencode" ? "Carthagent Classic" : value === "opencode2" ? "Carthagent Next" : value,
+       value: value,
+     }))
+   const dialog = useDialog()
 diff --git a/packages/tui/src/component/dialog-update.tsx b/packages/tui/src/component/dialog-update.tsx
-index 9dcf07b214..54469a0b69 100644
+index 9dcf07b..5bebafd 100644
 --- a/packages/tui/src/component/dialog-update.tsx
 +++ b/packages/tui/src/component/dialog-update.tsx
 @@ -6,6 +6,7 @@ import type { UpdateState } from "../context/update-notification"
@@ -1420,7 +1834,16 @@ index 9dcf07b214..54469a0b69 100644
  
  export function DialogUpdate(props: {
    check?: (signal: AbortSignal) => Promise<string | undefined>
-@@ -133,7 +134,7 @@ export function DialogUpdate(props: {
+@@ -92,7 +93,7 @@ export function DialogUpdate(props: {
+         <DialogHeader
+           title={
+             state().type === "installing"
+-              ? "Updating OpenCode"
++              ? "Updating Carthagent"
+               : state().type === "available" || state().type === "failed"
+                 ? "Update available"
+                 : "Update"
+@@ -133,16 +134,16 @@ export function DialogUpdate(props: {
          {(current) => (
            <Switch>
              <Match when={current.type === "checking"}>
@@ -1429,17 +1852,28 @@ index 9dcf07b214..54469a0b69 100644
              </Match>
              <Match when={current.type === "available"}>
                <text fg={theme.text.muted}>
-@@ -142,7 +143,7 @@ export function DialogUpdate(props: {
+-                An update is available. After installing, you'll be prompted to restart OpenCode.
++                An update is available. After installing, you'll be prompted to restart Carthagent.
+               </text>
              </Match>
              <Match when={current.type === "installing"}>
                <Spinner shimmer={theme.text.base}>
 -                {current.type === "installing" ? `Installing OpenCode ${current.version}…` : ""}
-+                {current.type === "installing" ? `Installing OpenCode ${current.version}${chromeEllipsis()}` : ""}
++                {current.type === "installing" ? `Installing Carthagent ${current.version}${chromeEllipsis()}` : ""}
                </Spinner>
              </Match>
              <Match when={current.type === "installed"}>
+@@ -151,7 +152,7 @@ export function DialogUpdate(props: {
+               </text>
+             </Match>
+             <Match when={current.type === "current"}>
+-              <text fg={theme.text.muted}>OpenCode is already up to date.</text>
++              <text fg={theme.text.muted}>Carthagent is already up to date.</text>
+             </Match>
+             <Match when={current.type === "unavailable"}>
+               <text fg={theme.text.muted} wrapMode="word">
 diff --git a/packages/tui/src/component/dialog-workspaces.tsx b/packages/tui/src/component/dialog-workspaces.tsx
-index 70aaa8ff4b..4f3a049714 100644
+index 70aaa8f..4f3a049 100644
 --- a/packages/tui/src/component/dialog-workspaces.tsx
 +++ b/packages/tui/src/component/dialog-workspaces.tsx
 @@ -15,6 +15,7 @@ import { errorMessage } from "../util/error"
@@ -1469,7 +1903,7 @@ index 70aaa8ff4b..4f3a049714 100644
            ) : (
              <box paddingLeft={DIALOG_LIST_INSET} paddingRight={DIALOG_LIST_INSET}>
 diff --git a/packages/tui/src/component/error-component.tsx b/packages/tui/src/component/error-component.tsx
-index 48ad4b107d..b4e46b9d8e 100644
+index 48ad4b1..3177ad2 100644
 --- a/packages/tui/src/component/error-component.tsx
 +++ b/packages/tui/src/component/error-component.tsx
 @@ -6,6 +6,7 @@ import { useClipboard } from "../context/clipboard"
@@ -1489,6 +1923,15 @@ index 48ad4b107d..b4e46b9d8e 100644
        copy: true,
        onUse: copyReport,
      },
+@@ -117,7 +118,7 @@ export function ErrorComponent(props: { error: Error; reset: () => void; mode?:
+         {/* Headline */}
+         <box flexDirection="column" alignItems="center" flexShrink={0}>
+           <text attributes={TextAttributes.BOLD} fg={colors.text}>
+-            OpenCode crashed
++            Carthagent crashed
+           </text>
+           <Show when={showSubtext()}>
+             <text fg={colors.muted}>An unexpected error stopped the session.</text>
 @@ -129,6 +130,7 @@ export function ErrorComponent(props: { error: Error; reset: () => void; mode?:
            flexShrink={0}
            border
@@ -1510,7 +1953,7 @@ index 48ad4b107d..b4e46b9d8e 100644
            bottomTitleAlignment="right"
            paddingLeft={1}
            paddingRight={1}
-@@ -205,7 +208,7 @@ export function ErrorComponent(props: { error: Error; reset: () => void; mode?:
+@@ -205,12 +208,12 @@ export function ErrorComponent(props: { error: Error; reset: () => void; mode?:
            <box flexDirection="column" alignItems="center" flexShrink={0}>
              <text fg={colors.muted}>
                {copyState() === "copied"
@@ -1519,17 +1962,42 @@ index 48ad4b107d..b4e46b9d8e 100644
                  : copyState() === "failed"
                    ? "Clipboard write failed. Try again or report the crash manually."
                    : "Copy the report and open a GitHub issue to help us fix this."}
-@@ -237,7 +240,7 @@ function buildIssueURL(message: string, stack: string, version: string) {
+             </text>
+-            <text fg={colors.muted}>OpenCode {app.version}</text>
++            <text fg={colors.muted}>Carthagent {app.version}</text>
+           </box>
+         </Show>
+       </box>
+@@ -222,14 +225,14 @@ function buildIssueURL(message: string, stack: string, version: string) {
+   // Field keys match the ids in .github/ISSUE_TEMPLATE/bug-report.yml so the issue
+   // form opens pre-filled. Populating os/terminal/reproduce keeps the report past
+   // the contributing-guidelines compliance check, which pushes for system info.
+-  const url = new URL("https://github.com/anomalyco/opencode/issues/new?template=bug-report.yml")
++  const url = new URL("https://github.com/B-icy/Carthagent/issues/new")
+   url.searchParams.set("title", `TUI crash: ${message}`)
+   url.searchParams.set("opencode-version", version)
+   url.searchParams.set("os", describeOS())
+   url.searchParams.set("terminal", describeTerminal())
+   url.searchParams.set(
+     "reproduce",
+-    "Reported automatically from the OpenCode crash screen. If you can, describe what you were doing when it crashed.",
++    "Reported automatically from the Carthagent crash screen. If you can, describe what you were doing when it crashed.",
+   )
+ 
+   // Budget the stack against the fully URL-encoded length (not the raw length) so
+@@ -237,8 +240,8 @@ function buildIssueURL(message: string, stack: string, version: string) {
    // clipped trace is obvious. searchParams.set handles encoding without throwing,
    // so measuring url.toString() is both correct and safe on any input.
    const MAX_URL_LENGTH = 6000
 -  const marker = "\n… (truncated)"
+-  const head = `The OpenCode TUI crashed with an unexpected error.\n\n**Error:** ${message}\n\n**Stack trace:**\n`
 +  const marker = `\n${chromeGlyph("…")} (truncated)`
-   const head = `The OpenCode TUI crashed with an unexpected error.\n\n**Error:** ${message}\n\n**Stack trace:**\n`
++  const head = `The Carthagent TUI crashed with an unexpected error.\n\n**Error:** ${message}\n\n**Stack trace:**\n`
    const setBody = (body: string) => url.searchParams.set("description", head + "```\n" + body + "\n```")
  
+   setBody(stack)
 diff --git a/packages/tui/src/component/logo.tsx b/packages/tui/src/component/logo.tsx
-index 2c3abc3cb0..e9e4e3bf95 100644
+index 2c3abc3..e9e4e3b 100644
 --- a/packages/tui/src/component/logo.tsx
 +++ b/packages/tui/src/component/logo.tsx
 @@ -4,10 +4,18 @@ import { useTerminalDimensions } from "@opentui/solid"
@@ -1582,7 +2050,7 @@ index 2c3abc3cb0..e9e4e3bf95 100644
            )}
          </For>
 diff --git a/packages/tui/src/component/prompt/autocomplete.tsx b/packages/tui/src/component/prompt/autocomplete.tsx
-index c669491c09..df8dadef7f 100644
+index c669491..df8dade 100644
 --- a/packages/tui/src/component/prompt/autocomplete.tsx
 +++ b/packages/tui/src/component/prompt/autocomplete.tsx
 @@ -14,6 +14,7 @@ import { useConfig } from "../../config"
@@ -1674,7 +2142,7 @@ index c669491c09..df8dadef7f 100644
                  </text>
                  <Show when={!confirmingAction() && option().description}>
 diff --git a/packages/tui/src/component/prompt/index.tsx b/packages/tui/src/component/prompt/index.tsx
-index a9f699c08a..74e84dbf06 100644
+index a9f699c..74e84db 100644
 --- a/packages/tui/src/component/prompt/index.tsx
 +++ b/packages/tui/src/component/prompt/index.tsx
 @@ -14,6 +14,7 @@ import { useTheme, useThemes } from "../../context/theme"
@@ -1773,7 +2241,7 @@ index a9f699c08a..74e84dbf06 100644
                          </Show>
                        </box>
 diff --git a/packages/tui/src/component/prompt/metadata.tsx b/packages/tui/src/component/prompt/metadata.tsx
-index 60c47397dc..d9fddeb91e 100644
+index 60c4739..d9fddeb 100644
 --- a/packages/tui/src/component/prompt/metadata.tsx
 +++ b/packages/tui/src/component/prompt/metadata.tsx
 @@ -2,6 +2,7 @@ import { RGBA, TextAttributes } from "@opentui/core"
@@ -1843,7 +2311,7 @@ index 60c47397dc..d9fddeb91e 100644
    ].join(" ")
  }
 diff --git a/packages/tui/src/component/reconnecting.tsx b/packages/tui/src/component/reconnecting.tsx
-index 773eadaaeb..f612976132 100644
+index 773eada..f612976 100644
 --- a/packages/tui/src/component/reconnecting.tsx
 +++ b/packages/tui/src/component/reconnecting.tsx
 @@ -1,6 +1,7 @@
@@ -1866,7 +2334,7 @@ index 773eadaaeb..f612976132 100644
            {props.managed
              ? "Your session will resume automatically."
 diff --git a/packages/tui/src/component/session-tabs-rail.tsx b/packages/tui/src/component/session-tabs-rail.tsx
-index 8ecaa95787..65c0626d6a 100644
+index 8ecaa95..65c0626 100644
 --- a/packages/tui/src/component/session-tabs-rail.tsx
 +++ b/packages/tui/src/component/session-tabs-rail.tsx
 @@ -2,6 +2,7 @@ import { createMemo, createSignal } from "solid-js"
@@ -1905,7 +2373,7 @@ index 8ecaa95787..65c0626d6a 100644
    )
  }
 diff --git a/packages/tui/src/component/session-tabs.tsx b/packages/tui/src/component/session-tabs.tsx
-index fdd23a43cb..540f63463e 100644
+index fdd23a4..540f634 100644
 --- a/packages/tui/src/component/session-tabs.tsx
 +++ b/packages/tui/src/component/session-tabs.tsx
 @@ -51,6 +51,7 @@ import { DialogSessionRename } from "./dialog-session-rename"
@@ -2016,7 +2484,7 @@ index fdd23a43cb..540f63463e 100644
        </Show>
        <Show when={showPlus()}>
 diff --git a/packages/tui/src/component/spinner-frames.ts b/packages/tui/src/component/spinner-frames.ts
-index dca99b642a..3869068d90 100644
+index dca99b6..3869068 100644
 --- a/packages/tui/src/component/spinner-frames.ts
 +++ b/packages/tui/src/component/spinner-frames.ts
 @@ -1 +1,7 @@
@@ -2029,7 +2497,7 @@ index dca99b642a..3869068d90 100644
 +}
 +export const SPINNER_FRAMES = spinnerFrames()
 diff --git a/packages/tui/src/component/spinner.tsx b/packages/tui/src/component/spinner.tsx
-index 3207dcb6e4..08a92ee9cf 100644
+index 3207dcb..08a92ee 100644
 --- a/packages/tui/src/component/spinner.tsx
 +++ b/packages/tui/src/component/spinner.tsx
 @@ -6,6 +6,7 @@ import type { RGBA } from "@opentui/core"
@@ -2050,7 +2518,7 @@ index 3207dcb6e4..08a92ee9cf 100644
        <Show
          when={props.shimmer}
 diff --git a/packages/tui/src/component/startup-loading.tsx b/packages/tui/src/component/startup-loading.tsx
-index 3df79782c6..c1e437df95 100644
+index 3df7978..c1e437d 100644
 --- a/packages/tui/src/component/startup-loading.tsx
 +++ b/packages/tui/src/component/startup-loading.tsx
 @@ -1,11 +1,14 @@
@@ -2070,7 +2538,7 @@ index 3df79782c6..c1e437df95 100644
    let hold: NodeJS.Timeout | undefined
    let stamp = 0
 diff --git a/packages/tui/src/component/tab-pulse.tsx b/packages/tui/src/component/tab-pulse.tsx
-index a6072fe109..59e891b868 100644
+index a6072fe..59e891b 100644
 --- a/packages/tui/src/component/tab-pulse.tsx
 +++ b/packages/tui/src/component/tab-pulse.tsx
 @@ -1,5 +1,6 @@
@@ -2089,8 +2557,34 @@ index a6072fe109..59e891b868 100644
          this.renderColor,
          this.outerRenderColor,
        )
+diff --git a/packages/tui/src/component/terminal-pane.tsx b/packages/tui/src/component/terminal-pane.tsx
+index c5e0be3..f1577b8 100644
+--- a/packages/tui/src/component/terminal-pane.tsx
++++ b/packages/tui/src/component/terminal-pane.tsx
+@@ -240,7 +240,7 @@ export function TerminalPane(props: {
+       }
+       if (message.type !== "attached") return
+       if (!("inputProtocol" in message) || message.inputProtocol !== 1) {
+-        setFailure("Persistent terminal server is out of date; restart OpenCode")
++        setFailure("Persistent terminal server is out of date; restart Carthagent")
+         next.close()
+         return
+       }
+diff --git a/packages/tui/src/config/index.tsx b/packages/tui/src/config/index.tsx
+index 953d597..34b11d6 100644
+--- a/packages/tui/src/config/index.tsx
++++ b/packages/tui/src/config/index.tsx
+@@ -249,7 +249,7 @@ export const Info = Schema.Struct({
+   }),
+   animations: Schema.optional(Schema.Boolean).annotate({ description: "Enable interface animations" }),
+   highlights: Schema.optional(Schema.Boolean).annotate({
+-    description: "Show the release highlights once after OpenCode updates",
++    description: "Show the release highlights once after Carthagent updates",
+   }),
+   mouse: Schema.optional(Schema.Boolean).annotate({ description: "Enable terminal mouse capture" }),
+   cursor: Schema.optional(Cursor),
 diff --git a/packages/tui/src/context/keymap.tsx b/packages/tui/src/context/keymap.tsx
-index 521b3aeac8..6d6ae30290 100644
+index 521b3ae..6d6ae30 100644
 --- a/packages/tui/src/context/keymap.tsx
 +++ b/packages/tui/src/context/keymap.tsx
 @@ -25,6 +25,7 @@ import {
@@ -2117,7 +2611,7 @@ index 521b3aeac8..6d6ae30290 100644
        pagedown: "pgdn",
        delete: "del",
 diff --git a/packages/tui/src/context/session-tabs-model.ts b/packages/tui/src/context/session-tabs-model.ts
-index 856f9961e7..0a1356cedc 100644
+index 856f996..0a1356c 100644
 --- a/packages/tui/src/context/session-tabs-model.ts
 +++ b/packages/tui/src/context/session-tabs-model.ts
 @@ -1,3 +1,5 @@
@@ -2136,7 +2630,7 @@ index 856f9961e7..0a1356cedc 100644
  
  export type SessionTabHistory = {
 diff --git a/packages/tui/src/context/theme.tsx b/packages/tui/src/context/theme.tsx
-index ed568e695c..2d7d363a40 100644
+index ed568e6..2d7d363 100644
 --- a/packages/tui/src/context/theme.tsx
 +++ b/packages/tui/src/context/theme.tsx
 @@ -94,6 +94,7 @@ type Themes = {
@@ -2159,7 +2653,7 @@ index ed568e695c..2d7d363a40 100644
        lock: () => pin(mode()),
        unlock: free,
 diff --git a/packages/tui/src/feature-plugins/home/footer.tsx b/packages/tui/src/feature-plugins/home/footer.tsx
-index d31888c277..eb939a1b51 100644
+index d31888c..eb939a1 100644
 --- a/packages/tui/src/feature-plugins/home/footer.tsx
 +++ b/packages/tui/src/feature-plugins/home/footer.tsx
 @@ -1,6 +1,7 @@
@@ -2198,7 +2692,7 @@ index d31888c277..eb939a1b51 100644
          </text>
          <Show when={visibility().pluginCommand}>
 diff --git a/packages/tui/src/feature-plugins/prompt/btw.tsx b/packages/tui/src/feature-plugins/prompt/btw.tsx
-index 6aca560702..1cc488b4ea 100644
+index 6aca560..1cc488b 100644
 --- a/packages/tui/src/feature-plugins/prompt/btw.tsx
 +++ b/packages/tui/src/feature-plugins/prompt/btw.tsx
 @@ -3,6 +3,7 @@ import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core"
@@ -2231,7 +2725,7 @@ index 6aca560702..1cc488b4ea 100644
            }}
          />
 diff --git a/packages/tui/src/feature-plugins/prompt/footer.tsx b/packages/tui/src/feature-plugins/prompt/footer.tsx
-index f8fafdce21..b2bca2b046 100644
+index f8fafdc..b2bca2b 100644
 --- a/packages/tui/src/feature-plugins/prompt/footer.tsx
 +++ b/packages/tui/src/feature-plugins/prompt/footer.tsx
 @@ -5,6 +5,7 @@ import { useTerminalDimensions } from "@opentui/solid"
@@ -2283,7 +2777,7 @@ index f8fafdce21..b2bca2b046 100644
    }
    if (usage && stringWidth(usage) <= available) return { usage: true, shortcuts: false }
 diff --git a/packages/tui/src/feature-plugins/sidebar/footer.tsx b/packages/tui/src/feature-plugins/sidebar/footer.tsx
-index b875d5ffe8..75609b21f7 100644
+index b875d5f..de0484a 100644
 --- a/packages/tui/src/feature-plugins/sidebar/footer.tsx
 +++ b/packages/tui/src/feature-plugins/sidebar/footer.tsx
 @@ -5,6 +5,7 @@ import { FilePath } from "../../ui/file-path"
@@ -2303,7 +2797,7 @@ index b875d5ffe8..75609b21f7 100644
          </text>
          <box flexGrow={1} gap={1}>
            <box flexDirection="row" justifyContent="space-between">
-@@ -51,7 +52,7 @@ export function SidebarOnboarding(props: { context: Plugin.Context; sessionID: s
+@@ -51,12 +52,12 @@ export function SidebarOnboarding(props: { context: Plugin.Context; sessionID: s
                  }).catch((error) => console.error("Failed to dismiss sidebar onboarding", error))
                }}
              >
@@ -2311,9 +2805,25 @@ index b875d5ffe8..75609b21f7 100644
 +              {chromeGlyph("✕")}
              </text>
            </box>
-           <text fg={props.context.theme.text.muted}>OpenCode includes free models so you can start immediately.</text>
+-          <text fg={props.context.theme.text.muted}>OpenCode includes free models so you can start immediately.</text>
++          <text fg={props.context.theme.text.muted}>Connect Carthagent Ship or your preferred provider to get started.</text>
+           <text fg={props.context.theme.text.muted}>
+-            Connect from 75+ providers to use other models, including Claude, GPT, Gemini etc
++            Choose Ship, Claude, xAI, Codex/OpenAI, or Gemini.
+           </text>
+           <box
+             id="sidebar.footer.getting-started.connect"
+@@ -66,7 +67,7 @@ export function SidebarOnboarding(props: { context: Plugin.Context; sessionID: s
+             onMouseUp={() => props.context.keymap.dispatch("provider.connect")}
+           >
+             <text fg={props.context.theme.text.base}>Connect provider</text>
+-            <text fg={props.context.theme.text.muted}>/connect</text>
++            <text fg={props.context.theme.text.muted}>/login</text>
+           </box>
+         </box>
+       </box>
 diff --git a/packages/tui/src/feature-plugins/sidebar/mcp.tsx b/packages/tui/src/feature-plugins/sidebar/mcp.tsx
-index 6018ff0ccb..f192f9ebe1 100644
+index 6018ff0..f192f9e 100644
 --- a/packages/tui/src/feature-plugins/sidebar/mcp.tsx
 +++ b/packages/tui/src/feature-plugins/sidebar/mcp.tsx
 @@ -1,6 +1,7 @@
@@ -2343,7 +2853,7 @@ index 6018ff0ccb..f192f9ebe1 100644
                  <text fg={theme.text.base} wrapMode="none" truncate flexGrow={1} flexShrink={1} minWidth={0}>
                    <b>{item.name}</b>
 diff --git a/packages/tui/src/feature-plugins/system/diff-viewer-file-tree.tsx b/packages/tui/src/feature-plugins/system/diff-viewer-file-tree.tsx
-index 4a2c4dc06b..7d0a7d4df5 100644
+index 4a2c4dc..7d0a7d4 100644
 --- a/packages/tui/src/feature-plugins/system/diff-viewer-file-tree.tsx
 +++ b/packages/tui/src/feature-plugins/system/diff-viewer-file-tree.tsx
 @@ -3,6 +3,7 @@ import { MouseButton, TextAttributes, type MouseEvent, type ScrollBoxRenderable
@@ -2408,7 +2918,7 @@ index 4a2c4dc06b..7d0a7d4df5 100644
 +  return `${chromeEllipsis()}/${kept.join("/")}`
  }
 diff --git a/packages/tui/src/feature-plugins/system/diff-viewer-image.tsx b/packages/tui/src/feature-plugins/system/diff-viewer-image.tsx
-index cb7f080179..7dc0b46ff8 100644
+index cb7f080..7dc0b46 100644
 --- a/packages/tui/src/feature-plugins/system/diff-viewer-image.tsx
 +++ b/packages/tui/src/feature-plugins/system/diff-viewer-image.tsx
 @@ -5,6 +5,7 @@ import { createResource, createSignal, Match, onCleanup, Show, Switch } from "so
@@ -2429,7 +2939,7 @@ index cb7f080179..7dc0b46ff8 100644
            <Match when={!image.error && image()} keyed>
              {(bytes) => {
 diff --git a/packages/tui/src/feature-plugins/system/diff-viewer.tsx b/packages/tui/src/feature-plugins/system/diff-viewer.tsx
-index 0e333fffcc..18fa75543b 100644
+index 0e333ff..18fa755 100644
 --- a/packages/tui/src/feature-plugins/system/diff-viewer.tsx
 +++ b/packages/tui/src/feature-plugins/system/diff-viewer.tsx
 @@ -20,6 +20,7 @@ import { DiffViewerImage, isDiffImageFile } from "./diff-viewer-image"
@@ -2543,7 +3053,7 @@ index 0e333fffcc..18fa75543b 100644
    )
    return (
 diff --git a/packages/tui/src/feature-plugins/system/stats.tsx b/packages/tui/src/feature-plugins/system/stats.tsx
-index 950d322422..ec6fb8625c 100644
+index 950d322..bccce7d 100644
 --- a/packages/tui/src/feature-plugins/system/stats.tsx
 +++ b/packages/tui/src/feature-plugins/system/stats.tsx
 @@ -6,6 +6,7 @@ import { useTerminalDimensions } from "@opentui/solid"
@@ -2554,6 +3064,24 @@ index 950d322422..ec6fb8625c 100644
  import { tint } from "../../theme/color"
  import { statsMetrics, statsNumber } from "./stats-data"
  
+@@ -62,7 +63,7 @@ export function StatsPoster(props: { stats: SessionStatsInfo }) {
+     <box width={width()} flexDirection="column" alignItems="center" flexShrink={0} gap={compact() ? 1 : 2}>
+       <box width="100%" flexDirection={width() < 44 ? "column" : "row"} justifyContent="space-between">
+         <text fg={theme.text.base} attributes={TextAttributes.BOLD}>
+-          opencode / stats
++          carthagent / stats
+         </text>
+         <text fg={theme.text.muted}>{dates()}</text>
+       </box>
+@@ -131,7 +132,7 @@ export function StatsPoster(props: { stats: SessionStatsInfo }) {
+         </For>
+       </box>
+       <box width="100%" flexDirection="row" justifyContent="flex-end">
+-        <text fg={theme.text.base}>opencode.ai</text>
++        <text fg={theme.text.base}>Carthagent</text>
+       </box>
+     </box>
+   )
 @@ -170,7 +171,7 @@ function StatsPage(props: { context: Plugin.Context; onClose: () => void }) {
              <text fg={theme.text.feedback.error.base}>Could not load stats. Reopen /stats to try again.</text>
            }
@@ -2564,7 +3092,7 @@ index 950d322422..ec6fb8625c 100644
            </Show>
          </Show>
 diff --git a/packages/tui/src/feature-plugins/system/storybook/footer.tsx b/packages/tui/src/feature-plugins/system/storybook/footer.tsx
-index 8b1fe2a519..bead551cb8 100644
+index 8b1fe2a..bead551 100644
 --- a/packages/tui/src/feature-plugins/system/storybook/footer.tsx
 +++ b/packages/tui/src/feature-plugins/system/storybook/footer.tsx
 @@ -1,5 +1,6 @@
@@ -2592,8 +3120,30 @@ index 8b1fe2a519..bead551cb8 100644
                {props.message ?? ""}
              </span>
            </text>
+diff --git a/packages/tui/src/feature-plugins/system/storybook/highlights.tsx b/packages/tui/src/feature-plugins/system/storybook/highlights.tsx
+index cf03eca..7952988 100644
+--- a/packages/tui/src/feature-plugins/system/storybook/highlights.tsx
++++ b/packages/tui/src/feature-plugins/system/storybook/highlights.tsx
+@@ -9,7 +9,7 @@ import { StoryFooter } from "./footer"
+ const items = [
+   {
+     title: "Built-In Worktree Tools",
+-    body: "Ask OpenCode to use `worktree_create`, `worktree_list`, and `worktree_remove` in Code Mode. You can create isolated worktrees, move sessions into them, and remove them with normal edit approval.",
++    body: "Ask Carthagent to use `worktree_create`, `worktree_list`, and `worktree_remove` in Code Mode. You can create isolated worktrees, move sessions into them, and remove them with normal edit approval.",
+   },
+   {
+     title: "Safer Remote Pairing",
+@@ -17,7 +17,7 @@ const items = [
+   },
+   {
+     title: "Installable Web App",
+-    body: "Use Chrome or Edge’s Install button to install the OpenCode web app, including when it runs behind an authenticating proxy.",
++    body: "Use Chrome or Edge’s Install button to install the Carthagent web app, including when it runs behind an authenticating proxy.",
+   },
+   {
+     title: "Clear Session Failures",
 diff --git a/packages/tui/src/feature-plugins/system/storybook/index.tsx b/packages/tui/src/feature-plugins/system/storybook/index.tsx
-index f69e3da68b..aab75d8fc8 100644
+index f69e3da..aab75d8 100644
 --- a/packages/tui/src/feature-plugins/system/storybook/index.tsx
 +++ b/packages/tui/src/feature-plugins/system/storybook/index.tsx
 @@ -8,6 +8,7 @@ import { sessionLocationMissingStory } from "./session-location-missing"
@@ -2623,10 +3173,10 @@ index f69e3da68b..aab75d8fc8 100644
            { shortcut: "esc", label: "home" },
          ]}
 diff --git a/packages/tui/src/feature-plugins/system/storybook/merman-layouts.tsx b/packages/tui/src/feature-plugins/system/storybook/merman-layouts.tsx
-index 19c6ed906b..d7348f8e3b 100644
+index 19c6ed9..1bb1380 100644
 --- a/packages/tui/src/feature-plugins/system/storybook/merman-layouts.tsx
 +++ b/packages/tui/src/feature-plugins/system/storybook/merman-layouts.tsx
-@@ -5,6 +5,7 @@ import { useTheme, useThemes } from "../../../context/theme"
+@@ -5,13 +5,14 @@ import { useTheme, useThemes } from "../../../context/theme"
  import { usePlugin } from "../../../plugin/context"
  import type { Story } from "./index"
  import { StoryFooter } from "./footer"
@@ -2634,6 +3184,14 @@ index 19c6ed906b..d7348f8e3b 100644
  
  const fixtures = [
    {
+     id: "deployment",
+     title: "Deployment architecture",
+     source: `flowchart LR
+-  Client[OpenCode client]
++  Client[Carthagent client]
+ 
+   subgraph CF[Cloudflare]
+     DNS[opencode.ai]
 @@ -185,7 +186,7 @@ function MermanLayoutsStory(props: { context: Plugin.Context }) {
          title="storybook / Mermaid layouts"
          details={[`${selected() + 1}/${fixtures.length}`, fixture().id, `${dimensions().width}x${dimensions().height}`]}
@@ -2644,7 +3202,7 @@ index 19c6ed906b..d7348f8e3b 100644
            { shortcut: "esc", label: "back" },
          ]}
 diff --git a/packages/tui/src/feature-plugins/system/storybook/session-location-missing.tsx b/packages/tui/src/feature-plugins/system/storybook/session-location-missing.tsx
-index c62d07b954..fd17fd9a0e 100644
+index c62d07b..fd17fd9 100644
 --- a/packages/tui/src/feature-plugins/system/storybook/session-location-missing.tsx
 +++ b/packages/tui/src/feature-plugins/system/storybook/session-location-missing.tsx
 @@ -6,6 +6,7 @@ import { DialogWorkspaces } from "../../../component/dialog-workspaces"
@@ -2671,7 +3229,7 @@ index c62d07b954..fd17fd9a0e 100644
          <box flexGrow={1} />
          <SessionLocationUnavailable directory={directory} onMove={open} />
 diff --git a/packages/tui/src/feature-plugins/system/storybook/session-tabs.tsx b/packages/tui/src/feature-plugins/system/storybook/session-tabs.tsx
-index 81a854320c..69321995d9 100644
+index 81a8543..6932199 100644
 --- a/packages/tui/src/feature-plugins/system/storybook/session-tabs.tsx
 +++ b/packages/tui/src/feature-plugins/system/storybook/session-tabs.tsx
 @@ -13,6 +13,7 @@ import {
@@ -2743,8 +3301,103 @@ index 81a854320c..69321995d9 100644
            { shortcut: "o", label: "layout" },
            { shortcut: "drag edge", label: "resize / double-click reset" },
            { shortcut: "r", label: "reset idle" },
+diff --git a/packages/tui/src/logo.ts b/packages/tui/src/logo.ts
+index 8c570fb..93e15f2 100644
+--- a/packages/tui/src/logo.ts
++++ b/packages/tui/src/logo.ts
+@@ -1,9 +1,16 @@
+ export const logo = {
+-  left: ["                   ", "█▀▀█ █▀▀█ █▀▀█ █▀▀▄", "█__█ █__█ █^^^ █__█", "▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀~~▀"],
+-  right: ["             ▄     ", "█▀▀▀ █▀▀█ █▀▀█ █▀▀█", "█___ █__█ █__█ █^^^", "▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀"],
++  "left": [
++    "                   ",
++    "█▀▀ █▀█ █▀█ ▀█▀ █ █",
++    "█   █▀█ █▀▄  █  █▀█",
++    "▀▀▀ ▀ ▀ ▀ ▀  ▀  ▀ ▀"
++  ],
++  "right": [
++    "                    ",
++    "█▀█ █▀▀ █▀▀ █▄ █ ▀█▀",
++    "█▀█ █ █ █▀▀ █ ▀█  █ ",
++    "▀ ▀ ▀▀▀ ▀▀▀ ▀  ▀  ▀ "
++  ]
+ }
+ 
+-export const go = {
+-  left: ["    ", "█▀▀▀", "█_^█", "▀▀▀▀"],
+-  right: ["    ", "█▀▀█", "█__█", "▀▀▀▀"],
+-}
++export const go = { left: ["", "CTG", "", ""], right: ["", "CTG", "", ""] }
+diff --git a/packages/tui/src/mini/footer.permission.tsx b/packages/tui/src/mini/footer.permission.tsx
+index 6f11e85..d751d18 100644
+--- a/packages/tui/src/mini/footer.permission.tsx
++++ b/packages/tui/src/mini/footer.permission.tsx
+@@ -110,7 +110,7 @@ export function RejectField(props: {
+       minHeight={1}
+       maxHeight={3}
+       wrapMode="word"
+-      placeholder="Tell OpenCode what to do differently"
++      placeholder="Tell Carthagent what to do differently"
+       placeholderColor={props.theme.muted}
+       textColor={props.theme.formfieldText}
+       focusedTextColor={props.theme.formfieldFocusedText}
+@@ -322,7 +322,7 @@ export function RunPermissionBody(props: {
+           {title()}
+         </text>
+         <Show when={!compact() && stage() === "reject"}>
+-          <text fg={props.theme.muted}>Tell OpenCode what to do differently</text>
++          <text fg={props.theme.muted}>Tell Carthagent what to do differently</text>
+         </Show>
+       </box>
+ 
+diff --git a/packages/tui/src/mini/footer.prompt.tsx b/packages/tui/src/mini/footer.prompt.tsx
+index d698f12..b10c166 100644
+--- a/packages/tui/src/mini/footer.prompt.tsx
++++ b/packages/tui/src/mini/footer.prompt.tsx
+@@ -534,7 +534,7 @@ export function createPromptState(input: PromptInput): PromptState {
+         description: "compact older session context to free space",
+       } satisfies SlashOption,
+       ...EXIT_COMMANDS.map(
+-        (name) => ({ kind: "slash", name, display: `/${name}`, description: "close OpenCode" }) satisfies SlashOption,
++        (name) => ({ kind: "slash", name, display: `/${name}`, description: "close Carthagent" }) satisfies SlashOption,
+       ),
+     ]
+     const hidden = new Set(builtins.map((item) => item.name))
+diff --git a/packages/tui/src/mini/runtime.lifecycle.ts b/packages/tui/src/mini/runtime.lifecycle.ts
+index 6a103bc..8a0c63b 100644
+--- a/packages/tui/src/mini/runtime.lifecycle.ts
++++ b/packages/tui/src/mini/runtime.lifecycle.ts
+@@ -1,3 +1,4 @@
++import { productTerminalTitle } from "../product"
+ // Lifecycle management for the split-footer renderer.
+ //
+ // Creates the OpenTUI CliRenderer in split-footer mode, resolves the theme
+@@ -174,8 +175,8 @@ export async function createRuntimeLifecycle(input: LifecycleInput): Promise<Lif
+   if (mono) renderer.on(CliRenderEvents.EXTERNAL_OUTPUT, monoSnapshot)
+   const setTitle = (title?: string) => {
+     if (input.host.platform !== "linux") return
+-    if (!title || isFallbackTitle(title)) return renderer.setTerminalTitle("OpenCode")
+-    renderer.setTerminalTitle(`OC | ${title.length > 40 ? title.slice(0, 37) + "…" : title}`)
++    if (!title || isFallbackTitle(title)) return renderer.setTerminalTitle(productTerminalTitle())
++    renderer.setTerminalTitle(productTerminalTitle(title))
+   }
+   setTitle(input.sessionTitle)
+   const theme = await resolveRunTheme(renderer, tuiConfig.theme, mono)
+diff --git a/packages/tui/src/mini/splash.ts b/packages/tui/src/mini/splash.ts
+index 123b224..dcec1b9 100644
+--- a/packages/tui/src/mini/splash.ts
++++ b/packages/tui/src/mini/splash.ts
+@@ -181,7 +181,7 @@ function buildExit(input: SplashWriterInput, ctx: ScrollbackRenderContext): Scro
+   const body_left = (mark[0]?.length ?? 0) + 2
+   const session = "Session  "
+   const label = "Continue "
+-  const command = `opencode mini -s ${meta.session_id}`
++  const command = `ctg native --session ${meta.session_id}`
+   const wide = body_left + stringWidth(label + command) <= width
+   const commandHeight = wide ? 1 : Math.ceil(stringWidth(command) / width)
+ 
 diff --git a/packages/tui/src/plugin/api.tsx b/packages/tui/src/plugin/api.tsx
-index 35a4eac6e5..4fdc50d422 100644
+index 35a4eac..4fdc50d 100644
 --- a/packages/tui/src/plugin/api.tsx
 +++ b/packages/tui/src/plugin/api.tsx
 @@ -32,9 +32,43 @@ import { useSessionTabs } from "../context/session-tabs"
@@ -2833,7 +3486,7 @@ index 35a4eac6e5..4fdc50d422 100644
          path: (value) => abbreviateHome(value, host.paths.home),
        },
 diff --git a/packages/tui/src/plugin/context.tsx b/packages/tui/src/plugin/context.tsx
-index 31c4f4cea0..b04abf548e 100644
+index 31c4f4c..b04abf5 100644
 --- a/packages/tui/src/plugin/context.tsx
 +++ b/packages/tui/src/plugin/context.tsx
 @@ -62,6 +62,13 @@ type Value = {
@@ -2867,8 +3520,22 @@ index 31c4f4cea0..b04abf548e 100644
 +  if (value) return value
 +  throw new Error("PluginProvider is missing")
  }
+diff --git a/packages/tui/src/product.ts b/packages/tui/src/product.ts
+new file mode 100644
+index 0000000..b26e816
+--- /dev/null
++++ b/packages/tui/src/product.ts
+@@ -0,0 +1,8 @@
++import { chromeEllipsis } from "./ui/glyphs"
++
++export const PRODUCT_NAME = "Carthagent"
++
++export function productTerminalTitle(title?: string) {
++  if (!title) return PRODUCT_NAME
++  return `CTG | ${title.length > 40 ? title.slice(0, 37) + chromeEllipsis() : title}`
++}
 diff --git a/packages/tui/src/routes/session/activity-summary.ts b/packages/tui/src/routes/session/activity-summary.ts
-index 6578f50d63..a9676c9031 100644
+index 6578f50..a9676c9 100644
 --- a/packages/tui/src/routes/session/activity-summary.ts
 +++ b/packages/tui/src/routes/session/activity-summary.ts
 @@ -9,6 +9,7 @@ import { visitEntries } from "./anchor-view"
@@ -2895,7 +3562,7 @@ index 6578f50d63..a9676c9031 100644
  
  /**
 diff --git a/packages/tui/src/routes/session/composer/index.tsx b/packages/tui/src/routes/session/composer/index.tsx
-index 2af8bfb521..4427c90c99 100644
+index 2af8bfb..4427c90 100644
 --- a/packages/tui/src/routes/session/composer/index.tsx
 +++ b/packages/tui/src/routes/session/composer/index.tsx
 @@ -3,6 +3,7 @@ import { createStore } from "solid-js/store"
@@ -2916,7 +3583,7 @@ index 2af8bfb521..4427c90c99 100644
                </Show>
              </box>
 diff --git a/packages/tui/src/routes/session/dialog-execute.tsx b/packages/tui/src/routes/session/dialog-execute.tsx
-index 86f9c8f1c5..b8d1740071 100644
+index 86f9c8f..b8d1740 100644
 --- a/packages/tui/src/routes/session/dialog-execute.tsx
 +++ b/packages/tui/src/routes/session/dialog-execute.tsx
 @@ -17,6 +17,7 @@ import {
@@ -2981,7 +3648,7 @@ index 86f9c8f1c5..b8d1740071 100644
                  }
                >
 diff --git a/packages/tui/src/routes/session/dialog-fork.tsx b/packages/tui/src/routes/session/dialog-fork.tsx
-index 2ba1a27fe1..df2666114f 100644
+index 2ba1a27..df26661 100644
 --- a/packages/tui/src/routes/session/dialog-fork.tsx
 +++ b/packages/tui/src/routes/session/dialog-fork.tsx
 @@ -3,6 +3,7 @@ import { useData } from "../../context/data"
@@ -3002,7 +3669,7 @@ index 2ba1a27fe1..df2666114f 100644
        }
      >
 diff --git a/packages/tui/src/routes/session/form.tsx b/packages/tui/src/routes/session/form.tsx
-index cba007198f..220b491c7e 100644
+index cba0071..220b491 100644
 --- a/packages/tui/src/routes/session/form.tsx
 +++ b/packages/tui/src/routes/session/form.tsx
 @@ -15,6 +15,7 @@ import type { FormAnswer, FormField, FormValue } from "@opencode/client"
@@ -3098,7 +3765,7 @@ index cba007198f..220b491c7e 100644
            </Show>
            <text
 diff --git a/packages/tui/src/routes/session/group-view.tsx b/packages/tui/src/routes/session/group-view.tsx
-index 2e09fc5e84..bcf83e0c9c 100644
+index 2e09fc5..bcf83e0 100644
 --- a/packages/tui/src/routes/session/group-view.tsx
 +++ b/packages/tui/src/routes/session/group-view.tsx
 @@ -5,6 +5,7 @@ import type { SessionMessageAssistantTool, SessionMessageInfo } from "@opencode/
@@ -3159,7 +3826,7 @@ index 2e09fc5e84..bcf83e0c9c 100644
    return (
      <Show when={!props.pendingOutside}>
 diff --git a/packages/tui/src/routes/session/index.tsx b/packages/tui/src/routes/session/index.tsx
-index 0b8228ef87..2dea17078c 100644
+index 0b8228e..2dea170 100644
 --- a/packages/tui/src/routes/session/index.tsx
 +++ b/packages/tui/src/routes/session/index.tsx
 @@ -19,6 +19,7 @@ import { useRoute, useRouteData } from "../../context/route"
@@ -3633,7 +4300,7 @@ index 0b8228ef87..2dea17078c 100644
      </InlineTool>
    )
 diff --git a/packages/tui/src/routes/session/location-missing.tsx b/packages/tui/src/routes/session/location-missing.tsx
-index d42aada29f..15f1d0ec37 100644
+index d42aada..15f1d0e 100644
 --- a/packages/tui/src/routes/session/location-missing.tsx
 +++ b/packages/tui/src/routes/session/location-missing.tsx
 @@ -10,6 +10,7 @@ import { useToast } from "../../ui/toast"
@@ -3654,7 +4321,7 @@ index d42aada29f..15f1d0ec37 100644
    return (
      <SessionQuestion
 diff --git a/packages/tui/src/routes/session/message-parts.tsx b/packages/tui/src/routes/session/message-parts.tsx
-index f63ba65250..a4b361664e 100644
+index f63ba65..a4b3616 100644
 --- a/packages/tui/src/routes/session/message-parts.tsx
 +++ b/packages/tui/src/routes/session/message-parts.tsx
 @@ -11,6 +11,7 @@ import { createSyntaxStyleMemo, useTheme, useThemes } from "../../context/theme"
@@ -3684,7 +4351,7 @@ index f63ba65250..a4b361664e 100644
                <Show
                  when={props.status}
 diff --git a/packages/tui/src/routes/session/permission.tsx b/packages/tui/src/routes/session/permission.tsx
-index 07338aba69..812d3e97e6 100644
+index 07338ab..b160203 100644
 --- a/packages/tui/src/routes/session/permission.tsx
 +++ b/packages/tui/src/routes/session/permission.tsx
 @@ -5,6 +5,7 @@ import type { TextareaRenderable } from "@opentui/core"
@@ -3704,7 +4371,7 @@ index 07338aba69..812d3e97e6 100644
                  <text fg={theme.text.base}>Permission required</text>
                </box>
                <Show when={props.request.action !== "shell" && current.title}>
-@@ -321,7 +322,7 @@ function RejectPrompt(props: {
+@@ -321,11 +322,11 @@ function RejectPrompt(props: {
      >
        <box gap={1} paddingLeft={1} paddingRight={3} paddingTop={1} paddingBottom={1}>
          <box flexDirection="row" gap={1} paddingLeft={1}>
@@ -3713,6 +4380,11 @@ index 07338aba69..812d3e97e6 100644
            <text fg={theme.text.base}>Reject permission</text>
          </box>
          <box paddingLeft={1}>
+-          <text fg={theme.text.muted}>Tell OpenCode what to do differently</text>
++          <text fg={theme.text.muted}>Tell Carthagent what to do differently</text>
+         </box>
+       </box>
+       <box
 @@ -527,7 +528,7 @@ export function SessionQuestion<const T extends Record<string, string>>(props: {
            when={props.header}
            fallback={
@@ -3732,7 +4404,7 @@ index 07338aba69..812d3e97e6 100644
            </Show>
            <text fg={theme.text.base}>
 diff --git a/packages/tui/src/routes/session/rows.ts b/packages/tui/src/routes/session/rows.ts
-index 52e45c94a3..f35003486c 100644
+index 52e45c9..f350034 100644
 --- a/packages/tui/src/routes/session/rows.ts
 +++ b/packages/tui/src/routes/session/rows.ts
 @@ -44,7 +44,11 @@ export async function completeGroupBoundary(input: {
@@ -3768,7 +4440,7 @@ index 52e45c94a3..f35003486c 100644
    createEffect(
      on(
 diff --git a/packages/tui/src/ui/border.ts b/packages/tui/src/ui/border.ts
-index 333071020c..d03cce8908 100644
+index 3330710..d03cce8 100644
 --- a/packages/tui/src/ui/border.ts
 +++ b/packages/tui/src/ui/border.ts
 @@ -1,3 +1,5 @@
@@ -3790,7 +4462,7 @@ index 333071020c..d03cce8908 100644
    },
  }
 diff --git a/packages/tui/src/ui/dialog-export-options.tsx b/packages/tui/src/ui/dialog-export-options.tsx
-index 2a38f62922..a60018289a 100644
+index 2a38f62..a600182 100644
 --- a/packages/tui/src/ui/dialog-export-options.tsx
 +++ b/packages/tui/src/ui/dialog-export-options.tsx
 @@ -1,6 +1,7 @@
@@ -3811,7 +4483,7 @@ index 2a38f62922..a60018289a 100644
                  </box>
                )}
 diff --git a/packages/tui/src/ui/dialog-export-result.tsx b/packages/tui/src/ui/dialog-export-result.tsx
-index 6304fbdb30..4751cc8d57 100644
+index 6304fbd..4751cc8 100644
 --- a/packages/tui/src/ui/dialog-export-result.tsx
 +++ b/packages/tui/src/ui/dialog-export-result.tsx
 @@ -3,6 +3,7 @@ import { useNewDesigns } from "../config"
@@ -3832,7 +4504,7 @@ index 6304fbdb30..4751cc8d57 100644
            ],
          },
 diff --git a/packages/tui/src/ui/dialog-prompt.tsx b/packages/tui/src/ui/dialog-prompt.tsx
-index b85074c491..00badea286 100644
+index b85074c..00badea 100644
 --- a/packages/tui/src/ui/dialog-prompt.tsx
 +++ b/packages/tui/src/ui/dialog-prompt.tsx
 @@ -6,6 +6,7 @@ import { Show, createEffect, createSignal, onMount, type JSX } from "solid-js"
@@ -3862,7 +4534,7 @@ index b85074c491..00badea286 100644
        </box>
      </DialogLayout>
 diff --git a/packages/tui/src/ui/dialog-select.tsx b/packages/tui/src/ui/dialog-select.tsx
-index f86d8b507f..acf4b6d528 100644
+index f86d8b5..acf4b6d 100644
 --- a/packages/tui/src/ui/dialog-select.tsx
 +++ b/packages/tui/src/ui/dialog-select.tsx
 @@ -22,6 +22,7 @@ import { Locale } from "../util/locale"
@@ -3921,7 +4593,7 @@ index f86d8b507f..acf4b6d528 100644
          </box>
        )}
 diff --git a/packages/tui/src/ui/file-path.tsx b/packages/tui/src/ui/file-path.tsx
-index 09b3806670..5fc5dd5725 100644
+index 09b3806..5fc5dd5 100644
 --- a/packages/tui/src/ui/file-path.tsx
 +++ b/packages/tui/src/ui/file-path.tsx
 @@ -1,6 +1,7 @@
@@ -3981,7 +4653,7 @@ index 09b3806670..5fc5dd5725 100644
  function takeStart(value: string, maxWidth: number) {
 diff --git a/packages/tui/src/ui/glyphs.ts b/packages/tui/src/ui/glyphs.ts
 new file mode 100644
-index 0000000000..f20313f4ce
+index 0000000..23e8a11
 --- /dev/null
 +++ b/packages/tui/src/ui/glyphs.ts
 @@ -0,0 +1,188 @@
@@ -4090,7 +4762,7 @@ index 0000000000..f20313f4ce
 +  "Delegating…": "Delegating...",
 +  "Preparing edit…": "Preparing edit...",
 +  "Forking session…": "Forking session...",
-+  "Installing OpenCode …": "Installing OpenCode ...",
++  "Installing Carthagent …": "Installing Carthagent ...",
 +  "Resolving diff…": "Resolving diff...",
 +  "Loading branches…": "Loading branches...",
 +  "Choose…": "Choose...",
@@ -4174,7 +4846,7 @@ index 0000000000..f20313f4ce
 +  compact: ["    ", " OC ", " OC ", " OC "],
 +} as const
 diff --git a/packages/tui/src/ui/spinner.ts b/packages/tui/src/ui/spinner.ts
-index c185ea7b83..83aa3e9723 100644
+index c185ea7..83aa3e9 100644
 --- a/packages/tui/src/ui/spinner.ts
 +++ b/packages/tui/src/ui/spinner.ts
 @@ -1,5 +1,6 @@
@@ -4206,7 +4878,7 @@ index c185ea7b83..83aa3e9723 100644
    })
  
 diff --git a/packages/tui/src/ui/toast.tsx b/packages/tui/src/ui/toast.tsx
-index 8f44284c2f..b6da5b2f67 100644
+index 8f44284..b6da5b2 100644
 --- a/packages/tui/src/ui/toast.tsx
 +++ b/packages/tui/src/ui/toast.tsx
 @@ -1,6 +1,7 @@
@@ -4227,7 +4899,7 @@ index 8f44284c2f..b6da5b2f67 100644
    )
  
 diff --git a/packages/tui/src/util/collapse-tool-output.ts b/packages/tui/src/util/collapse-tool-output.ts
-index dbdf6e5a19..f8c07cacf0 100644
+index dbdf6e5..f8c07ca 100644
 --- a/packages/tui/src/util/collapse-tool-output.ts
 +++ b/packages/tui/src/util/collapse-tool-output.ts
 @@ -1,3 +1,4 @@
@@ -4261,8 +4933,29 @@ index dbdf6e5a19..f8c07cacf0 100644
  }
  
  function collapseTail(output: string, maxLines: number, maxChars: number) {
+diff --git a/packages/tui/src/util/error-details.ts b/packages/tui/src/util/error-details.ts
+index 552e383..e16969e 100644
+--- a/packages/tui/src/util/error-details.ts
++++ b/packages/tui/src/util/error-details.ts
+@@ -8,14 +8,14 @@ export function errorDetails(input: { title: string; error: string; context?: st
+   return {
+     text,
+     prompt: [
+-      "Investigate why this OpenCode component failed in the current project.",
++      "Investigate why this Carthagent component failed in the current project.",
+       text,
+       ...(input.diagnosticRef
+         ? [
+             `Find the server log entry matching reference ${input.diagnosticRef} and inspect its original cause. If the server logs are not accessible from this session, say so and ask for the matching log entry; do not infer the cause from the reference alone.`,
+           ]
+         : []),
+-      "Inspect the relevant project and global OpenCode configuration, startup or loading behavior, required environment variables or credentials, dependencies, and logs. Identify the root cause and recommend a fix. Do not expose credentials.",
++      "Inspect the relevant project and global Carthagent configuration, startup or loading behavior, required environment variables or credentials, dependencies, and logs. Identify the root cause and recommend a fix. Do not expose credentials.",
+     ].join("\n\n"),
+   }
+ }
 diff --git a/packages/tui/src/util/error.ts b/packages/tui/src/util/error.ts
-index 33dff7be58..96cd6c31ca 100644
+index 33dff7b..e8cb7a6 100644
 --- a/packages/tui/src/util/error.ts
 +++ b/packages/tui/src/util/error.ts
 @@ -1,4 +1,5 @@
@@ -4271,6 +4964,15 @@ index 33dff7be58..96cd6c31ca 100644
  
  type ConfigIssue = { message: string; path: string[] }
  
+@@ -24,7 +25,7 @@ export function cliErrorMessage(input: unknown): string | undefined {
+     return [
+       `Model not found: ${field(model, "providerID")}/${field(model, "modelID")}`,
+       ...(suggestions.length ? ["Did you mean: " + suggestions.join(", ")] : []),
+-      "Try: `opencode models` to list available models",
++      "Try: `ctg native --list-models` to list available models",
+       "Or check your config (opencode.json) provider/model names",
+     ].join("\n")
+   }
 @@ -63,7 +64,7 @@ export function cliErrorMessage(input: unknown): string | undefined {
        : []
      return [
@@ -4281,7 +4983,7 @@ index 33dff7be58..96cd6c31ca 100644
    }
  
 diff --git a/packages/tui/src/util/locale.ts b/packages/tui/src/util/locale.ts
-index ac3371eb07..4ed4225fbf 100644
+index ac3371e..4ed4225 100644
 --- a/packages/tui/src/util/locale.ts
 +++ b/packages/tui/src/util/locale.ts
 @@ -1,4 +1,5 @@
@@ -4345,7 +5047,7 @@ index ac3371eb07..4ed4225fbf 100644
    const keepEnd = Math.floor((maxLength - ellipsis.length) / 2)
  
 diff --git a/packages/tui/src/util/marquee.ts b/packages/tui/src/util/marquee.ts
-index 8b9428ed4b..4c1d5a11ee 100644
+index 8b9428e..4c1d5a1 100644
 --- a/packages/tui/src/util/marquee.ts
 +++ b/packages/tui/src/util/marquee.ts
 @@ -1,7 +1,10 @@
@@ -4379,7 +5081,7 @@ index 8b9428ed4b..4c1d5a11ee 100644
    const cursor = offset % marqueeCycleWidth(value)
    const parts = [...loop, ...loop]
 diff --git a/packages/tui/src/util/permission.ts b/packages/tui/src/util/permission.ts
-index 09d607ff37..f9bc32c7b3 100644
+index 09d607f..f9bc32c 100644
 --- a/packages/tui/src/util/permission.ts
 +++ b/packages/tui/src/util/permission.ts
 @@ -1,5 +1,6 @@
@@ -4469,8 +5171,21 @@ index 09d607ff37..f9bc32c7b3 100644
      title: `Call tool ${source.action}`,
      lines: [`Tool: ${source.action}`],
    }
+diff --git a/packages/tui/src/util/presentation.ts b/packages/tui/src/util/presentation.ts
+index eb24ad0..c4ec355 100644
+--- a/packages/tui/src/util/presentation.ts
++++ b/packages/tui/src/util/presentation.ts
+@@ -29,7 +29,7 @@ export function sessionEpilogue(input: { title: string; sessionID?: string }) {
+     ...wordmark("  "),
+     "",
+     `  ${weak("Session")}${bold}${input.title}${reset}`,
+-    `  ${weak("Continue")}${bold}opencode -s ${input.sessionID}${reset}`,
++    `  ${weak("Continue")}${bold}ctg native --session ${input.sessionID}${reset}`,
+     "",
+   ].join("\n")
+ }
 diff --git a/packages/tui/src/util/renderer.ts b/packages/tui/src/util/renderer.ts
-index a0c16faa7b..92df561cfc 100644
+index a0c16fa..92df561 100644
 --- a/packages/tui/src/util/renderer.ts
 +++ b/packages/tui/src/util/renderer.ts
 @@ -1,7 +1,36 @@
@@ -4515,7 +5230,7 @@ index a0c16faa7b..92df561cfc 100644
 +  restoreUnacquiredTerminalTitle(write)
  }
 diff --git a/packages/tui/src/util/session.ts b/packages/tui/src/util/session.ts
-index c7213e2205..95f4dd09b2 100644
+index c7213e2..95f4dd0 100644
 --- a/packages/tui/src/util/session.ts
 +++ b/packages/tui/src/util/session.ts
 @@ -1,6 +1,7 @@
@@ -4542,8 +5257,21 @@ index c7213e2205..95f4dd09b2 100644
        return [{ session, prefix }, ...walk(session.id, [...ancestors, last])]
      })
    }
+diff --git a/packages/tui/src/util/tool-display.ts b/packages/tui/src/util/tool-display.ts
+index 0d56567..ae4a98f 100644
+--- a/packages/tui/src/util/tool-display.ts
++++ b/packages/tui/src/util/tool-display.ts
+@@ -39,7 +39,7 @@ export function executeCallSummary(call: ExecuteCall) {
+ 
+ export function webSearchProviderName(provider: unknown) {
+   if (typeof provider !== "string" || !provider) return ""
+-  if (provider === "opencode") return "OpenCode"
++  if (provider === "opencode") return "Carthagent"
+   return `${provider[0].toUpperCase()}${provider.slice(1)}`
+ }
+ 
 diff --git a/packages/tui/test/clear-session.test.tsx b/packages/tui/test/clear-session.test.tsx
-index b53525df46..5fd351ae4c 100644
+index b53525d..5fd351a 100644
 --- a/packages/tui/test/clear-session.test.tsx
 +++ b/packages/tui/test/clear-session.test.tsx
 @@ -2,6 +2,8 @@ import { expect, test } from "bun:test"
@@ -4668,8 +5396,40 @@ index b53525df46..5fd351ae4c 100644
  
  test("/new keeps the active session tab", async () => {
    await using state = await tmpdir()
+diff --git a/packages/tui/test/ctg-branding.test.ts b/packages/tui/test/ctg-branding.test.ts
+new file mode 100644
+index 0000000..232a223
+--- /dev/null
++++ b/packages/tui/test/ctg-branding.test.ts
+@@ -0,0 +1,26 @@
++import { expect, test } from "bun:test"
++import { PRODUCT_NAME, productTerminalTitle } from "../src/product"
++import { logo, go } from "../src/logo"
++
++test("Carthagent owns home, session, plugin and compact terminal titles", () => {
++  expect(PRODUCT_NAME).toBe("Carthagent")
++  expect(productTerminalTitle()).toBe("Carthagent")
++  expect(productTerminalTitle("Fix Ship login")).toBe("CTG | Fix Ship login")
++  expect(productTerminalTitle("workspace")).toBe("CTG | workspace")
++  const prior = process.env.CTG_TUI_GLYPHS
++  try {
++    process.env.CTG_TUI_GLYPHS = "ascii"
++    expect(productTerminalTitle("x".repeat(60))).toBe(`CTG | ${"x".repeat(37)}...`)
++  } finally {
++    if (prior === undefined) delete process.env.CTG_TUI_GLYPHS
++    else process.env.CTG_TUI_GLYPHS = prior
++  }
++})
++
++test("Carthagent wordmark supports wide, stacked and compact layouts", () => {
++  expect(logo.left).toHaveLength(4)
++  expect(logo.right).toHaveLength(4)
++  expect(logo.left.slice(1).every(line => line.length > 0)).toBe(true)
++  expect(logo.right.slice(1).every(line => line.length > 0)).toBe(true)
++  expect(go.right.slice(1)).toContain("CTG")
++})
 diff --git a/packages/tui/test/fixture/tui-client.ts b/packages/tui/test/fixture/tui-client.ts
-index 9accc15e64..b9729bfc0f 100644
+index 9accc15..b9729bf 100644
 --- a/packages/tui/test/fixture/tui-client.ts
 +++ b/packages/tui/test/fixture/tui-client.ts
 @@ -94,7 +94,13 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof
@@ -4689,7 +5449,7 @@ index 9accc15e64..b9729bfc0f 100644
      if (url.pathname === "/api/plugin")
 diff --git a/packages/tui/test/glyphs.test.ts b/packages/tui/test/glyphs.test.ts
 new file mode 100644
-index 0000000000..147e6c84e4
+index 0000000..147e6c8
 --- /dev/null
 +++ b/packages/tui/test/glyphs.test.ts
 @@ -0,0 +1,233 @@
@@ -4927,7 +5687,7 @@ index 0000000000..147e6c84e4
 +  })
 +})
 diff --git a/packages/tui/test/plugin-keymap.test.tsx b/packages/tui/test/plugin-keymap.test.tsx
-index 0790e9a689..fa236930c6 100644
+index 0790e9a..fa23693 100644
 --- a/packages/tui/test/plugin-keymap.test.tsx
 +++ b/packages/tui/test/plugin-keymap.test.tsx
 @@ -59,6 +59,39 @@ test("setup layers before and after await reach keyboard, palette, and slash acr
@@ -5029,7 +5789,7 @@ index 0790e9a689..fa236930c6 100644
  }
 diff --git a/packages/tui/test/plugin-theme-provider.test.tsx b/packages/tui/test/plugin-theme-provider.test.tsx
 new file mode 100644
-index 0000000000..bc539c9237
+index 0000000..bc539c9
 --- /dev/null
 +++ b/packages/tui/test/plugin-theme-provider.test.tsx
 @@ -0,0 +1,104 @@
@@ -5139,7 +5899,7 @@ index 0000000000..bc539c9237
 +})
 diff --git a/packages/tui/test/plugin-theme.test.tsx b/packages/tui/test/plugin-theme.test.tsx
 new file mode 100644
-index 0000000000..9a46b4d5b1
+index 0000000..9a46b4d
 --- /dev/null
 +++ b/packages/tui/test/plugin-theme.test.tsx
 @@ -0,0 +1,54 @@
@@ -5198,7 +5958,7 @@ index 0000000000..9a46b4d5b1
 +  expect(harness.theme.current()).toEqual({ name: "opencode", mode: "light" })
 +})
 diff --git a/packages/tui/test/util/renderer.test.ts b/packages/tui/test/util/renderer.test.ts
-index a5c4e7b54e..6c015fdf43 100644
+index a5c4e7b..6c015fd 100644
 --- a/packages/tui/test/util/renderer.test.ts
 +++ b/packages/tui/test/util/renderer.test.ts
 @@ -1,30 +1,63 @@

@@ -213,7 +213,7 @@ test('rejects tampered cached executables and archive digest mismatches without 
   await writeFile(path.join(destination, 'cli-linux-x64', 'bin', 'opencode'), 'altered');
   await writeFile(path.join(destination, 'SHA256SUMS'), `${sha(Buffer.from('altered'))}  ${executableRelative}\n`);
   assets.clear();
-  await assert.rejects(acquireOwnedRuntime(args()), /no system OpenCode fallback was attempted/);
+  await assert.rejects(acquireOwnedRuntime(args()), /no system Carthagent runtime fallback was attempted/);
   setArchive(archive);
   await assert.rejects(acquireOwnedRuntime(args({ expectedArchiveSha256: 'c'.repeat(64), cacheRoot: path.join(temp, 'bad-digest-cache') })), /SHA-256 mismatch/);
   await acquireOwnedRuntime(args());
@@ -255,7 +255,7 @@ test('serializes concurrent acquisition and publishes a single verified cache en
 
 test('cleans staging after a failed HTTP request and reports no fallback', async () => {
   assets.clear();
-  await assert.rejects(acquireOwnedRuntime(args({ cacheRoot: path.join(temp, 'http-fail-cache') })), /no system OpenCode fallback was attempted/);
+  await assert.rejects(acquireOwnedRuntime(args({ cacheRoot: path.join(temp, 'http-fail-cache') })), /no system Carthagent runtime fallback was attempted/);
   assert.deepEqual(await readdir(path.join(temp, 'http-fail-cache', '.staging')), []);
 });
 
@@ -263,7 +263,7 @@ test('cleans staging after a truncated transfer', async () => {
   setArchive(makeArchive());
   truncateResponse = true;
   try {
-    await assert.rejects(acquireOwnedRuntime(args({ cacheRoot: path.join(temp, 'truncated-cache') })), /no system OpenCode fallback was attempted/);
+    await assert.rejects(acquireOwnedRuntime(args({ cacheRoot: path.join(temp, 'truncated-cache') })), /no system Carthagent runtime fallback was attempted/);
     assert.deepEqual(await readdir(path.join(temp, 'truncated-cache', '.staging')), []);
   } finally { truncateResponse = false; }
 });

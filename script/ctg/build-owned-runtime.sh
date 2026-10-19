@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 EXPECTED_SOURCE="843a6c514e606b436a7fe713422ace0a93ad3d61"
 EXPECTED_LOCK="9d78379cd264584a495440a217b9d2ecab524c9a56f7f8b4b5bed3926daa330d"
-EXPECTED_PATCH="f66c58da6c4b1b16f0e6888866503c17d968bf95282fad87e00be40e184eb8ce"
+EXPECTED_PATCH="936c24a10c7c4260e85dcd7d2bcc9bafcf4792ee5302a8cb9b8582768f4a2a30"
 TARGET="${1:-opencode-linux-x64}"
 HOST_PLATFORM="$(node -p 'process.platform')"
 HOST_ARCH="$(node -p 'process.arch')"
@@ -110,7 +110,7 @@ bun test --cwd packages/core test/shell-retention.test.ts
 bun test --cwd packages/server test/shell-provenance.test.ts
 bun test --cwd packages/tui test/clear-session.test.tsx
 bun test --cwd packages/tui test/util/renderer.test.ts
-bun test --cwd packages/tui --timeout 60000 test/glyphs.test.ts test/plugin-keymap.test.tsx test/plugin-theme.test.tsx test/plugin-theme-provider.test.tsx
+bun test --cwd packages/tui --timeout 60000 test/ctg-branding.test.ts test/glyphs.test.ts test/plugin-keymap.test.tsx test/plugin-theme.test.tsx test/plugin-theme-provider.test.tsx
 
 cd packages/cli
 # A CTG build is intentionally detached from upstream updater channels and

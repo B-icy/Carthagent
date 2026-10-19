@@ -28,6 +28,7 @@ import { createHash } from 'node:crypto';
 import { legacyOAuthForOpenCode, nativeCredentialFile, refreshNativeCredential, refreshSingleFlight } from '../../../../lib/opencode/credentials.mjs';
 import { createDeviceAuthController } from './device-auth.ts';
 import { createSessionIdentity, isManagedShipCredential, shipTelemetryHeaders } from './telemetry.ts';
+import { nativeLoginProvider } from '../../../../lib/opencode/provider-policy.mjs';
 
 const OAUTH_METHOD = 'carthagent-device';
 const SHIP_INTEGRATION_ID = EXPERIENTIAL_PROVIDER_ID;
@@ -164,6 +165,7 @@ function integrationDefinitions(editor: Parameters<Context['integration']['trans
   editor.method.update(oauthMethod(options));
   editor.method.update({ integrationID: IntegrationSchema.ID.make(SHIP_INTEGRATION_ID), method: { type: 'key', label: 'Use an Experiential API key' } });
   editor.method.update({ integrationID: IntegrationSchema.ID.make(SHIP_INTEGRATION_ID), method: { type: 'env', names: [EXPERIENTIAL_API_KEY_ENV] } });
+  editor.update(SHIP_INTEGRATION_ID, integration => { integration.name = EXPERIENTIAL_PROVIDER_NAME; });
 }
 
 function asModelInfo(providerID: string, model: { id: string }, baseURL: string) {
@@ -236,23 +238,36 @@ export async function registerProviders(ctx: Context, options: ProviderRegistrat
     return failures;
   };
   try {
+  const excludedIntegrations = new Set<string>();
   const integration = await ctx.integration.transform(editor => {
     integrationDefinitions(editor, {
     env, fetchImpl, sleep, now, openBrowserImpl, agentDir, startDeviceFlow: deviceAuth.start,
     rereadCredential,
     credentialFile: options.credentialFile ?? nativeCredentialFile(env),
     });
+    for (const integration of editor.list()) {
+      const supported = nativeLoginProvider(integration.id);
+      if (supported) editor.update(integration.id, item => { item.name = supported.name; });
+      else {
+        excludedIntegrations.add(integration.id);
+        editor.remove(integration.id);
+      }
+    }
   });
   registrations.push(integration);
 
   const baseURL = experientialBaseUrl(env);
-  const shipModels: Model.Info[] = [];
+  let shipModels: Model.Info[] = [];
+  let shipConnection: ConnectionInfo | undefined;
   const subscriptions: Record<string, Model.Info[]> = { [ANTHROPIC_PROVIDER_ID]: [], [OPENAI_CODEX_PROVIDER_ID]: [] };
   const subscriptionConnections: Partial<Record<string, ConnectionInfo>> = {};
   const providerRegistration = await ctx.provider.transform(editor => {
+    for (const { provider } of editor.list()) {
+      if (provider.id.startsWith('opencode') || excludedIntegrations.has(provider.integrationID ?? provider.id)) editor.remove(provider.id);
+    }
     editor.add({ info: providerInfo(EXPERIENTIAL_PROVIDER_ID, EXPERIENTIAL_PROVIDER_NAME,
       '@opencode/ai/providers/openai-compatible', SHIP_INTEGRATION_ID,
-      { baseURL, apiKey: `$${EXPERIENTIAL_API_KEY_ENV}` }), models: shipModels });
+      { baseURL, apiKey: `$${EXPERIENTIAL_API_KEY_ENV}` }), models: shipModels, sourceConnection: shipConnection });
     // Subscription IDs already exist in the native catalog. Overlay only the
     // definitions and retain catalog cost/capability metadata.
     for (const [providerID, baseURL] of [
@@ -330,8 +345,10 @@ export async function registerProviders(ctx: Context, options: ProviderRegistrat
   const refresh = async (signal?: AbortSignal): Promise<void> => {
     const inventory = await loadShipModels({ ctx, fetchImpl, env, baseURL, signal });
     if (inventory?.models) {
-      shipModels.splice(0, shipModels.length, ...inventory.models.map(model => asModelInfo(EXPERIENTIAL_PROVIDER_ID, model,
-        inventory.managed ? cloudGatewayUrl(env) : baseURL)));
+      shipConnection = inventory.connection;
+      // The host indexes immutable model arrays by identity.
+      shipModels = inventory.models.map(model => asModelInfo(EXPERIENTIAL_PROVIDER_ID, model,
+        inventory.managed ? cloudGatewayUrl(env) : baseURL));
       await ctx.provider.reload();
     }
     for (const providerID of [ANTHROPIC_PROVIDER_ID, OPENAI_CODEX_PROVIDER_ID]) {
@@ -340,7 +357,7 @@ export async function registerProviders(ctx: Context, options: ProviderRegistrat
       if (!active) {
         if (subscriptionConnections[providerID]) {
           delete subscriptionConnections[providerID];
-          subscriptions[providerID].splice(0, subscriptions[providerID].length);
+          subscriptions[providerID] = [];
           await ctx.provider.reload();
         }
         continue;
@@ -357,7 +374,7 @@ export async function registerProviders(ctx: Context, options: ProviderRegistrat
       const accountMetadata = credential && 'metadata' in credential ? credential.metadata as Record<string, unknown> | undefined : undefined;
       const accountKey = createHash('sha256').update(String(('id' in active ? active.id : '') || accountMetadata?.accountId || (credential?.type === 'oauth' ? credential.access : credential?.type === 'key' ? credential.key : '') || '')).digest('hex');
       if (prior?.account !== accountKey) {
-        subscriptions[providerID].splice(0, subscriptions[providerID].length);
+        subscriptions[providerID] = [];
       }
       const known = new Map([
         ...catalogModels(providerID).map((model: CatalogModel) => [model.id, model] as const),
@@ -369,7 +386,7 @@ export async function registerProviders(ctx: Context, options: ProviderRegistrat
           ? anthropicModelDefinition(model, base) : codexModelDefinition(model, base),
         providerID === ANTHROPIC_PROVIDER_ID ? 'https://api.anthropic.com' : 'https://chatgpt.com/backend-api');
       });
-      subscriptions[providerID].splice(0, subscriptions[providerID].length, ...converted);
+      subscriptions[providerID] = converted;
       subscriptionConnections[providerID] = active;
       await ctx.storage.set(cacheKey, { account: accountKey, models: discovered, checkedAt: now() });
       await ctx.provider.reload();

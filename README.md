@@ -6,20 +6,20 @@ Carthagent is a delivery-focused AI coding console and CLI built on a bundled de
 
 `docs/workflow.svg` shows the flow; `docs/evaluation.md` has the honest trial history, failures included.
 
-## Native OpenCode preview
+## Native Carthagent preview
 
-The native OpenCode interface is currently an **opt-in preview**, not the default `ctg` experience. The regular CLI remains the default until the installed-product acceptance gates are complete. To try the native route in a checkout with its dependencies installed:
+The native Carthagent interface is currently an **opt-in preview**, not the default `ctg` experience. The regular CLI remains the default until the installed-product acceptance gates are complete. To try the native route in a checkout with its dependencies installed:
 
 ```sh
 ctg native
 ctg native --help
 ```
 
-Do not set `CTG_NATIVE=1` globally if you intend to keep using the regular CLI. The native route launches the package-owned, pinned OpenCode 2.0.32 runtime and uses a separate Carthagent-owned profile beneath `~/.carthagent/opencode/` (override with `CTG_OPENCODE_HOME`). Its config, database, sessions, auth, state, and cache are separate from regular OpenCode. It does not install, upgrade, or reuse regular OpenCode credentials. Project files and native task metadata/worktrees are separate again: task records live in each project’s `.harness/opencode-tasks.json`.
+Do not set `CTG_NATIVE=1` globally if you intend to keep using the regular CLI. The native route launches the package-owned, pinned native runtime (compatibility 2.0.32) and uses a separate Carthagent-owned profile beneath `~/.carthagent/opencode/` (override with `CTG_OPENCODE_HOME`). Its config, database, sessions, auth, state, and cache are separate from other coding-tool profiles. It does not install, upgrade, or reuse credentials from other coding-tool profiles. Project files and native task metadata/worktrees are separate again: task records live in each project’s `.harness/opencode-tasks.json`.
 
-Native projects use OpenCode’s project/session model. CTG task creation associates a task with an independent native session and OpenCode worktree; task relations are CTG metadata, not parent/child OpenCode sessions. Native session resume/continue is scoped to the active workspace. Legacy Pi transcripts can be listed, searched, read, and exported with `ctg archive`; they are **read-only archives** and cannot be resumed or imported as native sessions. See the [native upgrade and migration guide](docs/native-upgrade.md) before switching workflows.
+Native projects use the native project/session model. CTG task creation associates a task with an independent native session and native worktree; task relations are CTG metadata, not parent/child native sessions. Native session resume/continue is scoped to the active workspace. Legacy Pi transcripts can be listed, searched, read, and exported with `ctg archive`; they are **read-only archives** and cannot be resumed or imported as native sessions. See the [native upgrade and migration guide](docs/native-upgrade.md) before switching workflows.
 
-The native TUI exposes CTG workspace/task actions such as `/ctg-workspace`, `/ctg-open`, `/ctg-worktree`, and `/ctg-task`, alongside delivery and session commands. OpenCode owns the terminal renderer and lifecycle. Do not assume a listed command overrides a built-in host command: submitted `/help` precedence is a known unresolved acceptance gate.
+The native TUI exposes CTG workspace/task actions such as `/ctg-workspace`, `/ctg-open`, `/ctg-worktree`, and `/ctg-task`, alongside delivery and session commands. The native runtime owns the terminal renderer and lifecycle. Do not assume a listed command overrides a built-in host command: submitted `/help` precedence is a known unresolved acceptance gate.
 
 ```sh
 CTG_NATIVE=1 node bin/ctg.mjs                         # native interactive TUI
@@ -34,7 +34,7 @@ CTG_NATIVE=1 node bin/ctg.mjs archive list            # legacy archive (read-onl
 
 The native CLI retains command aliases such as `ui`/`interactive`, `sessions`, `s`, `c`, `fingerprint`, `auth`, `cloud`, `web`, `start`, and `upgrade`. `--json` with a headless prompt emits JSONL records for native tool start/end, assistant message completion, and terminal outcome; it is not the text `-p` stream. Headless success requires the native completed assistant turn and successful terminal outcome. Options whose enforcement is not advertised by the active native plugin fail closed; in particular `--bash-cap` and `--isolate` are currently unsupported. Refer to [native CLI compatibility details](docs/native-cli.md).
 
-**Acceptance is still open.** This preview is not a release-readiness or default-switch claim. Native host command precedence and final-binary terminal semantics remain explicit acceptance items; the migration ledger tracks current findings and required gates: [OpenCode migration ledger](docs/opencode-migration.md#delivery-ledger), [native compatibility matrix](docs/native-compatibility.md), and [terminal evidence status](docs/native-terminal-semantics.md#evidence-status-pr-162).
+**Acceptance is still open.** This preview is not a release-readiness or default-switch claim. Native host command precedence and final-binary terminal semantics remain explicit acceptance items; the migration ledger tracks current findings and required gates: [Native migration ledger](docs/opencode-migration.md#delivery-ledger), [native compatibility matrix](docs/native-compatibility.md), and [terminal evidence status](docs/native-terminal-semantics.md#evidence-status-pr-162).
 
 ## Install and update
 

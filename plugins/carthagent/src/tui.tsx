@@ -3,6 +3,7 @@ import { Plugin } from "@opencode/plugin/tui";
 import { Show } from "solid-js";
 import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { nativeProviderName } from "../../../lib/opencode/provider-policy.mjs";
 import { framePrompt } from "../../../lib/tui/framing.mjs";
 import { carthagentConfigPath, loadCarthagentConfig, resolveReviewMode, reviewKickoff, saveCarthagentConfig } from "../../../lib/review.mjs";
 import { COMMANDS, NATIVE_COMMAND_COLLISIONS } from "./ui/commands.js";
@@ -14,7 +15,7 @@ import { provisionNativeThemes } from "./ui/theme-provision.mjs";
 import { setSessionAutoCompaction } from "./ui/session-preferences.mjs";
 import { createNativeReviewConsumer, nativeReviewMode, sendNativeReviewKickoff, subscribeNativeReviewEvents } from "./ui/native-review.mjs";
 
-const THEMES = ["carthage", "opencode", "tokyonight", "nebula", "ember", "forest", "mono", "obsidian", "midnight", "solarized-dark", "nord", "contrast-dark", "okabe-dark", "paper", "daylight", "solarized-light", "contrast-light", "okabe-light", "solarized", "okabe", "contrast", "system"];
+const THEMES = ["carthage", "tokyonight", "nebula", "ember", "forest", "mono", "obsidian", "midnight", "solarized-dark", "nord", "contrast-dark", "okabe-dark", "paper", "daylight", "solarized-light", "contrast-light", "okabe-light", "solarized", "okabe", "contrast", "system"];
 const OPENCODE_BUILTIN_THEMES = new Set(["opencode", "tokyonight"]);
 
 export default Plugin.define({
@@ -92,8 +93,11 @@ export default Plugin.define({
       const selectedModel = context.ui.model.current();
       const sessionApi = sessionControls(context, location);
       switch (id) {
+        case "login":
+          context.keymap.dispatch("provider.connect");
+          return;
         case "help": case "ctg-help":
-          await context.ui.dialog.alert({ title: "Carthagent commands", message: COMMANDS.map((command) => `/${command.name}${command.args ? ` ${command.args}` : ""}${command.aliases?.length ? ` (${command.aliases.map((alias) => `/${alias}`).join(", ")})` : ""} — ${command.description}`).join("\n") + "\n\nCtrl+R sessions · Ctrl+T settings · Ctrl+N new session are native OpenCode actions." });
+          await context.ui.dialog.alert({ title: "Carthagent commands", message: COMMANDS.map((command) => `/${command.name}${command.args ? ` ${command.args}` : ""}${command.aliases?.length ? ` (${command.aliases.map((alias) => `/${alias}`).join(", ")})` : ""} — ${command.description}`).join("\n") + "\n\nCtrl+R sessions · Ctrl+T settings · Ctrl+N new session are native Carthagent actions." });
           return;
         case "resume": {
           const query = arg.toLowerCase();
@@ -138,22 +142,22 @@ export default Plugin.define({
             if (!THEMES.includes(theme)) { toast(`Unknown theme “${theme}”. Available compatibility names: ${THEMES.join(", ")}.`, "warning"); return; }
             const provisioned: { directory?: string; installed: string[] } = OPENCODE_BUILTIN_THEMES.has(theme) ? { installed: [] } : await provisionNativeThemes(cliConfigDirectory(), [theme]);
             if (provisioned.installed.length) {
-              toast(`Installed native theme “${theme}” in ${provisioned.directory ?? cliConfigDirectory()}. OpenCode discovers new theme files at startup; restart the TUI, then run /theme ${theme} again to select it.`, "warning");
+              toast(`Installed native theme “${theme}” in ${provisioned.directory ?? cliConfigDirectory()}. Carthagent discovers new theme files at startup; restart the TUI, then run /theme ${theme} again to select it.`, "warning");
               return;
             }
             await writeNativeTheme(cliConfigPath(), theme);
-            toast(`Theme “${theme}” saved to native OpenCode cli.json. OpenCode reloads valid theme selections while the TUI is running.`, "success");
+            toast(`Theme “${theme}” saved to native Carthagent cli.json. Carthagent reloads valid theme selections while the TUI is running.`, "success");
             return;
           }
-          const selected = await context.ui.dialog.select({ title: "OpenCode themes", current: currentTheme, options: THEMES.map((name) => ({ title: name, value: name, description: name === "carthage" ? "Carthagent purple field, gold accent" : "OpenCode theme" })) });
+          const selected = await context.ui.dialog.select({ title: "Carthagent themes", current: currentTheme, options: THEMES.map((name) => ({ title: name, value: name, description: name === "carthage" ? "Carthagent purple field, gold accent" : "Carthagent theme" })) });
           if (selected) {
             const provisioned: { directory?: string; installed: string[] } = OPENCODE_BUILTIN_THEMES.has(selected) ? { installed: [] } : await provisionNativeThemes(cliConfigDirectory(), [selected]);
             if (provisioned.installed.length) {
-              toast(`Installed native theme “${selected}” in ${provisioned.directory ?? cliConfigDirectory()}. OpenCode discovers new theme files at startup; restart the TUI, then select it again.`, "warning");
+              toast(`Installed native theme “${selected}” in ${provisioned.directory ?? cliConfigDirectory()}. Carthagent discovers new theme files at startup; restart the TUI, then select it again.`, "warning");
               return;
             }
             await writeNativeTheme(cliPath, selected);
-            toast(`Theme “${selected}” saved to native OpenCode cli.json. OpenCode reloads valid theme selections while the TUI is running.`, "success");
+            toast(`Theme “${selected}” saved to native Carthagent cli.json. Carthagent reloads valid theme selections while the TUI is running.`, "success");
           }
           return;
         }
@@ -161,12 +165,12 @@ export default Plugin.define({
           await context.data.location.model.sync(location);
           const models = context.data.location.model.list(location) ?? [];
           const query = arg.toLowerCase();
-          const options = models.filter((model) => !query || `${model.providerID}/${model.modelID} ${model.name}`.toLowerCase().includes(query))
-            .map((model) => ({ title: `${model.providerID}/${model.modelID}`, value: model, description: model.name }));
+          const options = models.filter((model) => !query || `${nativeProviderName(model.providerID)} ${model.providerID}/${model.modelID} ${model.name}`.toLowerCase().includes(query))
+            .map((model) => ({ title: `${nativeProviderName(model.providerID)}/${model.modelID}`, value: model, description: model.name }));
           const selected = await context.ui.dialog.select({ title: "Select provider model", placeholder: "Search provider/model…", options });
           if (selected && sessionID) {
             await context.client.session.switchModel({ sessionID, model: { providerID: selected.providerID, id: selected.id } });
-            toast(`Selected ${selected.providerID}/${selected.modelID}.`, "success");
+            toast(`Selected ${nativeProviderName(selected.providerID)}/${selected.modelID}.`, "success");
           } else if (selected) toast("Open or create a session before selecting its model.", "warning");
           return;
         }
@@ -308,7 +312,7 @@ export default Plugin.define({
         }
         case "logout-cloud": {
           const session = arg || undefined;
-          const confirmed = await context.ui.dialog.confirm({ title: session ? "Revoke Ship session" : "Sign out of Carthagent Ship", message: session ? `Revoke Ship session ${session}?` : "Revoke the active Ship session and remove its OpenCode connection?" });
+          const confirmed = await context.ui.dialog.confirm({ title: session ? "Revoke Ship session" : "Sign out of Carthagent Ship", message: session ? `Revoke Ship session ${session}?` : "Revoke the active Ship session and remove its Carthagent connection?" });
           if (confirmed !== true) return;
           await shipClient(context, location).logout(session ? { session } : {});
           toast(session ? `Revoked Ship session ${session}.` : "Revoked and removed the active Carthagent Ship connection.", "success");
@@ -378,7 +382,7 @@ export default Plugin.define({
         }
         case "clear":
           if (!sessionID) { toast("/clear requires an open session.", "warning"); return; }
-          // Hand off to OpenCode's registered host action; it owns presentation
+          // Hand off to the registered host action; it owns presentation
           // state and guarantees the durable conversation is untouched.
           context.keymap.dispatch("session.transcript.clear");
           return;

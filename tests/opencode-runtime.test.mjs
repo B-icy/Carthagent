@@ -330,8 +330,8 @@ test('present but invalid runtime release manifest fails closed instead of selec
   const manifestPath = path.join(root, 'runtime-release.json');
   try {
     await writeFile(manifestPath, JSON.stringify({ version: 1, releaseVersion: '1.2.3', assets: {} }));
-    await assert.rejects(resolveOpenCode({ runtimeReleaseManifestPath: manifestPath }), /Invalid or incompatible CTG OpenCode release manifest/);
-    await assert.rejects(readRuntimeReleaseManifest(manifestPath), /Invalid or incompatible CTG OpenCode release manifest/);
+    await assert.rejects(resolveOpenCode({ runtimeReleaseManifestPath: manifestPath }), /Invalid or incompatible CTG Carthagent runtime release manifest/);
+    await assert.rejects(readRuntimeReleaseManifest(manifestPath), /Invalid or incompatible CTG Carthagent runtime release manifest/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -355,7 +355,7 @@ test('incomplete release platform matrix fails closed without acquisition', asyn
     await assert.rejects(resolveOpenCode({
       runtimeReleaseManifestPath: manifestPath,
       acquireOwnedRuntime: async () => { acquired = true; throw new Error('must not acquire'); },
-    }), /Invalid or incompatible CTG OpenCode release manifest/);
+    }), /Invalid or incompatible CTG Carthagent runtime release manifest/);
     assert.equal(acquired, false);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

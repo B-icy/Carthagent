@@ -371,7 +371,7 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
       <For each={workspaceSessions()}>{(session) => <text fg={session.attention ? context.theme.text.feedback.warning.base : context.theme.text.action.secondary.base} on:click={() => void openSession(session.id)}>{session.attention ? "! " : "· "}{session.title} [{session.attention ? `${session.attention} pending` : session.status}] · {session.directory}</text>}</For>
     </Show>
     <Show when={!snapshot()}>
-      <text fg={context.theme.text.action.primary.base}>Local OpenCode sessions</text>
+      <text fg={context.theme.text.action.primary.base}>Local Carthagent sessions</text>
       <For each={localSessions().filter((session) => !query() || `${session.title ?? ""} ${session.id} ${session.location.directory}`.toLowerCase().includes(query().toLowerCase()))}>{(session) => <text fg={context.theme.text.action.secondary.base} on:click={() => context.ui.router.navigate({ type: "session", sessionID: session.id })}>· {session.title ?? session.id} [{context.data.session.status(session.id)}]</text>}</For>
     </Show>
     <text fg={context.theme.text.faint}>Keyboard: use /ctg-open to search sessions; /ctg-worktree creates a worktree; /ctg-task starts a task.</text>
