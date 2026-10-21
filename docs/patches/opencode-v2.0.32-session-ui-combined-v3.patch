@@ -1871,10 +1871,16 @@ index c669491c09..df8dadef7f 100644
                  </text>
                  <Show when={!confirmingAction() && option().description}>
 diff --git a/packages/tui/src/component/prompt/index.tsx b/packages/tui/src/component/prompt/index.tsx
-index a9f699c08a..23ca34ff80 100644
+index a9f699c08a..d9ed82a936 100644
 --- a/packages/tui/src/component/prompt/index.tsx
 +++ b/packages/tui/src/component/prompt/index.tsx
-@@ -14,6 +14,7 @@ import { useTheme, useThemes } from "../../context/theme"
+@@ -9,11 +9,12 @@ import {
+ } from "@opentui/core"
+ import { createEffect, createMemo, onMount, createSignal, onCleanup, on, Show, Switch, Match, For } from "solid-js"
+ import path from "path"
+-import { useLocal } from "../../context/local"
++import { AGENT_ORDER, useLocal } from "../../context/local"
+ import { useTheme, useThemes } from "../../context/theme"
  import { tint } from "../../theme/color"
  import { createAnimatable, tween } from "../../ui/animation"
  import { EmptyBorder, SplitBorder } from "../../ui/border"
@@ -1894,7 +1900,7 @@ index a9f699c08a..23ca34ff80 100644
  
  const DRAFT_RETENTION_MIN_CHARS = 20
  const revealedPromptMetadata = new WeakSet<object>()
-+const MODES = ["ship", "lite", "plan", "build"]
++const MODES = AGENT_ORDER
  
  function randomIndex(count: number) {
    if (count <= 0) return 0
@@ -3863,6 +3869,48 @@ index 521b3aeac8..6d6ae30290 100644
        pageup: "pgup",
        pagedown: "pgdn",
        delete: "del",
+diff --git a/packages/tui/src/context/local.tsx b/packages/tui/src/context/local.tsx
+index d3304eb339..ac93d3f20d 100644
+--- a/packages/tui/src/context/local.tsx
++++ b/packages/tui/src/context/local.tsx
+@@ -27,6 +27,8 @@ import { usePermission } from "./permission"
+ import { useLocation } from "./location"
+ import { parse } from "../util/model"
+ 
++export const AGENT_ORDER: readonly string[] = ["ship", "lite", "plan", "build"]
++
+ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
+   name: "Local",
+   init: () => {
+@@ -59,6 +61,13 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
+       const agents = createMemo(() =>
+         (data.location.agent.list(location.ref) ?? []).filter((agent) => agent.mode !== "subagent" && !agent.hidden),
+       )
++      const cycleOrder = createMemo(() =>
++        [...agents()].sort(
++          (first, second) =>
++            (AGENT_ORDER.indexOf(first.id) === -1 ? AGENT_ORDER.length : AGENT_ORDER.indexOf(first.id)) -
++            (AGENT_ORDER.indexOf(second.id) === -1 ? AGENT_ORDER.length : AGENT_ORDER.indexOf(second.id)),
++        ),
++      )
+       const visibleAgents = createMemo(() =>
+         (data.location.agent.list(location.ref) ?? []).filter((agent) => !agent.hidden),
+       )
+@@ -118,10 +127,10 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
+           batch(() => {
+             const current = this.current()
+             if (!current) return
+-            let next = agents().findIndex((agent) => agent.id === current.id) + direction
+-            if (next < 0) next = agents().length - 1
+-            if (next >= agents().length) next = 0
+-            const value = agents()[next]
++            let next = cycleOrder().findIndex((agent) => agent.id === current.id) + direction
++            if (next < 0) next = cycleOrder().length - 1
++            if (next >= cycleOrder().length) next = 0
++            const value = cycleOrder()[next]
+             this.set(value.id)
+           })
+         },
 diff --git a/packages/tui/src/context/session-tabs-model.ts b/packages/tui/src/context/session-tabs-model.ts
 index 856f9961e7..df291f5b70 100644
 --- a/packages/tui/src/context/session-tabs-model.ts
