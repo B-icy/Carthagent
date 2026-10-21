@@ -106,7 +106,7 @@ function workflowJob(name) {
   return lines.slice(start, end).join('\n');
 }
 
-const combinedPatchPath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v2.patch';
+const combinedPatchPath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v3.patch';
 
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
@@ -403,15 +403,15 @@ test('draft metadata validation has scoped write capability; artifact mutation s
   assert.doesNotMatch(assembly, /contents: write/);
   assert.match(publish, /contents: write/);
   assert.match(uploadBlock, /gh release upload/);
-  assert.match(workflow, /git -C ctg show HEAD:docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v2\.patch > opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v2\.patch/);
-  assert.match(workflow, /patch_sha256="\$\(hash_file opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v2\.patch\)"/);
-  assert.equal((workflow.match(/git -C ctg show HEAD:docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v2\.patch > ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui\.patch/g) ?? []).length, 2,
+  assert.match(workflow, /git -C ctg show HEAD:docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v3\.patch > opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v3\.patch/);
+  assert.match(workflow, /patch_sha256="\$\(hash_file opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v3\.patch\)"/);
+  assert.equal((workflow.match(/git -C ctg show HEAD:docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v3\.patch > ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui\.patch/g) ?? []).length, 2,
     'both generation paths must extract exact committed candidate bytes at the pinned historical path');
   assert.match(workflow, /git -C ctg show HEAD:script\/ctg\/build-owned-runtime\.sh > opencode\/script\/ctg\/build-owned-runtime\.sh/);
   assert.match(workflow, /chmod \+x opencode\/script\/ctg\/build-owned-runtime\.sh/);
   assert.match(workflow, /GIT_CONFIG_KEY_0:\s*core\.autocrlf[\s\S]*?GIT_CONFIG_VALUE_0:\s*'false'/);
   assert.match(workflow, /git -C opencode config --local core\.autocrlf false/);
-  assert.match(workflow, /patch_sha256="\$\(hash_file opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v2\.patch\)"/);
+  assert.match(workflow, /patch_sha256="\$\(hash_file opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v3\.patch\)"/);
 });
 
 test('review-branch prebuild source is exact dispatch SHA; publish validation is default-branch-only', { skip: requiresUbuntuWorkflowShell, timeout: 60000 }, async (t) => {

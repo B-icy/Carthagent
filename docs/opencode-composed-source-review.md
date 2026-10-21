@@ -16,8 +16,8 @@ The approved base combined source patch is
 `docs/patches/opencode-v2.0.32-session-ui.patch`; its SHA-256 is
 `81e86a4c139e02ebd077e1b635a62ea804ec60b6ae20100893cb6d9f73b06d62`. A
 separate combined candidate is recorded at
-`docs/patches/opencode-v2.0.32-session-ui-combined-v2.patch` with SHA-256
-`f66c58da6c4b1b16f0e6888866503c17d968bf95282fad87e00be40e184eb8ce`; it adds
+`docs/patches/opencode-v2.0.32-session-ui-combined-v3.patch` with SHA-256
+`d0cbfe762eacff15120ec74d489921e359ad97e818376504bca2968b8fbec5db`; it adds
 the approved spinner test-isolation and real-provider theme proof patches. The
 candidate recipe and packaged runtime identity both pin this digest; the
 historical base recipe/runtime identity remain recorded in Git, and the base

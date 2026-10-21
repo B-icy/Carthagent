@@ -167,7 +167,7 @@ jobs:
           # git status checks in this isolated upstream clone.
           git -C opencode config --local core.autocrlf false
           mkdir -p opencode/docs/patches opencode/script/ctg
-          git -C ctg show HEAD:docs/patches/opencode-v2.0.32-session-ui-combined-v2.patch > opencode/docs/patches/opencode-v2.0.32-session-ui-combined-v2.patch
+          git -C ctg show HEAD:docs/patches/opencode-v2.0.32-session-ui-combined-v3.patch > opencode/docs/patches/opencode-v2.0.32-session-ui-combined-v3.patch
           git -C ctg show HEAD:script/ctg/build-owned-runtime.sh > opencode/script/ctg/build-owned-runtime.sh
           chmod +x opencode/script/ctg/build-owned-runtime.sh
           cd opencode
@@ -195,7 +195,7 @@ jobs:
           executable_sha256="$(hash_file "$binary")"
           # Hash the exact committed blob extracted into the upstream checkout,
           # not a potentially CRLF-converted Windows CTG worktree file.
-          patch_sha256="$(hash_file opencode/docs/patches/opencode-v2.0.32-session-ui-combined-v2.patch)"
+          patch_sha256="$(hash_file opencode/docs/patches/opencode-v2.0.32-session-ui-combined-v3.patch)"
           lock_sha256="$(hash_file opencode/bun.lock)"
           TARGET_KEY="$TARGET_KEY" TARGET_PLATFORM="$TARGET_PLATFORM" TARGET_ARCH="$TARGET_ARCH" SOURCE_REVISION="$(git -C opencode rev-parse HEAD)" PATCH_SHA256="$patch_sha256" LOCK_SHA256="$lock_sha256" ARCHIVE_SHA256="$archive_sha256" EXECUTABLE_SHA256="$executable_sha256" OUT="$OUT" \
             node -e 'const fs=require("node:fs"); const record={version:1,target:process.env.TARGET_KEY,platform:process.env.TARGET_PLATFORM,arch:process.env.TARGET_ARCH,sourceRevision:process.env.SOURCE_REVISION,patchSha256:process.env.PATCH_SHA256,lockSha256:process.env.LOCK_SHA256,compatibilityVersion:"2.0.32",runtimeVersion:"0.0.0-ctg.2.0.32",archiveSha256:process.env.ARCHIVE_SHA256,executableSha256:process.env.EXECUTABLE_SHA256}; fs.writeFileSync(process.env.OUT+"/opencode-"+process.env.TARGET_KEY+".tar.gz.build.json",JSON.stringify(record,null,2)+"\n",{flag:"wx"})'
@@ -256,7 +256,7 @@ jobs:
           # The pinned release generator still reads the historical patch path.
           # In this isolated checkout, provide the reviewed candidate bytes at
           # that compatibility path without changing the source repository.
-          git -C ctg show HEAD:docs/patches/opencode-v2.0.32-session-ui-combined-v2.patch > ctg/docs/patches/opencode-v2.0.32-session-ui.patch
+          git -C ctg show HEAD:docs/patches/opencode-v2.0.32-session-ui-combined-v3.patch > ctg/docs/patches/opencode-v2.0.32-session-ui.patch
           node release-generator/tools/generate-owned-runtime-release.mjs "$RELEASE_VERSION" candidate-assets "$GITHUB_WORKSPACE/ctg" > /dev/null
           node -e 'const fs=require("node:fs");const p="runtime-release.json.candidate";const m=JSON.parse(fs.readFileSync(p));if(m.releaseVersion!==process.env.RELEASE_VERSION)process.exit(1)'
           mkdir candidate-bundle
@@ -345,7 +345,7 @@ jobs:
           for key in linux-x64 linux-arm64 darwin-x64 darwin-arm64 windows-x64; do cp "$candidate_dir/opencode-$key.tar.gz" "$candidate_dir/opencode-$key.tar.gz.build.json" regenerated-assets/; done
           # The pinned release generator still reads the historical patch path.
           # Point that path at the reviewed bytes only in this disposable checkout.
-          git -C ctg show HEAD:docs/patches/opencode-v2.0.32-session-ui-combined-v2.patch > ctg/docs/patches/opencode-v2.0.32-session-ui.patch
+          git -C ctg show HEAD:docs/patches/opencode-v2.0.32-session-ui-combined-v3.patch > ctg/docs/patches/opencode-v2.0.32-session-ui.patch
           node release-generator/tools/generate-owned-runtime-release.mjs "$RELEASE_VERSION" regenerated-assets "$GITHUB_WORKSPACE/ctg" > /dev/null
           cmp "$candidate_dir/runtime-release.json.candidate" "$GITHUB_WORKSPACE/runtime-release.json.candidate"
           (cd "$candidate_dir" && sha256sum --check runtime-archives-SHA256SUMS.txt)
