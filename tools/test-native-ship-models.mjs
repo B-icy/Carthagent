@@ -134,15 +134,12 @@ try {
 
 } finally {
   if (child && child.exitCode === null && child.signalCode === null) {
-    const closed = once(child, 'close');
-    if (process.platform === 'win32') {
-      await promisify(execFile)('taskkill.exe', ['/PID', String(child.pid), '/T', '/F']).catch(() => {});
-      await closed;
-    } else {
-      child.kill('SIGTERM');
-      const timer = setTimeout(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); }, 5000);
-      await closed; clearTimeout(timer);
-    }
+    const closed = once(child, 'close', { signal: AbortSignal.timeout(10_000) });
+    // No PTYs are spawned here; stop this exact server like the service-stop command does.
+    child.kill('SIGTERM');
+    const timer = setTimeout(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); }, 5000);
+    try { await closed; }
+    finally { clearTimeout(timer); }
   }
   cloud.closeAllConnections();
   await new Promise(resolve => cloud.close(resolve));
