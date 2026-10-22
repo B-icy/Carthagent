@@ -1,15 +1,15 @@
 # Native OpenCode preview: upgrade and migration guide
 
-> **Status: preview / acceptance in progress.** `CTG_NATIVE=1` selects the
-> native adapter for that process only. Without it, `ctg` still uses the
-> existing CLI. No release version or tag is selected by this guide.
+Experimental preview.8 uses native by default. `ctg native` is a compatibility
+alias; `CTG_NATIVE` no longer selects a different console. Stable 1.0.7 remains
+the legacy release. Install previews only through an explicit experimental
+channel switch or an exact published tag.
 
 ## Before you try it
 
-- The native route uses the package-owned OpenCode **2.0.32** executable. It
+- The native route uses a checksum-pinned CTG-owned runtime compatible with OpenCode **2.0.32**. It
   does not use, install over, update, or borrow authentication from a regular
-  OpenCode installation. The native runtime is currently opt-in; do not change
-  your shell-wide environment just to test it.
+  OpenCode installation. Selecting the experimental release is explicit; no shell-wide routing toggle is needed.
 - Native OpenCode settings, auth, database/sessions, state, and cache belong to
   the CTG profile under `~/.carthagent/opencode/`. `CTG_OPENCODE_HOME` can
   override that profile root. The old CLI's Carthagent data is separate too.
@@ -19,34 +19,31 @@
   is no transcript continuation, conversion, or import. Keep the old
   installation and source data until you have independently confirmed the
   archive contains what you need.
-- The migration is not yet accepted as the default. In particular, the pinned
-  host's submitted `/help` command precedence and final-binary terminal
-  acceptance have open items. See the [migration ledger](opencode-migration.md),
-  [native compatibility matrix](native-compatibility.md), and
-  [terminal evidence status](native-terminal-semantics.md#evidence-status-pr-162).
+- Read the exact release notes for installed-package acceptance and platform
+  limitations. Earlier migration findings remain in the
+  [migration ledger](opencode-migration.md) and
+  [terminal evidence](native-terminal-semantics.md); they are historical evidence,
+  not a claim that every command or platform has been verified by a live model.
 
 ## Try the native route from a checkout
 
-The runtime resolver uses Node's package resolver to find the pinned upstream
-`@opencode/cli@2.0.32` dependency, including when npm hoists it beside Carthagent.
-That upstream-compatible executable is distinct from the CTG-owned runtime
-identity `0.0.0-ctg.2.0.32`. This resolver behavior does not establish final
-owned-runtime acquisition, platform artifact acceptance, or full acceptance from
-a fresh global install; those gates remain open in the
-[migration ledger](opencode-migration.md#delivery-ledger). Install dependencies
-in a development checkout as its contributor instructions require, then invoke
-the native route for one command at a time:
+The default resolver acquires only the platform archive pinned by the packaged
+release manifest, validates source/patch/lock and archive/executable checksums,
+and caches it in the private Carthagent profile. It never falls back to a system
+or upstream binary after selecting the owned runtime. An explicit developer
+artifact is a separate, validated staging path—not an end-user update mechanism.
+
+After installing dependencies in a checkout of a published source tag:
 
 ```sh
-CTG_NATIVE=1 node bin/ctg.mjs --help
-CTG_NATIVE=1 node bin/ctg.mjs
-CTG_NATIVE=1 node bin/ctg.mjs "Investigate the failing tests"
+node bin/ctg.mjs --help
+node bin/ctg.mjs
+node bin/ctg.mjs "Investigate the failing tests"
 ```
 
-The flag is intentionally per invocation. `export CTG_NATIVE=1` or a persistent
-shell profile setting routes all subsequent `ctg` invocations through the
-preview. Omit it to return to the existing CLI. No command here installs a
-runtime or changes your normal OpenCode profile.
+The native service refreshes after a verified owned runtime or launcher update.
+Sessions and credentials remain in the profile; an unauthenticated or foreign
+process is never stopped just because its registration looks stale.
 
 The native launcher preserves familiar commands and aliases: `tui`/`ui`/
 `interactive`, `resume`/`sessions`, `continue`, `status`/`s`, `check`/`c`,
@@ -80,10 +77,10 @@ legacy session archive at its existing location; the native adapter exposes it
 for reading and does not mutate those transcripts:
 
 ```sh
-CTG_NATIVE=1 node bin/ctg.mjs archive list
-CTG_NATIVE=1 node bin/ctg.mjs archive search "query"
-CTG_NATIVE=1 node bin/ctg.mjs archive read <archive-id>
-CTG_NATIVE=1 node bin/ctg.mjs archive export <archive-id> --format jsonl
+node bin/ctg.mjs archive list
+node bin/ctg.mjs archive search "query"
+node bin/ctg.mjs archive read <archive-id>
+node bin/ctg.mjs archive export <archive-id> --format jsonl
 ```
 
 Archive output is not an import format. Start a new native session and provide
@@ -101,9 +98,9 @@ headless mode automatically. A resume-picker request in headless mode becomes
 continuation of the latest native session for that workspace.
 
 ```sh
-CTG_NATIVE=1 node bin/ctg.mjs -p "Summarize this project"
-CTG_NATIVE=1 node bin/ctg.mjs --json -p "Run the declared checks"
-CTG_NATIVE=1 node bin/ctg.mjs status --json
+node bin/ctg.mjs -p "Summarize this project"
+node bin/ctg.mjs --json -p "Run the declared checks"
+node bin/ctg.mjs status --json
 ```
 
 JSONL consumers should use the terminal outcome and exit status, not the
@@ -113,11 +110,16 @@ and unresolved turns are not success. `-p` text is not a live tool-event stream.
 
 ## Release installation and update
 
-This guide does not publish a version and does not change release state. The
-following is the exact-tag npm installation form for a future accepted release,
-not a claim that a fresh npm installation currently passes native runtime
-resolution. Once a version has actually been accepted, published, and tagged by
-the release owner, the command is:
+Only published releases are installable; a draft is not an update. From an
+installation with channel support:
+
+```sh
+ctg update --channel experimental --check
+ctg update --channel experimental
+ctg
+```
+
+The exact-tag installation form for a published release is:
 
 ```sh
 npm install -g --install-links=true github:B-icy/Carthagent#vX.Y.Z
@@ -149,9 +151,10 @@ Do not discard or overwrite local changes to make this procedure succeed. If
 the checkout has work you need, commit it or preserve it outside the checkout
 before changing revisions; resolve conflicts or recovery deliberately rather
 than using a destructive reset. The updater is Carthagent's updater, not a
-regular OpenCode updater. As long as native execution is opt-in, updating the
-package does not change the CLI default. Do not install a branch or guess a
-version to obtain a future native default.
+regular OpenCode updater. In preview.8 the installed CLI is native by default.
+Use `ctg update --channel stable` to return to the legacy stable release; neither
+channel switching nor service refresh deletes profiles or legacy transcripts.
+Do not install a moving branch or guess an unpublished version.
 
 ## Acceptance status and help
 

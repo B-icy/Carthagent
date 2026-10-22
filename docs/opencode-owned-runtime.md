@@ -1,44 +1,43 @@
-# CTG-owned OpenCode v2.0.32 UI runtime (opt-in)
+# CTG-owned OpenCode v2.0.32 UI runtime
 
-This change defines a source-pinned, CTG-owned OpenCode runtime. The explicit
-`CTG_OWNED_OPENCODE_RUNTIME` directory selector is a staging/developer override,
-not an end-user release path. A complete release must bundle or install a
-platform artifact pinned to its exact manifest and verify its checksum before
-launch, without replacing an upstream OpenCode install or mutating the
-package-owned `@opencode/cli`. Until that delivery path is implemented and the
-installed-package default resolver selects the owned artifact, ordinary CTG
-installs continue to use the compatibility runtime and do not receive the UI
-features in this patch. This branch does not commit a large executable. The
-staging opt-in can be selected by setting
-`CTG_OWNED_OPENCODE_RUNTIME` to an extracted artifact directory containing
-`ctg-runtime.json`, `SHA256SUMS`, and the platform-specific CLI artifact.
-Without that variable, current code resolves the package-owned `@opencode/cli@2.0.32`
-dependency with Node's package resolver and reads its `bin.opencode` entry,
-working for both nested and npm-hoisted installs. An explicit
-`CTG_OPENCODE_BIN`/`--engine-cli` continues to use the exact compatibility-version
-path. The packed-install test checks this default path before setting any
-override.
+Published native releases select a CTG-owned, source-pinned runtime through the
+packaged `lib/opencode/runtime-release.json`. The default resolver downloads the
+exact platform asset for that release, verifies archive and executable checksums
+and source/patch/lock provenance, and caches it under Carthagent's private profile.
+It never replaces a regular OpenCode installation or rewrites `@opencode/cli`.
+Selecting the owned runtime is fail-closed: a missing or invalid release asset is
+an error, not permission to fall back to a different executable.
+
+`CTG_OWNED_OPENCODE_RUNTIME` is a separate staging/developer selector, not the
+normal end-user installation path. An explicit directory must contain the
+matching `ctg-runtime.json`, `SHA256SUMS`, and platform artifact. Native is the
+CLI default in experimental preview.8; `ctg native` remains an alias. The legacy
+`--engine-cli` option cannot restore the retired console.
 
 ## Pinned inputs and reproducible source application
 
 - Upstream: `https://github.com/anomalyco/opencode`
 - Tag/revision: `v2.0.32` / `843a6c514e606b436a7fe713422ace0a93ad3d61`
 - CTG patch candidate: `docs/patches/opencode-v2.0.32-session-ui-combined-v3.patch` (approved session/runtime + `/help` + live-theme + glyph-v4, spinner test-isolation fix, real-provider theme integration proof, runtime-resolved glyph separators)
-- Candidate patch SHA-256: `75d6484112881481b178bde583f9ff4e5d36cbac2fdf19d000339795b9485ce2`
-- Candidate verification: Bun 1.4.2 frozen-lockfile install passed, TUI
+- Candidate patch SHA-256: `b4238d77827d7ccf8f87fb0326551eaa62268d9387cd89e29bd0cf12bd6dafaa`
+- Combined preview.8 source verification: 136 retained TUI rendering/loader/theme/selection
+  regressions, 24 core recovery/shell regressions, and core/server/plugin/client/tui
+  typechecks passed. Exact five-platform archives and full installed-package
+  acceptance remain per-release gates; source tests alone do not satisfy them.
+- Historical migration verification: Bun 1.4.2 frozen-lockfile install passed, TUI
   typecheck passed, and glyph/keymap/plugin-theme/real-provider-theme tests
   passed together (19 tests / 188 assertions, one process,
   `--timeout 60000`). Independent review approved exact corrected head
   `0e38142bff30ca2a8b2a66394e5055d541fce489`, including the canonical
   Windows-style checkout-to-recipe handoff and dirty-input rejection.
-  Final five-platform build and installed-artifact acceptance remain pending.
-- Workflow registration: independently and parent-approved bootstrap #197
+  At that historical revision, five-platform build and installed-artifact acceptance were still pending.
+- Historical workflow registration: independently and parent-approved bootstrap #197
   passed CI and merged on `main` as `bd1292c8c4`. The workflow is registered;
   actual prebuild run `39089640210` was dispatched at reviewed source
   `70882269e25ebcb62c843f9265345342b9e6844d` for planned version `1.1.0`.
   That first run produced Darwin archives but failed the other three targets.
-  No complete five-platform candidate exists yet.
-- Separate parent-quality follow-up: native CLI browser-launch isolation
+  That initial run was not a complete five-platform candidate; later previews have separate tagged manifests.
+- Historical separate parent-quality follow-up: native CLI browser-launch isolation
   `d4983b57328a187e8be6bc0e2c6bd2dda7518920` is not part of this upstream source
   patch and must be integrated in its applicable parent branch before the
   parent's full-quality result is claimed.

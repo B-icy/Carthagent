@@ -8,33 +8,34 @@ Carthagent is a delivery-focused AI coding console and CLI built on a bundled de
 
 ## Native Carthagent preview
 
-The native Carthagent interface is currently an **opt-in preview**, not the default `ctg` experience. The regular CLI remains the default until the installed-product acceptance gates are complete. To try the native route in a checkout with its dependencies installed:
+In experimental **1.1.0-preview.8**, native is the default `ctg` interface. Ship retains the legacy delivery workflow, including approval, checks, review, repair, recovery, and resume; Lite remains direct execution. Installing the experimental channel is still explicit. Stable 1.0.7 retains the legacy console.
 
 ```sh
-ctg native
-ctg native --help
+ctg
+ctg --help
+ctg native  # compatibility alias
 ```
 
-Do not set `CTG_NATIVE=1` globally if you intend to keep using the regular CLI. The native route launches the package-owned, pinned native runtime (compatibility 2.0.32) and uses a separate Carthagent-owned profile beneath `~/.carthagent/opencode/` (override with `CTG_OPENCODE_HOME`). Its config, database, sessions, auth, state, and cache are separate from other coding-tool profiles. It does not install, upgrade, or reuse credentials from other coding-tool profiles. Project files and native task metadata/worktrees are separate again: task records live in each project’s `.harness/opencode-tasks.json`.
+The old `CTG_NATIVE` toggle no longer changes routing. The native route launches the checksum-pinned CTG-owned runtime (compatibility 2.0.32) and uses a separate Carthagent-owned profile beneath `~/.carthagent/opencode/` (override with `CTG_OPENCODE_HOME`). Its config, database, sessions, auth, state, and cache are separate from other coding-tool profiles. It does not install, upgrade, or reuse credentials from other coding-tool profiles. Project files and native task metadata/worktrees are separate again: task records live in each project’s `.harness/opencode-tasks.json`.
 
 Native projects use the native project/session model. CTG task creation associates a task with an independent native session and native worktree; task relations are CTG metadata, not parent/child native sessions. Native session resume/continue is scoped to the active workspace. Legacy Pi transcripts can be listed, searched, read, and exported with `ctg archive`; they are **read-only archives** and cannot be resumed or imported as native sessions. See the [native upgrade and migration guide](docs/native-upgrade.md) before switching workflows.
 
 The native TUI exposes CTG workspace/task actions such as `/ctg-workspace`, `/ctg-open`, `/ctg-worktree`, and `/ctg-task`, alongside delivery and session commands. The native runtime owns the terminal renderer and lifecycle. Do not assume a listed command overrides a built-in host command: submitted `/help` precedence is a known unresolved acceptance gate.
 
 ```sh
-CTG_NATIVE=1 node bin/ctg.mjs                         # native interactive TUI
-CTG_NATIVE=1 node bin/ctg.mjs "Build a task CLI"      # task in the TUI
-CTG_NATIVE=1 node bin/ctg.mjs resume                  # native session picker
-CTG_NATIVE=1 node bin/ctg.mjs continue                # latest native session here
-CTG_NATIVE=1 node bin/ctg.mjs -p "Summarize this repo" # headless text
-CTG_NATIVE=1 node bin/ctg.mjs --json -p "Run checks" # native lifecycle JSONL
-CTG_NATIVE=1 node bin/ctg.mjs status --json           # delivery status JSON
-CTG_NATIVE=1 node bin/ctg.mjs archive list            # legacy archive (read-only)
+node bin/ctg.mjs                         # native interactive TUI
+node bin/ctg.mjs "Build a task CLI"      # task in the TUI
+node bin/ctg.mjs resume                  # native session picker
+node bin/ctg.mjs continue                # latest native session here
+node bin/ctg.mjs -p "Summarize this repo" # headless text
+node bin/ctg.mjs --json -p "Run checks" # native lifecycle JSONL
+node bin/ctg.mjs status --json           # delivery status JSON
+node bin/ctg.mjs archive list            # legacy archive (read-only)
 ```
 
 The native CLI retains command aliases such as `ui`/`interactive`, `sessions`, `s`, `c`, `fingerprint`, `auth`, `cloud`, `web`, `start`, and `upgrade`. `--json` with a headless prompt emits JSONL records for native tool start/end, assistant message completion, and terminal outcome; it is not the text `-p` stream. Headless success requires the native completed assistant turn and successful terminal outcome. Options whose enforcement is not advertised by the active native plugin fail closed; in particular `--bash-cap` and `--isolate` are currently unsupported. Refer to [native CLI compatibility details](docs/native-cli.md).
 
-**Acceptance is still open.** This preview is not a release-readiness or default-switch claim. Native host command precedence and final-binary terminal semantics remain explicit acceptance items; the migration ledger tracks current findings and required gates: [Native migration ledger](docs/opencode-migration.md#delivery-ledger), [native compatibility matrix](docs/native-compatibility.md), and [terminal evidence status](docs/native-terminal-semantics.md#evidence-status-pr-162).
+Each experimental release must pass its exact installed-package gate before publication. Earlier migration findings and remaining platform caveats are recorded in: [Native migration ledger](docs/opencode-migration.md#delivery-ledger), [native compatibility matrix](docs/native-compatibility.md), and [terminal evidence status](docs/native-terminal-semantics.md#evidence-status-pr-162).
 
 ## Install and update
 
@@ -45,9 +46,9 @@ npm install -g --install-links=true github:B-icy/Carthagent#vX.Y.Z
 ctg
 ```
 
-Replace `vX.Y.Z` with a version that has actually been published. npm 11 requires `--install-links=true` for this GitHub global install. To persist that setting, run `npm config set install-links true --location=user`. The native preview is currently documented and exercised from a source checkout; a fresh npm-installed native runtime is **not** yet accepted. See the [native upgrade guide](docs/native-upgrade.md) for current checkout instructions and the runtime resolver limitation. If you are using the currently-default regular CLI, see [legacy CLI install, provider, account, and console instructions](docs/legacy-cli.md).
+Replace `vX.Y.Z` with a published release tag. npm 11 requires the per-command `--install-links=true` flag for this GitHub global install. Native releases acquire and verify their own platform runtime from the exact tagged assets; they never fall back to an unrelated system binary. See the [native upgrade guide](docs/native-upgrade.md) for source-checkout and profile-preservation instructions, or [legacy CLI instructions](docs/legacy-cli.md) for stable 1.0.7.
 
-`ctg update --check` checks for a published release without installing. The regular CLI is still the default, and its updater can update a clean source clone. The native updater differs: it refuses to check out a release into any active source clone, including a clean one; it installs package releases only from an npm installation. Preserve local changes and use the manual exact-tag checkout procedure in the [native upgrade guide](docs/native-upgrade.md) when updating a development checkout. Do not treat this documentation change as a release: version selection, publishing, and tagging happen separately after product acceptance. See the [UNRELEASED draft notes](docs/release-notes-native-draft.md).
+`ctg update --check` checks for a published release without installing. Select `--channel experimental` to include published previews; drafts are never installed. The legacy stable updater can update a clean source clone. The native updater differs: it refuses to check out a release into any active source clone, including a clean one; it installs package releases only from an npm installation. Preserve local changes and use the manual exact-tag checkout procedure in the [native upgrade guide](docs/native-upgrade.md) when updating a development checkout. Do not treat this documentation change as a release: version selection, publishing, and tagging happen separately after product acceptance. See the [UNRELEASED draft notes](docs/release-notes-native-draft.md).
 
 ## Update channels
 
@@ -77,7 +78,7 @@ Experimental software may still contain bugs; read its release notes first.
 
 ## Regular CLI
 
-Without `ctg native` or `CTG_NATIVE=1`, `ctg` continues to launch the existing split-terminal CLI and its existing Carthagent agent profile. This behavior remains the default for now. Its data and provider setup are distinct from the native preview described above.
+The split-terminal console remains available in stable 1.0.7, not as an alternate route inside the native-default experimental package. To return to stable, use `ctg update --channel stable`. Its legacy data and provider setup remain distinct from the native profile; existing transcripts remain available through the read-only archive commands.
 
 ## Delivery engine and existing CLI
 

@@ -2,19 +2,19 @@
 
 This is a GitHub experimental prerelease, not a stable 1.1.0 release. Install it
 only through explicit `ctg update --channel experimental` after the stable updater
-bootstrap. The regular OpenCode installation is never replaced. Native launch
-remains explicit (`ctg native`); the fixture runner below uses a separately
-verified owned binary and isolated profiles. Agent/tool execution is **not an OS
+bootstrap. The regular OpenCode installation is never replaced. Native is the
+default interface in preview.8 (`ctg native` remains an alias). The fixture runner
+below uses a separately verified owned binary and isolated profiles. Agent/tool execution is **not an OS
 sandbox**. Start with these disposable projects.
 
 ## 1. Get the candidate source
 
 For the published preview, use `ctg update --channel experimental` after installing
-the stable 1.0.7 updater. Launch the native interface explicitly with `ctg native`.
+the stable 1.0.7 updater. Launch the native interface with `ctg`.
 For the fixture generator, check out its exact source tag:
 
 ```sh
-git -c core.autocrlf=false clone -c core.autocrlf=false --branch v1.1.0-preview.7 https://github.com/B-icy/Carthagent.git ctg-native-manual
+git -c core.autocrlf=false clone -c core.autocrlf=false --branch v1.1.0-preview.8 https://github.com/B-icy/Carthagent.git ctg-native-manual
 cd ctg-native-manual
 npm ci
 ```
@@ -29,10 +29,11 @@ probes, not for the interactive manual runner. No Bun installation is required.
 
 ## 2. Prepare your machine's runtime and projects
 
-Install/authenticate GitHub CLI (`gh`) so it can read this repository's Actions
-artifacts. The script downloads only the matching platform from successful run
-[39869144800](https://github.com/B-icy/Carthagent/actions/runs/39869144800). Artifacts
-can expire. It fails rather than silently selecting an upstream/system binary.
+Run this helper from the source checkout, which includes `package-lock.json`, not
+from the global npm installation. By default it acquires the current platform's
+archive from the exact published release in the packaged trust manifest. GitHub
+CLI authentication is not required for published assets. Setup fails rather than
+silently selecting an upstream/system binary.
 
 ```sh
 node tools/prepare-native-manual.mjs ../ctg-manual-kit
@@ -42,12 +43,23 @@ Supported targets: Linux x64/arm64, macOS x64/arm64, Windows x64. Use matching N
 architecture; native Windows arm64 is not in the reviewed candidate. WSL is Linux,
 not proof of Windows terminal behavior. The commands also work in PowerShell.
 
-For no GitHub login/download during setup, first obtain the matching
-`ctg-runtime-prebuild-<target>` artifact from that run and unzip it. Then use:
+For offline archive acquisition, obtain the matching release archive first, then use:
 
 ```sh
 node tools/prepare-native-manual.mjs ../ctg-manual-kit --assets /path/to/unzipped-artifact
 ```
+
+For an unpublished prebuild, obtain the matching artifact and its complete candidate
+manifest from the reviewed build. Supply an independently checked manifest digest:
+
+```sh
+node tools/prepare-native-manual.mjs ../ctg-candidate-kit --assets /path/to/archives --manifest /path/to/runtime-release.json.candidate --manifest-sha256 <reviewed-sha256>
+```
+
+Do not derive the expected digest from an untrusted download without reviewing it.
+The helper prints the same manifest arguments to use with `native-manual.mjs`.
+Existing published manifests and per-platform archive hashes are never rewritten
+to make a different candidate pass.
 
 The directory must contain `opencode-<target>.tar.gz`, **not** an arbitrary
 executable. Setup uses the production archive verifier, checks the packaged trust
@@ -147,7 +159,7 @@ kit manifest hash, and executable SHA-256 from `manual-kit.json`.
   controlled paired performance acceptance remain manual/release gates.
 - Linux automated success does not establish macOS/Windows native UI acceptance.
 - GitHub draft/public release installation is not tested by this development
-  override. Use the v1.1.0-preview.7 assets, not the unshipped v1.1.0 stable tag. Do not run the final
+  override. Use the v1.1.0-preview.8 assets, not the unshipped v1.1.0 stable tag. Do not run the final
   release/package gate and mistake a missing asset for a manual-kit setup failure.
 
 ## 5. Explicit live-provider testing
@@ -203,7 +215,7 @@ candidate checkout and test kit after saving wanted work; no global binary chang
 POSIX example (adjust paths; do not export these persistently):
 
 ```sh
-export CTG_OWNED_OPENCODE_RUNTIME="$(pwd)/../ctg-manual-kit/runtimes/1.1.0-preview.7/linux-x64"
+export CTG_OWNED_OPENCODE_RUNTIME="$(pwd)/../ctg-manual-kit/runtimes/1.1.0-preview.8/linux-x64"
 export CTG_TEST_RUNTIME_RELEASE_MANIFEST="$(pwd)/lib/opencode/runtime-release.json"
 node tools/test-native-swe-host.mjs
 node tools/test-native-public-repo.mjs
