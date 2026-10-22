@@ -13,9 +13,9 @@ import { preflightNativeTestRuntimeArtifact } from './native-runtime-identity.mj
 import { createManualProjects } from './native-manual-projects.mjs';
 
 const root = resolve(import.meta.dirname, '..');
-export const MANUAL_RUNTIME_RUN = '39688889002';
+export const MANUAL_RUNTIME_RUN = '39837130343';
 const manifestSha256 =
-  'c829138a135f34712ddca0f717da117783bcb9ab0c491e630e898beabebb393b';
+  'c9d31fd851998adcf1c268df7fdb0a8c05c67341a686516eb557101bab6f3880';
 
 export async function prepareManualKit(
   directory,
@@ -78,7 +78,7 @@ async function prepareManualKitInPlace(
       if (
         String(info.id) !== MANUAL_RUNTIME_RUN ||
         info.conclusion !== 'success' ||
-        info.head_sha !== '300d37e56ece69e8aa44f12388e04131556dfd2f' ||
+        info.head_sha !== 'a9981a4b05bd57ef0f4ecf8aedfa54f4218baeee' ||
         info.path !== '.github/workflows/publish-owned-opencode-runtime.yml'
       )
         throw Error('Unexpected CI runtime provenance');

@@ -14,7 +14,7 @@ the stable 1.0.7 updater. Launch the native interface explicitly with `ctg nativ
 For the fixture generator, check out its exact source tag:
 
 ```sh
-git -c core.autocrlf=false clone -c core.autocrlf=false --branch v1.1.0-preview.3 https://github.com/B-icy/Carthagent.git ctg-native-manual
+git -c core.autocrlf=false clone -c core.autocrlf=false --branch v1.1.0-preview.5 https://github.com/B-icy/Carthagent.git ctg-native-manual
 cd ctg-native-manual
 npm ci
 ```
@@ -31,7 +31,7 @@ probes, not for the interactive manual runner. No Bun installation is required.
 
 Install/authenticate GitHub CLI (`gh`) so it can read this repository's Actions
 artifacts. The script downloads only the matching platform from successful run
-[39688889002](https://github.com/B-icy/Carthagent/actions/runs/39688889002). Artifacts
+[39837130343](https://github.com/B-icy/Carthagent/actions/runs/39837130343). Artifacts
 can expire. It fails rather than silently selecting an upstream/system binary.
 
 ```sh
@@ -147,7 +147,7 @@ kit manifest hash, and executable SHA-256 from `manual-kit.json`.
   controlled paired performance acceptance remain manual/release gates.
 - Linux automated success does not establish macOS/Windows native UI acceptance.
 - GitHub draft/public release installation is not tested by this development
-  override. Use the v1.1.0-preview.3 assets, not the unshipped v1.1.0 stable tag. Do not run the final
+  override. Use the v1.1.0-preview.5 assets, not the unshipped v1.1.0 stable tag. Do not run the final
   release/package gate and mistake a missing asset for a manual-kit setup failure.
 
 ## 5. Explicit live-provider testing
@@ -203,7 +203,7 @@ candidate checkout and test kit after saving wanted work; no global binary chang
 POSIX example (adjust paths; do not export these persistently):
 
 ```sh
-export CTG_OWNED_OPENCODE_RUNTIME="$(pwd)/../ctg-manual-kit/runtimes/1.1.0-preview.3/linux-x64"
+export CTG_OWNED_OPENCODE_RUNTIME="$(pwd)/../ctg-manual-kit/runtimes/1.1.0-preview.5/linux-x64"
 export CTG_TEST_RUNTIME_RELEASE_MANIFEST="$(pwd)/lib/opencode/runtime-release.json"
 node tools/test-native-swe-host.mjs
 node tools/test-native-public-repo.mjs

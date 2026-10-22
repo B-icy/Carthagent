@@ -1,6 +1,6 @@
 {
   "name": "carthagent",
-  "version": "1.1.0-preview.3",
+  "version": "1.1.0-preview.5",
   "private": true,
   "workspaces": [
     "plugins/carthagent"
