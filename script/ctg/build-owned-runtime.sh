@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 EXPECTED_SOURCE="843a6c514e606b436a7fe713422ace0a93ad3d61"
 EXPECTED_LOCK="9d78379cd264584a495440a217b9d2ecab524c9a56f7f8b4b5bed3926daa330d"
-EXPECTED_PATCH="5ced955070efaefd3c4bf302e8cf51788fdc4597f7e09e935813511a7d2b990c"
+EXPECTED_PATCH="b4238d77827d7ccf8f87fb0326551eaa62268d9387cd89e29bd0cf12bd6dafaa"
 TARGET="${1:-opencode-linux-x64}"
 HOST_PLATFORM="$(node -p 'process.platform')"
 HOST_ARCH="$(node -p 'process.arch')"
@@ -108,8 +108,10 @@ bun run --cwd packages/tui typecheck
 bun test --cwd packages/core test/session-compaction.test.ts
 bun test --cwd packages/core test/shell-retention.test.ts
 bun test --cwd packages/server test/shell-provenance.test.ts
+bun test --cwd packages/tui test/plugin-source.test.ts
 bun test --cwd packages/tui test/clear-session.test.tsx
 bun test --cwd packages/tui test/util/renderer.test.ts
+bun test --cwd packages/tui test/component/plan-view.test.tsx test/component/transcript-scrollbox.test.ts test/component/seascape.test.ts test/component/session-tabs-rail.test.tsx test/component/session-tabs-marquee.test.ts test/component/session-tabs-mouse.test.tsx test/context/session-tabs-model.test.ts test/ui/layout.test.ts
 bun test --cwd packages/tui --timeout 60000 test/glyphs.test.ts test/plugin-keymap.test.tsx test/plugin-theme.test.tsx test/plugin-theme-provider.test.tsx
 
 cd packages/cli

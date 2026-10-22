@@ -39,7 +39,11 @@ def run_mode(binary, mode, timeout):
         config = root / 'config' / 'opencode'
         for directory in (project, config, root / 'home', root / 'data', root / 'state', root / 'cache'):
             directory.mkdir(parents=True, exist_ok=True)
-        (config / 'opencode.json').write_text(json.dumps({'update': 'disable'}), encoding='utf8')
+        (config / 'opencode.json').write_text(json.dumps({'update': 'disable', 'model': 'ctg-glyph/fixture',
+            'providers': {'ctg-glyph': {'name': 'Local glyph probe',
+                'package': '@opencode/ai/providers/openai-compatible',
+                'settings': {'baseURL': 'http://127.0.0.1:1/v1', 'apiKey': 'offline-fixture'},
+                'models': {'fixture': {'name': 'Glyph fixture', 'limit': {'context': 32000, 'output': 1024}}}}}}), encoding='utf8')
         env = child_environment(root, config, mode)
         master, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 32, 100, 0, 0))
@@ -68,7 +72,7 @@ def run_mode(binary, mode, timeout):
                         os.write(master, b'\x1b[?1;2c')
                 visible = screen.visible()
                 lower = visible.lower()
-                if not pasted and ('ask anything' in lower or 'what is the tech' in lower):
+                if not pasted and ('shift+tab agents' in lower and 'ctrl+p commands' in lower):
                     home_seen = True
                     # Insert but do not submit: this makes arbitrary user text
                     # observable in the genuine composer without contacting a provider.
@@ -91,12 +95,12 @@ def run_mode(binary, mode, timeout):
                                          'unicodePresent': unicode_token in chrome_region,
                                          'asciiPresent': ascii_token in chrome_region}
             if mode == 'ascii':
-                if '█▀▀' in chrome_region or '▀▀▀' in chrome_region:
+                if CHROME_PAIRS[0][0] in chrome_region or '▀▀▀' in chrome_region:
                     raise AssertionError(f'ASCII startup logo still contains Unicode block-art chrome; screen={visible[-1200:]!r}')
                 if 'CARTHAGENT' not in chrome_region.replace(' ', ''):
                     raise AssertionError(f'ASCII startup logo alternative not observed; screen={visible[-1200:]!r}')
             else:
-                if '█▀▀' not in chrome_region:
+                if CHROME_PAIRS[0][0] not in chrome_region:
                     raise AssertionError(f'Unicode startup logo not observed; screen={visible[-1200:]!r}')
             if 'Carthagent' not in screen.title_updates:
                 raise AssertionError(f'{mode}: Carthagent terminal title not observed: {screen.title_updates!r}')

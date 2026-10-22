@@ -572,6 +572,63 @@ test('ensureService rejects normal/owned selector switches without stopping the 
   }
 });
 
+test('owned runtime upgrades restart the authenticated service and preserve the profile', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-owned-upgrade-'));
+  const artifact = path.join(root, 'artifact');
+  const target = `${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch}`;
+  const executable = `cli-${target}/bin/${process.platform === 'win32' ? 'opencode.exe' : 'opencode'}`;
+  const binary = path.join(artifact, executable);
+  const script = path.join(root, 'server.cjs');
+  const options = { root: path.join(root, 'profile'), ownedRuntime: artifact,
+    spawnImpl: (command, args, opts) => spawn(process.execPath, [script, ...args], opts), startupTimeout: 5000 };
+  try {
+    await mkdir(path.dirname(binary), { recursive: true });
+    await writeFile(script, `
+      if (process.argv[2] === '--version') { console.log('opencode v${CTG_RUNTIME_VERSION}'); process.exit(0); }
+      const http = require('node:http');
+      const server = http.createServer((req, res) => {
+        if (req.headers.authorization !== 'Basic ' + Buffer.from('opencode:' + process.env.OPENCODE_SERVER_PASSWORD).toString('base64')) { res.writeHead(401); res.end(); return; }
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({version:'${CTG_RUNTIME_VERSION}',pid:process.pid,capabilities:{shellOrigin:true}}));
+      });
+      server.listen(0, '127.0.0.1', () => console.log('server listening on http://127.0.0.1:' + server.address().port));
+    `);
+    await writeFile(path.join(artifact, 'ctg-runtime.json'), JSON.stringify({
+      owner: 'Carthagent', sourceRepository: 'https://github.com/anomalyco/opencode',
+      sourceRevision: CTG_RUNTIME_SOURCE, lockSha256: CTG_RUNTIME_LOCK_SHA256, patchSha256: CTG_RUNTIME_PATCH_SHA256,
+      compatibilityVersion: OPENCODE_VERSION, runtimeVersion: CTG_RUNTIME_VERSION, channel: 'ctg.2.0.32', platform: target, webUI: false,
+    }));
+    const { createHash } = await import('node:crypto');
+    const install = async (bytes) => {
+      await writeFile(binary, bytes);
+      await writeFile(path.join(artifact, 'SHA256SUMS'), `${createHash('sha256').update(bytes).digest('hex')}  ${executable}\n`);
+    };
+    await install('owned runtime revision one');
+    const first = await ensureService(options);
+    assert.equal((await ensureService(options)).pid, first.pid, 'unchanged runtime reuses the service');
+    const marker = path.join(first.paths.data, 'preserved-session');
+    await writeFile(marker, 'session and credential data must remain');
+    await install('owned runtime revision two');
+    const second = await ensureService(options);
+    assert.notEqual(second.pid, first.pid, 'new runtime replaces the old service without manual stop');
+    assert.equal((await ensureService(options)).pid, second.pid);
+    assert.equal(await readFile(marker, 'utf8'), 'session and credential data must remain');
+    const staleLauncher = { ...second.info, launcherVersion: '0.0.0-old' };
+    await writeFile(second.paths.serviceFile, JSON.stringify(staleLauncher));
+    const third = await ensureService(options);
+    assert.notEqual(third.pid, second.pid, 'launcher/plugin update restarts even when runtime bytes match');
+    assert.equal(await readFile(marker, 'utf8'), 'session and credential data must remain');
+    await writeFile(third.paths.serviceFile, JSON.stringify({ ...third.info, password: 'incorrect' }));
+    await install('owned runtime revision three');
+    await assert.rejects(ensureService(options), /left running|unhealthy|cannot be verified/);
+    assert.doesNotThrow(() => process.kill(third.pid, 0), 'unverified process must never be signalled');
+    await writeFile(third.paths.serviceFile, JSON.stringify(third.info));
+  } finally {
+    await stopService(options).catch(() => {});
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('dead mismatched registration is cleaned before a replacement service starts', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-dead-registration-'));
   const paths = runtimePaths({ root });

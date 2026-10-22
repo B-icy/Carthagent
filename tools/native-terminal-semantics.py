@@ -392,7 +392,7 @@ def main():
                 elapsed = time.monotonic() - start
                 visible = screen.visible().lower()
                 visible_original = screen.visible()
-                home_ready = 'ask anything' in visible or 'what is the tech' in visible
+                home_ready = 'shift+tab agents' in visible and 'ctrl+p commands' in visible
                 onboarding_visible = ('connect opencode go' in visible or
                                       'connect an integration to' in visible or
                                       'send prompts' in visible)
@@ -402,7 +402,7 @@ def main():
                     auth_dismissed_at = time.monotonic()
                 if focused_case and auth_dismissed and time.monotonic() - auth_dismissed_at > .4:
                     visible = screen.visible().lower()
-                    home_ready = 'ask anything' in visible or 'what is the tech' in visible
+                    home_ready = 'shift+tab agents' in visible and 'ctrl+p commands' in visible
                 if not focused_case and not picker_started and elapsed > 2 and home_ready:
                     # Ctrl+O opens OpenCode's recent sessions/projects menu.
                     # Ctrl+P is command completion on this runtime and must not
@@ -426,8 +426,8 @@ def main():
                 if picker_cancelled and result['checks'].get('pickerEscapeCancel', {}).get('status') == 'PENDING':
                     if time.monotonic() - picker_cancelled_at > .5:
                         still_open = picker_heading in screen.visible().lower()
-                        picker_home_restored = ('ask anything' in screen.visible().lower() or
-                                                'what is the tech' in screen.visible().lower())
+                        picker_home_restored = ('shift+tab agents' in screen.visible().lower() and
+                                                'ctrl+p commands' in screen.visible().lower())
                         no_provider_request = len(Provider.received) == 0
                         result['checks']['pickerEscapeCancel'] = {
                             'status': 'PASS' if picker_home_before and picker_home_restored and not still_open and no_provider_request else 'FAIL',
@@ -477,9 +477,11 @@ def main():
                 mouse_mode = (b'\x1b[?1000h' in output or b'\x1b[?1002h' in output or
                               b'\x1b[?1006h' in output)
                 response_rows = [index for index, line in enumerate(visible_lines, 1)
-                                 if ('FINAL' in line and selection_target in line and 'END' in line and
-                                     4 <= index <= screen.rows - 4)]
-                if (not selection_sent and response_rows and mouse_mode):
+                                 if ('FINAL' + selection_target + 'END' in line and
+                                     1 <= index <= screen.rows - 4)]
+                response_settled = ('provider_received_at' in locals() and
+                                    time.monotonic() - provider_received_at > 1.0)
+                if (not selection_sent and response_rows and mouse_mode and response_settled):
                     target_row = response_rows[-1]
                     target_line = visible_lines[target_row - 1]
                     # Derive terminal cells from the original VT paint stream:
@@ -503,8 +505,6 @@ def main():
                     selection_sent = True
                     selection_sent_at = time.monotonic()
                 response_observed = fixture_response.encode() in output
-                response_settled = ('provider_received_at' in locals() and
-                                    time.monotonic() - provider_received_at > 1.0)
                 selection_values_now = screen.clipboard_history[selected_clipboard_count:]
                 selection_observed = (selection_sent and selection_confirmed and
                                       selection_values_now == [selected_text])
@@ -512,7 +512,7 @@ def main():
                     selection_readback_at_selection = screen.query_clipboard()
                 if (Provider.received and not copy_invoked and
                         (response_observed or (args.focused_host_roundtrip and response_settled)) and
-                        (not args.focused_host_roundtrip or selection_observed) and
+                        selection_observed and
                         not args.assertion_regression_only):
                     copy_clipboard_count = len(screen.clipboard_history)
                     os.write(master, b'/copy\r')
@@ -712,7 +712,7 @@ def main():
                 'finalTitle': screen.title,
                 'titleSequenceObserved': screen.title_history,
                 'oscTitleUpdates': screen.osc_title_updates}
-            selection_values = screen.clipboard_history[selected_clipboard_count:copy_clipboard_count] if selection_sent else []
+            selection_values = screen.clipboard_history[selected_clipboard_count:copy_clipboard_count if copy_invoked else None] if selection_sent else []
             selection_readback = locals().get('selection_readback_at_selection')
             selection_model_pass = (selection_sent and selected_text == selection_target and
                                     selection_values == [selection_target] and
