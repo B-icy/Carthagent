@@ -332,8 +332,10 @@ jobs:
           mkdir regenerated-assets
           for key in linux-x64 linux-arm64 darwin-x64 darwin-arm64 windows-x64; do cp "$candidate_dir/opencode-$key.tar.gz" "$candidate_dir/opencode-$key.tar.gz.build.json" regenerated-assets/; done
           # The pinned release generator still reads the historical patch path.
-          # Point that path at the reviewed bytes only in this disposable checkout.
-          cp ctg/docs/patches/opencode-v2.0.32-session-ui-combined-v1.patch ctg/docs/patches/opencode-v2.0.32-session-ui.patch
+          # Resolve its input from the tagged recipe, never execute the recipe.
+          patch_file="$(git -C ctg show HEAD:script/ctg/build-owned-runtime.sh | sed -n 's|^patch_file="\$ROOT/\(docs/patches/[^"[:space:]]*\.patch\)"$|\1|p')"
+          [[ "$patch_file" =~ ^docs/patches/[A-Za-z0-9._-]+\.patch$ ]]
+          git -C ctg show "HEAD:$patch_file" > ctg/docs/patches/opencode-v2.0.32-session-ui.patch
           node release-generator/tools/generate-owned-runtime-release.mjs "$RELEASE_VERSION" regenerated-assets "$GITHUB_WORKSPACE/ctg" > /dev/null
           cmp "$candidate_dir/runtime-release.json.candidate" "$GITHUB_WORKSPACE/runtime-release.json.candidate"
           (cd "$candidate_dir" && sha256sum --check runtime-archives-SHA256SUMS.txt)
