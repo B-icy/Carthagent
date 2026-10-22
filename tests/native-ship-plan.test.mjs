@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
 import { createHash } from 'node:crypto';
@@ -21,13 +22,13 @@ const items = messages => JSON.parse(JSON.stringify(exports.planItems(messages))
 const snapshot = (status = 'pending', revision = 1) => ({ runId: 'run-a', revision, items: [{ id: 'implementation', content: 'Implement the contract', status }] });
 const message = (name, deliveryPlan, status = 'completed') => ({ type: 'assistant', content: [{ type: 'tool', name, state: { status, metadata: { deliveryPlan } } }] });
 
-test('the runtime plan graph parser typechecks against the pinned native client API', () => {
-  const virtualPath = fileURLToPath(new URL('.native-plan-items.ts', import.meta.url));
+test('the runtime plan graph parser typechecks against the pinned native client API', t => {
+  const directory = mkdtempSync(fileURLToPath(new URL('.native-plan-', import.meta.url)));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const sourcePath = join(directory, 'plan-items.ts');
+  writeFileSync(sourcePath, source);
   const options = { noEmit: true, skipLibCheck: true, strict: true, target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler };
-  const host = ts.createCompilerHost(options);
-  const originalGet = host.getSourceFile.bind(host);
-  host.getSourceFile = (name, languageVersion, onError, createNew) => name === virtualPath ? ts.createSourceFile(name, source, languageVersion, true) : originalGet(name, languageVersion, onError, createNew);
-  const program = ts.createProgram([virtualPath], options, host);
+  const program = ts.createProgram([sourcePath], options);
   const errors = ts.getPreEmitDiagnostics(program).map(diagnostic => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'));
   assert.deepEqual(errors, []);
 });

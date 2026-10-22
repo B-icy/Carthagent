@@ -179,7 +179,7 @@ async function fixture(t) {
     copyFile(path.join(root, combinedPatchPath), path.join(ctg, combinedPatchPath)),
   ]);
   execFileSync('git', ['init', '-q'], { cwd: ctg });
-  execFileSync('git', ['-c', 'user.name=Workflow Fixture', '-c', 'user.email=fixture@example.invalid', 'add', combinedPatchPath], { cwd: ctg });
+  execFileSync('git', ['-c', 'user.name=Workflow Fixture', '-c', 'user.email=fixture@example.invalid', 'add', combinedPatchPath, 'script/ctg/build-owned-runtime.sh'], { cwd: ctg });
   execFileSync('git', ['-c', 'user.name=Workflow Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture candidate patch'], { cwd: ctg });
   await copyFile(path.join(root, 'lib/opencode/runtime.mjs'), path.join(ctg, 'lib/opencode/runtime.mjs'));
 
@@ -405,8 +405,10 @@ test('draft metadata validation has scoped write capability; artifact mutation s
   assert.match(uploadBlock, /gh release upload/);
   assert.match(workflow, /git -C ctg show HEAD:docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v3\.patch > opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v3\.patch/);
   assert.match(workflow, /patch_sha256="\$\(hash_file opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v3\.patch\)"/);
-  assert.equal((workflow.match(/git -C ctg show HEAD:docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v3\.patch > ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui\.patch/g) ?? []).length, 2,
-    'both generation paths must extract exact committed candidate bytes at the pinned historical path');
+  assert.equal((workflow.match(/git -C ctg show HEAD:docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v3\.patch > ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui\.patch/g) ?? []).length, 1,
+    'candidate assembly must extract exact committed bytes at the pinned historical path');
+  assert.match(verifyBlock, /git -C ctg show HEAD:script\/ctg\/build-owned-runtime\.sh/);
+  assert.match(verifyBlock, /git -C ctg show "HEAD:\$patch_file" > ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui\.patch/);
   assert.match(workflow, /git -C ctg show HEAD:script\/ctg\/build-owned-runtime\.sh > opencode\/script\/ctg\/build-owned-runtime\.sh/);
   assert.match(workflow, /chmod \+x opencode\/script\/ctg\/build-owned-runtime\.sh/);
   assert.match(workflow, /GIT_CONFIG_KEY_0:\s*core\.autocrlf[\s\S]*?GIT_CONFIG_VALUE_0:\s*'false'/);
