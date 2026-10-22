@@ -5,7 +5,7 @@ import { once } from 'node:events';
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, resolve, toNamespacedPath } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { promisify } from 'node:util';
 import { OpenCode } from '@opencode/client';
@@ -145,11 +145,11 @@ try {
   await new Promise(resolve => cloud.close(resolve));
   if (process.platform === 'win32') {
     // fs.rm can stall on the runtime-created Windows cache tree after the host exits.
-    await promisify(execFile)(process.env.ComSpec || 'cmd.exe', ['/d', '/c', 'rmdir /s /q "%CTG_NATIVE_FIXTURE_TEMP%"'], {
-      env: { ...process.env, CTG_NATIVE_FIXTURE_TEMP: temp },
+    const removed = await promisify(execFile)(process.env.ComSpec || 'cmd.exe', ['/d', '/c', 'rmdir /s /q "%CTG_NATIVE_FIXTURE_TEMP%"'], {
+      env: { ...process.env, CTG_NATIVE_FIXTURE_TEMP: toNamespacedPath(temp) },
       windowsVerbatimArguments: true, windowsHide: true, timeout: 30_000,
     });
-    await assert.rejects(access(temp), { code: 'ENOENT' });
+    await assert.rejects(access(temp), { code: 'ENOENT' }, JSON.stringify(removed));
   } else {
     await rm(temp, { recursive: true, force: true, maxRetries: 12, retryDelay: 250 });
   }
