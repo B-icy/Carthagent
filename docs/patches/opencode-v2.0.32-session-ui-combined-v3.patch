@@ -5161,10 +5161,10 @@ index 31c4f4cea0..b04abf548e 100644
 +  throw new Error("PluginProvider is missing")
  }
 diff --git a/packages/tui/src/plugin/runtime-plugin-support.bun.ts b/packages/tui/src/plugin/runtime-plugin-support.bun.ts
-index b1ebab0226..abba4076c0 100644
+index b1ebab0226..a8114643be 100644
 --- a/packages/tui/src/plugin/runtime-plugin-support.bun.ts
 +++ b/packages/tui/src/plugin/runtime-plugin-support.bun.ts
-@@ -1,8 +1,40 @@
+@@ -1,8 +1,41 @@
  import { ensurePluginRuntime, provides } from "@opencode/plugin/runtime"
  import { Plugin, PluginContextProvider, usePlugin } from "@opencode/plugin/tui"
 +import { createSolidTransformPlugin } from "@opentui/solid/bun-plugin"
@@ -5183,9 +5183,10 @@ index b1ebab0226..abba4076c0 100644
 +])
 +const installedSolid = createSolidTransformPlugin({
 +  moduleName: runtimeModuleIdForSpecifier("@opentui/solid"),
-+  resolvePath: (specifier) => isCoreRuntimeModuleSpecifier(specifier) || sharedSolidModules.has(specifier)
-+    ? runtimeModuleIdForSpecifier(specifier)
-+    : null,
++  resolvePath: (specifier) =>
++    isCoreRuntimeModuleSpecifier(specifier) || sharedSolidModules.has(specifier)
++      ? runtimeModuleIdForSpecifier(specifier)
++      : null,
 +})
 +Bun.plugin({
 +  name: "opencode-installed-solid-jsx",
@@ -7733,10 +7734,10 @@ index b53525df46..5fd351ae4c 100644
    await using state = await tmpdir()
 diff --git a/packages/tui/test/component/plan-view.test.tsx b/packages/tui/test/component/plan-view.test.tsx
 new file mode 100644
-index 0000000000..43b6178d52
+index 0000000000..5e535dbd82
 --- /dev/null
 +++ b/packages/tui/test/component/plan-view.test.tsx
-@@ -0,0 +1,49 @@
+@@ -0,0 +1,88 @@
 +/** @jsxImportSource @opentui/solid */
 +import { expect, test } from "bun:test"
 +import { testRender } from "@opentui/solid"
@@ -7750,25 +7751,64 @@ index 0000000000..43b6178d52
 +import { TestTuiContexts } from "../fixture/tui-environment"
 +
 +function message(name: string, todos: Array<{ content: string; status: string }>): SessionMessageInfo {
-+  return { id: "msg-plan", type: "assistant", agent: "ship", model: { providerID: "fixture", id: "fixture" },
-+    time: { created: 1 }, content: [{ type: "tool", id: "tool-plan", name, time: { created: 1 },
-+      state: { status: "completed", input: name === "todowrite" ? { todos } : {},
-+        content: [{ type: "text", text: "Plan recorded" }],
-+        metadata: name === "execute" ? { toolCalls: [{ tool: "todowrite", input: { todos } }] } : {} } }] }
++  return {
++    id: "msg-plan",
++    type: "assistant",
++    agent: "ship",
++    model: { providerID: "fixture", id: "fixture" },
++    time: { created: 1 },
++    content: [
++      {
++        type: "tool",
++        id: "tool-plan",
++        name,
++        time: { created: 1 },
++        state: {
++          status: "completed",
++          input: name === "todowrite" ? { todos } : {},
++          content: [{ type: "text", text: "Plan recorded" }],
++          metadata: name === "execute" ? { toolCalls: [{ tool: "todowrite", input: { todos } }] } : {},
++        },
++      },
++    ],
++  }
 +}
 +
-+test.each([["todowrite", "unicode"], ["execute", "unicode"], ["execute", "ascii"]])("plan view updates from %s in %s mode without remounting", async (name, mode) => {
++test.each([
++  ["todowrite", "unicode"],
++  ["execute", "unicode"],
++  ["execute", "ascii"],
++])("plan view updates from %s in %s mode without remounting", async (name, mode) => {
 +  const previousMode = process.env.CTG_TUI_GLYPHS
 +  process.env.CTG_TUI_GLYPHS = mode
 +  const [messages, update] = createSignal<SessionMessageInfo[]>([])
-+  const app = await testRender(() => <TestTuiContexts>
-+    <ConfigProvider config={createTuiResolvedConfig()}><ThemeProvider mode="dark" source={emptyThemeSource}><PlanView messages={messages} /></ThemeProvider></ConfigProvider>
-+  </TestTuiContexts>, { width: 90, height: 15 })
++  const app = await testRender(
++    () => (
++      <TestTuiContexts>
++        <ConfigProvider config={createTuiResolvedConfig()}>
++          <ThemeProvider mode="dark" source={emptyThemeSource}>
++            <PlanView messages={messages} />
++          </ThemeProvider>
++        </ConfigProvider>
++      </TestTuiContexts>
++    ),
++    { width: 90, height: 15 },
++  )
 +  try {
 +    await app.waitForFrame((frame) => frame.includes("No plan yet"))
-+    update([message(name, [{ content: "Check λ input", status: "in_progress" }, { content: "Run checks", status: "pending" }])])
++    update([
++      message(name, [
++        { content: "Check λ input", status: "in_progress" },
++        { content: "Run checks", status: "pending" },
++      ]),
++    ])
 +    await app.waitForFrame((frame) => frame.includes("Check λ input") && frame.includes("1 in progress"))
-+    update([message(name, [{ content: "Check λ input", status: "completed" }, { content: "Run checks", status: "completed" }])])
++    update([
++      message(name, [
++        { content: "Check λ input", status: "completed" },
++        { content: "Run checks", status: "completed" },
++      ]),
++    ])
 +    await app.waitForFrame((frame) => frame.includes("2 completed"))
 +    expect(app.captureCharFrame()).not.toContain("in progress")
 +    if (mode === "ascii") expect(app.captureCharFrame()).not.toMatch(/[■◐□│]/)
@@ -8404,7 +8444,7 @@ index 0790e9a689..fa236930c6 100644
 +  await setup.mockInput.typeText(query)
  }
 diff --git a/packages/tui/test/plugin-source.test.ts b/packages/tui/test/plugin-source.test.ts
-index 2f4d396a61..53dba05f61 100644
+index 2f4d396a61..4f47fdf888 100644
 --- a/packages/tui/test/plugin-source.test.ts
 +++ b/packages/tui/test/plugin-source.test.ts
 @@ -7,7 +7,8 @@ import { Host } from "@opencode/plugin/host"
@@ -8417,7 +8457,7 @@ index 2f4d396a61..53dba05f61 100644
  import { Effect, Option, Schema } from "effect"
  import { Plugin } from "@opencode/plugin/tui"
  import { tmpdir } from "./fixture/fixture"
-@@ -56,6 +57,34 @@ test("an explicit local entrypoint inside node_modules still reloads", async ()
+@@ -56,6 +57,37 @@ test("an explicit local entrypoint inside node_modules still reloads", async ()
    expect((await sources.read(entry.href)).module).toMatchObject({ default: "after" })
  })
 
@@ -8430,9 +8470,12 @@ index 2f4d396a61..53dba05f61 100644
 +    fileURLToPath(new URL("node_modules/@opentui/solid", sources.url)),
 +    "junction",
 +  )
-+  await Bun.write(entry, `import { createSignal } from "solid-js"
++  await Bun.write(
++    entry,
++    `import { createSignal } from "solid-js"
 +    export const [value, update] = createSignal("Loading workspace")
-+    export default () => <text>{value()}</text>`)
++    export default () => <text>{value()}</text>`,
++  )
 +  const loaded = (await sources.read(entry.href)).module as {
 +    default: () => JSX.Element
 +    value: () => string
@@ -8452,16 +8495,15 @@ index 2f4d396a61..53dba05f61 100644
  test("unchanged bytes are a no-op, reverted bytes get a fresh module", async () => {
    await using sources = await fixture()
    const entry = new URL("tui.ts", sources.url)
-@@ -126,7 +155,8 @@ test("shared runtime and ordinary package identities survive plugin generations"
-   for (const label of ["before", "after"]) {
-     await Bun.write(
-       entry,
--      `import { createSignal } from "solid-js"
-+      `import { createSignal, type JSX } from "solid-js"
-+import { testRender } from "@opentui/solid"
-       import { Plugin } from "@opencode/plugin/tui"
-       import value from "example"
-       export { createSignal, Plugin, value }; export const label = ${JSON.stringify(label)}`,
+@@ -192,7 +224,7 @@ test("TUI plugins importing @opencode/plugin/tui and solid-js alongside effect r
+         'import { Effect, Schema } from "effect"; import { some } from "effect/Option"; export const helper = { Effect, Schema, some }',
+       "node_modules/zod/package.json": '{"name":"zod","type":"module","exports":{".":"./index.js"}}',
+       "node_modules/zod/index.js": "export const fromPluginZod = true",
+-      "helper.ts": ['import { fromPluginZod }', 'from "zod"; export { fromPluginZod }'].join(" "),
++      "helper.ts": ["import { fromPluginZod }", 'from "zod"; export { fromPluginZod }'].join(" "),
+       "tui.ts": [
+         "import { createSignal }",
+         'from "solid-js"',
 diff --git a/packages/tui/test/plugin-theme-provider.test.tsx b/packages/tui/test/plugin-theme-provider.test.tsx
 new file mode 100644
 index 0000000000..ff8cbeabb0
