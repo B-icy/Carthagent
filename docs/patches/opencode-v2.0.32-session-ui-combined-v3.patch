@@ -2584,7 +2584,7 @@ index 8ecaa95787..65c0626d6a 100644
    )
  }
 diff --git a/packages/tui/src/component/session-tabs.tsx b/packages/tui/src/component/session-tabs.tsx
-index fdd23a43cb..c07db91f34 100644
+index fdd23a43cb..f206e6d146 100644
 --- a/packages/tui/src/component/session-tabs.tsx
 +++ b/packages/tui/src/component/session-tabs.tsx
 @@ -20,6 +20,7 @@ import {
@@ -3320,7 +3320,26 @@ index fdd23a43cb..c07db91f34 100644
        onMouseUp={(event) => {
          if (event.button === RIGHT_MOUSE_BUTTON) return
          release()
-@@ -739,408 +1336,21 @@ function VerticalSessionTabs(props: {
+@@ -727,6 +1324,18 @@ function VerticalSessionTabs(props: {
+       <Show when={compact()}>
+         <SessionTabsRailControls width={width()} tabs={tabs} belowHighlighted={belowHighlighted()} />
+       </Show>
++      <Show when={!compact()}>
++        <box flexShrink={0} flexDirection="row" height={1} paddingLeft={1} alignItems="center">
++          <text fg={theme.text.base} attributes={TextAttributes.BOLD} selectable={false}>
++            Sessions
++          </text>
++          <box flexGrow={1} />
++          <text fg={theme.text.muted} paddingRight={1} selectable={false}>
++            {items().length}
++          </text>
++        </box>
++        <box flexShrink={0} height={1} border={["top"]} borderColor={theme.border.base} />
++      </Show>
+       <scrollbox
+         ref={(element) => {
+           scroll = element
+@@ -739,408 +1348,21 @@ function VerticalSessionTabs(props: {
          scrollbarOptions={{ visible: false }}
        >
          <box flexShrink={0} flexDirection="column" gap={1} paddingY={compact() ? 1 : 0}>
@@ -3742,7 +3761,7 @@ index fdd23a43cb..c07db91f34 100644
            {/* One slot with two states: a muted affordance that promotes in place into the
                active new-session tab, instead of spawning a separate pseudo tab above itself. */}
            <Show when={tabs.add || newTab()}>
-@@ -1230,7 +1440,7 @@ function VerticalSessionTabs(props: {
+@@ -1230,7 +1452,7 @@ function VerticalSessionTabs(props: {
                      tabs.close()
                    }}
                  >
@@ -3751,7 +3770,7 @@ index fdd23a43cb..c07db91f34 100644
                  </text>
                </Show>
              </box>
-@@ -1262,6 +1472,7 @@ function VerticalSessionTabs(props: {
+@@ -1262,6 +1484,7 @@ function VerticalSessionTabs(props: {
                      items().find((tab) => tab.sessionID === sessionID())?.title ??
                      "Untitled session",
                    tooltipWidth() - 2,
@@ -3759,7 +3778,7 @@ index fdd23a43cb..c07db91f34 100644
                  )}
                </text>
                <text fg={theme.text.muted} wrapMode="none" selectable={false}>
-@@ -1556,7 +1767,7 @@ function HorizontalSessionTabs(props: {
+@@ -1556,7 +1779,7 @@ function HorizontalSessionTabs(props: {
      >
        <Show when={layout().before > 0}>
          <text width={sessionTabOverflowWidth(layout().before)} fg={theme.text.muted} selectable={false}>
@@ -3768,7 +3787,7 @@ index fdd23a43cb..c07db91f34 100644
          </text>
        </Show>
        <For each={layout().tabs}>
-@@ -1753,7 +1964,7 @@ function HorizontalSessionTabs(props: {
+@@ -1753,7 +1976,7 @@ function HorizontalSessionTabs(props: {
                      tabs.close(tab === NEW_SESSION_TAB ? undefined : tab.sessionID)
                    }}
                  >
@@ -3777,7 +3796,7 @@ index fdd23a43cb..c07db91f34 100644
                  </text>
                </box>
              </box>
-@@ -1762,7 +1973,7 @@ function HorizontalSessionTabs(props: {
+@@ -1762,7 +1985,7 @@ function HorizontalSessionTabs(props: {
        </For>
        <Show when={layout().after > 0}>
          <text width={sessionTabOverflowWidth(layout().after)} fg={theme.text.muted} selectable={false}>

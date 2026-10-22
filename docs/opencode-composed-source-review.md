@@ -17,7 +17,7 @@ The approved base combined source patch is
 `81e86a4c139e02ebd077e1b635a62ea804ec60b6ae20100893cb6d9f73b06d62`. A
 separate combined candidate is recorded at
 `docs/patches/opencode-v2.0.32-session-ui-combined-v3.patch` with SHA-256
-`7a2f3fd8141d593771a92398af3a85f0ea8c213443018b30aca20298fe926691`; it adds
+`58cb5ece8d3113fa597bd5b978112b5d96bdfbede4e9918867441b0143c06f85`; it adds
 the approved spinner test-isolation and real-provider theme proof patches. The
 candidate recipe and packaged runtime identity both pin this digest; the
 historical base recipe/runtime identity remain recorded in Git, and the base
