@@ -24,7 +24,7 @@ override.
 - Upstream: `https://github.com/anomalyco/opencode`
 - Tag/revision: `v2.0.32` / `843a6c514e606b436a7fe713422ace0a93ad3d61`
 - CTG patch candidate: `docs/patches/opencode-v2.0.32-session-ui-combined-v3.patch` (approved session/runtime + `/help` + live-theme + glyph-v4, spinner test-isolation fix, real-provider theme integration proof, runtime-resolved glyph separators)
-- Candidate patch SHA-256: `5322f8526ca23370abbb7d35e86ab33bde93ceaf313480bfe63c4bcff59c75a2`
+- Candidate patch SHA-256: `58cb5ece8d3113fa597bd5b978112b5d96bdfbede4e9918867441b0143c06f85`
 - Candidate verification: Bun 1.4.2 frozen-lockfile install passed, TUI
   typecheck passed, and glyph/keymap/plugin-theme/real-provider-theme tests
   passed together (19 tests / 188 assertions, one process,

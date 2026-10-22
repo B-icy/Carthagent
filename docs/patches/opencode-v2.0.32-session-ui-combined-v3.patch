@@ -56,15 +56,15 @@ index ef0d5d635b..346cc6872c 100644
                    ? [{ type: "text" as const, text: executed.content }]
 diff --git a/packages/core/src/plugin/carthagent.ts b/packages/core/src/plugin/carthagent.ts
 new file mode 100644
-index 0000000000..e860c54c86
+index 0000000000..fb01b79e10
 --- /dev/null
 +++ b/packages/core/src/plugin/carthagent.ts
-@@ -0,0 +1,46 @@
+@@ -0,0 +1,79 @@
 +export * as CarthagentPlugin from "./carthagent.js"
 +
 +import { define } from "@opencode/plugin/effect/plugin"
 +import { Agent } from "@opencode/schema/agent"
-+import { Effect } from "effect"
++import { Effect, Schema } from "effect"
 +
 +const ship = Agent.ID.make("ship")
 +const lite = Agent.ID.make("lite")
@@ -73,12 +73,27 @@ index 0000000000..e860c54c86
 +
 +Before writing any code, strategize: state the goal, the approach, and the concrete acceptance checks you will run to prove the work. Then execute. Before claiming the work is done, validate: run the checks you named (tests, builds, type checks, or real end-to-end runs) and report the evidence. Do not declare success on intent alone.
 +
++Track the plan with the todowrite tool: one item per step or acceptance check, and keep each item's status current as you work.
++
 +- Keep output terse.
 +- Prefer minimal, focused edits in the existing style.
 +- If validation fails, fix and re-run; report honest failures.
 +- Ask before major design decisions or destructive actions.`
 +
 +const PROMPT_LITE = `You are a direct execution agent. Use the skills and tools already available and work the task directly. No extra planning ceremony, no harness phases — just do the work well and concisely.`
++
++const TodoItem = Schema.Struct({
++  content: Schema.NonEmptyString.annotate({ description: "One step or acceptance check" }),
++  status: Schema.Literals(["pending", "in_progress", "completed", "cancelled"]).annotate({
++    description: "Current status of the item",
++  }),
++})
++
++const TodoInput = Schema.Struct({
++  todos: Schema.Array(TodoItem).check(Schema.isNonEmpty()).annotate({
++    description: "The full plan, replacing any previously recorded plan",
++  }),
++})
 +
 +export const Plugin = define({
 +  id: "carthagent.agents",
@@ -104,6 +119,24 @@ index 0000000000..e860c54c86
 +
 +      editor.default(ship)
 +    })
++
++    yield* ctx.tool
++      .transform((editor) =>
++        editor.add({
++          name: "todowrite",
++          description:
++            "Record the working plan for this task: one item per step or acceptance check. Call it once the plan is set and again whenever an item's status changes — it replaces the recorded plan.",
++          input: TodoInput,
++          output: TodoInput,
++          execute: (input) =>
++            Effect.succeed({
++              output: { todos: input.todos },
++              content: `Plan recorded: ${input.todos.length} item${input.todos.length === 1 ? "" : "s"}.`,
++              metadata: { todos: input.todos },
++            }),
++        }),
++      )
++      .pipe(Effect.orDie)
 +  }),
 +})
 diff --git a/packages/core/src/plugin/internal.ts b/packages/core/src/plugin/internal.ts
@@ -686,7 +719,7 @@ index 0000000000..2f742d73f3
 +  }).pipe(Effect.scoped),
 +)
 diff --git a/packages/tui/src/app.tsx b/packages/tui/src/app.tsx
-index 88939ebc85..dbb004c80b 100644
+index 88939ebc85..d7c624dbd8 100644
 --- a/packages/tui/src/app.tsx
 +++ b/packages/tui/src/app.tsx
 @@ -2,6 +2,7 @@ import { existsSync } from "fs"
@@ -697,7 +730,7 @@ index 88939ebc85..dbb004c80b 100644
  import { Effect, Latch } from "effect"
  import { Service, type Endpoint } from "@opencode/client/effect/service"
  import { OpenCode, type SessionInfo } from "@opencode/client"
-@@ -71,6 +72,7 @@ import { DialogHighlights } from "./component/dialog-highlights"
+@@ -71,11 +72,13 @@ import { DialogHighlights } from "./component/dialog-highlights"
  import { claim } from "./util/highlights"
  import { DialogThemeList } from "./component/dialog-theme-list"
  import { DialogHelp } from "./ui/dialog-help"
@@ -705,7 +738,13 @@ index 88939ebc85..dbb004c80b 100644
  import { DialogAgent } from "./component/dialog-agent"
  import { DialogSessionList } from "./component/dialog-session-list"
  import { DialogOpen, DialogOpenKey, moveOpenSession } from "./component/dialog-open"
-@@ -95,13 +97,19 @@ import { Config, ConfigProvider, useConfig } from "./config"
+ import { SessionTabs } from "./component/session-tabs"
+ import { clampSessionTabsWidth, sessionTabsFitVertically, SESSION_SIDEBAR_WIDTH } from "./ui/layout"
++import { togglePlanGraph } from "./routes/session/plan-view"
+ import { createPaneResize } from "./ui/pane-resize"
+ import { PaneResizeHandle } from "./ui/pane-resize-handle"
+ import { clickedLink } from "./ui/link"
+@@ -95,13 +98,19 @@ import { Config, ConfigProvider, useConfig } from "./config"
  import { newSessionLocation } from "./config/new-session-location"
  import { UpdateNotificationProvider, useUpdateNotification, type UpdateSource } from "./context/update-notification"
  import { PluginProvider, usePlugin, type PackageSource } from "./plugin/context"
@@ -726,15 +765,16 @@ index 88939ebc85..dbb004c80b 100644
  import { cliErrorMessage, errorFormat } from "./util/error"
  import { AttentionProvider } from "./context/attention"
  import { StorageProvider, useStorage } from "./context/storage"
-@@ -121,6 +129,7 @@ const sessionTabBindingCommands = [
+@@ -121,6 +130,8 @@ const sessionTabBindingCommands = [
    "session.tab.previous_unread",
    "session.tab.close",
    "session.tab.reopen",
 +  "session.tab.sidebar",
++  "session.plan.graph",
    "session.tab.select.1",
    "session.tab.select.2",
    "session.tab.select.3",
-@@ -252,6 +261,8 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
+@@ -252,6 +263,8 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
        const renderer = yield* Effect.gen(function* () {
          if (handoff) {
            handoff.renderer.useMouse = options.useMouse
@@ -743,7 +783,7 @@ index 88939ebc85..dbb004c80b 100644
            return yield* Effect.acquireRelease(Effect.succeed(handoff.renderer), (renderer) =>
              Effect.sync(() => destroyRenderer(renderer)),
            )
-@@ -260,13 +271,24 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
+@@ -260,13 +273,24 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
            const { Drive } = yield* Effect.promise(() => import("@opencode/simulation/frontend"))
            return yield* Drive.create(options, input.app.version)
          }
@@ -770,7 +810,7 @@ index 88939ebc85..dbb004c80b 100644
        })
        renderer.setMaxListeners(15)
        const clipboard = yield* Effect.acquireRelease(
-@@ -380,8 +402,9 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
+@@ -380,8 +404,9 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                                <PermissionProvider>
                                                  <DataProvider directory={directory}>
                                                    <LocationProvider>
@@ -782,7 +822,7 @@ index 88939ebc85..dbb004c80b 100644
                                                          <ThemeProvider
                                                            mode={mode}
                                                            source={createThemeSource(global.config)}
-@@ -416,8 +439,9 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
+@@ -416,8 +441,9 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                                              </PromptStashProvider>
                                                            </LocalProvider>
                                                          </ThemeProvider>
@@ -794,7 +834,7 @@ index 88939ebc85..dbb004c80b 100644
                                                    </LocationProvider>
                                                  </DataProvider>
                                                </PermissionProvider>
-@@ -579,7 +603,8 @@ function App() {
+@@ -579,7 +605,8 @@ function App() {
    const pasteSummaryEnabled = () => config.data.prompt?.paste !== "full"
    const tabsVertical = () =>
      config.data.tabs.layout === "vertical" && sessionTabsFitVertically(dimensions().width, tabsResize.size())
@@ -804,7 +844,7 @@ index 88939ebc85..dbb004c80b 100644
    const fullscreenPanel = () =>
      route.data.type === "session" &&
      panels.current()?.sessionID === route.data.sessionID &&
-@@ -607,23 +632,23 @@ function App() {
+@@ -607,23 +634,23 @@ function App() {
      if (!terminalTitleEnabled()) return
 
      if (route.data.type === "home") {
@@ -832,7 +872,7 @@ index 88939ebc85..dbb004c80b 100644
      }
    })
 
-@@ -767,7 +792,6 @@ function App() {
+@@ -767,7 +794,6 @@ function App() {
          name: "session.clear",
          title: "Clear session",
          category: "Session",
@@ -840,10 +880,17 @@ index 88939ebc85..dbb004c80b 100644
          run: () => {
            const model = local.model.current()
            const agent = local.agent.current()
-@@ -857,6 +881,53 @@ function App() {
+@@ -857,6 +883,60 @@ function App() {
          enabled: sessionTabs.enabled,
          run: () => sessionTabs.reopen(),
        },
++      {
++        name: "session.plan.graph",
++        title: "Toggle plan graph",
++        category: "Session",
++        slash: { name: "graph" },
++        run: () => togglePlanGraph(),
++      },
 +      {
 +        name: "session.tab.sidebar",
 +        title: "Toggle session sidebar",
@@ -894,7 +941,7 @@ index 88939ebc85..dbb004c80b 100644
        ...Array.from({ length: 10 }, (_, i) => ({
          name: `session.tab.select.${i + 1}`,
          title: `Switch to tab ${i + 1}`,
-@@ -1046,7 +1117,7 @@ function App() {
+@@ -1046,7 +1126,7 @@ function App() {
                  const restart = client.restart
                  if (!restart) return
                  dialog.clear()
@@ -903,7 +950,7 @@ index 88939ebc85..dbb004c80b 100644
                  // restart resolves once the replacement service is healthy; the
                  // event stream reattaches through the reconnect loop.
                  await restart()
-@@ -1063,7 +1134,7 @@ function App() {
+@@ -1063,7 +1143,7 @@ function App() {
          slash: { name: "reload" },
          run: async () => {
            dialog.clear()
@@ -3981,14 +4028,15 @@ index 953d5977d0..f053c3840c 100644
      },
    }
 diff --git a/packages/tui/src/config/keybind.ts b/packages/tui/src/config/keybind.ts
-index ef1cba9cc8..429dc89ab4 100644
+index ef1cba9cc8..c4b949b2a3 100644
 --- a/packages/tui/src/config/keybind.ts
 +++ b/packages/tui/src/config/keybind.ts
-@@ -118,6 +118,9 @@ export const Definitions = {
+@@ -118,6 +118,10 @@ export const Definitions = {
    "session.tab.previous_unread": keybind("alt+shift+up", "Switch to previous unread session tab"),
    "session.tab.close": keybind("<leader>w", "Close current session tab"),
    "session.tab.reopen": keybind("ctrl+shift+t", "Reopen last closed session tab"),
 +  "session.tab.sidebar": keybind("alt+t", "Toggle session sidebar"),
++  "session.plan.graph": keybind("<leader>p", "Toggle plan graph"),
 +  "session.tab.directory.open": keybind("none", "Open directory in session sidebar"),
 +  "session.tab.folder.new": keybind("none", "New session tab folder"),
    "session.timeline": keybind("<leader>g", "Show session timeline"),
@@ -5112,6 +5160,51 @@ index 31c4f4cea0..b04abf548e 100644
 +  if (value) return value
 +  throw new Error("PluginProvider is missing")
  }
+diff --git a/packages/tui/src/plugin/runtime-plugin-support.bun.ts b/packages/tui/src/plugin/runtime-plugin-support.bun.ts
+index b1ebab0226..abba4076c0 100644
+--- a/packages/tui/src/plugin/runtime-plugin-support.bun.ts
++++ b/packages/tui/src/plugin/runtime-plugin-support.bun.ts
+@@ -1,8 +1,40 @@
+ import { ensurePluginRuntime, provides } from "@opencode/plugin/runtime"
+ import { Plugin, PluginContextProvider, usePlugin } from "@opencode/plugin/tui"
++import { createSolidTransformPlugin } from "@opentui/solid/bun-plugin"
++import { isCoreRuntimeModuleSpecifier, runtimeModuleIdForSpecifier } from "@opentui/core/runtime-plugin"
+ import { ensureRuntimePluginSupport } from "@opentui/solid/runtime-plugin-support/configure"
+
+ ensurePluginRuntime()
++const sharedSolidModules = new Set([
++  "@opentui/solid",
++  "@opentui/solid/components",
++  "@opentui/solid/jsx-runtime",
++  "@opentui/solid/jsx-dev-runtime",
++  "solid-js",
++  "solid-js/store",
++  "@opencode/plugin/tui",
++])
++const installedSolid = createSolidTransformPlugin({
++  moduleName: runtimeModuleIdForSpecifier("@opentui/solid"),
++  resolvePath: (specifier) => isCoreRuntimeModuleSpecifier(specifier) || sharedSolidModules.has(specifier)
++    ? runtimeModuleIdForSpecifier(specifier)
++    : null,
++})
++Bun.plugin({
++  name: "opencode-installed-solid-jsx",
++  setup(build) {
++    installedSolid.setup({
++      ...build,
++      onLoad(options, callback) {
++        // OpenTUI excludes node_modules by default; installed plugin JSX still needs reactive compilation.
++        if (options.filter.test("plugin.tsx")) {
++          build.onLoad({ ...options, filter: /[/\\]node_modules[/\\].*\.[cm]?[jt]sx(?:[?#].*)?$/ }, callback)
++        }
++        return build
++      },
++    })
++  },
++})
+ ensureRuntimePluginSupport({
+   additional: {
+     "@opencode/plugin/tui": { Plugin, PluginContextProvider, usePlugin },
 diff --git a/packages/tui/src/routes/home.tsx b/packages/tui/src/routes/home.tsx
 index 71e7b64339..32a9580a21 100644
 --- a/packages/tui/src/routes/home.tsx
@@ -5503,7 +5596,7 @@ index 2e09fc5e84..bcf83e0c9c 100644
    return (
      <Show when={!props.pendingOutside}>
 diff --git a/packages/tui/src/routes/session/index.tsx b/packages/tui/src/routes/session/index.tsx
-index 0b8228ef87..17a7cb91db 100644
+index 0b8228ef87..47639aee73 100644
 --- a/packages/tui/src/routes/session/index.tsx
 +++ b/packages/tui/src/routes/session/index.tsx
 @@ -19,6 +19,7 @@ import { useRoute, useRouteData } from "../../context/route"
@@ -5522,7 +5615,15 @@ index 0b8228ef87..17a7cb91db 100644
  import { Prompt, type PromptRef } from "../../component/prompt"
  import type {
    SessionMessageInfo,
-@@ -170,7 +172,9 @@ export function Session(props: {
+@@ -57,6 +59,7 @@ import {
+   type ExecuteCall,
+ } from "../../util/tool-display"
+ import { DialogExecute } from "./dialog-execute"
++import { PlanView, planGraphVisible } from "./plan-view"
+ import { RetryProvider } from "../../component/retry-provider"
+ import { useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
+ import { useClient } from "../../context/client"
+@@ -170,7 +173,9 @@ export function Session(props: {
    const theme = useTheme()
    const promptRef = usePromptRef()
    const session = createMemo(() => data.session.get(route.sessionID))
@@ -5532,7 +5633,7 @@ index 0b8228ef87..17a7cb91db 100644
    const messageIndexes = createMemo(() => new Map(messages().map((message, index) => [message.id, index])))
    const legacy = createMemo(() => legacyTurns(messages()))
    const messagesBeforeRevert = () => {
-@@ -191,7 +195,7 @@ export function Session(props: {
+@@ -191,7 +196,7 @@ export function Session(props: {
    createEffect(() => currentLocation.set(location()))
 
    createEffect(() => {
@@ -5541,7 +5642,7 @@ index 0b8228ef87..17a7cb91db 100644
      setEpilogue(sessionEpilogue({ title, sessionID: session()?.id }))
    })
    onCleanup(() => setEpilogue())
-@@ -278,11 +282,14 @@ export function Session(props: {
+@@ -278,11 +283,14 @@ export function Session(props: {
    })
    const editor = useEditorContext()
    const [rowsSynced, setRowsSynced] = createSignal(false)
@@ -5556,7 +5657,7 @@ index 0b8228ef87..17a7cb91db 100644
    )
    const boundaries = createMemo(() => messageBoundaryIDs(rows, messages()))
    const anchors = createTimelineAnchors()
-@@ -291,6 +298,21 @@ export function Session(props: {
+@@ -291,6 +299,21 @@ export function Session(props: {
    const [firstJump, setFirstJump] = createSignal<() => void>()
    const [synced, setSynced] = createSignal(false)
    const sessionTabs = useSessionTabs()
@@ -5578,7 +5679,7 @@ index 0b8228ef87..17a7cb91db 100644
    const [awayFromBottom, setAwayFromBottom] = createSignal(false)
    const [latestHovered, setLatestHovered] = createSignal(false)
    let ensureAllRowsPending: (() => void)[] | undefined
-@@ -822,6 +844,31 @@ export function Session(props: {
+@@ -822,6 +845,31 @@ export function Session(props: {
    ]
 
    const baseAndUnfocusedCommands = [
@@ -5610,16 +5711,17 @@ index 0b8228ef87..17a7cb91db 100644
      {
        id: "session.first",
        title: "First message",
-@@ -1389,7 +1436,7 @@ export function Session(props: {
+@@ -1389,7 +1437,8 @@ export function Session(props: {
          >
            <Show when={session()}>
              <box flexGrow={1} minHeight={0} position="relative">
 -              <scrollbox
++              <Show when={!planGraphVisible()} fallback={<PlanView messages={messages} />}>
 +              <transcript_scrollbox
                  ref={(r) => {
                    scroll = r
                    props.scrollRef?.(r)
-@@ -1418,6 +1465,19 @@ export function Session(props: {
+@@ -1418,6 +1467,19 @@ export function Session(props: {
                    updateAwayFromBottom()
                  }}
                >
@@ -5639,12 +5741,13 @@ index 0b8228ef87..17a7cb91db 100644
                  <For each={visibleRows()}>
                    {(row, index) => (
                      <SessionRowView
-@@ -1437,11 +1497,11 @@ export function Session(props: {
+@@ -1437,11 +1499,12 @@ export function Session(props: {
                  <Show when={navigationSlack()}>
                    {(height) => <box id={NAVIGATION_SLACK_ID} height={height()} flexShrink={0} />}
                  </Show>
 -              </scrollbox>
 +              </transcript_scrollbox>
++              </Show>
              </box>
              <box height={1} flexShrink={0} flexDirection="row" justifyContent="flex-end">
                <Show when={firstJump()}>
@@ -5653,7 +5756,7 @@ index 0b8228ef87..17a7cb91db 100644
                </Show>
                <Show when={!firstJump() && awayFromBottom()}>
                  <box
-@@ -1454,7 +1514,7 @@ export function Session(props: {
+@@ -1454,7 +1517,7 @@ export function Session(props: {
                    <text
                      fg={latestHovered() ? theme.text.action.secondary.hovered : theme.text.action.secondary.base}
                    >
@@ -5662,7 +5765,7 @@ index 0b8228ef87..17a7cb91db 100644
                    </text>
                  </box>
                </Show>
-@@ -1677,14 +1737,14 @@ function TurnTokenUsage(props: {
+@@ -1677,14 +1740,14 @@ function TurnTokenUsage(props: {
              <span>{expanded() ? "- " : "+ "}</span>
              <span style={{ attributes: TextAttributes.BOLD }}>Tokens</span>
              <span>
@@ -5680,7 +5783,7 @@ index 0b8228ef87..17a7cb91db 100644
                </span>
              </Show>
            </text>
-@@ -1914,16 +1974,16 @@ function AssistantFooter(props: { message: SessionMessageAssistant }) {
+@@ -1914,16 +1977,16 @@ function AssistantFooter(props: { message: SessionMessageAssistant }) {
              {Locale.titlecase(props.message.agent)}
            </span>
            <Show when={ctx.terminal.width >= 28}>
@@ -5701,7 +5804,7 @@ index 0b8228ef87..17a7cb91db 100644
            </Show>
          </text>
        </box>
-@@ -1938,7 +1998,7 @@ function SessionSwitchMessageV2(props: { message: SessionMessageInfo }) {
+@@ -1938,7 +2001,7 @@ function SessionSwitchMessageV2(props: { message: SessionMessageInfo }) {
      return (
        <box paddingLeft={3}>
          <text>
@@ -5710,7 +5813,7 @@ index 0b8228ef87..17a7cb91db 100644
            <span style={{ fg: theme.text.feedback.info.base }}>{props.message.location.directory}</span>
          </text>
        </box>
-@@ -1984,8 +2044,9 @@ function SessionNoticeMessageV2(props: { message: SessionMessageInfo }) {
+@@ -1984,8 +2047,9 @@ function SessionNoticeMessageV2(props: { message: SessionMessageInfo }) {
      if (state() === "error") return "failed"
      return state() ?? "finished"
    }
@@ -5722,7 +5825,7 @@ index 0b8228ef87..17a7cb91db 100644
    const color = () => {
      if (state() === "error") return theme.text.feedback.error.base
      if (state() === "cancelled") return theme.text.feedback.warning.base
-@@ -1996,7 +2057,7 @@ function SessionNoticeMessageV2(props: { message: SessionMessageInfo }) {
+@@ -1996,7 +2060,7 @@ function SessionNoticeMessageV2(props: { message: SessionMessageInfo }) {
      <Show
        when={completion()}
        fallback={
@@ -5731,7 +5834,7 @@ index 0b8228ef87..17a7cb91db 100644
            {text()}
          </InlineToolRow>
        }
-@@ -2023,7 +2084,7 @@ function SessionNoticeMessageV2(props: { message: SessionMessageInfo }) {
+@@ -2023,7 +2087,7 @@ function SessionNoticeMessageV2(props: { message: SessionMessageInfo }) {
  function SessionSkillMessage(props: { message: Extract<SessionMessageInfo, { type: "skill" }> }) {
    const theme = useTheme()
    return (
@@ -5740,7 +5843,7 @@ index 0b8228ef87..17a7cb91db 100644
        Skill {props.message.name}
      </InlineToolRow>
    )
-@@ -2047,7 +2108,7 @@ function CompactionMessage(props: { message: Extract<SessionMessageInfo, { type:
+@@ -2047,7 +2111,7 @@ function CompactionMessage(props: { message: Extract<SessionMessageInfo, { type:
      const input = tokens.input + tokens.cache.read + tokens.cache.write
      const output = tokens.output + tokens.reasoning
      if (input + output <= 0) return
@@ -5749,7 +5852,7 @@ index 0b8228ef87..17a7cb91db 100644
    }
    return (
      <box>
-@@ -2056,12 +2117,12 @@ function CompactionMessage(props: { message: Extract<SessionMessageInfo, { type:
+@@ -2056,12 +2120,12 @@ function CompactionMessage(props: { message: Extract<SessionMessageInfo, { type:
          <box flexDirection="row" gap={1} paddingLeft={1} paddingRight={1}>
            <Switch>
              <Match when={status() === "running"}>
@@ -5764,7 +5867,7 @@ index 0b8228ef87..17a7cb91db 100644
              </Match>
            </Switch>
            <text fg={color()}>
-@@ -2070,10 +2131,10 @@ function CompactionMessage(props: { message: Extract<SessionMessageInfo, { type:
+@@ -2070,10 +2134,10 @@ function CompactionMessage(props: { message: Extract<SessionMessageInfo, { type:
                : "Compaction"}
            </text>
            <Show when={cancelled()}>
@@ -5777,7 +5880,7 @@ index 0b8228ef87..17a7cb91db 100644
            </Show>
          </box>
          <box border={["top"]} borderColor={color()} flexGrow={1} />
-@@ -2103,7 +2164,7 @@ function CompactionQueued() {
+@@ -2103,7 +2167,7 @@ function CompactionQueued() {
      <box flexDirection="row" alignItems="center">
        <box border={["top"]} borderColor={theme.border.base} flexGrow={1} />
        <box flexDirection="row" gap={1} paddingLeft={1} paddingRight={1}>
@@ -5786,7 +5889,7 @@ index 0b8228ef87..17a7cb91db 100644
          <text fg={theme.text.muted}>Compaction queued</text>
        </box>
        <box border={["top"]} borderColor={theme.border.base} flexGrow={1} />
-@@ -2369,7 +2430,7 @@ function QueuedPromptDock(props: { prompts: { id: string; text: string }[]; onOp
+@@ -2369,7 +2433,7 @@ function QueuedPromptDock(props: { prompts: { id: string; text: string }[]; onOp
        >
          <text fg={theme.text.muted} wrapMode="none" truncate flexGrow={1} flexShrink={1} minWidth={0}>
            <span style={{ fg: theme.text.base }}>{props.prompts.length} queued</span>
@@ -5795,7 +5898,7 @@ index 0b8228ef87..17a7cb91db 100644
          </text>
        </box>
      </box>
-@@ -2394,7 +2455,7 @@ function AssistantRetry(props: { retry: SessionMessageAssistant["retry"] }) {
+@@ -2394,7 +2458,7 @@ function AssistantRetry(props: { retry: SessionMessageAssistant["retry"] }) {
        {(retry) => (
          <box paddingLeft={3}>
            <text fg={theme.text.feedback.warning.base}>
@@ -5804,7 +5907,15 @@ index 0b8228ef87..17a7cb91db 100644
              {retry().error.message}
            </text>
          </box>
-@@ -2575,7 +2636,7 @@ function GenericTool(props: ToolProps) {
+@@ -2406,6 +2470,7 @@ function AssistantRetry(props: { retry: SessionMessageAssistant["retry"] }) {
+ // Pending messages moved to individual tool pending functions
+
+ function ToolPart(props: { part: SessionMessageAssistantTool; images?: boolean }) {
++  if (props.part.name === "todowrite") return null
+   const display = createMemo(() => toolDisplay(props.part.name))
+
+   const toolprops = {
+@@ -2575,7 +2640,7 @@ function GenericTool(props: ToolProps) {
    return (
      <>
        <InlineTool
@@ -5813,7 +5924,7 @@ index 0b8228ef87..17a7cb91db 100644
          complete={props.part.state.status === "completed"}
          pending={props.tool}
          spinner={loading()}
-@@ -2943,9 +3004,9 @@ function ShellDisplay(props: {
+@@ -2943,9 +3008,9 @@ function ShellDisplay(props: {
            when={props.command}
            fallback={
              isRunning() || props.status === "streaming" ? (
@@ -5825,7 +5936,7 @@ index 0b8228ef87..17a7cb91db 100644
              )
            }
          >
-@@ -3014,7 +3075,7 @@ function Write(props: ToolProps) {
+@@ -3014,7 +3079,7 @@ function Write(props: ToolProps) {
          </BlockTool>
        </Match>
        <Match when={true}>
@@ -5834,7 +5945,7 @@ index 0b8228ef87..17a7cb91db 100644
            Write {pathFormatter.format(stringValue(props.input.path))}
          </InlineTool>
        </Match>
-@@ -3025,7 +3086,7 @@ function Write(props: ToolProps) {
+@@ -3025,7 +3090,7 @@ function Write(props: ToolProps) {
  function Glob(props: ToolProps) {
    const pathFormatter = usePathFormatter()
    return (
@@ -5843,7 +5954,7 @@ index 0b8228ef87..17a7cb91db 100644
        Glob "{stringValue(props.input.pattern)}"{" "}
        <Show when={stringValue(props.input.path)}>in {pathFormatter.format(stringValue(props.input.path))} </Show>
        <Show when={finiteNumber(props.metadata.count)}>
-@@ -3048,8 +3109,8 @@ function Read(props: ToolProps) {
+@@ -3048,8 +3113,8 @@ function Read(props: ToolProps) {
    return (
      <>
        <InlineTool
@@ -5854,7 +5965,7 @@ index 0b8228ef87..17a7cb91db 100644
          complete={stringValue(props.input.path)}
          spinner={isRunning()}
          part={props.part}
-@@ -3064,7 +3125,7 @@ function Read(props: ToolProps) {
+@@ -3064,7 +3129,7 @@ function Read(props: ToolProps) {
          {(filepath) => (
            <box paddingLeft={3}>
              <text paddingLeft={3} fg={theme.text.muted}>
@@ -5863,7 +5974,7 @@ index 0b8228ef87..17a7cb91db 100644
              </text>
            </box>
          )}
-@@ -3076,7 +3137,7 @@ function Read(props: ToolProps) {
+@@ -3076,7 +3141,7 @@ function Read(props: ToolProps) {
  function Grep(props: ToolProps) {
    const pathFormatter = usePathFormatter()
    return (
@@ -5872,7 +5983,7 @@ index 0b8228ef87..17a7cb91db 100644
        Grep "{stringValue(props.input.pattern)}"{" "}
        <Show when={stringValue(props.input.path)}>in {pathFormatter.format(stringValue(props.input.path))} </Show>
        <Show when={finiteNumber(props.metadata.matches)}>
-@@ -3088,7 +3149,7 @@ function Grep(props: ToolProps) {
+@@ -3088,7 +3153,7 @@ function Grep(props: ToolProps) {
 
  function WebFetch(props: ToolProps) {
    return (
@@ -5881,7 +5992,7 @@ index 0b8228ef87..17a7cb91db 100644
        WebFetch {stringValue(props.input.url)}
      </InlineTool>
    )
-@@ -3098,7 +3159,7 @@ function WebSearch(props: ToolProps) {
+@@ -3098,7 +3163,7 @@ function WebSearch(props: ToolProps) {
    const ctx = use()
    const provider = createMemo(() => stringValue(props.metadata.provider))
    return (
@@ -5890,7 +6001,7 @@ index 0b8228ef87..17a7cb91db 100644
        <Show when={provider()} fallback="Web Search">
          {(value) => (
            <>
-@@ -3133,11 +3194,11 @@ function Subagent(props: ToolProps) {
+@@ -3133,11 +3198,11 @@ function Subagent(props: ToolProps) {
 
    return (
      <InlineTool
@@ -5904,7 +6015,7 @@ index 0b8228ef87..17a7cb91db 100644
        part={props.part}
        onClick={() => {
          const id = sessionID()
-@@ -3149,7 +3210,7 @@ function Subagent(props: ToolProps) {
+@@ -3149,7 +3214,7 @@ function Subagent(props: ToolProps) {
          ) : undefined
        }
      >
@@ -5913,7 +6024,7 @@ index 0b8228ef87..17a7cb91db 100644
      </InlineTool>
    )
  }
-@@ -3202,7 +3263,7 @@ function ExecuteCallView(props: { call: Accessor<ExecuteCall> }) {
+@@ -3202,7 +3267,7 @@ function ExecuteCallView(props: { call: Accessor<ExecuteCall> }) {
      >
        <box flexDirection="row">
          <box width={INLINE_TOOL_ICON_WIDTH} flexShrink={0}>
@@ -5922,7 +6033,7 @@ index 0b8228ef87..17a7cb91db 100644
          </box>
          <text flexGrow={1} wrapMode="none" truncate fg={color()}>
            {expanded() ? props.call().tool : executeCallSummary(props.call())}
-@@ -3248,7 +3309,7 @@ function Execute(props: ToolProps) {
+@@ -3248,7 +3313,7 @@ function Execute(props: ToolProps) {
    return (
      <>
        <InlineTool
@@ -5931,7 +6042,7 @@ index 0b8228ef87..17a7cb91db 100644
          color={hasRuntimeError() ? theme.text.feedback.error.base : undefined}
          spinner={isLoading()}
          pending="execute"
-@@ -3265,7 +3326,7 @@ function Execute(props: ToolProps) {
+@@ -3265,7 +3330,7 @@ function Execute(props: ToolProps) {
            <For each={outputPreview().split("\n")}>
              {(line, index) => (
                <text paddingLeft={3} fg={theme.text.feedback.error.base}>
@@ -5940,7 +6051,7 @@ index 0b8228ef87..17a7cb91db 100644
                  {line}
                </text>
              )}
-@@ -3297,7 +3358,7 @@ function Edit(props: ToolProps) {
+@@ -3297,7 +3362,7 @@ function Edit(props: ToolProps) {
      <Switch>
        <Match when={file()}>
          {(item) => (
@@ -5949,7 +6060,7 @@ index 0b8228ef87..17a7cb91db 100644
              <box paddingLeft={1}>
                <PatchDiff
                  diff={item().patch}
-@@ -3328,10 +3389,10 @@ function Edit(props: ToolProps) {
+@@ -3328,10 +3393,10 @@ function Edit(props: ToolProps) {
          <BlockTool
            path={
              stringValue(props.input.path)
@@ -5962,7 +6073,7 @@ index 0b8228ef87..17a7cb91db 100644
            part={props.part}
            spinner={props.part.state.status === "streaming"}
          />
-@@ -3375,7 +3436,7 @@ function ApplyPatch(props: ToolProps) {
+@@ -3375,7 +3440,7 @@ function ApplyPatch(props: ToolProps) {
              {(file) => (
                <BlockTool
                  path={{
@@ -5971,7 +6082,7 @@ index 0b8228ef87..17a7cb91db 100644
                    value: pathFormatter.format(file.relativePath),
                  }}
                  part={props.part}
-@@ -3422,7 +3483,7 @@ function ApplyPatch(props: ToolProps) {
+@@ -3422,7 +3487,7 @@ function ApplyPatch(props: ToolProps) {
              {(file) => (
                <BlockTool
                  path={{
@@ -5980,7 +6091,7 @@ index 0b8228ef87..17a7cb91db 100644
                    value: pathFormatter.format(file.resource),
                  }}
                  part={props.part}
-@@ -3488,7 +3549,7 @@ function Question(props: ToolProps) {
+@@ -3488,7 +3553,7 @@ function Question(props: ToolProps) {
          </BlockTool>
        </Match>
        <Match when={true}>
@@ -5989,7 +6100,7 @@ index 0b8228ef87..17a7cb91db 100644
            Asked {count()} question{count() !== 1 ? "s" : ""}
          </InlineTool>
        </Match>
-@@ -3499,7 +3560,7 @@ function Question(props: ToolProps) {
+@@ -3499,7 +3564,7 @@ function Question(props: ToolProps) {
  function Skill(props: ToolProps) {
    const name = createMemo(() => stringValue(props.metadata.name) ?? stringValue(props.input.id))
    return (
@@ -6097,6 +6208,151 @@ index 07338aba69..812d3e97e6 100644
              </text>
            </Show>
            <text fg={theme.text.base}>
+diff --git a/packages/tui/src/routes/session/plan-view.tsx b/packages/tui/src/routes/session/plan-view.tsx
+new file mode 100644
+index 0000000000..7591912dcf
+--- /dev/null
++++ b/packages/tui/src/routes/session/plan-view.tsx
+@@ -0,0 +1,139 @@
++import { For, Show, createMemo, createSignal } from "solid-js"
++import { useTheme } from "../../context/theme"
++import { Locale } from "../../util/locale"
++import { chromeGlyph } from "../../ui/glyphs"
++import type { SessionMessageInfo } from "@opencode/client"
++
++export const [planGraphVisible, setPlanGraphVisible] = createSignal(false)
++
++export function togglePlanGraph() {
++  setPlanGraphVisible((visible) => !visible)
++}
++
++type PlanItem = { content: string; status: string }
++
++function planItems(messages: SessionMessageInfo[]): PlanItem[] {
++  for (const message of [...messages].reverse()) {
++    if (message.type !== "assistant") continue
++    for (const part of [...message.content].reverse()) {
++      if (part.type !== "tool") continue
++      const todos = planTodos(part)
++      if (todos) return todos
++    }
++  }
++  return []
++}
++
++// The plan can be recorded directly (part named todowrite) or through the
++// codemode `execute` wrapper, which lists each sub-call in metadata.toolCalls.
++function planTodos(part: { name: string; state: unknown }): PlanItem[] | undefined {
++  if (part.name === "todowrite") return parseTodos(partInput(part.state)?.todos)
++  if (part.name !== "execute") return undefined
++  const calls = partMetadata(part.state)?.toolCalls
++  if (!Array.isArray(calls)) return undefined
++  for (const call of [...calls].reverse()) {
++    if (!call || typeof call !== "object") continue
++    const entry = call as { tool?: unknown; input?: unknown }
++    if (entry.tool !== "todowrite" || !entry.input || typeof entry.input !== "object") continue
++    const todos = parseTodos((entry.input as { todos?: unknown }).todos)
++    if (todos) return todos
++  }
++  return undefined
++}
++
++function partInput(state: unknown) {
++  if (!state || typeof state !== "object" || !("input" in state)) return undefined
++  const input = (state as { input?: unknown }).input
++  return input && typeof input === "object" ? (input as { todos?: unknown }) : undefined
++}
++
++function partMetadata(state: unknown) {
++  if (!state || typeof state !== "object" || !("metadata" in state)) return undefined
++  const metadata = (state as { metadata?: unknown }).metadata
++  return metadata && typeof metadata === "object" && !Array.isArray(metadata)
++    ? (metadata as { toolCalls?: unknown })
++    : undefined
++}
++
++function parseTodos(todos: unknown): PlanItem[] | undefined {
++  if (!Array.isArray(todos)) return undefined
++  return todos.flatMap((todo) => {
++    if (!todo || typeof todo !== "object") return []
++    const item = todo as { content?: unknown; status?: unknown }
++    if (typeof item.content !== "string" || !item.content.trim()) return []
++    return [{ content: item.content.trim(), status: typeof item.status === "string" ? item.status : "pending" }]
++  })
++}
++
++const STATUS_ORDER = ["completed", "in_progress", "pending", "cancelled"]
++
++export function PlanView(props: { messages: () => SessionMessageInfo[] }) {
++  const theme = useTheme()
++  const items = createMemo(() => planItems(props.messages()))
++
++  const nodeColor = (status: string) =>
++    status === "completed"
++      ? theme.text.feedback.success.base
++      : status === "in_progress"
++        ? theme.text.action.secondary.base
++        : status === "cancelled"
++          ? theme.text.muted
++          : theme.text.base
++
++  const glyph = (status: string) =>
++    status === "completed" ? "■" : status === "in_progress" ? "◐" : status === "cancelled" ? "×" : "□"
++
++  const counts = createMemo(() => {
++    const tally = new Map<string, number>()
++    for (const item of items()) tally.set(item.status, (tally.get(item.status) ?? 0) + 1)
++    return STATUS_ORDER.filter((status) => tally.has(status)).map(
++      (status) => `${tally.get(status)} ${status.replace("_", " ")}`,
++    )
++  })
++
++  return (
++    <box flexGrow={1} minHeight={0} paddingTop={1} paddingLeft={1} flexDirection="column">
++      <box flexDirection="row" gap={1} flexShrink={0}>
++        <text fg={theme.text.base} attributes={1}>
++          SHIP PLAN
++        </text>
++        <Show when={counts().length > 0}>
++          <text fg={theme.text.muted}>{counts().join(` ${chromeGlyph("·")} `)}</text>
++        </Show>
++      </box>
++      <Show
++        when={items().length > 0}
++        fallback={
++          <box paddingTop={1} flexShrink={0}>
++            <text fg={theme.text.muted}>No plan yet. Ship records its plan here as it works.</text>
++          </box>
++        }
++      >
++        <For each={items()}>
++          {(item, index) => (
++            <>
++              <Show when={index() > 0}>
++                <box paddingLeft={1} flexShrink={0}>
++                  <text fg={theme.border.base}>{chromeGlyph("│")}</text>
++                </box>
++              </Show>
++              <box flexDirection="row" gap={1} flexShrink={0}>
++                <text fg={nodeColor(item.status)}>{chromeGlyph(glyph(item.status))}</text>
++                <text fg={nodeColor(item.status)} wrapMode="word">
++                  {item.content}
++                </text>
++                <Show when={item.status !== "pending" && item.status !== "completed"}>
++                  <text fg={theme.text.muted}>{Locale.titlecase(item.status.replace("_", " "))}</text>
++                </Show>
++              </box>
++            </>
++          )}
++        </For>
++      </Show>
++      <box flexGrow={1} minHeight={0} />
++      <box flexShrink={0}>
++        <text fg={theme.text.muted}>ctrl+x p or /graph returns to chat</text>
++      </box>
++    </box>
++  )
++}
 diff --git a/packages/tui/src/routes/session/rows.ts b/packages/tui/src/routes/session/rows.ts
 index 52e45c94a3..f35003486c 100644
 --- a/packages/tui/src/routes/session/rows.ts
@@ -6771,10 +7027,10 @@ index 09b3806670..5fc5dd5725 100644
  function takeStart(value: string, maxWidth: number) {
 diff --git a/packages/tui/src/ui/glyphs.ts b/packages/tui/src/ui/glyphs.ts
 new file mode 100644
-index 0000000000..7414f4b0f2
+index 0000000000..1d73f1203e
 --- /dev/null
 +++ b/packages/tui/src/ui/glyphs.ts
-@@ -0,0 +1,193 @@
+@@ -0,0 +1,195 @@
 +/** Host chrome glyphs. This deliberately does not transform arbitrary text. */
 +export type GlyphMode = "auto" | "unicode" | "ascii"
 +
@@ -6806,6 +7062,8 @@ index 0000000000..7414f4b0f2
 +    "●": "*",
 +    "▪": "*",
 +    "■": "#",
++    "◐": "*",
++    "□": "o",
 +    "◉": "o",
 +    "○": "o",
 +    "⇆": "<>",
@@ -7473,6 +7731,61 @@ index b53525df46..5fd351ae4c 100644
 
  test("/new keeps the active session tab", async () => {
    await using state = await tmpdir()
+diff --git a/packages/tui/test/component/plan-view.test.tsx b/packages/tui/test/component/plan-view.test.tsx
+new file mode 100644
+index 0000000000..43b6178d52
+--- /dev/null
++++ b/packages/tui/test/component/plan-view.test.tsx
+@@ -0,0 +1,49 @@
++/** @jsxImportSource @opentui/solid */
++import { expect, test } from "bun:test"
++import { testRender } from "@opentui/solid"
++import { createSignal } from "solid-js"
++import type { SessionMessageInfo } from "@opencode/client"
++import { PlanView, planGraphVisible, togglePlanGraph } from "../../src/routes/session/plan-view"
++import { ConfigProvider } from "../../src/config"
++import { createTuiResolvedConfig } from "../fixture/tui-runtime"
++import { ThemeProvider } from "../../src/context/theme"
++import { emptyThemeSource } from "../fixture/fixture"
++import { TestTuiContexts } from "../fixture/tui-environment"
++
++function message(name: string, todos: Array<{ content: string; status: string }>): SessionMessageInfo {
++  return { id: "msg-plan", type: "assistant", agent: "ship", model: { providerID: "fixture", id: "fixture" },
++    time: { created: 1 }, content: [{ type: "tool", id: "tool-plan", name, time: { created: 1 },
++      state: { status: "completed", input: name === "todowrite" ? { todos } : {},
++        content: [{ type: "text", text: "Plan recorded" }],
++        metadata: name === "execute" ? { toolCalls: [{ tool: "todowrite", input: { todos } }] } : {} } }] }
++}
++
++test.each([["todowrite", "unicode"], ["execute", "unicode"], ["execute", "ascii"]])("plan view updates from %s in %s mode without remounting", async (name, mode) => {
++  const previousMode = process.env.CTG_TUI_GLYPHS
++  process.env.CTG_TUI_GLYPHS = mode
++  const [messages, update] = createSignal<SessionMessageInfo[]>([])
++  const app = await testRender(() => <TestTuiContexts>
++    <ConfigProvider config={createTuiResolvedConfig()}><ThemeProvider mode="dark" source={emptyThemeSource}><PlanView messages={messages} /></ThemeProvider></ConfigProvider>
++  </TestTuiContexts>, { width: 90, height: 15 })
++  try {
++    await app.waitForFrame((frame) => frame.includes("No plan yet"))
++    update([message(name, [{ content: "Check λ input", status: "in_progress" }, { content: "Run checks", status: "pending" }])])
++    await app.waitForFrame((frame) => frame.includes("Check λ input") && frame.includes("1 in progress"))
++    update([message(name, [{ content: "Check λ input", status: "completed" }, { content: "Run checks", status: "completed" }])])
++    await app.waitForFrame((frame) => frame.includes("2 completed"))
++    expect(app.captureCharFrame()).not.toContain("in progress")
++    if (mode === "ascii") expect(app.captureCharFrame()).not.toMatch(/[■◐□│]/)
++  } finally {
++    app.renderer.destroy()
++    if (previousMode === undefined) delete process.env.CTG_TUI_GLYPHS
++    else process.env.CTG_TUI_GLYPHS = previousMode
++  }
++})
++
++test("plan graph toggles back to the transcript", () => {
++  expect(planGraphVisible()).toBe(false)
++  togglePlanGraph()
++  expect(planGraphVisible()).toBe(true)
++  togglePlanGraph()
++  expect(planGraphVisible()).toBe(false)
++})
 diff --git a/packages/tui/test/component/seascape.test.ts b/packages/tui/test/component/seascape.test.ts
 new file mode 100644
 index 0000000000..cb464a621e
@@ -8090,6 +8403,65 @@ index 0790e9a689..fa236930c6 100644
 -  await setup.mockInput.typeText("setup-keymap")
 +  await setup.mockInput.typeText(query)
  }
+diff --git a/packages/tui/test/plugin-source.test.ts b/packages/tui/test/plugin-source.test.ts
+index 2f4d396a61..53dba05f61 100644
+--- a/packages/tui/test/plugin-source.test.ts
++++ b/packages/tui/test/plugin-source.test.ts
+@@ -7,7 +7,8 @@ import { Host } from "@opencode/plugin/host"
+ import "../src/plugin/runtime-plugin-support.bun"
+ import { createPluginSources } from "../src/plugin/source"
+ import { createSourceWatcher } from "../src/plugin/watch"
+-import { createSignal } from "solid-js"
++import { createSignal, type JSX } from "solid-js"
++import { testRender } from "@opentui/solid"
+ import { Effect, Option, Schema } from "effect"
+ import { Plugin } from "@opencode/plugin/tui"
+ import { tmpdir } from "./fixture/fixture"
+@@ -56,6 +57,34 @@ test("an explicit local entrypoint inside node_modules still reloads", async ()
+   expect((await sources.read(entry.href)).module).toMatchObject({ default: "after" })
+ })
+
++test("installed TSX plugin updates rendered children after asynchronous data arrives", async () => {
++  await using sources = await fixture()
++  const entry = new URL("node_modules/installed-plugin/panel.tsx", sources.url)
++  await mkdir(new URL("node_modules/@opentui", sources.url), { recursive: true })
++  await symlink(
++    path.dirname(Bun.resolveSync("@opentui/solid/package.json", import.meta.dir)),
++    fileURLToPath(new URL("node_modules/@opentui/solid", sources.url)),
++    "junction",
++  )
++  await Bun.write(entry, `import { createSignal } from "solid-js"
++    export const [value, update] = createSignal("Loading workspace")
++    export default () => <text>{value()}</text>`)
++  const loaded = (await sources.read(entry.href)).module as {
++    default: () => JSX.Element
++    value: () => string
++    update: (value: string) => void
++  }
++  const app = await testRender(() => loaded.default(), { width: 40, height: 3 })
++  try {
++    await app.waitForFrame((frame) => frame.includes("Loading workspace"))
++    loaded.update("Workspace native sessions")
++    expect(loaded.value()).toBe("Workspace native sessions")
++    await app.waitForFrame((frame) => frame.includes("Workspace native sessions"))
++  } finally {
++    app.renderer.destroy()
++  }
++})
++
+ test("unchanged bytes are a no-op, reverted bytes get a fresh module", async () => {
+   await using sources = await fixture()
+   const entry = new URL("tui.ts", sources.url)
+@@ -126,7 +155,8 @@ test("shared runtime and ordinary package identities survive plugin generations"
+   for (const label of ["before", "after"]) {
+     await Bun.write(
+       entry,
+-      `import { createSignal } from "solid-js"
++      `import { createSignal, type JSX } from "solid-js"
++import { testRender } from "@opentui/solid"
+       import { Plugin } from "@opencode/plugin/tui"
+       import value from "example"
+       export { createSignal, Plugin, value }; export const label = ${JSON.stringify(label)}`,
 diff --git a/packages/tui/test/plugin-theme-provider.test.tsx b/packages/tui/test/plugin-theme-provider.test.tsx
 new file mode 100644
 index 0000000000..ff8cbeabb0
