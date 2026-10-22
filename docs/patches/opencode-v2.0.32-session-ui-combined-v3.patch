@@ -2205,10 +2205,10 @@ index 773eadaaeb..f612976132 100644
              ? "Your session will resume automatically."
 diff --git a/packages/tui/src/component/seascape.tsx b/packages/tui/src/component/seascape.tsx
 new file mode 100644
-index 0000000000..85499e02cb
+index 0000000000..ef1eab2017
 --- /dev/null
 +++ b/packages/tui/src/component/seascape.tsx
-@@ -0,0 +1,288 @@
+@@ -0,0 +1,293 @@
 +import { OptimizedBuffer, RGBA, Renderable, type RenderContext, type RenderableOptions } from "@opentui/core"
 +import { extend } from "@opentui/solid"
 +import { useConfig } from "../config"
@@ -2244,6 +2244,11 @@ index 0000000000..85499e02cb
 +const STROKE = 1500
 +const FRAME = 70
 +const EDGE = 12
++
++export function seascapeTime(elapsed: number, entrance = true) {
++  const arrival = entrance ? ENTRANCE : 0
++  return elapsed <= arrival ? elapsed : arrival + (elapsed - arrival) / 3
++}
 +
 +const hex = RGBA.fromHex
 +const SHIP_COLORS: Record<string, RGBA> = {
@@ -2336,7 +2341,7 @@ index 0000000000..85499e02cb
 +  protected override renderSelf(buffer: OptimizedBuffer) {
 +    const width = this.width
 +    if (width <= 0) return
-+    const t = this._animated ? performance.now() - this.start : ENTRANCE + 4000
++    const t = this._animated ? seascapeTime(performance.now() - this.start, this._entrance) : ENTRANCE + 4000
 +    const pixels: RGBA[] = new Array(width * HEIGHT)
 +    const set = (x: number, y: number, color: RGBA) => {
 +      if (x < 0 || x >= width || y < 0 || y >= HEIGHT) return
@@ -2537,7 +2542,7 @@ index 8ecaa95787..65c0626d6a 100644
    )
  }
 diff --git a/packages/tui/src/component/session-tabs.tsx b/packages/tui/src/component/session-tabs.tsx
-index fdd23a43cb..c07db91f34 100644
+index fdd23a43cb..076a123b1e 100644
 --- a/packages/tui/src/component/session-tabs.tsx
 +++ b/packages/tui/src/component/session-tabs.tsx
 @@ -20,6 +20,7 @@ import {
@@ -2548,15 +2553,19 @@ index fdd23a43cb..c07db91f34 100644
  import { useConfig } from "../config"
  import { useSessionTabs } from "../context/session-tabs"
  import { useData } from "../context/data"
-@@ -34,6 +35,7 @@ import {
+@@ -32,8 +33,11 @@ import {
+   sessionTabComplete,
+   sessionTabDetail,
    sessionTabNumberLabel,
++  folderSessionCount,
++  railSessionDetail,
    seedSessionTabMotion,
    sessionTabOverflowWidth,
 +  directoryFolderID,
    type SessionTab,
    type SessionTabUnread,
  } from "../context/session-tabs-model"
-@@ -46,11 +48,14 @@ import { projectName } from "../util/project"
+@@ -46,11 +50,14 @@ import { projectName } from "../util/project"
  import { stringWidth } from "../util/string-width"
  import { marqueeCycleWidth, marqueeOverflows, marqueeTextParts } from "../util/marquee"
  import { useDialog } from "../ui/dialog"
@@ -2571,7 +2580,7 @@ index fdd23a43cb..c07db91f34 100644
  import { SessionTabsRailControls, SessionTabHalfRow } from "./session-tabs-rail"
  import "./title-shimmer"
  
-@@ -58,8 +63,14 @@ registerOpencodeSpinner()
+@@ -58,8 +65,14 @@ registerOpencodeSpinner()
  
  export const TAB_SPINNERS = {
    dots: { frames: SPINNER_FRAMES, interval: 80 },
@@ -2588,7 +2597,7 @@ index fdd23a43cb..c07db91f34 100644
    line: { frames: ["|", "/", "-", "\\"], interval: 120 },
  }
  export type TabSpinner = keyof typeof TAB_SPINNERS
-@@ -71,6 +82,9 @@ export const TAB_UNREAD_MARKERS = {
+@@ -71,6 +84,9 @@ export const TAB_UNREAD_MARKERS = {
    "large-square": "■",
  }
  export type TabUnreadMarker = keyof typeof TAB_UNREAD_MARKERS
@@ -2598,7 +2607,7 @@ index fdd23a43cb..c07db91f34 100644
  
  // A long title fades out over its last cells instead of cutting hard.
  const FADE_WIDTH = 4
-@@ -97,6 +111,7 @@ type TabContextMenuState = {
+@@ -97,6 +113,7 @@ type TabContextMenuState = {
    y: number
    sessionID?: string
    title?: string
@@ -2606,7 +2615,7 @@ index fdd23a43cb..c07db91f34 100644
  }
  
  type ContextController = ReturnType<typeof useSessionTabs>
-@@ -119,6 +134,17 @@ export type SessionTabsController = Pick<ContextController, "tabs" | "current" |
+@@ -119,6 +136,17 @@ export type SessionTabsController = Pick<ContextController, "tabs" | "current" |
    rename?: (sessionID: string) => void
    search?: () => void
    status(sessionID: string): SessionTabsStatus
@@ -2624,7 +2633,7 @@ index fdd23a43cb..c07db91f34 100644
  }
  const NEW_SESSION_TAB: SessionTab = { sessionID: "new", title: NEW_SESSION_TAB_TITLE }
  const glowTextColor = (base: RGBA, glow: RGBA, index: number, width: number, level = 1) =>
-@@ -170,14 +196,16 @@ function TabIndicator(props: {
+@@ -170,14 +198,16 @@ function TabIndicator(props: {
      const flash = Math.max(0, 1 - Math.abs(opacity - 0.8) / 0.2)
      return tint(props.backgroundColor, tint(unreadColor(), props.flashColor, flash * 0.3), Math.min(1, opacity / 0.8))
    }
@@ -2643,7 +2652,7 @@ index fdd23a43cb..c07db91f34 100644
      return props.idleLabel ?? ""
    }
    return (
-@@ -382,10 +410,94 @@ function TabContextMenu(props: { state: TabContextMenuState; tabs: SessionTabsCo
+@@ -382,10 +412,94 @@ function TabContextMenu(props: { state: TabContextMenuState; tabs: SessionTabsCo
      mode: "menu",
      commands: [{ bind: "escape,ctrl+c", title: "Close tab menu", group: "Tabs", run: props.onClose }],
    }))
@@ -2738,7 +2747,7 @@ index fdd23a43cb..c07db91f34 100644
      return [
        ...(sessionID && props.tabs.add ? [{ title: NEW_SESSION_TAB_TITLE, run: () => props.tabs.add?.() }] : []),
        ...(sessionID
-@@ -395,6 +507,7 @@ function TabContextMenu(props: { state: TabContextMenuState; tabs: SessionTabsCo
+@@ -395,6 +509,7 @@ function TabContextMenu(props: { state: TabContextMenuState; tabs: SessionTabsCo
                run: () =>
                  props.tabs.rename ? props.tabs.rename(sessionID) : DialogSessionRename.show(dialog, sessionID, title),
              },
@@ -2746,7 +2755,7 @@ index fdd23a43cb..c07db91f34 100644
              {
                title: "Copy session ID",
                run: () =>
-@@ -405,7 +518,11 @@ function TabContextMenu(props: { state: TabContextMenuState; tabs: SessionTabsCo
+@@ -405,7 +520,11 @@ function TabContextMenu(props: { state: TabContextMenuState; tabs: SessionTabsCo
              },
              { title: "Close", run: () => props.tabs.close(sessionID) },
            ]
@@ -2759,7 +2768,72 @@ index fdd23a43cb..c07db91f34 100644
        ...(!sessionID && props.tabs.reopen
          ? [
              { title: "Recently closed tabs" },
-@@ -604,6 +721,75 @@ function VerticalSessionTabs(props: {
+@@ -570,6 +689,64 @@ function VerticalSessionTabs(props: {
+   const separatorUpperPulseColor = createMemo(() => tint(background(), theme.text.base, 0.04))
+   const separatorLowerPulseColor = createMemo(() => tint(background(), theme.text.base, 0.05))
+   const [addHovered, setAddHovered] = createSignal(false)
++  const dialog = useDialog()
++  const keymap = Keymap.use()
++  const runSearch = () => (tabs.search ? tabs.search() : keymap.dispatch("session.list"))
++  const promptNewFolder = () =>
++    dialog.replace(() => (
++      <DialogPrompt
++        title="New folder"
++        placeholder="Folder name"
++        onConfirm={(value) => {
++          if (!value.trim()) return
++          tabs.createFolder?.(value)
++          dialog.clear()
++        }}
++      />
++    ))
++  const renderHeaderButton = (label: string, run: () => void) => {
++    const [hoveredButton, setHoveredButton] = createSignal(false)
++    return (
++      <box
++        height={1}
++        flexShrink={0}
++        paddingLeft={1}
++        backgroundColor={hoveredButton() ? actionHovered() : background()}
++        onMouseOver={() => setHoveredButton(true)}
++        onMouseOut={() => setHoveredButton(false)}
++        onMouseUp={(event) => {
++          if (event.button === RIGHT_MOUSE_BUTTON) return
++          event.stopPropagation()
++          run()
++        }}
++      >
++        <text fg={hoveredButton() ? theme.text.base : theme.text.action.secondary.base} selectable={false} wrapMode="none">
++          {label}
++        </text>
++      </box>
++    )
++  }
++  const renderRailHeader = () => (
++    <box height={1} width="100%" flexDirection="row" flexShrink={0} paddingLeft={1} backgroundColor={background()}>
++      <text fg={theme.text.base} selectable={false} wrapMode="none" attributes={TextAttributes.BOLD}>
++        Sessions
++      </text>
++      <box flexGrow={1} />
++      {renderHeaderButton(chromeGlyph("⌕"), runSearch)}
++      <Show when={tabs.createFolder}>{renderHeaderButton("+ Folder", promptNewFolder)}</Show>
++      <Show when={tabs.add}>{renderHeaderButton("+ New", () => tabs.add?.())}</Show>
++    </box>
++  )
++  const renderRailHints = () => (
++    <box flexDirection="column" flexShrink={0} paddingLeft={1} paddingY={1} backgroundColor={background()}>
++      <text fg={theme.text.muted} selectable={false} wrapMode="none">
++        {Locale.takeWidth("Right-click to rename & move", Math.max(1, width() - 2))}
++      </text>
++      <text fg={theme.text.muted} selectable={false} wrapMode="none">
++        {Locale.takeWidth("Alt+T hides this sidebar", Math.max(1, width() - 2))}
++      </text>
++    </box>
++  )
+   const marquee = createTabMarquee(animations)
+   const hovered = marquee.hovered
+   createEffect(() => {
+@@ -604,6 +781,75 @@ function VerticalSessionTabs(props: {
      return moveSessionTab(tabs.tabs(), pending.sessionID, pending.index)
    })
    const items = ordered
@@ -2823,11 +2897,11 @@ index fdd23a43cb..c07db91f34 100644
 +          {folderChevron(group.collapsed)}
 +        </text>
 +        <text fg={theme.text.base} selectable={false} wrapMode="none" attributes={TextAttributes.BOLD}>
-+          {Locale.takeWidth(group.title, Math.max(1, width() - 6))}
++          {Locale.takeWidth(group.title, Math.max(1, width() - 4 - folderSessionCount(group.tabs.length).length))}
 +        </text>
 +        <box flexGrow={1} />
 +        <text fg={theme.text.muted} selectable={false} paddingRight={1}>
-+          {group.tabs.length}
++          {folderSessionCount(group.tabs.length)}
 +        </text>
 +      </box>
 +    )
@@ -2835,7 +2909,7 @@ index fdd23a43cb..c07db91f34 100644
    const highlightColor = createMemo(() =>
      tint(background(), actionHovered(), actionHovered().a),
    )
-@@ -689,10 +875,13 @@ function VerticalSessionTabs(props: {
+@@ -689,10 +935,13 @@ function VerticalSessionTabs(props: {
      const source = dragging()
      if (!source) return
      didDrag = true
@@ -2851,11 +2925,11 @@ index fdd23a43cb..c07db91f34 100644
          Math.floor(
            (event.y - (scroll?.viewport.screenY ?? rail.screenY + 1) - (compact() ? 1 : 0) + (scroll?.scrollTop ?? 0)) /
              stride(),
-@@ -703,6 +892,407 @@ function VerticalSessionTabs(props: {
+@@ -703,6 +952,407 @@ function VerticalSessionTabs(props: {
      if (target !== sourceIndex && preview()?.index !== target) setPreview({ sessionID: source, index: target })
    }
  
-+  const renderTab = (tab: SessionTab, index: () => number) => {
++  const renderTab = (tab: SessionTab, index: () => number, groupTitle?: string) => {
 +            const selected = () => activeID() === tab.sessionID
 +            const status = createMemo(() => itemStatus(tab))
 +            const [sweepLevel, setSweepLevel] = createSignal(0)
@@ -2882,7 +2956,7 @@ index fdd23a43cb..c07db91f34 100644
 +                .join(""),
 +            )
 +            const titleFades = createMemo(() => marqueeOverflows(title(), titleWidth()) && titleWidth() > FADE_WIDTH)
-+            const tabDetail = createMemo(() => detail(tab.sessionID))
++            const tabDetail = createMemo(() => railSessionDetail(detail(tab.sessionID), groupTitle) ?? "")
 +            const visibleDetail = createMemo(() => Locale.takeWidth(tabDetail(), titleWidth()))
 +            const visibleDetailParts = createMemo(() => Locale.graphemes(visibleDetail()))
 +            const detailFades = createMemo(
@@ -3259,7 +3333,7 @@ index fdd23a43cb..c07db91f34 100644
    return (
      <box
        ref={(element) => (rail = element)}
-@@ -714,6 +1304,13 @@ function VerticalSessionTabs(props: {
+@@ -714,6 +1364,13 @@ function VerticalSessionTabs(props: {
        paddingTop={1}
        backgroundColor={background()}
        onMouseOut={marquee.leaveHovered}
@@ -3273,7 +3347,15 @@ index fdd23a43cb..c07db91f34 100644
        onMouseUp={(event) => {
          if (event.button === RIGHT_MOUSE_BUTTON) return
          release()
-@@ -739,408 +1336,21 @@ function VerticalSessionTabs(props: {
+@@ -727,6 +1384,7 @@ function VerticalSessionTabs(props: {
+       <Show when={compact()}>
+         <SessionTabsRailControls width={width()} tabs={tabs} belowHighlighted={belowHighlighted()} />
+       </Show>
++      <Show when={!compact()}>{renderRailHeader()}</Show>
+       <scrollbox
+         ref={(element) => {
+           scroll = element
+@@ -739,408 +1397,21 @@ function VerticalSessionTabs(props: {
          scrollbarOptions={{ visible: false }}
        >
          <box flexShrink={0} flexDirection="column" gap={1} paddingY={compact() ? 1 : 0}>
@@ -3683,7 +3765,7 @@ index fdd23a43cb..c07db91f34 100644
 +                <box flexDirection="column" flexShrink={0}>
 +                  {renderFolderHeader(group)}
 +                  <Show when={!group.collapsed}>
-+                    <For each={group.tabs}>{(tab) => renderTab(tab, () => flatIndex(tab.sessionID))}</For>
++                    <For each={group.tabs}>{(tab) => renderTab(tab, () => flatIndex(tab.sessionID), group.title)}</For>
                    </Show>
                  </box>
 -              )
@@ -3695,7 +3777,7 @@ index fdd23a43cb..c07db91f34 100644
            {/* One slot with two states: a muted affordance that promotes in place into the
                active new-session tab, instead of spawning a separate pseudo tab above itself. */}
            <Show when={tabs.add || newTab()}>
-@@ -1230,7 +1440,7 @@ function VerticalSessionTabs(props: {
+@@ -1230,13 +1501,14 @@ function VerticalSessionTabs(props: {
                      tabs.close()
                    }}
                  >
@@ -3704,7 +3786,14 @@ index fdd23a43cb..c07db91f34 100644
                  </text>
                </Show>
              </box>
-@@ -1262,6 +1472,7 @@ function VerticalSessionTabs(props: {
+           </Show>
+         </box>
+       </scrollbox>
++      <Show when={!compact()}>{renderRailHints()}</Show>
+       <Show when={compact() && !dragging() && !contextMenu() && hovered()}>
+         {(sessionID) => (
+           <box
+@@ -1262,6 +1534,7 @@ function VerticalSessionTabs(props: {
                      items().find((tab) => tab.sessionID === sessionID())?.title ??
                      "Untitled session",
                    tooltipWidth() - 2,
@@ -3712,7 +3801,7 @@ index fdd23a43cb..c07db91f34 100644
                  )}
                </text>
                <text fg={theme.text.muted} wrapMode="none" selectable={false}>
-@@ -1556,7 +1767,7 @@ function HorizontalSessionTabs(props: {
+@@ -1556,7 +1829,7 @@ function HorizontalSessionTabs(props: {
      >
        <Show when={layout().before > 0}>
          <text width={sessionTabOverflowWidth(layout().before)} fg={theme.text.muted} selectable={false}>
@@ -3721,7 +3810,7 @@ index fdd23a43cb..c07db91f34 100644
          </text>
        </Show>
        <For each={layout().tabs}>
-@@ -1753,7 +1964,7 @@ function HorizontalSessionTabs(props: {
+@@ -1753,7 +2026,7 @@ function HorizontalSessionTabs(props: {
                      tabs.close(tab === NEW_SESSION_TAB ? undefined : tab.sessionID)
                    }}
                  >
@@ -3730,7 +3819,7 @@ index fdd23a43cb..c07db91f34 100644
                  </text>
                </box>
              </box>
-@@ -1762,7 +1973,7 @@ function HorizontalSessionTabs(props: {
+@@ -1762,7 +2035,7 @@ function HorizontalSessionTabs(props: {
        </For>
        <Show when={layout().after > 0}>
          <text width={sessionTabOverflowWidth(layout().after)} fg={theme.text.muted} selectable={false}>
@@ -3912,7 +4001,7 @@ index d3304eb339..ac93d3f20d 100644
            })
          },
 diff --git a/packages/tui/src/context/session-tabs-model.ts b/packages/tui/src/context/session-tabs-model.ts
-index 856f9961e7..df291f5b70 100644
+index 856f9961e7..0e2f737d2d 100644
 --- a/packages/tui/src/context/session-tabs-model.ts
 +++ b/packages/tui/src/context/session-tabs-model.ts
 @@ -1,6 +1,32 @@
@@ -3948,12 +4037,30 @@ index 856f9961e7..df291f5b70 100644
  }
  
  export type SessionTabUnread = "activity" | "error"
-@@ -18,7 +44,7 @@ export function sessionTabDetail(
+@@ -17,8 +43,24 @@ export function sessionTabDetail(
+   defaultBranch: string | undefined,
    worktree: boolean,
  ) {
-   const branch = worktree && current !== defaultBranch ? current : undefined
+-  const branch = worktree && current !== defaultBranch ? current : undefined
 -  return branch && project ? `${project} ⎇ ${branch}` : (branch ?? project)
++  const branch = worktree && current && current !== defaultBranch ? current : undefined
 +  return branch && project ? `${project} ${chromeGlyph("⎇")} ${branch}` : (branch ?? project)
++}
++
++export function folderSessionCount(count: number) {
++  if (count <= 0) return ""
++  return count === 1 ? "1 session" : `${count} sessions`
++}
++
++// A grouped rail heading already names the project; repeating the same word
++// as the row detail reads as a duplicate line. Keep only detail that adds
++// information (a branch suffix, or a different project name).
++export function railSessionDetail(detail: string | undefined, folderTitle: string | undefined) {
++  const value = detail?.trim() ?? ""
++  if (!value) return undefined
++  const title = folderTitle?.trim() ?? ""
++  if (title && value === title) return undefined
++  return value
  }
  
  export type SessionTabHistory = {
@@ -6748,6 +6855,16 @@ index 0000000000..e151b03a4e
 +  right: ["                        ", " C A R T H A G E N T    ", " C A R T H A G E N T    ", " C A R T H A G E N T    "],
 +  compact: ["    ", " CTG", " CTG", " CTG"],
 +} as const
+diff --git a/packages/tui/src/ui/layout.ts b/packages/tui/src/ui/layout.ts
+index 803ae76897..01bea3d158 100644
+--- a/packages/tui/src/ui/layout.ts
++++ b/packages/tui/src/ui/layout.ts
+@@ -1,4 +1,4 @@
+-export const SESSION_SIDEBAR_WIDTH = 42
++export const SESSION_SIDEBAR_WIDTH = 30
+ export const SESSION_TABS_COMPACT_WIDTH = 5
+ export const SESSION_TABS_COMPACT_BREAKPOINT = 12
+ export const SESSION_SIDEBAR_MAX_WIDTH = 72
 diff --git a/packages/tui/src/ui/spinner.ts b/packages/tui/src/ui/spinner.ts
 index c185ea7b83..83aa3e9723 100644
 --- a/packages/tui/src/ui/spinner.ts
@@ -7243,6 +7360,184 @@ index b53525df46..5fd351ae4c 100644
  
  test("/new keeps the active session tab", async () => {
    await using state = await tmpdir()
+diff --git a/packages/tui/test/component/seascape.test.ts b/packages/tui/test/component/seascape.test.ts
+new file mode 100644
+index 0000000000..cb464a621e
+--- /dev/null
++++ b/packages/tui/test/component/seascape.test.ts
+@@ -0,0 +1,19 @@
++import { expect, test } from "bun:test"
++import { seascapeTime } from "../../src/component/seascape"
++
++test("ship entrance retains its original timing", () => {
++  expect(seascapeTime(0)).toBe(0)
++  expect(seascapeTime(1300)).toBe(1300)
++  expect(seascapeTime(2600)).toBe(2600)
++})
++
++test("ambient motion slows to one-third speed continuously after arrival", () => {
++  expect(seascapeTime(2603)).toBe(2601)
++  expect(seascapeTime(5600)).toBe(3600)
++  expect(seascapeTime(8600) - seascapeTime(5600)).toBe(1000)
++})
++
++test("revisited new-session screens use slow ambient motion immediately", () => {
++  expect(seascapeTime(0, false)).toBe(0)
++  expect(seascapeTime(3000, false)).toBe(1000)
++})
+diff --git a/packages/tui/test/component/session-tabs-rail.test.tsx b/packages/tui/test/component/session-tabs-rail.test.tsx
+index 769070428a..6f105915aa 100644
+--- a/packages/tui/test/component/session-tabs-rail.test.tsx
++++ b/packages/tui/test/component/session-tabs-rail.test.tsx
+@@ -10,6 +10,8 @@ import { Keymap } from "../../src/context/keymap"
+ import { ThemeProvider } from "../../src/context/theme"
+ import { SPINNER_FRAMES } from "../../src/component/spinner-frames"
+ import { SESSION_TABS_COMPACT_WIDTH } from "../../src/ui/layout"
++import { DialogProvider } from "../../src/ui/dialog"
++import { ToastProvider } from "../../src/ui/toast"
+ import { emptyThemeSource } from "../fixture/fixture"
+ import { TestTuiContexts } from "../fixture/tui-environment"
+ import { createTuiResolvedConfig } from "../fixture/tui-runtime"
+@@ -43,16 +45,20 @@ test("compact rail renders and controls session tabs", async () => {
+         <ConfigProvider config={createTuiResolvedConfig({ tabs: { indicators: "status" } })}>
+           <Keymap.Provider>
+             <ThemeProvider mode="dark" source={emptyThemeSource}>
+-              <box width="100%" height="100%" flexDirection="row">
+-                <SessionTabs
+-                  controller={controller}
+-                  orientation="vertical"
+-                  animations={false}
+-                  indicators={indicators()}
+-                  width={SESSION_TABS_COMPACT_WIDTH}
+-                />
+-                <text>transcript</text>
+-              </box>
++              <ToastProvider>
++                <DialogProvider>
++                  <box width="100%" height="100%" flexDirection="row">
++                    <SessionTabs
++                      controller={controller}
++                      orientation="vertical"
++                      animations={false}
++                      indicators={indicators()}
++                      width={SESSION_TABS_COMPACT_WIDTH}
++                    />
++                    <text>transcript</text>
++                  </box>
++                </DialogProvider>
++              </ToastProvider>
+             </ThemeProvider>
+           </Keymap.Provider>
+         </ConfigProvider>
+@@ -123,3 +129,72 @@ test("compact rail renders and controls session tabs", async () => {
+     app.renderer.destroy()
+   }
+ })
++
++test("wide rail shows a header bar, worded folder counts, and no duplicate detail", async () => {
++  const [active, setActive] = createSignal("only")
++  const [items] = createSignal<SessionTab[]>([{ sessionID: "only", title: "Manual tiny fixture" }])
++  const [searches, setSearches] = createSignal(0)
++  const [added, setAdded] = createSignal(0)
++  const controller = {
++    tabs: items,
++    current: active,
++    add: () => setAdded((value) => value + 1),
++    search: () => setSearches((value) => value + 1),
++    select: setActive,
++    close() {},
++    move() {},
++    detail: () => "project",
++    folders: () => [{ id: "dir:/work/project", kind: "directory", directory: "/work/project" } as const],
++    folderFor: () => "dir:/work/project",
++    setFolderCollapsed() {},
++    status: () => EMPTY_SESSION_TAB_STATUS,
++  } satisfies SessionTabsController
++  const app = await testRender(
++    () => (
++      <TestTuiContexts>
++        <ConfigProvider config={createTuiResolvedConfig({ tabs: { indicators: "status" } })}>
++          <Keymap.Provider>
++            <ThemeProvider mode="dark" source={emptyThemeSource}>
++              <ToastProvider>
++                <DialogProvider>
++                  <box width="100%" height="100%" flexDirection="row">
++                    <SessionTabs controller={controller} orientation="vertical" animations={false} width={30} />
++                    <text>transcript</text>
++                  </box>
++                </DialogProvider>
++              </ToastProvider>
++            </ThemeProvider>
++          </Keymap.Provider>
++        </ConfigProvider>
++      </TestTuiContexts>
++    ),
++    { width: 100, height: 24 },
++  )
++
++  try {
++    app.renderer.start()
++    await app.waitForFrame((frame) => frame.includes("Manual tiny fixture"))
++    const frame = app.captureCharFrame()
++    expect(frame).toContain("Sessions")
++    expect(frame).toContain("⌕")
++    expect(frame).toContain("+ New")
++    expect(frame).toContain("▾ project")
++    expect(frame).toContain("1 session")
++    expect(frame).toContain("Manual tiny fixture")
++    const railLines = frame.split("\n").map((line) => line.slice(0, 30))
++    expect(railLines.filter((line) => line.includes("project")).length).toBe(1)
++    const header = railLines.find((line) => line.includes("Sessions"))!
++    expect(header).toBeDefined()
++    const searchIndex = header.indexOf("⌕")
++    expect(searchIndex).toBeGreaterThan(10)
++    const newIndex = header.indexOf("+ New")
++    expect(newIndex).toBeGreaterThan(20)
++    const headerRow = frame.split("\n").findIndex((line) => line.includes("Sessions"))
++    await app.mockMouse.click(searchIndex, headerRow)
++    expect(searches()).toBe(1)
++    await app.mockMouse.click(newIndex + 1, headerRow)
++    expect(added()).toBe(1)
++  } finally {
++    app.renderer.destroy()
++  }
++})
+diff --git a/packages/tui/test/context/session-tabs-model.test.ts b/packages/tui/test/context/session-tabs-model.test.ts
+index a744c2966e..dbae37c530 100644
+--- a/packages/tui/test/context/session-tabs-model.test.ts
++++ b/packages/tui/test/context/session-tabs-model.test.ts
+@@ -12,6 +12,8 @@ import {
+   seedSessionTabMotion,
+   sessionTabComplete,
+   sessionTabDetail,
++  folderSessionCount,
++  railSessionDetail,
+   sessionTabOverflowWidth,
+   sessionTabNumberLabel,
+ } from "../../src/context/session-tabs-model"
+@@ -24,6 +26,22 @@ describe("session tabs", () => {
+     expect(sessionTabDetail("opencode", "main", "main", true)).toBe("opencode")
+     expect(sessionTabDetail("opencode", undefined, "main", true)).toBe("opencode")
+   })
++  test("folder counts read as words, not bare digits", () => {
++    expect(folderSessionCount(0)).toBe("")
++    expect(folderSessionCount(1)).toBe("1 session")
++    expect(folderSessionCount(2)).toBe("2 sessions")
++    expect(folderSessionCount(12)).toBe("12 sessions")
++  })
++
++  test("rail detail never repeats the folder heading", () => {
++    expect(railSessionDetail("project", "project")).toBeUndefined()
++    expect(railSessionDetail("  project  ", "project")).toBeUndefined()
++    expect(railSessionDetail("project ⎇ feature/sidebar", "project")).toBe("project ⎇ feature/sidebar")
++    expect(railSessionDetail("opencode", "My folder")).toBe("opencode")
++    expect(railSessionDetail(undefined, "project")).toBeUndefined()
++    expect(railSessionDetail("project", undefined)).toBe("project")
++  })
++
+ 
+   test("labels tabs by ordinal", () => {
+     expect(Array.from({ length: 12 }, (_, index) => sessionTabNumberLabel(index))).toEqual([
 diff --git a/packages/tui/test/fixture/tui-client.ts b/packages/tui/test/fixture/tui-client.ts
 index 9accc15e64..b9729bfc0f 100644
 --- a/packages/tui/test/fixture/tui-client.ts
@@ -7772,6 +8067,23 @@ index 0000000000..9a46b4d5b1
 +  expect(harness.theme.set({ name: "opencode" })).toBe(true)
 +  expect(harness.theme.current()).toEqual({ name: "opencode", mode: "light" })
 +})
+diff --git a/packages/tui/test/ui/layout.test.ts b/packages/tui/test/ui/layout.test.ts
+index 96c7831485..f9a91f1ee4 100644
+--- a/packages/tui/test/ui/layout.test.ts
++++ b/packages/tui/test/ui/layout.test.ts
+@@ -8,9 +8,9 @@ import {
+ } from "../../src/ui/layout"
+ 
+ test("vertical tabs match the session sidebar and preserve readable content width", () => {
+-  expect(SESSION_SIDEBAR_WIDTH).toBe(42)
+-  expect(sessionTabsFitVertically(106)).toBe(true)
+-  expect(sessionTabsFitVertically(105)).toBe(false)
++  expect(SESSION_SIDEBAR_WIDTH).toBe(30)
++  expect(sessionTabsFitVertically(94)).toBe(true)
++  expect(sessionTabsFitVertically(93)).toBe(false)
+ })
+ 
+ test("vertical tabs account for a resized width", () => {
 diff --git a/packages/tui/test/util/renderer.test.ts b/packages/tui/test/util/renderer.test.ts
 index a5c4e7b54e..6c015fdf43 100644
 --- a/packages/tui/test/util/renderer.test.ts
