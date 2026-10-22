@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 EXPECTED_SOURCE="843a6c514e606b436a7fe713422ace0a93ad3d61"
 EXPECTED_LOCK="9d78379cd264584a495440a217b9d2ecab524c9a56f7f8b4b5bed3926daa330d"
-EXPECTED_PATCH="c9e6ca1b1abaec65f5f1b688118293a4925711ffb2e4415c509eedb9b210ff46"
+EXPECTED_PATCH="349c68e7b236f438292703f7e311d6e43999db6b883f0e3f05eb34acb954c90e"
 TARGET="${1:-opencode-linux-x64}"
 HOST_PLATFORM="$(node -p 'process.platform')"
 HOST_ARCH="$(node -p 'process.arch')"
@@ -110,7 +110,7 @@ bun test --cwd packages/core test/shell-retention.test.ts
 bun test --cwd packages/server test/shell-provenance.test.ts
 bun test --cwd packages/tui test/clear-session.test.tsx
 bun test --cwd packages/tui test/util/renderer.test.ts
-bun test --cwd packages/tui test/component/seascape.test.ts test/component/session-tabs-rail.test.tsx test/component/session-tabs-marquee.test.ts test/component/session-tabs-mouse.test.tsx test/context/session-tabs-model.test.ts test/ui/layout.test.ts
+bun test --cwd packages/tui test/component/transcript-scrollbox.test.ts test/component/seascape.test.ts test/component/session-tabs-rail.test.tsx test/component/session-tabs-marquee.test.ts test/component/session-tabs-mouse.test.tsx test/context/session-tabs-model.test.ts test/ui/layout.test.ts
 bun test --cwd packages/tui --timeout 60000 test/glyphs.test.ts test/plugin-keymap.test.tsx test/plugin-theme.test.tsx test/plugin-theme-provider.test.tsx
 
 cd packages/cli

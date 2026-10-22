@@ -477,9 +477,11 @@ def main():
                 mouse_mode = (b'\x1b[?1000h' in output or b'\x1b[?1002h' in output or
                               b'\x1b[?1006h' in output)
                 response_rows = [index for index, line in enumerate(visible_lines, 1)
-                                 if ('FINAL' in line and selection_target in line and 'END' in line and
-                                     4 <= index <= screen.rows - 4)]
-                if (not selection_sent and response_rows and mouse_mode):
+                                 if ('FINAL' + selection_target + 'END' in line and
+                                     1 <= index <= screen.rows - 4)]
+                response_settled = ('provider_received_at' in locals() and
+                                    time.monotonic() - provider_received_at > 1.0)
+                if (not selection_sent and response_rows and mouse_mode and response_settled):
                     target_row = response_rows[-1]
                     target_line = visible_lines[target_row - 1]
                     # Derive terminal cells from the original VT paint stream:
@@ -503,8 +505,6 @@ def main():
                     selection_sent = True
                     selection_sent_at = time.monotonic()
                 response_observed = fixture_response.encode() in output
-                response_settled = ('provider_received_at' in locals() and
-                                    time.monotonic() - provider_received_at > 1.0)
                 selection_values_now = screen.clipboard_history[selected_clipboard_count:]
                 selection_observed = (selection_sent and selection_confirmed and
                                       selection_values_now == [selected_text])
@@ -512,7 +512,7 @@ def main():
                     selection_readback_at_selection = screen.query_clipboard()
                 if (Provider.received and not copy_invoked and
                         (response_observed or (args.focused_host_roundtrip and response_settled)) and
-                        (not args.focused_host_roundtrip or selection_observed) and
+                        selection_observed and
                         not args.assertion_regression_only):
                     copy_clipboard_count = len(screen.clipboard_history)
                     os.write(master, b'/copy\r')
@@ -712,7 +712,7 @@ def main():
                 'finalTitle': screen.title,
                 'titleSequenceObserved': screen.title_history,
                 'oscTitleUpdates': screen.osc_title_updates}
-            selection_values = screen.clipboard_history[selected_clipboard_count:copy_clipboard_count] if selection_sent else []
+            selection_values = screen.clipboard_history[selected_clipboard_count:copy_clipboard_count if copy_invoked else None] if selection_sent else []
             selection_readback = locals().get('selection_readback_at_selection')
             selection_model_pass = (selection_sent and selected_text == selection_target and
                                     selection_values == [selection_target] and

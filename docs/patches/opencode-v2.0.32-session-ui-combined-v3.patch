@@ -3934,6 +3934,37 @@ index a6072fe109..59e891b868 100644
          this.renderColor,
          this.outerRenderColor,
        )
+diff --git a/packages/tui/src/component/transcript-scrollbox.tsx b/packages/tui/src/component/transcript-scrollbox.tsx
+new file mode 100644
+index 0000000000..f35aef1416
+--- /dev/null
++++ b/packages/tui/src/component/transcript-scrollbox.tsx
+@@ -0,0 +1,25 @@
++import { ScrollBoxRenderable, type MouseEvent } from "@opentui/core"
++import { extend } from "@opentui/solid"
++
++export class TranscriptScrollBoxRenderable extends ScrollBoxRenderable {
++  private selectionRow: number | undefined
++
++  protected override onMouseEvent(event: MouseEvent) {
++    if (event.type === "down") this.selectionRow = event.y
++    // Edge proximity alone must not turn a horizontal text selection into a vertical drag.
++    if (event.type === "drag" && event.isDragging && event.y === this.selectionRow) {
++      this.stopAutoScroll()
++      return
++    }
++    super.onMouseEvent(event)
++    if (event.type === "up" || event.type === "drag-end") this.selectionRow = undefined
++  }
++}
++
++declare module "@opentui/solid" {
++  interface OpenTUIComponents {
++    transcript_scrollbox: typeof TranscriptScrollBoxRenderable
++  }
++}
++
++extend({ transcript_scrollbox: TranscriptScrollBoxRenderable })
 diff --git a/packages/tui/src/config/index.tsx b/packages/tui/src/config/index.tsx
 index 953d5977d0..f053c3840c 100644
 --- a/packages/tui/src/config/index.tsx
@@ -5472,7 +5503,7 @@ index 2e09fc5e84..bcf83e0c9c 100644
    return (
      <Show when={!props.pendingOutside}>
 diff --git a/packages/tui/src/routes/session/index.tsx b/packages/tui/src/routes/session/index.tsx
-index 0b8228ef87..2dea17078c 100644
+index 0b8228ef87..17a7cb91db 100644
 --- a/packages/tui/src/routes/session/index.tsx
 +++ b/packages/tui/src/routes/session/index.tsx
 @@ -19,6 +19,7 @@ import { useRoute, useRouteData } from "../../context/route"
@@ -5483,7 +5514,15 @@ index 0b8228ef87..2dea17078c 100644
  import { useTuiTerminalEnvironment } from "../../context/runtime"
  import { Spinner, SPINNER_FRAMES } from "../../component/spinner"
  import { PatchDiff } from "../../component/patch-diff"
-@@ -170,7 +171,9 @@ export function Session(props: {
+@@ -32,6 +33,7 @@ import {
+   MouseEvent,
+   type Renderable,
+ } from "@opentui/core"
++import "../../component/transcript-scrollbox"
+ import { Prompt, type PromptRef } from "../../component/prompt"
+ import type {
+   SessionMessageInfo,
+@@ -170,7 +172,9 @@ export function Session(props: {
    const theme = useTheme()
    const promptRef = usePromptRef()
    const session = createMemo(() => data.session.get(route.sessionID))
@@ -5493,7 +5532,7 @@ index 0b8228ef87..2dea17078c 100644
    const messageIndexes = createMemo(() => new Map(messages().map((message, index) => [message.id, index])))
    const legacy = createMemo(() => legacyTurns(messages()))
    const messagesBeforeRevert = () => {
-@@ -191,7 +194,7 @@ export function Session(props: {
+@@ -191,7 +195,7 @@ export function Session(props: {
    createEffect(() => currentLocation.set(location()))
 
    createEffect(() => {
@@ -5502,7 +5541,7 @@ index 0b8228ef87..2dea17078c 100644
      setEpilogue(sessionEpilogue({ title, sessionID: session()?.id }))
    })
    onCleanup(() => setEpilogue())
-@@ -278,11 +281,14 @@ export function Session(props: {
+@@ -278,11 +282,14 @@ export function Session(props: {
    })
    const editor = useEditorContext()
    const [rowsSynced, setRowsSynced] = createSignal(false)
@@ -5517,7 +5556,7 @@ index 0b8228ef87..2dea17078c 100644
    )
    const boundaries = createMemo(() => messageBoundaryIDs(rows, messages()))
    const anchors = createTimelineAnchors()
-@@ -291,6 +297,21 @@ export function Session(props: {
+@@ -291,6 +298,21 @@ export function Session(props: {
    const [firstJump, setFirstJump] = createSignal<() => void>()
    const [synced, setSynced] = createSignal(false)
    const sessionTabs = useSessionTabs()
@@ -5539,7 +5578,7 @@ index 0b8228ef87..2dea17078c 100644
    const [awayFromBottom, setAwayFromBottom] = createSignal(false)
    const [latestHovered, setLatestHovered] = createSignal(false)
    let ensureAllRowsPending: (() => void)[] | undefined
-@@ -822,6 +843,31 @@ export function Session(props: {
+@@ -822,6 +844,31 @@ export function Session(props: {
    ]
 
    const baseAndUnfocusedCommands = [
@@ -5571,7 +5610,16 @@ index 0b8228ef87..2dea17078c 100644
      {
        id: "session.first",
        title: "First message",
-@@ -1418,6 +1464,19 @@ export function Session(props: {
+@@ -1389,7 +1436,7 @@ export function Session(props: {
+         >
+           <Show when={session()}>
+             <box flexGrow={1} minHeight={0} position="relative">
+-              <scrollbox
++              <transcript_scrollbox
+                 ref={(r) => {
+                   scroll = r
+                   props.scrollRef?.(r)
+@@ -1418,6 +1465,19 @@ export function Session(props: {
                    updateAwayFromBottom()
                  }}
                >
@@ -5591,7 +5639,12 @@ index 0b8228ef87..2dea17078c 100644
                  <For each={visibleRows()}>
                    {(row, index) => (
                      <SessionRowView
-@@ -1441,7 +1500,7 @@ export function Session(props: {
+@@ -1437,11 +1497,11 @@ export function Session(props: {
+                 <Show when={navigationSlack()}>
+                   {(height) => <box id={NAVIGATION_SLACK_ID} height={height()} flexShrink={0} />}
+                 </Show>
+-              </scrollbox>
++              </transcript_scrollbox>
              </box>
              <box height={1} flexShrink={0} flexDirection="row" justifyContent="flex-end">
                <Show when={firstJump()}>
@@ -5600,7 +5653,7 @@ index 0b8228ef87..2dea17078c 100644
                </Show>
                <Show when={!firstJump() && awayFromBottom()}>
                  <box
-@@ -1454,7 +1513,7 @@ export function Session(props: {
+@@ -1454,7 +1514,7 @@ export function Session(props: {
                    <text
                      fg={latestHovered() ? theme.text.action.secondary.hovered : theme.text.action.secondary.base}
                    >
@@ -5609,7 +5662,7 @@ index 0b8228ef87..2dea17078c 100644
                    </text>
                  </box>
                </Show>
-@@ -1677,14 +1736,14 @@ function TurnTokenUsage(props: {
+@@ -1677,14 +1737,14 @@ function TurnTokenUsage(props: {
              <span>{expanded() ? "- " : "+ "}</span>
              <span style={{ attributes: TextAttributes.BOLD }}>Tokens</span>
              <span>
@@ -5627,7 +5680,7 @@ index 0b8228ef87..2dea17078c 100644
                </span>
              </Show>
            </text>
-@@ -1914,16 +1973,16 @@ function AssistantFooter(props: { message: SessionMessageAssistant }) {
+@@ -1914,16 +1974,16 @@ function AssistantFooter(props: { message: SessionMessageAssistant }) {
              {Locale.titlecase(props.message.agent)}
            </span>
            <Show when={ctx.terminal.width >= 28}>
@@ -5648,7 +5701,7 @@ index 0b8228ef87..2dea17078c 100644
            </Show>
          </text>
        </box>
-@@ -1938,7 +1997,7 @@ function SessionSwitchMessageV2(props: { message: SessionMessageInfo }) {
+@@ -1938,7 +1998,7 @@ function SessionSwitchMessageV2(props: { message: SessionMessageInfo }) {
      return (
        <box paddingLeft={3}>
          <text>
@@ -5657,7 +5710,7 @@ index 0b8228ef87..2dea17078c 100644
            <span style={{ fg: theme.text.feedback.info.base }}>{props.message.location.directory}</span>
          </text>
        </box>
-@@ -1984,8 +2043,9 @@ function SessionNoticeMessageV2(props: { message: SessionMessageInfo }) {
+@@ -1984,8 +2044,9 @@ function SessionNoticeMessageV2(props: { message: SessionMessageInfo }) {
      if (state() === "error") return "failed"
      return state() ?? "finished"
    }
@@ -5669,7 +5722,7 @@ index 0b8228ef87..2dea17078c 100644
    const color = () => {
      if (state() === "error") return theme.text.feedback.error.base
      if (state() === "cancelled") return theme.text.feedback.warning.base
-@@ -1996,7 +2056,7 @@ function SessionNoticeMessageV2(props: { message: SessionMessageInfo }) {
+@@ -1996,7 +2057,7 @@ function SessionNoticeMessageV2(props: { message: SessionMessageInfo }) {
      <Show
        when={completion()}
        fallback={
@@ -5678,7 +5731,7 @@ index 0b8228ef87..2dea17078c 100644
            {text()}
          </InlineToolRow>
        }
-@@ -2023,7 +2083,7 @@ function SessionNoticeMessageV2(props: { message: SessionMessageInfo }) {
+@@ -2023,7 +2084,7 @@ function SessionNoticeMessageV2(props: { message: SessionMessageInfo }) {
  function SessionSkillMessage(props: { message: Extract<SessionMessageInfo, { type: "skill" }> }) {
    const theme = useTheme()
    return (
@@ -5687,7 +5740,7 @@ index 0b8228ef87..2dea17078c 100644
        Skill {props.message.name}
      </InlineToolRow>
    )
-@@ -2047,7 +2107,7 @@ function CompactionMessage(props: { message: Extract<SessionMessageInfo, { type:
+@@ -2047,7 +2108,7 @@ function CompactionMessage(props: { message: Extract<SessionMessageInfo, { type:
      const input = tokens.input + tokens.cache.read + tokens.cache.write
      const output = tokens.output + tokens.reasoning
      if (input + output <= 0) return
@@ -5696,7 +5749,7 @@ index 0b8228ef87..2dea17078c 100644
    }
    return (
      <box>
-@@ -2056,12 +2116,12 @@ function CompactionMessage(props: { message: Extract<SessionMessageInfo, { type:
+@@ -2056,12 +2117,12 @@ function CompactionMessage(props: { message: Extract<SessionMessageInfo, { type:
          <box flexDirection="row" gap={1} paddingLeft={1} paddingRight={1}>
            <Switch>
              <Match when={status() === "running"}>
@@ -5711,7 +5764,7 @@ index 0b8228ef87..2dea17078c 100644
              </Match>
            </Switch>
            <text fg={color()}>
-@@ -2070,10 +2130,10 @@ function CompactionMessage(props: { message: Extract<SessionMessageInfo, { type:
+@@ -2070,10 +2131,10 @@ function CompactionMessage(props: { message: Extract<SessionMessageInfo, { type:
                : "Compaction"}
            </text>
            <Show when={cancelled()}>
@@ -5724,7 +5777,7 @@ index 0b8228ef87..2dea17078c 100644
            </Show>
          </box>
          <box border={["top"]} borderColor={color()} flexGrow={1} />
-@@ -2103,7 +2163,7 @@ function CompactionQueued() {
+@@ -2103,7 +2164,7 @@ function CompactionQueued() {
      <box flexDirection="row" alignItems="center">
        <box border={["top"]} borderColor={theme.border.base} flexGrow={1} />
        <box flexDirection="row" gap={1} paddingLeft={1} paddingRight={1}>
@@ -5733,7 +5786,7 @@ index 0b8228ef87..2dea17078c 100644
          <text fg={theme.text.muted}>Compaction queued</text>
        </box>
        <box border={["top"]} borderColor={theme.border.base} flexGrow={1} />
-@@ -2369,7 +2429,7 @@ function QueuedPromptDock(props: { prompts: { id: string; text: string }[]; onOp
+@@ -2369,7 +2430,7 @@ function QueuedPromptDock(props: { prompts: { id: string; text: string }[]; onOp
        >
          <text fg={theme.text.muted} wrapMode="none" truncate flexGrow={1} flexShrink={1} minWidth={0}>
            <span style={{ fg: theme.text.base }}>{props.prompts.length} queued</span>
@@ -5742,7 +5795,7 @@ index 0b8228ef87..2dea17078c 100644
          </text>
        </box>
      </box>
-@@ -2394,7 +2454,7 @@ function AssistantRetry(props: { retry: SessionMessageAssistant["retry"] }) {
+@@ -2394,7 +2455,7 @@ function AssistantRetry(props: { retry: SessionMessageAssistant["retry"] }) {
        {(retry) => (
          <box paddingLeft={3}>
            <text fg={theme.text.feedback.warning.base}>
@@ -5751,7 +5804,7 @@ index 0b8228ef87..2dea17078c 100644
              {retry().error.message}
            </text>
          </box>
-@@ -2575,7 +2635,7 @@ function GenericTool(props: ToolProps) {
+@@ -2575,7 +2636,7 @@ function GenericTool(props: ToolProps) {
    return (
      <>
        <InlineTool
@@ -5760,7 +5813,7 @@ index 0b8228ef87..2dea17078c 100644
          complete={props.part.state.status === "completed"}
          pending={props.tool}
          spinner={loading()}
-@@ -2943,9 +3003,9 @@ function ShellDisplay(props: {
+@@ -2943,9 +3004,9 @@ function ShellDisplay(props: {
            when={props.command}
            fallback={
              isRunning() || props.status === "streaming" ? (
@@ -5772,7 +5825,7 @@ index 0b8228ef87..2dea17078c 100644
              )
            }
          >
-@@ -3014,7 +3074,7 @@ function Write(props: ToolProps) {
+@@ -3014,7 +3075,7 @@ function Write(props: ToolProps) {
          </BlockTool>
        </Match>
        <Match when={true}>
@@ -5781,7 +5834,7 @@ index 0b8228ef87..2dea17078c 100644
            Write {pathFormatter.format(stringValue(props.input.path))}
          </InlineTool>
        </Match>
-@@ -3025,7 +3085,7 @@ function Write(props: ToolProps) {
+@@ -3025,7 +3086,7 @@ function Write(props: ToolProps) {
  function Glob(props: ToolProps) {
    const pathFormatter = usePathFormatter()
    return (
@@ -5790,7 +5843,7 @@ index 0b8228ef87..2dea17078c 100644
        Glob "{stringValue(props.input.pattern)}"{" "}
        <Show when={stringValue(props.input.path)}>in {pathFormatter.format(stringValue(props.input.path))} </Show>
        <Show when={finiteNumber(props.metadata.count)}>
-@@ -3048,8 +3108,8 @@ function Read(props: ToolProps) {
+@@ -3048,8 +3109,8 @@ function Read(props: ToolProps) {
    return (
      <>
        <InlineTool
@@ -5801,7 +5854,7 @@ index 0b8228ef87..2dea17078c 100644
          complete={stringValue(props.input.path)}
          spinner={isRunning()}
          part={props.part}
-@@ -3064,7 +3124,7 @@ function Read(props: ToolProps) {
+@@ -3064,7 +3125,7 @@ function Read(props: ToolProps) {
          {(filepath) => (
            <box paddingLeft={3}>
              <text paddingLeft={3} fg={theme.text.muted}>
@@ -5810,7 +5863,7 @@ index 0b8228ef87..2dea17078c 100644
              </text>
            </box>
          )}
-@@ -3076,7 +3136,7 @@ function Read(props: ToolProps) {
+@@ -3076,7 +3137,7 @@ function Read(props: ToolProps) {
  function Grep(props: ToolProps) {
    const pathFormatter = usePathFormatter()
    return (
@@ -5819,7 +5872,7 @@ index 0b8228ef87..2dea17078c 100644
        Grep "{stringValue(props.input.pattern)}"{" "}
        <Show when={stringValue(props.input.path)}>in {pathFormatter.format(stringValue(props.input.path))} </Show>
        <Show when={finiteNumber(props.metadata.matches)}>
-@@ -3088,7 +3148,7 @@ function Grep(props: ToolProps) {
+@@ -3088,7 +3149,7 @@ function Grep(props: ToolProps) {
 
  function WebFetch(props: ToolProps) {
    return (
@@ -5828,7 +5881,7 @@ index 0b8228ef87..2dea17078c 100644
        WebFetch {stringValue(props.input.url)}
      </InlineTool>
    )
-@@ -3098,7 +3158,7 @@ function WebSearch(props: ToolProps) {
+@@ -3098,7 +3159,7 @@ function WebSearch(props: ToolProps) {
    const ctx = use()
    const provider = createMemo(() => stringValue(props.metadata.provider))
    return (
@@ -5837,7 +5890,7 @@ index 0b8228ef87..2dea17078c 100644
        <Show when={provider()} fallback="Web Search">
          {(value) => (
            <>
-@@ -3133,11 +3193,11 @@ function Subagent(props: ToolProps) {
+@@ -3133,11 +3194,11 @@ function Subagent(props: ToolProps) {
 
    return (
      <InlineTool
@@ -5851,7 +5904,7 @@ index 0b8228ef87..2dea17078c 100644
        part={props.part}
        onClick={() => {
          const id = sessionID()
-@@ -3149,7 +3209,7 @@ function Subagent(props: ToolProps) {
+@@ -3149,7 +3210,7 @@ function Subagent(props: ToolProps) {
          ) : undefined
        }
      >
@@ -5860,7 +5913,7 @@ index 0b8228ef87..2dea17078c 100644
      </InlineTool>
    )
  }
-@@ -3202,7 +3262,7 @@ function ExecuteCallView(props: { call: Accessor<ExecuteCall> }) {
+@@ -3202,7 +3263,7 @@ function ExecuteCallView(props: { call: Accessor<ExecuteCall> }) {
      >
        <box flexDirection="row">
          <box width={INLINE_TOOL_ICON_WIDTH} flexShrink={0}>
@@ -5869,7 +5922,7 @@ index 0b8228ef87..2dea17078c 100644
          </box>
          <text flexGrow={1} wrapMode="none" truncate fg={color()}>
            {expanded() ? props.call().tool : executeCallSummary(props.call())}
-@@ -3248,7 +3308,7 @@ function Execute(props: ToolProps) {
+@@ -3248,7 +3309,7 @@ function Execute(props: ToolProps) {
    return (
      <>
        <InlineTool
@@ -5878,7 +5931,7 @@ index 0b8228ef87..2dea17078c 100644
          color={hasRuntimeError() ? theme.text.feedback.error.base : undefined}
          spinner={isLoading()}
          pending="execute"
-@@ -3265,7 +3325,7 @@ function Execute(props: ToolProps) {
+@@ -3265,7 +3326,7 @@ function Execute(props: ToolProps) {
            <For each={outputPreview().split("\n")}>
              {(line, index) => (
                <text paddingLeft={3} fg={theme.text.feedback.error.base}>
@@ -5887,7 +5940,7 @@ index 0b8228ef87..2dea17078c 100644
                  {line}
                </text>
              )}
-@@ -3297,7 +3357,7 @@ function Edit(props: ToolProps) {
+@@ -3297,7 +3358,7 @@ function Edit(props: ToolProps) {
      <Switch>
        <Match when={file()}>
          {(item) => (
@@ -5896,7 +5949,7 @@ index 0b8228ef87..2dea17078c 100644
              <box paddingLeft={1}>
                <PatchDiff
                  diff={item().patch}
-@@ -3328,10 +3388,10 @@ function Edit(props: ToolProps) {
+@@ -3328,10 +3389,10 @@ function Edit(props: ToolProps) {
          <BlockTool
            path={
              stringValue(props.input.path)
@@ -5909,7 +5962,7 @@ index 0b8228ef87..2dea17078c 100644
            part={props.part}
            spinner={props.part.state.status === "streaming"}
          />
-@@ -3375,7 +3435,7 @@ function ApplyPatch(props: ToolProps) {
+@@ -3375,7 +3436,7 @@ function ApplyPatch(props: ToolProps) {
              {(file) => (
                <BlockTool
                  path={{
@@ -5918,7 +5971,7 @@ index 0b8228ef87..2dea17078c 100644
                    value: pathFormatter.format(file.relativePath),
                  }}
                  part={props.part}
-@@ -3422,7 +3482,7 @@ function ApplyPatch(props: ToolProps) {
+@@ -3422,7 +3483,7 @@ function ApplyPatch(props: ToolProps) {
              {(file) => (
                <BlockTool
                  path={{
@@ -5927,7 +5980,7 @@ index 0b8228ef87..2dea17078c 100644
                    value: pathFormatter.format(file.resource),
                  }}
                  part={props.part}
-@@ -3488,7 +3548,7 @@ function Question(props: ToolProps) {
+@@ -3488,7 +3549,7 @@ function Question(props: ToolProps) {
          </BlockTool>
        </Match>
        <Match when={true}>
@@ -5936,7 +5989,7 @@ index 0b8228ef87..2dea17078c 100644
            Asked {count()} question{count() !== 1 ? "s" : ""}
          </InlineTool>
        </Match>
-@@ -3499,7 +3559,7 @@ function Question(props: ToolProps) {
+@@ -3499,7 +3560,7 @@ function Question(props: ToolProps) {
  function Skill(props: ToolProps) {
    const name = createMemo(() => stringValue(props.metadata.name) ?? stringValue(props.input.id))
    return (
@@ -7561,6 +7614,75 @@ index 769070428a..6f105915aa 100644
 +  } finally {
 +    app.renderer.destroy()
 +  }
++})
+diff --git a/packages/tui/test/component/transcript-scrollbox.test.ts b/packages/tui/test/component/transcript-scrollbox.test.ts
+new file mode 100644
+index 0000000000..b707b01663
+--- /dev/null
++++ b/packages/tui/test/component/transcript-scrollbox.test.ts
+@@ -0,0 +1,63 @@
++import { expect, test } from "bun:test"
++import { TextRenderable } from "@opentui/core"
++import { createTestRenderer, ManualClock } from "@opentui/core/testing"
++import { TranscriptScrollBoxRenderable } from "../../src/component/transcript-scrollbox"
++
++async function fixture() {
++  const clock = new ManualClock()
++  const app = await createTestRenderer({ width: 40, height: 12, useThread: false, clock })
++  app.renderer.pause()
++  const scroll = new TranscriptScrollBoxRenderable(app.renderer, {
++    width: 40, height: 5, position: "absolute", top: 1,
++    stickyScroll: true, stickyStart: "bottom",
++  })
++  scroll.add(new TextRenderable(app.renderer, {
++    content: Array.from({ length: 30 }, (_, index) => `row-${String(index).padStart(2, "0")} SNIP tail`).join("\n"),
++  }))
++  app.renderer.root.add(scroll)
++  const frame = async (millis = 0) => {
++    clock.setTime(clock.now() + millis)
++    await app.waitFor(() => !app.renderer.getSchedulerState().isRendering)
++    await app.renderOnce()
++  }
++  await frame()
++  await frame()
++  return { ...app, scroll, frame, [Symbol.dispose]: () => app.renderer.destroy() }
++}
++
++test.each([1, 5])("same-row selection at edge row %i does not scroll or expand its range", async (row) => {
++  using app = await fixture()
++  app.scroll.scrollTop = 15
++  await app.frame()
++  const before = app.scroll.scrollTop
++  expect(before).toBeGreaterThan(0)
++  await app.mockMouse.pressDown(7, row)
++  await app.mockMouse.emitMouseEvent("drag", 10, row)
++  await app.frame(200)
++  await app.mockMouse.release(10, row)
++  expect(app.scroll.scrollTop).toBe(before)
++  expect(app.renderer.getSelection()?.getSelectedText()).toBe("SNIP")
++})
++
++test("vertical drag toward the viewport edge still auto-scrolls", async () => {
++  using app = await fixture()
++  const before = app.scroll.scrollTop
++  await app.mockMouse.pressDown(7, 3)
++  await app.mockMouse.emitMouseEvent("drag", 10, 1)
++  await app.frame(200)
++  expect(app.scroll.scrollTop).toBeLessThan(before)
++  await app.mockMouse.release(10, 1)
++  const stopped = app.scroll.scrollTop
++  await app.frame(200)
++  expect(app.scroll.scrollTop).toBe(stopped)
++})
++
++test("wheel scrolling remains available after a horizontal selection", async () => {
++  using app = await fixture()
++  const before = app.scroll.scrollTop
++  await app.mockMouse.pressDown(7, 1)
++  await app.mockMouse.emitMouseEvent("drag", 10, 1)
++  await app.mockMouse.release(10, 1)
++  await app.mockMouse.scroll(10, 2, "up")
++  expect(app.scroll.scrollTop).toBeLessThan(before)
 +})
 diff --git a/packages/tui/test/context/session-tabs-model.test.ts b/packages/tui/test/context/session-tabs-model.test.ts
 index a744c2966e..dbae37c530 100644
