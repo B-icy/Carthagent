@@ -392,7 +392,7 @@ def main():
                 elapsed = time.monotonic() - start
                 visible = screen.visible().lower()
                 visible_original = screen.visible()
-                home_ready = 'ask anything' in visible or 'what is the tech' in visible
+                home_ready = 'shift+tab agents' in visible and 'ctrl+p commands' in visible
                 onboarding_visible = ('connect opencode go' in visible or
                                       'connect an integration to' in visible or
                                       'send prompts' in visible)
@@ -402,7 +402,7 @@ def main():
                     auth_dismissed_at = time.monotonic()
                 if focused_case and auth_dismissed and time.monotonic() - auth_dismissed_at > .4:
                     visible = screen.visible().lower()
-                    home_ready = 'ask anything' in visible or 'what is the tech' in visible
+                    home_ready = 'shift+tab agents' in visible and 'ctrl+p commands' in visible
                 if not focused_case and not picker_started and elapsed > 2 and home_ready:
                     # Ctrl+O opens OpenCode's recent sessions/projects menu.
                     # Ctrl+P is command completion on this runtime and must not
@@ -426,8 +426,8 @@ def main():
                 if picker_cancelled and result['checks'].get('pickerEscapeCancel', {}).get('status') == 'PENDING':
                     if time.monotonic() - picker_cancelled_at > .5:
                         still_open = picker_heading in screen.visible().lower()
-                        picker_home_restored = ('ask anything' in screen.visible().lower() or
-                                                'what is the tech' in screen.visible().lower())
+                        picker_home_restored = ('shift+tab agents' in screen.visible().lower() and
+                                                'ctrl+p commands' in screen.visible().lower())
                         no_provider_request = len(Provider.received) == 0
                         result['checks']['pickerEscapeCancel'] = {
                             'status': 'PASS' if picker_home_before and picker_home_restored and not still_open and no_provider_request else 'FAIL',
