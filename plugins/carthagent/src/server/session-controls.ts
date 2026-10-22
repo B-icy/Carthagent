@@ -1,6 +1,7 @@
 import type { Context } from '@opencode/plugin/promise/plugin';
-import { framePrompt, shouldFrame, unframe } from '../../../../lib/tui/framing.mjs';
+import { framePrompt, shouldFrame, unframe } from './framing.mjs';
 import { SessionControls } from '../session-rpc';
+import { isShipAgent } from './ship-agents';
 import { effectiveSessionOptions } from '../../../../lib/opencode/session-options.mjs';
 
 /** Admission framing is session-scoped; raw bypasses framing, never delivery policy. */
@@ -25,6 +26,7 @@ export async function registerSessionControls(ctx: Context) {
     const prompt = await ctx.session.hook('prompt', async (event) => {
       const session = await ctx.session.get({ sessionID: event.sessionID });
       const options = effectiveSessionOptions(session, ctx.options);
+      if (!isShipAgent(session.agent)) return;
       const saved = await settings(event.sessionID);
       if (event.metadata?.['ctg.raw'] === true || event.metadata?.['ctg.framed'] === true) return;
       if (!shouldFrame(event.prompt.text, {

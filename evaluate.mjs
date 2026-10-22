@@ -23,7 +23,33 @@ const { values: args } = parseArgs({ options: {
   timeout: { type: 'string', default: '600' }, 'max-turns': { type: 'string', default: '100' }, 'max-cost': { type: 'string', default: '3' },
   python: { type: 'string' }, 'seed-from': { type: 'string' }, 'allow-live': { type: 'boolean', default: false },
   'dry-run': { type: 'boolean', default: false },
+  help: { type: 'boolean', short: 'h', default: false },
 } });
+if (args.help) {
+  console.log(`Usage: ctg eval [options]
+
+Opt-in live A/B evaluation of baseline vs custom configurations against a
+scenario manifest under scenarios/<name>/. Live calls spend API credit and
+generated code runs with your permissions, so a run must be explicit.
+
+Options:
+  --mode baseline|custom|both   What to evaluate (default both)
+  --task <name>                  Scenario short name (default cli)
+  --scenario <name>              Scenario directory (overrides --task)
+  --model <id>                   Model id
+  --provider <name>              Provider name; needs <PROVIDER>_API_KEY
+  --thinking <level>             Thinking level (default medium)
+  --timeout <seconds>            Per-run timeout, max 3600 (default 600)
+  --max-turns <n>                Turn budget, max 1000 (default 100)
+  --max-cost <usd>               Cost budget (default 3)
+  --python <path>                Python executable for scenarios that need it
+  --seed-from <dir>              Continue from a previous candidate directory
+  --allow-live                   Confirm live provider calls
+  --dry-run                      Assemble and preview without calling a provider
+  --help, -h                     Show this help
+`);
+  process.exit(0);
+}
 if (!args['allow-live'] && !args['dry-run']) throw Error('Live calls spend API credit and generated code runs with your permissions. Use --allow-live explicitly (or --dry-run to preview the assembled run without calling a provider).');
 if (!['baseline', 'custom', 'both'].includes(args.mode)) throw Error('Use --mode baseline|custom|both');
 for (const key of ['timeout', 'max-turns', 'max-cost']) if (!(Number(args[key]) > 0 && Number.isFinite(Number(args[key])))) throw Error(`Invalid ${key}`);
@@ -197,7 +223,8 @@ for (const mode of args.mode === 'both' ? ['baseline', 'custom'] : [args.mode]) 
     cwd,
     evidenceSchema: 2,
     runtime: NATIVE_EVALUATION_RUNTIME,
-    runtimeVersion: result.opencodeVersion,
+    compatibilityVersion: result.compatibilityVersion,
+    runtimeVersion: result.runtimeVersion,
     exitCode: result.exitCode,
     timedOut: result.timedOut,
     budgetReason: result.budgetReason,

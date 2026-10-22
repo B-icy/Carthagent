@@ -19,6 +19,10 @@ try {
   await host.outcome(unrelated.id);
   const result = await runNativeEvaluation({ client, directory, prompt:'Run bounded fixture task.', provider:model.providerID, model:model.id, timeoutSeconds:30, maxTurns:4, maxCost:1 });
   assert.equal(result.runtime,'opencode-2');
+  const hostInfo = await client.server.info(request());
+  assert.equal(result.compatibilityVersion,'2.0.32');
+  assert.equal(result.runtimeVersion,hostInfo.version,'evaluation records the actual connected server version');
+  assert.equal(result.opencodeVersion,hostInfo.version,'legacy version field is not normalized to the compatibility version');
   assert.equal(result.exitCode,0,JSON.stringify(result));
   assert.equal(result.outcome,'succeeded');
   assert.equal(result.turns,1,JSON.stringify(result));
@@ -36,11 +40,11 @@ try {
   assert.equal(failed.turns,1,JSON.stringify(failed));
   assert.equal(failed.productiveTurns,0,JSON.stringify(failed));
   assert.ok(failed.providerErrors >= 1,JSON.stringify(failed));
-  assert.equal(host.requests.length,2);
+  assert.equal(host.requests.length,3,'an unrelated native session is outside the evaluation-only budget guard');
   const mismatched = await runNativeEvaluation({client,directory,prompt:'This must fail the budget handshake.',provider:model.providerID,model:model.id,timeoutSeconds:30,maxTurns:5,maxCost:1});
   assert.equal(mismatched.exitCode,1,JSON.stringify(mismatched));
   assert.equal(mismatched.outcome,'failed',JSON.stringify(mismatched));
   assert.ok(mismatched.errors.some(error=>/budget handshake/i.test(error)),JSON.stringify(mismatched));
-  assert.equal(host.requests.length,2,'mismatched turn limit must be rejected before provider admission');
-  console.log(JSON.stringify({host:'2.0.32',outcome:result.outcome,failureOutcome:failed.outcome,turns:result.turns,cost:result.cost,isolatedFromConcurrentSession:true}));
+  assert.equal(host.requests.length,3,'mismatched turn limit must be rejected before provider admission');
+  console.log(JSON.stringify({host:{compatibilityVersion:result.compatibilityVersion,runtimeVersion:result.runtimeVersion},outcome:result.outcome,failureOutcome:failed.outcome,turns:result.turns,cost:result.cost,isolatedFromConcurrentSession:true}));
 } finally { await host.close(); }

@@ -1,0 +1,58 @@
+{
+  "startedAtUtc": "2026-10-17T19:07:14.382762+00:00",
+  "case": "model-picker-regression",
+  "binary": "/tmp/opencode/ctg-final-runtime-build/resume-build/packages/cli/dist-ctg/cli-linux-x64/bin/opencode",
+  "binaryResolvedPath": "/tmp/opencode/ctg-final-runtime-build/resume-build/packages/cli/dist-ctg/cli-linux-x64/bin/opencode",
+  "binarySha256": "85bb44a65e8c185f4f33d41507d29acc77f2db0cdcb0103a14476021c8e43794",
+  "buildHash": "85bb44a65e8c185f4f33d41507d29acc77f2db0cdcb0103a14476021c8e43794",
+  "binaryVersion": "opencode v0.0.0-ctg.2.0.32",
+  "probeSha256": "2027ce70f3054f9fa886af7172ba81c58dd539d36bad5ac352be5c2897288f21",
+  "pluginSha256": "f162e6184bcb7980c7ec61e3c5c675563351aa814127cbb0a7fa1b6f79f116e6",
+  "sourceCommit": "ad15830b1f56a86a3e0b11a726eebfecf6868bc0",
+  "workingTreeDirty": true,
+  "sourceStatus": "M tools/native-terminal-semantics.py",
+  "sourceTreeSha256": "199622df5510f1f881cdd32d30f1b25457ae6586a55cb7331b7ca659718c96ab",
+  "sourceDiffDirty": true,
+  "provider": "loopback offline fixture",
+  "terminal": {
+    "initialRows": 32,
+    "initialColumns": 100,
+    "resizeRows": null,
+    "resizeColumns": null,
+    "TERM": "xterm-256color"
+  },
+  "controlledHostClipboardModel": true,
+  "physicalOSClipboardVerified": false,
+  "checks": {
+    "pickerEscapeCancel": {
+      "status": "UNSUPPORTED",
+      "reason": "native model picker did not expose a recognizable visible heading; Escape was sent to dismiss any command menu",
+      "providerRequestsBeforePrompt": 0,
+      "visibleScreenExcerpt": "\n\n\n\n\n\n\n\n\n                        Select model                                     esc\n\n                        Search\n\n                        No items available\n\n                        View all integrations ctrl+a\n             ┃\n             ┃  Ask anythi  Reconnecting to the server automatically.\n             ┃\n             ┃\n             ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n             /…/ctg-terminal-semantics-0bhik…/project  shift+tab agents  ctrl+p commands\n\n\n\n\n\n\n\n\n                                                                                  0.0.0-ctg.2.0.32\n"
+    },
+    "modelPickerEscapeCancel": {
+      "status": "FAIL",
+      "pickerObserved": false,
+      "navigationOccurred": false,
+      "dismissed": true,
+      "composerRestored": false,
+      "providerRequests": 2,
+      "providerRequestModels": [
+        "fixture",
+        "fixture"
+      ],
+      "configuredModelUnchanged": true,
+      "authority": "offline fixture request model after Escape; selection would require Enter"
+    },
+    "recentSessionsMenuEscapeCancel": {
+      "status": "NOT_RUN",
+      "reason": "model-picker-only case exercises the model picker, not recent sessions"
+    }
+  },
+  "status": "INCOMPLETE",
+  "incompleteChecks": [
+    "pickerEscapeCancel",
+    "modelPickerEscapeCancel"
+  ],
+  "reviewNote": "Attempted the verified Ctrl+X then m model.list hotkey (confirmed from runtime keybind source). The terminal model did not establish option navigation followed by Escape dismissal: modelPickerEscapeCancel is FAIL and configuredModelUnchanged is not inferred from the subsequent fixture requests alone. Treat provider model names and request model only as diagnostic. No model-picker acceptance claim."
+}

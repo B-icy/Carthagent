@@ -79,6 +79,28 @@ test('argv execution captures output without shell expansion, including spaces',
   assert.equal(result.code, 0); assert.match(result.output, /literal \$HOME ; echo bad/);
   assert.match(readFileSync(logPath, 'utf8'), /literal/);
 });
+test('runCommand strips runtime transport tokens case-insensitively without mutating parent env', async t => {
+  const cwd = fixture(t);
+  const tokenKeys = ['CTG_RUNTIME_GITHUB_TOKEN', 'ctg_runtime_github_token', 'CtG_RuNtImE_GiThUb_ToKeN'];
+  const original = new Map(tokenKeys.map(key => [key, process.env[key]]));
+  const preservedOriginal = process.env.DELIVERY_ENV_PRESERVED;
+  process.env.DELIVERY_ENV_PRESERVED = 'yes';
+  for (const key of tokenKeys) process.env[key] = 'test-only-marker';
+  t.after(() => {
+    if (preservedOriginal === undefined) delete process.env.DELIVERY_ENV_PRESERVED;
+    else process.env.DELIVERY_ENV_PRESERVED = preservedOriginal;
+    for (const [key, value] of original) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  const script = `const keys = Object.keys(process.env); console.log(JSON.stringify({ tokensAbsent: !keys.some(key => key.toUpperCase() === 'CTG_RUNTIME_GITHUB_TOKEN'), preserved: process.env.DELIVERY_ENV_PRESERVED === 'yes' }));`;
+  const result = await runCommand([process.execPath, '-e', script], { cwd });
+  assert.equal(result.code, 0);
+  assert.deepEqual(JSON.parse(result.output.trim()), { tokensAbsent: true, preserved: true });
+  assert.deepEqual(tokenKeys.map(key => process.env[key]), tokenKeys.map(key => 'test-only-marker'));
+});
 test('nonzero exit and missing executable cannot be successful', async t => {
   const cwd = fixture(t);
   const fail = await runCommand([process.execPath, '-e', 'process.exit(7)'], { cwd, logPath: join(cwd, 'fail.log') });
@@ -340,4 +362,3 @@ test('guidance, prompt template and README document the classification', () => {
   assert.match(readme, /Informational vs delivery asks/);
   assert.match(readme, /advisory/);
 });
-

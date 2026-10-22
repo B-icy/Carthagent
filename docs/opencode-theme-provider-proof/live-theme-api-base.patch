@@ -1,0 +1,122 @@
+diff --git a/packages/plugin/src/tui/context.ts b/packages/plugin/src/tui/context.ts
+index fe641b3..21ec351 100644
+--- a/packages/plugin/src/tui/context.ts
++++ b/packages/plugin/src/tui/context.ts
+@@ -490,6 +490,13 @@ export interface Keymap {
+ export interface UI {
+   readonly dialog: Dialog
+   readonly toast: Toast
++  /** Live host theme controls. Theme files must already be available to the host. */
++  readonly theme: {
++    /** Returns the selected theme name and active color mode. */
++    current(): { readonly name: string; readonly mode: "dark" | "light" }
++    /** Switches the live theme and optionally locks its color mode; returns false if either is unavailable. */
++    set(selection: { readonly name: string; readonly mode?: "dark" | "light" }): boolean
++  }
+   readonly format: {
+     path(value: string): string
+   }
+diff --git a/packages/tui/src/context/theme.tsx b/packages/tui/src/context/theme.tsx
+index ed568e6..2d7d363 100644
+--- a/packages/tui/src/context/theme.tsx
++++ b/packages/tui/src/context/theme.tsx
+@@ -94,6 +94,7 @@ type Themes = {
+   mode: Accessor<"dark" | "light">
+   modes: Accessor<readonly ("dark" | "light")[]>
+   supports(mode: "dark" | "light"): boolean
++  supportsThemeMode(theme: string, mode: "dark" | "light"): boolean
+   locked: Accessor<boolean>
+   lock(): void
+   unlock(): void
+@@ -329,6 +330,10 @@ const themeContext = createSimpleContext({
+       mode,
+       modes,
+       supports: (requested) => modes().includes(requested),
++      supportsThemeMode: (theme, requested) => {
++        const source = available()[theme]
++        return source !== undefined && themeModes(parseTheme(source, theme)).includes(requested)
++      },
+       locked: () => store.lock !== undefined,
+       lock: () => pin(mode()),
+       unlock: free,
+diff --git a/packages/tui/src/plugin/api.tsx b/packages/tui/src/plugin/api.tsx
+index 35a4eac..4150ba9 100644
+--- a/packages/tui/src/plugin/api.tsx
++++ b/packages/tui/src/plugin/api.tsx
+@@ -204,6 +204,16 @@ export function createPluginContext(input: {
+     ui: {
+       dialog: dialogApi,
+       toast: toastApi,
++      theme: {
++        current: () => ({ name: host.themes.selected, mode: host.themes.mode() }),
++        set(selection) {
++          if (!selection || typeof selection.name !== "string" || !host.themes.has(selection.name)) return false
++          if (selection.mode !== undefined && !host.themes.supportsThemeMode(selection.name, selection.mode)) return false
++          if (!host.themes.set(selection.name)) return false
++          if (selection.mode !== undefined) host.themes.setMode(selection.mode)
++          return true
++        },
++      },
+       format: {
+         path: (value) => abbreviateHome(value, host.paths.home),
+       },
+diff --git a/packages/tui/test/plugin-theme.test.tsx b/packages/tui/test/plugin-theme.test.tsx
+new file mode 100644
+index 0000000..9a46b4d
+--- /dev/null
++++ b/packages/tui/test/plugin-theme.test.tsx
+@@ -0,0 +1,54 @@
++import { expect, test } from "bun:test"
++import { createPluginContext, type Registry, type usePluginHost } from "../src/plugin/api"
++
++function setup() {
++  let selected = "opencode"
++  let mode: "dark" | "light" = "dark"
++  const available = new Set(["opencode", "custom"])
++  const host = {
++    app: {},
++    client: {},
++    keymap: {},
++    shortcuts: {},
++    keymapState: {},
++    sessionTabs: {},
++    themes: {
++      get selected() {
++        return selected
++      },
++      mode: () => mode,
++      has: (name: string) => available.has(name),
++      supportsThemeMode: (name: string, requested: "dark" | "light") => requested === "dark" || name === "custom",
++      set(name: string) {
++        if (!available.has(name)) return false
++        selected = name
++        return true
++      },
++      setMode(requested: "dark" | "light") {
++        mode = requested
++        return true
++      },
++    },
++  } as unknown as ReturnType<typeof usePluginHost>
++  const registry: Registry = { has: () => false, set() {}, remove() {}, active: () => true }
++  const theme = createPluginContext({ host, id: "test", options: undefined, owned: [], registry }).ui.theme
++  return { theme, current: () => ({ selected, mode }) }
++}
++
++test("plugin theme setter applies available theme and mode live through the host service", () => {
++  const harness = setup()
++  expect(harness.theme.current()).toEqual({ name: "opencode", mode: "dark" })
++  expect(harness.theme.set({ name: "custom", mode: "light" })).toBe(true)
++  expect(harness.theme.current()).toEqual({ name: "custom", mode: "light" })
++  expect(harness.current()).toEqual({ selected: "custom", mode: "light" })
++})
++
++test("plugin theme setter rejects unknown themes and unsupported modes without partial changes", () => {
++  const harness = setup()
++  expect(harness.theme.set({ name: "missing", mode: "dark" })).toBe(false)
++  expect(harness.theme.set({ name: "custom", mode: "light" })).toBe(true)
++  expect(harness.theme.set({ name: "opencode", mode: "light" })).toBe(false)
++  expect(harness.theme.current()).toEqual({ name: "custom", mode: "light" })
++  expect(harness.theme.set({ name: "opencode" })).toBe(true)
++  expect(harness.theme.current()).toEqual({ name: "opencode", mode: "light" })
++})

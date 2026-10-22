@@ -39,6 +39,8 @@ function fakeContext({ integrations = ['experiential-labs', 'anthropic', 'openai
       async transform(callback) {
         const models = new Map();
         const editor = {
+          list: () => [],
+          remove() {},
           add(record) { providerTransforms.push(record); },
           get(id) { return integrations.includes(id) ? { provider: { id }, models: new Map() } : undefined; },
           models: { set(id, value) { models.set(id, value); } },
@@ -209,7 +211,7 @@ test('native refresh waits are bounded and never retry an uncertain rotation', a
     timeout: 80,
     reread: async () => credential,
     refresh: async () => { refreshCalls++; return credential; },
-  }), /Timed out waiting for OpenCode to persist/);
+  }), /Timed out waiting for Carthagent runtime to persist/);
   assert.equal(refreshCalls, 0, 'a contender must not submit the old single-use token again');
   const receipt = await readFile(pending, 'utf8');
   assert.doesNotMatch(receipt, /issued-old-token|old-access/);

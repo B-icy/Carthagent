@@ -82,6 +82,16 @@ test('normalizeRelease rejects install specs that do not install the release tag
   assert.equal(normalizeRelease(manifest).installSpec, 'github:B-icy/Carthagent#v0.3.0');
 });
 
+test('normalizeRelease binds the install ref exactly to the validated version', () => {
+  for (const tag of ['main', 'v0.3.1', 'v0.3.0%2Fmain', ' v0.3.0', 'v0.3.0\n']) {
+    assert.equal(normalizeRelease({ version: '0.3.0', tag }), null, `rejected tag ${JSON.stringify(tag)}`);
+  }
+  assert.equal(normalizeRelease({ version: '1.2.3-beta.2', tag_name: 'v1.2.3-beta.2' })?.installSpec,
+    'github:B-icy/Carthagent#v1.2.3-beta.2');
+  assert.equal(normalizeRelease({ version: '1.2.3-beta.2', tag_name: 'v1.2.3' }), null);
+  assert.equal(normalizeRelease({ version: '01.2.3', tag: 'v01.2.3' }), null);
+});
+
 test('fetchLatestRelease falls back to GitHub when the manifest fails validation', async () => {
   // A control-plane 200 whose installSpec is rejected must not dead-end the
   // update — the GitHub release still resolves.
@@ -98,6 +108,22 @@ test('fetchLatestRelease falls back to GitHub when the manifest fails validation
   assert.equal(release.version, '0.3.1');
   assert.equal(release.installSpec, 'github:B-icy/Carthagent#v0.3.1');
   assert.equal(urls.length, 2);
+});
+
+test('fetchLatestRelease forwards cancellation and does not fall back after an abort', async () => {
+  const controller = new AbortController();
+  let calls = 0;
+  await assert.rejects(fetchLatestRelease({
+    cloudUrl: 'https://cloud.test',
+    signal: controller.signal,
+    fetchImpl: async (_url, options) => {
+      calls++;
+      assert.equal(options.signal.aborted, false);
+      controller.abort(new Error('cancelled'));
+      throw controller.signal.reason;
+    },
+  }), /cancelled/);
+  assert.equal(calls, 1, 'an aborted control-plane request must not trigger GitHub fallback');
 });
 
 // ---- latestReleaseCached

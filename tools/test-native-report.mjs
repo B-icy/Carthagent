@@ -9,26 +9,16 @@ import { createReport } from '../lib/reports.mjs';
 import { selectReport } from '../lib/workspace.mjs';
 import { nativeFixture } from './native-fixture.mjs';
 
-const plugin = process.argv[2] ?? join(import.meta.dirname, 'native-report-plugin');
-const host = await nativeFixture({ plugin });
+const host = await nativeFixture({ plugin: process.argv[2] });
+const identity = host.runtimeIdentity;
 try {
   execFileSync('git', ['init', '-q'], { cwd: host.cwd });
   await writeFile(join(host.cwd, 'source.txt'), 'original\n');
-  const activationDeadline = Date.now() + 15_000;
-  while (true) {
-    const inventory = await host.client.plugin.list({ location: host.location }, host.request());
-    const pluginState = inventory.data.find(item => item.id === 'carthagent-report-fixture')?.state.status;
-    if (pluginState === 'active') break;
-    if (Date.now() >= activationDeadline) throw Error(`Report fixture plugin did not activate: ${JSON.stringify(inventory.data)}\n${host.output}`);
-    await new Promise(done => setTimeout(done, 50));
-  }
+  await host.active();
   const session = await host.client.session.create({ location: host.location, model: host.model, title: 'Report projection' }, host.request());
   const read = async () => (await host.client.rpc.call({
     rpcID: 'carthagent.workspace', method: 'delivery', input: { sessionID: session.id }, location: host.location,
   }, host.request())).output;
-  const probe = method => host.client.rpc.call({
-    rpcID: 'carthagent.report-schema-probe', method, input: {}, location: host.location,
-  }, host.request());
   const check = { id: 'unit', kind: 'test', argv: ['node', '--test'], timeoutSeconds: 20 };
   const plan = {
     goal: 'Show authoritative report data', verification: 'required', artifacts: ['.'], outputs: [],
@@ -61,12 +51,6 @@ try {
   assert.equal(current.architecture.nodes[0].title, 'Project report state');
   assert.ok(!JSON.stringify(current).includes('PRIVATE_REPORT_LOG_SENTINEL'));
   assert.ok(!JSON.stringify(current).includes(host.cwd));
-  await assert.rejects(probe('incompleteVerified'), error => error.type === 'rpc.invalid_output');
-  const invalidWithFields = await probe('invalidWithFullFields');
-  assert.deepEqual(invalidWithFields.output, { status: 'invalid' });
-  assert.deepEqual((await probe('validUnavailable')).output, { status: 'unavailable' });
-  assert.deepEqual((await probe('validInvalid')).output, { status: 'invalid' });
-  assert.equal((await probe('validActive')).output.status, 'active');
 
   await writeFile(join(host.cwd, 'source.txt'), 'modified\n');
   const stale = await read();
@@ -82,7 +66,30 @@ try {
   selectReport(host.cwd, report.path);
   await writeFile(report.path, '{corrupt');
   assert.deepEqual(await read(), { status: 'invalid' });
-  console.log(JSON.stringify({ host: '2.0.32', deliveryOutputSchema: 'passed', freshness: 'passed', verifiedFailClosed: 'passed', ownership: 'passed' }));
+  console.log(JSON.stringify({ host: identity.runtimeVersion, compatibilityVersion: identity.compatibilityVersion,
+    ...(identity.binarySha256 ? { binarySha256: identity.binarySha256 } : {}),
+    deliveryOutputSchema: 'passed', freshness: 'passed', verifiedFailClosed: 'passed', ownership: 'passed' }));
 } finally {
   await host.close();
+}
+
+// Deliberately malformed outputs require a test-only handler. Exercise that
+// handler separately so production ownership/report checks use the shipped plugin.
+const schemaHost = await nativeFixture({ plugin: join(import.meta.dirname, 'native-report-plugin') });
+const schemaIdentity = schemaHost.runtimeIdentity;
+try {
+  await schemaHost.active('carthagent-report-fixture');
+  const probe = method => schemaHost.client.rpc.call({
+    rpcID: 'carthagent.report-schema-probe', method, input: {}, location: schemaHost.location,
+  }, schemaHost.request());
+  await assert.rejects(probe('incompleteVerified'), error => error.type === 'rpc.invalid_output');
+  assert.deepEqual((await probe('invalidWithFullFields')).output, { status: 'invalid' });
+  assert.deepEqual((await probe('validUnavailable')).output, { status: 'unavailable' });
+  assert.deepEqual((await probe('validInvalid')).output, { status: 'invalid' });
+  assert.equal((await probe('validActive')).output.status, 'active');
+  console.log(JSON.stringify({ host: schemaIdentity.runtimeVersion, compatibilityVersion: schemaIdentity.compatibilityVersion,
+    ...(schemaIdentity.binarySha256 ? { binarySha256: schemaIdentity.binarySha256 } : {}),
+    reportSchemaVariants: 'passed', incompleteVerified: 'rejected' }));
+} finally {
+  await schemaHost.close();
 }

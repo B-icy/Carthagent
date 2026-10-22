@@ -2,19 +2,37 @@
 /** Offline real-host test. Uses a disposable HOME and never discovers the user's service. */
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm, readFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { randomBytes } from 'node:crypto';
 import { OpenCode } from '@opencode/client';
+import { resolveOpenCode, runtimeIdentity as getRuntimeIdentity } from '../lib/opencode/runtime.mjs';
 import { createNativeFixture, toolCall, assistantText } from './native-fixture.mjs';
+import { loadNativeTestRuntime, preflightNativeTestRuntimeArtifact } from './native-runtime-identity.mjs';
+import { waitForPluginActive } from './native-plugin-readiness.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const plugin = resolve(process.argv[2] ?? join(root, 'plugins/carthagent'));
 const productionPlugin = plugin.endsWith('/.ctg-production-plugin') ? resolve(plugin, '../plugins/carthagent/src/index.ts') : plugin.endsWith('/plugins/carthagent') ? resolve(plugin, 'src/index.ts') : plugin;
 const archiveFixture = resolve(root, 'tests/fixtures/archive-plugin');
-const binary = process.env.CTG_OPENCODE_BIN ?? join(root, 'node_modules/@opencode/cli/bin/opencode.exe');
+const runtimeOptions = {};
+if (process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST) {
+  runtimeOptions.runtimeReleaseManifestPath = process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST;
+}
+if (process.env.CTG_TEST_RUNTIME_ARTIFACT_ROOT) {
+  await preflightNativeTestRuntimeArtifact({
+    ownedRoot: process.env.CTG_TEST_RUNTIME_ARTIFACT_ROOT,
+    expectedManifestPath: process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST,
+  });
+  runtimeOptions.acquireOwnedRuntime = async () => process.env.CTG_TEST_RUNTIME_ARTIFACT_ROOT;
+}
+const binary = await resolveOpenCode(runtimeOptions);
+const productionIdentity = await getRuntimeIdentity(binary, runtimeOptions);
+const ownedRoot = productionIdentity.kind === 'ctg-owned' ? dirname(dirname(dirname(binary))) : undefined;
+const expectedManifest = ownedRoot ? JSON.parse(await readFile(process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST ?? join(root, 'lib/opencode/runtime-release.json'), 'utf8')) : undefined;
+const runtimeIdentity = await loadNativeTestRuntime({ binary, ownedRoot, expectedManifest });
 const temp = await mkdtemp(join(tmpdir(), 'ctg-host-smoke-'));
 const password = randomBytes(24).toString('hex');
 let child;
@@ -44,7 +62,7 @@ const Observer = { id: 'carthagent-delivery-observer', methods: { state: {
 } }, events: {} };
 export default { id: 'carthagent', async setup(context) {
   const monitored = { ...context,
-    tool: { ...context.tool, hook: async (name, callback) => context.tool.hook(name, async event => { if (name === 'execute.before') { const entry = { hook: name, sessionID: event.sessionID, tool: event.tool, id: event.id, messageID: event.messageID }; if (invocations.some(previous => previous.sessionID === entry.sessionID && previous.tool === entry.tool && previous.id === entry.id && previous.messageID === entry.messageID)) duplicateInvocations.push(entry); invocations.push(entry); } await callback(event); }) },
+    tool: { ...context.tool, hook: async (name, callback) => context.tool.hook(name, async event => { if (name === 'execute.before') { const entry = { hook: name, sessionID: event.sessionID, tool: event.tool, agent: event.agent, id: event.id, messageID: event.messageID }; if (invocations.some(previous => previous.sessionID === entry.sessionID && previous.tool === entry.tool && previous.id === entry.id && previous.messageID === entry.messageID)) duplicateInvocations.push(entry); invocations.push(entry); } await callback(event); }) },
     shell: { ...context.shell, hook: async (name, callback) => context.shell.hook(name, async event => { if (name === 'create.before') invocations.push({ hook: 'shell.' + name, command: event.command }); await callback(event); }) },
     session: { ...context.session, interrupt: async input => { interrupts.push(input); return context.session.interrupt(input); } },
   };
@@ -74,6 +92,8 @@ export default { id: 'carthagent', async setup(context) {
     } else if (JSON.stringify(latestUser).includes('MIXED_DISABLED')) {
       if (tools.includes('shell') && toolResults === 0) toolCall(response, { name: 'shell', arguments: { command: "printf disabled-session > mixed-disabled.txt" } });
       else assistantText(response, 'DISABLED_SESSION_SHELL_OK');
+    } else if (JSON.stringify(latestUser).includes('MODE_SHIP_PARITY')) {
+      assistantText(response, 'MODE_SHIP_GUIDANCE_OK');
     } else if (scenario === 'budget' && toolResults >= 6) {
       toolCall(response, { name: 'execute', arguments: { code: 'return await tools.carthagent["delivery_status"]({})' } });
     } else if (tools.includes('execute') && toolResults === 0) {
@@ -148,26 +168,20 @@ export default { id: 'carthagent', async setup(context) {
   // multi-turn offline workflow; give each host call its own bounded signal.
   const request = { signal: AbortSignal.timeout(120_000) };
   const info = await client.server.info(request);
-  assert.equal(info.version, '2.0.32');
+  assert.equal(info.version, runtimeIdentity.runtimeVersion);
   const unauthorized = await fetch(`${endpoint}/api/info`, { signal: request.signal });
   assert.equal(unauthorized.status, 401);
   await client.session.create({ location: { directory: cwd }, title: 'CTG host smoke' }, request);
-  let plugins;
-  const deadline = Date.now() + 15_000;
-  do {
-    plugins = await client.plugin.list({ location: { directory: cwd } }, request);
-    if (plugins.data.some((entry) => entry.id === 'carthagent')) break;
-    await new Promise((done) => setTimeout(done, 200));
-  } while (Date.now() < deadline);
-  const nativePlugin = plugins.data.find((entry) => entry.id === 'carthagent');
-  const archivePlugin = plugins.data.find((entry) => entry.id === 'ctg-archive-fixture');
-  assert.ok(nativePlugin, 'Carthagent plugin must become visible');
-  assert.equal(nativePlugin.state.status, 'active');
-  assert.equal(archivePlugin?.state.status, 'active', 'archive registration fixture must become visible');
+  const location = { directory: cwd };
+  const listPlugins = async (timeoutMs) => client.plugin.list({ location }, { signal: AbortSignal.timeout(timeoutMs) });
+  const readinessOptions = { listPlugins, timeoutMs: 15_000, hostOutput: () => output };
+  const nativePlugin = await waitForPluginActive('carthagent', readinessOptions);
+  await waitForPluginActive('ctg-archive-fixture', readinessOptions);
   const health = await client.rpc.call({
     rpcID: 'carthagent', method: 'health', input: {}, location: { directory: cwd },
   }, request);
-  console.log(JSON.stringify({ version: info.version, plugin: nativePlugin, health }, null, 2));
+  assert.equal(health.output.hostVersion, runtimeIdentity.runtimeVersion);
+  console.log(JSON.stringify({ version: info.version, compatibilityVersion: runtimeIdentity.compatibilityVersion, plugin: nativePlugin, health }, null, 2));
   assert.equal(health.output.directory, cwd);
   assert.equal(health.output.protocol, 1);
   await assert.rejects(client.rpc.call({
@@ -290,7 +304,75 @@ export default { id: 'carthagent', async setup(context) {
     assert.ok(disabledDiagnostics.output.budget.limits.tools === 10);
   }
   }
-  console.log('Native plugin and validated RPC passed against OpenCode 2.0.32.');
+  if (scenario === 'standard') {
+    const agents = (await client.agent.list({ location: { directory: cwd } }, request)).data;
+    assert.ok(agents.some(agent => agent.id === 'ship' && agent.name === 'Ship' && agent.mode === 'primary'));
+    assert.ok(agents.some(agent => agent.id === 'lite' && agent.name === 'Lite' && agent.mode === 'primary'));
+    const modeSession = await client.session.create({ location: { directory: cwd }, title: 'Native mode parity', agent: 'lite' }, request);
+    await client.session.switchModel({ sessionID: modeSession.id, model: { providerID: 'fixture', id: 'fixture' } }, request);
+    const first = observed.length;
+    await client.session.prompt({ sessionID: modeSession.id, text: 'MIXED_DISABLED native mode parity: execute directly.' }, request);
+    await client.session.wait({ sessionID: modeSession.id }, { signal: AbortSignal.timeout(45_000) });
+    assert.equal(observed.slice(first).some(call => JSON.stringify(call.messages).includes('Standard delivery:')), false, 'Lite has no delivery guidance');
+    const liteHistory = await client.message.list({ sessionID: modeSession.id }, request);
+    assert.match(JSON.stringify(liteHistory.data), /DISABLED_SESSION_SHELL_OK/);
+    await client.session.switchAgent({ sessionID: modeSession.id, agent: 'ship' }, request);
+    const second = observed.length;
+    await client.session.prompt({ sessionID: modeSession.id, text: 'MODE_SHIP_PARITY inspect the workspace.' }, request);
+    await client.session.wait({ sessionID: modeSession.id }, { signal: AbortSignal.timeout(45_000) });
+    assert.ok(observed.slice(second).some(call => JSON.stringify(call.messages).includes('Standard delivery:')), 'switching to Ship enables the harness on the next request');
+    await client.session.switchAgent({ sessionID: modeSession.id, agent: 'lite' }, request);
+    assert.equal((await client.session.get({ sessionID: modeSession.id }, request)).agent, 'lite');
+    const beforeCommands = fixture.calls;
+    await client.session.command({ sessionID: modeSession.id, name: 'delivery-budget-status', text: '' }, request);
+    await client.session.command({ sessionID: modeSession.id, name: 'delivery-budget-reset', text: '' }, request);
+    assert.equal(fixture.calls, beforeCommands, 'budget commands must not dispatch provider requests');
+    const planHistory = await client.message.list({ sessionID: session.id }, request);
+    const snapshots = planHistory.data.flatMap(message => message.type === 'assistant' ? message.content.filter(part => part.type === 'tool' && part.state.status === 'completed' && part.state.metadata?.deliveryPlan) : []);
+    assert.ok(snapshots.length > 0, 'real Code Mode results persist delivery plan snapshots for the graph');
+    if (process.env.CTG_NATIVE_PLAN_PTY === '1') {
+      assert.ok(ownedRoot, 'graph rendering acceptance requires a verified owned runtime');
+      const probe = spawn(process.env.PYTHON ?? 'python3', ['-c', `
+import importlib.util, json, os, sys
+from pathlib import Path
+root, binary = sys.argv[1:]
+spec = importlib.util.spec_from_file_location('slash_probe', Path(root) / 'tools/test-native-slash-commands.py')
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+fixture = json.load(sys.stdin)
+home = Path(fixture['temp']) / 'graph-tui-home'
+env = module.fixture_environment(os.environ, home, '', '')
+env = {key: value for key, value in env.items() if key in module.TUI_ENV_KEYS}
+env['OPENCODE_SERVER_PASSWORD'] = fixture['password']
+env['OPENCODE_SERVER_USERNAME'] = 'opencode'
+tui = module.Tui(binary, fixture, fixture['sessionID'], env)
+try:
+    tui.wait_for(lambda: '┃' in tui.screen.visible(), 'session composer')
+    if 'getting started' in tui.screen.visible().lower():
+        os.write(tui.master, b'\x1b')
+        tui.drain(.3)
+    tui.submit_slash('/graph', marker='SHIP PLAN')
+    tui.wait_for(lambda: 'Create fixture file' in tui.screen.visible(), 'authoritative delivery step in plan graph')
+    print(json.dumps({'graph': 'passed', 'source': 'actual Code Mode delivery snapshot', 'step': 'Create fixture file'}))
+finally:
+    tui.stop()
+`, root, binary], {
+        cwd: root,
+        env: Object.fromEntries(['PATH', 'LANG', 'LC_ALL', 'SystemRoot', 'WINDIR', 'COMSPEC', 'PATHEXT'].filter(key => process.env[key]).map(key => [key, process.env[key]])),
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      let probeOutput = '';
+      probe.stdout.on('data', chunk => { probeOutput += chunk; });
+      probe.stderr.on('data', chunk => { probeOutput += chunk; });
+      probe.stdin.end(JSON.stringify({ temp, cwd, baseUrl: endpoint, password, sessionID: session.id }));
+      const timer = setTimeout(() => probe.kill('SIGTERM'), 45_000);
+      const [code] = await once(probe, 'exit');
+      clearTimeout(timer);
+      assert.equal(code, 0, probeOutput.replaceAll(password, '[redacted]'));
+      console.log(probeOutput.trim());
+    }
+  }
+  console.log(`Native plugin and validated RPC passed against OpenCode ${runtimeIdentity.runtimeVersion} (compatibility ${runtimeIdentity.compatibilityVersion}).`);
 } catch (error) {
   console.error(output.replaceAll(password, '[redacted]'));
   throw error;

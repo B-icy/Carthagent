@@ -21,7 +21,7 @@ export default Plugin.define({
             const health = result as { hostVersion: string; directory: string };
             context.ui.toast.show({
               title: 'Carthagent',
-              message: `OpenCode ${health.hostVersion} · ${context.ui.format.path(health.directory)}`,
+              message: `Carthagent ${health.hostVersion} · ${context.ui.format.path(health.directory)}`,
               variant: 'success',
             });
           } catch (error) {

@@ -1,0 +1,159 @@
+{
+  "startedAtUtc": "2026-10-17T19:09:53.396366+00:00",
+  "case": "layout-regression",
+  "binary": "/tmp/opencode/ctg-final-runtime-build/resume-build/packages/cli/dist-ctg/cli-linux-x64/bin/opencode",
+  "binaryResolvedPath": "/tmp/opencode/ctg-final-runtime-build/resume-build/packages/cli/dist-ctg/cli-linux-x64/bin/opencode",
+  "binarySha256": "85bb44a65e8c185f4f33d41507d29acc77f2db0cdcb0103a14476021c8e43794",
+  "buildHash": "85bb44a65e8c185f4f33d41507d29acc77f2db0cdcb0103a14476021c8e43794",
+  "binaryVersion": "opencode v0.0.0-ctg.2.0.32",
+  "probeSha256": "8e9ba4ebfdd4ac8446ac3f03c9c466162a77a78e4709d19bd59810f6545847ba",
+  "pluginSha256": "f162e6184bcb7980c7ec61e3c5c675563351aa814127cbb0a7fa1b6f79f116e6",
+  "sourceCommit": "ad15830b1f56a86a3e0b11a726eebfecf6868bc0",
+  "workingTreeDirty": true,
+  "sourceStatus": "M tools/native-terminal-semantics.py",
+  "sourceTreeSha256": "703d04ec3d414031bc3c5f5c9c08d3ae17c43a8b6493eed905dcaf778134ab72",
+  "sourceDiffDirty": true,
+  "provider": "loopback offline fixture",
+  "terminal": {
+    "initialRows": 32,
+    "initialColumns": 100,
+    "resizeRows": 12,
+    "resizeColumns": 40,
+    "TERM": "xterm-256color"
+  },
+  "controlledHostClipboardModel": true,
+  "physicalOSClipboardVerified": false,
+  "checks": {
+    "focusedPromptTransport": {
+      "status": "PASS",
+      "exactProviderUserMessage": true,
+      "providerRequests": 2
+    },
+    "pickerEscapeCancel": {
+      "status": "NOT_RUN",
+      "reason": "focused layout regression case does not open picker"
+    },
+    "narrowLayout": {
+      "status": "PASS",
+      "rows": 12,
+      "columns": 40,
+      "resizeRequested": true,
+      "hostAlive": true,
+      "fixtureResponseVisible": true,
+      "composerVisible": true,
+      "pickerAbsent": true,
+      "visibleRowsWithinWidth": true,
+      "interactiveInput": {
+        "uniqueInputTyped": true,
+        "backspaceSent": true,
+        "inputEditedAsExpected": true,
+        "recentSessionsMenuOpened": true,
+        "menuNavigationSent": true,
+        "escapeSent": true,
+        "composerAndEditedInputRestored": true,
+        "editedInput": "NARROW-EDIT-INTERACTIV"
+      },
+      "visibleScreenExcerpt": "   FINAL[SNIP]END                +\n    FINALSNIPEND\n\n    Build · Offline fixture · 299ms\n\n ┃\n ┃ NARROW-EDIT-INTERACTIV\n ┃\n ┃ Offline fixture\n ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n /…/ctg-terminal-semantics-w8y…/project\n"
+    },
+    "terminalTitleRestoration": {
+      "status": "PASS",
+      "reason": "Controlled terminal host restored the seeded original title after normal TUI exit",
+      "controlledHostModel": true,
+      "normalExitCode": 0,
+      "exitActions": [
+        "ctrl-u+quit+enter",
+        "enter",
+        "ctrl-c"
+      ],
+      "forcedTerminationAfterExitRequestTimeout": false,
+      "ptyDrainedToEof": true,
+      "titleSaveControls": 1,
+      "titleRestoreControls": 1,
+      "titleControlOrder": [
+        "save",
+        "restore"
+      ],
+      "modeledTitleStackDepth": 0,
+      "titleControlsObserved": [
+        "save",
+        "restore"
+      ],
+      "titleControlSequences": [
+        "22;0",
+        "23;0"
+      ],
+      "initialTitle": "CTG-ORIGINAL-TITLE",
+      "finalTitle": "CTG-ORIGINAL-TITLE",
+      "titleSequenceObserved": [
+        "OpenCode",
+        "OpenCode",
+        "OpenCode",
+        "OC | FINAL[SNIP]END",
+        "OC | FINAL[SNIP]END",
+        "",
+        "",
+        "CTG-ORIGINAL-TITLE"
+      ],
+      "oscTitleUpdates": [
+        {
+          "kind": "0",
+          "title": "OpenCode"
+        },
+        {
+          "kind": "0",
+          "title": "OpenCode"
+        },
+        {
+          "kind": "0",
+          "title": "OpenCode"
+        },
+        {
+          "kind": "0",
+          "title": "OC | FINAL[SNIP]END"
+        },
+        {
+          "kind": "0",
+          "title": "OC | FINAL[SNIP]END"
+        },
+        {
+          "kind": "0",
+          "title": ""
+        },
+        {
+          "kind": "0",
+          "title": ""
+        }
+      ]
+    },
+    "selectionClipboard": {
+      "status": "UNVERIFIED",
+      "reason": "Native selection gesture did not yield an exact selection OSC 52 update and modeled readback",
+      "mouseReporting": true,
+      "mouseDragSent": false,
+      "fixtureResponseInCapturedPty": true,
+      "fixtureResponseInScreenModel": true,
+      "screenExcerpt": "   FINAL[SNIP]END                +\n    FINALSNIPEND\n\n    Build · Offline fixture · 299ms\n ┃ /quit          Exit the app        ┃\n ┃\n ┃ /quit^C\n     ▄\n  █▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀\n█╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n  █  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀\nHs13koM6DBz8Nfencode -s ses_eb4baa65effe",
+      "selectedSubstring": null,
+      "mouseCoordinates": null,
+      "controlledHostClipboardUpdates": [],
+      "clipboardUpdateDeltaBeforeCopy": [],
+      "controlledHostClipboardReadback": null,
+      "physicalOSClipboardVerified": false
+    },
+    "clipboardOSC52": {
+      "status": "UNVERIFIED",
+      "reason": "No exact new OSC 52 clipboard value and readback observed after /copy",
+      "copyActionSent": false,
+      "controlledHostClipboardUpdates": [],
+      "clipboardUpdateDeltaAfterSelection": [],
+      "controlledHostClipboardReadback": null,
+      "physicalOSClipboardVerified": false
+    }
+  },
+  "status": "INCOMPLETE",
+  "incompleteChecks": [
+    "pickerEscapeCancel",
+    "selectionClipboard",
+    "clipboardOSC52"
+  ]
+}

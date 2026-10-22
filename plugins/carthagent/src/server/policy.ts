@@ -8,7 +8,7 @@ type DeliveryState = Parameters<typeof startImplementation>[0]
 export const READ_ONLY_TOOLS = new Set(["read", "ls", "find", "grep", "code_nav", "delivery_probe"])
 
 export function requiresPlanApproval(tool: string) {
-  return needsImplementation(tool)
+  return !["glob", "skill", "question"].includes(tool) && needsImplementation(tool.replace(/^carthagent_/, ""))
 }
 
 export function enforceToolPolicy(tool: string, state: DeliveryState, cwd: string) {
