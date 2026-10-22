@@ -133,6 +133,7 @@ try {
   console.log('Explicit native service stop preserved credentials and database.');
 
 } finally {
+  console.log(JSON.stringify({ stage: "ship-cleanup-start", resources: process.getActiveResourcesInfo() }));
   if (child && child.exitCode === null && child.signalCode === null) {
     const closed = once(child, 'close', { signal: AbortSignal.timeout(10_000) });
     // No PTYs are spawned here; stop this exact server like the service-stop command does.
@@ -141,7 +142,11 @@ try {
     try { await closed; }
     finally { clearTimeout(timer); }
   }
+  console.log(JSON.stringify({ stage: "ship-child-closed", resources: process.getActiveResourcesInfo() }));
   cloud.closeAllConnections();
+  console.log(JSON.stringify({ stage: "ship-cloud-closing" }));
   await new Promise(resolve => cloud.close(resolve));
+  console.log(JSON.stringify({ stage: "ship-cloud-closed", resources: process.getActiveResourcesInfo() }));
   await rm(temp, { recursive: true, force: true, maxRetries: 12, retryDelay: 250 });
+  console.log(JSON.stringify({ stage: "ship-cleanup-complete", resources: process.getActiveResourcesInfo() }));
 }
