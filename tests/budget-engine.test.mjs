@@ -6,8 +6,9 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildEngineArgs } from '../lib/engine.mjs';
 
-for (const mode of ['tools', 'seconds', 'repairs']) test(`actual engine stops ${mode}, restores budget and accepts explicit reset offline`, { timeout: 120000 }, async t => {
+for (const mode of ['tools', 'seconds', 'repairs']) test(`legacy engine boundary stops ${mode}, restores budget and accepts explicit reset offline`, { timeout: 120000 }, async t => {
   const cwd = mkdtempSync(join(tmpdir(), 'budget café '));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
   let calls = 0;
@@ -36,7 +37,7 @@ for (const mode of ['tools', 'seconds', 'repairs']) test(`actual engine stops ${
   writeFileSync(join(agent, 'models.json'), JSON.stringify({ providers: { localtest: { baseUrl: `http://127.0.0.1:${server.address().port}/v1`, api: 'openai-completions', apiKey: 'dummy', models: [{ id: 'fixture', contextWindow: 128000, maxTokens: 1024 }] } } }));
   writeFileSync(join(cwd, 'input.txt'), 'café ✓');
   const session = join(cwd, 'session.jsonl');
-  const cli = fileURLToPath(new URL('../bin/ctg.mjs', import.meta.url));
+  const cli = fileURLToPath(new URL('../vendor/agent/cli.js', import.meta.url));
   let beforeRestore = -1;
   let forcedKill = false;
   async function run(prompt, secondsLimit = mode === 'seconds' ? '5' : '10000', expectBudgetStop = false) {
@@ -44,7 +45,7 @@ for (const mode of ['tools', 'seconds', 'repairs']) test(`actual engine stops ${
     let priorEntryCount = 0;
     try { priorEntryCount = readFileSync(session, 'utf8').split('\n').filter(Boolean).length; } catch { /* Initial session has not been created yet. */ }
     let budgetStoppedAt = null;
-    const child = spawn(process.execPath, [cli, '-p', '--no-guide', '--provider', 'localtest', '--model', 'fixture', '--session', session, '--max-tools', mode === 'tools' ? '1' : '0', '--max-seconds', secondsLimit, '--max-repairs', mode === 'repairs' ? '1' : '0', prompt], { cwd, env: { ...process.env, PI_OFFLINE: '1', CARTHAGENT_CODING_AGENT_DIR: agent, PI_CODING_AGENT_DIR: agent } });
+    const child = spawn(process.execPath, [cli, '--offline', '-p', ...buildEngineArgs({ isolate: true, provider: 'localtest', model: 'fixture', session, maxTools: mode === 'tools' ? '1' : '0', maxSeconds: secondsLimit, maxRepairs: mode === 'repairs' ? '1' : '0' }), prompt], { cwd, env: { ...process.env, PI_OFFLINE: '1', CARTHAGENT_CODING_AGENT_DIR: agent, PI_CODING_AGENT_DIR: agent } });
     child.stdin.end();
     let output = ''; child.stdout.on('data', d => output += d); child.stderr.on('data', d => output += d);
     let timer;

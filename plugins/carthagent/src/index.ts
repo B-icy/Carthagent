@@ -10,6 +10,7 @@ import { createDeviceAuthController } from './server/device-auth.ts';
 import { shipAgentDir } from '../../../lib/ship-auth.mjs';
 import { registerNativeDelivery } from './server/native-delivery';
 import { createShipRpcHandlers } from './server/ship-rpc';
+import { registerShipAgents, registerShipSkills } from './server/ship-agents';
 
 export async function setupCarthagent(
   context: Parameters<typeof registerSessionControls>[0],
@@ -27,6 +28,8 @@ export async function setupCarthagent(
     const deviceAuth = createDeviceAuthController({ env: process.env, agentDir: shipAgentDir() });
     cleanups.push(() => deviceAuth.cleanup());
     try {
+      cleanups.push(await registerShipAgents(context));
+      cleanups.push(await registerShipSkills(context));
       cleanups.push(await registerProviders(context, { deviceAuth }));
       cleanups.push(await registerSessionControls(context));
       cleanups.push(await registerWorkspaceRpc(context, context.options));
@@ -92,6 +95,6 @@ export async function setupCarthagent(
 export default Plugin.define({ id: 'carthagent', setup: setupCarthagent });
 
 function sessionOptionDefaults(options: Record<string, unknown>) {
-  const allowed = ['maxTools', 'maxSeconds', 'maxRepairs', 'codegraphMaxFiles', 'bashCap', 'workflow', 'validators', 'context', 'strict', 'delivery', 'protectExisting', 'rewriteCap', 'toolOutputCap'];
+  const allowed = ['maxTools', 'maxSeconds', 'maxRepairs', 'codegraphMaxFiles', 'bashCap', 'workflow', 'validators', 'context', 'strict', 'delivery', 'protectExisting', 'rewriteCap', 'toolOutputCap', 'turnDelayMs', 'jev', 'jevProvider'];
   return Object.fromEntries(allowed.filter(key => options[key] !== undefined).map(key => [key, options[key]]));
 }

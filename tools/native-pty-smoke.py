@@ -38,7 +38,7 @@ def main():
     parser.add_argument('--command', default='/ctg-status')
     parser.add_argument('--after-command', action='append', help='Submit another command after expected output; may be repeated')
     parser.add_argument('--after-expect', action='append', help='Expected output for each additional command')
-    parser.add_argument('--expect', default='OpenCode 2.0.32')
+    parser.add_argument('--expect', default='Carthagent 2.0.32')
     parser.add_argument('--capture', help='Save the full raw PTY transcript for diagnosis')
     parser.add_argument('--expect-color', help='Require a truecolor ANSI RGB sequence after the command, e.g. 230,196,128')
     parser.add_argument('--initial-theme', help='Select a provisioned native theme before launching the TUI')

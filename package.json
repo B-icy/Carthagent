@@ -74,6 +74,8 @@
     "test:native-terminal-performance": "python3 tools/test-native-terminal-performance.py",
     "test:native-package": "node tools/test-native-package.mjs",
     "test:native-controls": "node tools/test-native-controls.mjs",
+    "test:native-ship-walkthrough": "node tools/test-native-ship-walkthrough.mjs",
+    "test:native-default-cli": "node tools/test-native-default-cli.mjs",
     "test:owned-host-controls": "node tools/test-owned-host-controls.mjs",
     "test:owned-visual-clear-env": "python3 tools/test-owned-visual-clear-env.py",
     "test:native-terminal-semantics": "python3 tools/native-terminal-semantics.py",

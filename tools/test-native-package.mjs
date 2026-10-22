@@ -165,6 +165,7 @@ try {
   // imports (including @opencode/client) resolve only through that install.
   const probes = [];
   const acceptanceTests = [
+    'test-native-ship-walkthrough.mjs', 'test-native-default-cli.mjs',
     'test-owned-host-controls.mjs', 'test-native-glyph-pty.mjs',
     'test-native-terminal-semantics-installed.mjs', 'test-native-visual-clear-installed.mjs',
     'test-native-host.mjs', 'test-native-ship-models.mjs', 'test-native-controls.mjs', 'test-native-outcomes.mjs',
@@ -215,7 +216,7 @@ try {
         // The trusted harness may need to reacquire a missing default runtime.
         // Runtime identity/version, host, PTY, workspace, and npm children
         // independently strip the optional transport credential.
-        env: { ...env, CTG_NATIVE_SCENARIO: scenario ?? '' },
+        env: { ...env, CTG_NATIVE_SCENARIO: scenario ?? '', CTG_NATIVE_PLAN_PTY: scenario === 'standard' && resolution.identity.kind === 'ctg-owned' && process.platform === 'linux' ? '1' : '' },
         cwd: install,
       });
     } catch (error) {

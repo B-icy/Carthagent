@@ -354,8 +354,9 @@ test('native bash-cap requires session-option enforcement and is sent in per-ses
       context: async () => [{ type: 'user', id: 'a' }, { type: 'assistant', finish: 'stop' }, { type: 'idle', outcome: 'succeeded' }],
     } }),
   } });
-  assert.equal(await runtime.run({ mode: 'headless', options: { prompt: 'task', bashCap: '12.5' }, prompt: 'task' }), 0);
+  assert.equal(await runtime.run({ mode: 'headless', options: { prompt: 'task', bashCap: '12.5', protectExisting: true, rewriteCap: '2', toolOutputCap: '4000', turnDelayMs: '50', jev: false, jevProvider: 'ship' }, prompt: 'task' }), 0);
   assert.equal(saved.bashCap, 12.5);
+  assert.deepEqual({ protectExisting: saved.protectExisting, rewriteCap: saved.rewriteCap, toolOutputCap: saved.toolOutputCap, turnDelayMs: saved.turnDelayMs, jev: saved.jev, jevProvider: saved.jevProvider }, { protectExisting: true, rewriteCap: 2, toolOutputCap: 4000, turnDelayMs: 50, jev: false, jevProvider: 'ship' });
 });
 
 test('native run rejects only options without an enforcement contract and persists framing metadata', async t => {
@@ -974,6 +975,7 @@ test('native workspace review preserves raw metadata and returns usage exit code
     runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) }, headless: {},
     clientFactory: async () => ({
       location: { get: async () => ({}) },
+      model: { list: async () => ({ data: [] }) },
       agent: { list: async () => ({ data: [{ id: 'build' }] }) },
       session: {
         create: async input => { globalThis.fixtureReviewer = { permissions: input.permissions }; return { id: 'reviewer' }; },

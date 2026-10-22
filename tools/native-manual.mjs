@@ -4,9 +4,9 @@ import { spawn, execFileSync } from 'node:child_process';
 import { once } from 'node:events';
 import { resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { createHash } from 'node:crypto';
 import { nativeFixture, streamText } from './native-fixture.mjs';
 import { preflightNativeTestRuntimeArtifact } from './native-runtime-identity.mjs';
+import { readManualRuntimeManifest } from './manual-runtime-manifest.mjs';
 import { provisionDefaultNativeTheme } from '../plugins/carthagent/src/ui/theme-provision.mjs';
 
 const root = resolve(import.meta.dirname, '..');
@@ -14,7 +14,7 @@ const root = resolve(import.meta.dirname, '..');
 export async function runManualKit(
   directory,
   project = 'tiny',
-  { live = false, smoke = false, args = [], stop = false } = {},
+  { live = false, smoke = false, args = [], stop = false, runtimeManifest, manifestSha256 } = {},
 ) {
   if (!['tiny', 'product', 'scale'].includes(project))
     throw Error('Project must be tiny, product, or scale');
@@ -22,9 +22,8 @@ export async function runManualKit(
   const record = JSON.parse(
     await readFile(join(kit, 'manual-kit.json'), 'utf8'),
   );
-  const manifestPath = join(root, 'lib/opencode/runtime-release.json');
-  const manifestBytes = await readFile(manifestPath);
-  const releaseVersion = JSON.parse(manifestBytes).releaseVersion;
+  const { manifest, manifestPath, manifestSha256: actualDigest } = await readManualRuntimeManifest({ runtimeManifest, manifestSha256 });
+  const releaseVersion = manifest.releaseVersion;
   const target = `${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch}`;
   if (
     record.version !== 1 ||
@@ -34,11 +33,7 @@ export async function runManualKit(
     throw Error(
       'Kit platform/layout does not match this machine; prepare a new native kit',
     );
-  if (
-    createHash('sha256')
-      .update(await readFile(manifestPath))
-      .digest('hex') !== record.manifestSha256
-  )
+  if (actualDigest !== record.manifestSha256)
     throw Error('Kit manifest does not match this source checkout');
   const ownedRoot = join(kit, record.runtime);
   const { identity } = await preflightNativeTestRuntimeArtifact({
@@ -325,9 +320,16 @@ if (
     );
   const delimiter = options.indexOf('--');
   const flags = delimiter < 0 ? options : options.slice(0, delimiter);
-  if (flags.some((flag) => !['--live', '--smoke', '--stop'].includes(flag)))
-    throw Error('Unknown manual runner option');
+  const manifestOptions = {};
+  for (let i = 0; i < flags.length; i++) {
+    if (['--live', '--smoke', '--stop'].includes(flags[i])) continue;
+    const flag = flags[i];
+    if (!['--manifest', '--manifest-sha256'].includes(flag) || !flags[i + 1] || flags[i + 1].startsWith('--'))
+      throw Error('Unknown or incomplete manual runner option');
+    manifestOptions[flag === '--manifest' ? 'runtimeManifest' : 'manifestSha256'] = flags[++i];
+  }
   await runManualKit(directory, project, {
+    ...manifestOptions,
     live: flags.includes('--live'),
     smoke: flags.includes('--smoke'),
     stop: flags.includes('--stop'),

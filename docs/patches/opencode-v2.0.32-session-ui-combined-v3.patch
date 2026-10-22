@@ -54,111 +54,6 @@ index ef0d5d635b..346cc6872c 100644
                const content =
                  typeof executed.content === "string"
                    ? [{ type: "text" as const, text: executed.content }]
-diff --git a/packages/core/src/plugin/carthagent.ts b/packages/core/src/plugin/carthagent.ts
-new file mode 100644
-index 0000000000..fb01b79e10
---- /dev/null
-+++ b/packages/core/src/plugin/carthagent.ts
-@@ -0,0 +1,79 @@
-+export * as CarthagentPlugin from "./carthagent.js"
-+
-+import { define } from "@opencode/plugin/effect/plugin"
-+import { Agent } from "@opencode/schema/agent"
-+import { Effect, Schema } from "effect"
-+
-+const ship = Agent.ID.make("ship")
-+const lite = Agent.ID.make("lite")
-+
-+const PROMPT_SHIP = `You are Carthagent Ship, an evidence-driven delivery agent.
-+
-+Before writing any code, strategize: state the goal, the approach, and the concrete acceptance checks you will run to prove the work. Then execute. Before claiming the work is done, validate: run the checks you named (tests, builds, type checks, or real end-to-end runs) and report the evidence. Do not declare success on intent alone.
-+
-+Track the plan with the todowrite tool: one item per step or acceptance check, and keep each item's status current as you work.
-+
-+- Keep output terse.
-+- Prefer minimal, focused edits in the existing style.
-+- If validation fails, fix and re-run; report honest failures.
-+- Ask before major design decisions or destructive actions.`
-+
-+const PROMPT_LITE = `You are a direct execution agent. Use the skills and tools already available and work the task directly. No extra planning ceremony, no harness phases — just do the work well and concisely.`
-+
-+const TodoItem = Schema.Struct({
-+  content: Schema.NonEmptyString.annotate({ description: "One step or acceptance check" }),
-+  status: Schema.Literals(["pending", "in_progress", "completed", "cancelled"]).annotate({
-+    description: "Current status of the item",
-+  }),
-+})
-+
-+const TodoInput = Schema.Struct({
-+  todos: Schema.Array(TodoItem).check(Schema.isNonEmpty()).annotate({
-+    description: "The full plan, replacing any previously recorded plan",
-+  }),
-+})
-+
-+export const Plugin = define({
-+  id: "carthagent.agents",
-+  effect: Effect.fn(function* (ctx) {
-+    yield* ctx.agent.transform((editor) => {
-+      editor.update(ship, (item) => {
-+        item.name = Agent.Name.make("Ship")
-+        item.description = "Carthagent delivery workflow: strategize, execute, validate with evidence."
-+        item.mode = "primary"
-+        item.color = "#e6c480"
-+        item.system = PROMPT_SHIP
-+        item.permissions.push({ action: "question", resource: "*", effect: "allow" })
-+      })
-+
-+      editor.update(lite, (item) => {
-+        item.name = Agent.Name.make("Lite")
-+        item.description = "Direct execution with existing skills and tools. No planning harness."
-+        item.mode = "primary"
-+        item.color = "#b89ce0"
-+        item.system = PROMPT_LITE
-+        item.permissions.push({ action: "question", resource: "*", effect: "allow" })
-+      })
-+
-+      editor.default(ship)
-+    })
-+
-+    yield* ctx.tool
-+      .transform((editor) =>
-+        editor.add({
-+          name: "todowrite",
-+          description:
-+            "Record the working plan for this task: one item per step or acceptance check. Call it once the plan is set and again whenever an item's status changes — it replaces the recorded plan.",
-+          input: TodoInput,
-+          output: TodoInput,
-+          execute: (input) =>
-+            Effect.succeed({
-+              output: { todos: input.todos },
-+              content: `Plan recorded: ${input.todos.length} item${input.todos.length === 1 ? "" : "s"}.`,
-+              metadata: { todos: input.todos },
-+            }),
-+        }),
-+      )
-+      .pipe(Effect.orDie)
-+  }),
-+})
-diff --git a/packages/core/src/plugin/internal.ts b/packages/core/src/plugin/internal.ts
-index f6239be4cb..0d7ae687e6 100644
---- a/packages/core/src/plugin/internal.ts
-+++ b/packages/core/src/plugin/internal.ts
-@@ -91,6 +91,7 @@ import BrowserPlugin from "@opencode/plugin-browser"
- import { CommandPlugin } from "./command.js"
- import { IdentityPlugin } from "./identity.js"
- import { PlanPlugin } from "./plan.js"
-+import { CarthagentPlugin } from "./carthagent.js"
- import { ModelsDevPlugin } from "./models-dev.js"
- import { McpCodeModeDefaultsPlugin } from "./mcp-codemode-defaults.js"
- import { ProviderPlugins } from "./provider.js"
-@@ -222,6 +223,7 @@ const pre = [
-   VcsGitPlugin.Plugin,
-   AgentPlugin.Plugin,
-   PlanPlugin.Plugin,
-+  CarthagentPlugin.Plugin,
-   CommandPlugin.Plugin,
-   SkillPlugin.Plugin,
-   VcsHgPlugin.Plugin,
 diff --git a/packages/core/src/session/compaction.ts b/packages/core/src/session/compaction.ts
 index 3cb5279029..602114bb6b 100644
 --- a/packages/core/src/session/compaction.ts
@@ -5377,7 +5272,7 @@ index 2e09fc5e84..bcf83e0c9c 100644
    return (
      <Show when={!props.pendingOutside}>
 diff --git a/packages/tui/src/routes/session/index.tsx b/packages/tui/src/routes/session/index.tsx
-index 0b8228ef87..0b19b42d17 100644
+index 0b8228ef87..d5a9952e16 100644
 --- a/packages/tui/src/routes/session/index.tsx
 +++ b/packages/tui/src/routes/session/index.tsx
 @@ -19,6 +19,7 @@ import { useRoute, useRouteData } from "../../context/route"
@@ -5676,15 +5571,7 @@ index 0b8228ef87..0b19b42d17 100644
              {retry().error.message}
            </text>
          </box>
-@@ -2406,6 +2469,7 @@ function AssistantRetry(props: { retry: SessionMessageAssistant["retry"] }) {
- // Pending messages moved to individual tool pending functions
- 
- function ToolPart(props: { part: SessionMessageAssistantTool; images?: boolean }) {
-+  if (props.part.name === "todowrite") return null
-   const display = createMemo(() => toolDisplay(props.part.name))
- 
-   const toolprops = {
-@@ -2575,7 +2639,7 @@ function GenericTool(props: ToolProps) {
+@@ -2575,7 +2638,7 @@ function GenericTool(props: ToolProps) {
    return (
      <>
        <InlineTool
@@ -5693,7 +5580,7 @@ index 0b8228ef87..0b19b42d17 100644
          complete={props.part.state.status === "completed"}
          pending={props.tool}
          spinner={loading()}
-@@ -2943,9 +3007,9 @@ function ShellDisplay(props: {
+@@ -2943,9 +3006,9 @@ function ShellDisplay(props: {
            when={props.command}
            fallback={
              isRunning() || props.status === "streaming" ? (
@@ -5705,7 +5592,7 @@ index 0b8228ef87..0b19b42d17 100644
              )
            }
          >
-@@ -3014,7 +3078,7 @@ function Write(props: ToolProps) {
+@@ -3014,7 +3077,7 @@ function Write(props: ToolProps) {
          </BlockTool>
        </Match>
        <Match when={true}>
@@ -5714,7 +5601,7 @@ index 0b8228ef87..0b19b42d17 100644
            Write {pathFormatter.format(stringValue(props.input.path))}
          </InlineTool>
        </Match>
-@@ -3025,7 +3089,7 @@ function Write(props: ToolProps) {
+@@ -3025,7 +3088,7 @@ function Write(props: ToolProps) {
  function Glob(props: ToolProps) {
    const pathFormatter = usePathFormatter()
    return (
@@ -5723,7 +5610,7 @@ index 0b8228ef87..0b19b42d17 100644
        Glob "{stringValue(props.input.pattern)}"{" "}
        <Show when={stringValue(props.input.path)}>in {pathFormatter.format(stringValue(props.input.path))} </Show>
        <Show when={finiteNumber(props.metadata.count)}>
-@@ -3048,8 +3112,8 @@ function Read(props: ToolProps) {
+@@ -3048,8 +3111,8 @@ function Read(props: ToolProps) {
    return (
      <>
        <InlineTool
@@ -5734,7 +5621,7 @@ index 0b8228ef87..0b19b42d17 100644
          complete={stringValue(props.input.path)}
          spinner={isRunning()}
          part={props.part}
-@@ -3064,7 +3128,7 @@ function Read(props: ToolProps) {
+@@ -3064,7 +3127,7 @@ function Read(props: ToolProps) {
          {(filepath) => (
            <box paddingLeft={3}>
              <text paddingLeft={3} fg={theme.text.muted}>
@@ -5743,7 +5630,7 @@ index 0b8228ef87..0b19b42d17 100644
              </text>
            </box>
          )}
-@@ -3076,7 +3140,7 @@ function Read(props: ToolProps) {
+@@ -3076,7 +3139,7 @@ function Read(props: ToolProps) {
  function Grep(props: ToolProps) {
    const pathFormatter = usePathFormatter()
    return (
@@ -5752,7 +5639,7 @@ index 0b8228ef87..0b19b42d17 100644
        Grep "{stringValue(props.input.pattern)}"{" "}
        <Show when={stringValue(props.input.path)}>in {pathFormatter.format(stringValue(props.input.path))} </Show>
        <Show when={finiteNumber(props.metadata.matches)}>
-@@ -3088,7 +3152,7 @@ function Grep(props: ToolProps) {
+@@ -3088,7 +3151,7 @@ function Grep(props: ToolProps) {
  
  function WebFetch(props: ToolProps) {
    return (
@@ -5761,7 +5648,7 @@ index 0b8228ef87..0b19b42d17 100644
        WebFetch {stringValue(props.input.url)}
      </InlineTool>
    )
-@@ -3098,7 +3162,7 @@ function WebSearch(props: ToolProps) {
+@@ -3098,7 +3161,7 @@ function WebSearch(props: ToolProps) {
    const ctx = use()
    const provider = createMemo(() => stringValue(props.metadata.provider))
    return (
@@ -5770,7 +5657,7 @@ index 0b8228ef87..0b19b42d17 100644
        <Show when={provider()} fallback="Web Search">
          {(value) => (
            <>
-@@ -3133,11 +3197,11 @@ function Subagent(props: ToolProps) {
+@@ -3133,11 +3196,11 @@ function Subagent(props: ToolProps) {
  
    return (
      <InlineTool
@@ -5784,7 +5671,7 @@ index 0b8228ef87..0b19b42d17 100644
        part={props.part}
        onClick={() => {
          const id = sessionID()
-@@ -3149,7 +3213,7 @@ function Subagent(props: ToolProps) {
+@@ -3149,7 +3212,7 @@ function Subagent(props: ToolProps) {
          ) : undefined
        }
      >
@@ -5793,7 +5680,7 @@ index 0b8228ef87..0b19b42d17 100644
      </InlineTool>
    )
  }
-@@ -3202,7 +3266,7 @@ function ExecuteCallView(props: { call: Accessor<ExecuteCall> }) {
+@@ -3202,7 +3265,7 @@ function ExecuteCallView(props: { call: Accessor<ExecuteCall> }) {
      >
        <box flexDirection="row">
          <box width={INLINE_TOOL_ICON_WIDTH} flexShrink={0}>
@@ -5802,7 +5689,7 @@ index 0b8228ef87..0b19b42d17 100644
          </box>
          <text flexGrow={1} wrapMode="none" truncate fg={color()}>
            {expanded() ? props.call().tool : executeCallSummary(props.call())}
-@@ -3248,7 +3312,7 @@ function Execute(props: ToolProps) {
+@@ -3248,7 +3311,7 @@ function Execute(props: ToolProps) {
    return (
      <>
        <InlineTool
@@ -5811,7 +5698,7 @@ index 0b8228ef87..0b19b42d17 100644
          color={hasRuntimeError() ? theme.text.feedback.error.base : undefined}
          spinner={isLoading()}
          pending="execute"
-@@ -3265,7 +3329,7 @@ function Execute(props: ToolProps) {
+@@ -3265,7 +3328,7 @@ function Execute(props: ToolProps) {
            <For each={outputPreview().split("\n")}>
              {(line, index) => (
                <text paddingLeft={3} fg={theme.text.feedback.error.base}>
@@ -5820,7 +5707,7 @@ index 0b8228ef87..0b19b42d17 100644
                  {line}
                </text>
              )}
-@@ -3297,7 +3361,7 @@ function Edit(props: ToolProps) {
+@@ -3297,7 +3360,7 @@ function Edit(props: ToolProps) {
      <Switch>
        <Match when={file()}>
          {(item) => (
@@ -5829,7 +5716,7 @@ index 0b8228ef87..0b19b42d17 100644
              <box paddingLeft={1}>
                <PatchDiff
                  diff={item().patch}
-@@ -3328,10 +3392,10 @@ function Edit(props: ToolProps) {
+@@ -3328,10 +3391,10 @@ function Edit(props: ToolProps) {
          <BlockTool
            path={
              stringValue(props.input.path)
@@ -5842,7 +5729,7 @@ index 0b8228ef87..0b19b42d17 100644
            part={props.part}
            spinner={props.part.state.status === "streaming"}
          />
-@@ -3375,7 +3439,7 @@ function ApplyPatch(props: ToolProps) {
+@@ -3375,7 +3438,7 @@ function ApplyPatch(props: ToolProps) {
              {(file) => (
                <BlockTool
                  path={{
@@ -5851,7 +5738,7 @@ index 0b8228ef87..0b19b42d17 100644
                    value: pathFormatter.format(file.relativePath),
                  }}
                  part={props.part}
-@@ -3422,7 +3486,7 @@ function ApplyPatch(props: ToolProps) {
+@@ -3422,7 +3485,7 @@ function ApplyPatch(props: ToolProps) {
              {(file) => (
                <BlockTool
                  path={{
@@ -5860,7 +5747,7 @@ index 0b8228ef87..0b19b42d17 100644
                    value: pathFormatter.format(file.resource),
                  }}
                  part={props.part}
-@@ -3488,7 +3552,7 @@ function Question(props: ToolProps) {
+@@ -3488,7 +3551,7 @@ function Question(props: ToolProps) {
          </BlockTool>
        </Match>
        <Match when={true}>
@@ -5869,7 +5756,7 @@ index 0b8228ef87..0b19b42d17 100644
            Asked {count()} question{count() !== 1 ? "s" : ""}
          </InlineTool>
        </Match>
-@@ -3499,7 +3563,7 @@ function Question(props: ToolProps) {
+@@ -3499,7 +3562,7 @@ function Question(props: ToolProps) {
  function Skill(props: ToolProps) {
    const name = createMemo(() => stringValue(props.metadata.name) ?? stringValue(props.input.id))
    return (
@@ -5977,16 +5864,48 @@ index 07338aba69..812d3e97e6 100644
              </text>
            </Show>
            <text fg={theme.text.base}>
+diff --git a/packages/tui/src/routes/session/plan-items.ts b/packages/tui/src/routes/session/plan-items.ts
+new file mode 100644
+index 0000000000..249dcac601
+--- /dev/null
++++ b/packages/tui/src/routes/session/plan-items.ts
+@@ -0,0 +1,25 @@
++import type { SessionMessageInfo } from "@opencode/client"
++
++export type PlanItem = { id: string; content: string; status: string }
++
++// Only server-authored snapshots count. Proposed tool inputs and failed calls
++// are not accepted plans; Code Mode publishes the same snapshot on execute.
++export function planItems(messages: SessionMessageInfo[]): PlanItem[] {
++  for (const message of [...messages].reverse()) {
++    if (message.type !== "assistant") continue
++    for (const part of [...message.content].reverse()) {
++      if (part.type !== "tool" || part.state.status !== "completed") continue
++      const snapshot = part.state.metadata?.deliveryPlan
++      if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot) || !Array.isArray(snapshot.items)) continue
++      if (typeof snapshot.runId !== "string" || !Number.isSafeInteger(snapshot.revision)) continue
++      return snapshot.items.flatMap((item: unknown) => {
++        if (!item || typeof item !== "object") return []
++        const row = item as { id?: unknown; content?: unknown; status?: unknown }
++        if (typeof row.id !== "string" || typeof row.content !== "string" || !row.content.trim()) return []
++        const status = row.status === "done" ? "completed" : row.status === "active" ? "in_progress" : row.status === "failed" ? "failed" : "pending"
++        return [{ id: row.id, content: row.content, status }]
++      })
++    }
++  }
++  return []
++}
 diff --git a/packages/tui/src/routes/session/plan-view.tsx b/packages/tui/src/routes/session/plan-view.tsx
 new file mode 100644
-index 0000000000..607261da8a
+index 0000000000..243d21e178
 --- /dev/null
 +++ b/packages/tui/src/routes/session/plan-view.tsx
-@@ -0,0 +1,138 @@
+@@ -0,0 +1,84 @@
 +import { For, Show, createMemo, createSignal } from "solid-js"
 +import { useTheme } from "../../context/theme"
 +import { Locale } from "../../util/locale"
 +import type { SessionMessageInfo } from "@opencode/client"
++import { planItems } from "./plan-items"
 +
 +export const [planGraphVisible, setPlanGraphVisible] = createSignal(false)
 +
@@ -5994,69 +5913,14 @@ index 0000000000..607261da8a
 +  setPlanGraphVisible((visible) => !visible)
 +}
 +
-+type PlanItem = { content: string; status: string }
-+
-+function planItems(messages: SessionMessageInfo[]): PlanItem[] {
-+  for (const message of [...messages].reverse()) {
-+    if (message.type !== "assistant") continue
-+    for (const part of [...message.content].reverse()) {
-+      if (part.type !== "tool") continue
-+      const todos = planTodos(part)
-+      if (todos) return todos
-+    }
-+  }
-+  return []
-+}
-+
-+// The plan can be recorded directly (part named todowrite) or through the
-+// codemode `execute` wrapper, which lists each sub-call in metadata.toolCalls.
-+function planTodos(part: { name: string; state: unknown }): PlanItem[] | undefined {
-+  if (part.name === "todowrite") return parseTodos(partInput(part.state)?.todos)
-+  if (part.name !== "execute") return undefined
-+  const calls = partMetadata(part.state)?.toolCalls
-+  if (!Array.isArray(calls)) return undefined
-+  for (const call of [...calls].reverse()) {
-+    if (!call || typeof call !== "object") continue
-+    const entry = call as { tool?: unknown; input?: unknown }
-+    if (entry.tool !== "todowrite" || !entry.input || typeof entry.input !== "object") continue
-+    const todos = parseTodos((entry.input as { todos?: unknown }).todos)
-+    if (todos) return todos
-+  }
-+  return undefined
-+}
-+
-+function partInput(state: unknown) {
-+  if (!state || typeof state !== "object" || !("input" in state)) return undefined
-+  const input = (state as { input?: unknown }).input
-+  return input && typeof input === "object" ? (input as { todos?: unknown }) : undefined
-+}
-+
-+function partMetadata(state: unknown) {
-+  if (!state || typeof state !== "object" || !("metadata" in state)) return undefined
-+  const metadata = (state as { metadata?: unknown }).metadata
-+  return metadata && typeof metadata === "object" && !Array.isArray(metadata)
-+    ? (metadata as { toolCalls?: unknown })
-+    : undefined
-+}
-+
-+function parseTodos(todos: unknown): PlanItem[] | undefined {
-+  if (!Array.isArray(todos)) return undefined
-+  return todos.flatMap((todo) => {
-+    if (!todo || typeof todo !== "object") return []
-+    const item = todo as { content?: unknown; status?: unknown }
-+    if (typeof item.content !== "string" || !item.content.trim()) return []
-+    return [{ content: item.content.trim(), status: typeof item.status === "string" ? item.status : "pending" }]
-+  })
-+}
-+
-+const STATUS_ORDER = ["completed", "in_progress", "pending", "cancelled"]
++const STATUS_ORDER = ["completed", "in_progress", "failed", "pending", "cancelled"]
 +
 +export function PlanView(props: { messages: () => SessionMessageInfo[] }) {
 +  const theme = useTheme()
 +  const items = createMemo(() => planItems(props.messages()))
 +
 +  const nodeColor = (status: string) =>
-+    status === "completed"
++    status === "failed" ? theme.text.feedback.error.base : status === "completed"
 +      ? theme.text.feedback.success.base
 +      : status === "in_progress"
 +        ? theme.text.action.secondary.base
@@ -6065,7 +5929,7 @@ index 0000000000..607261da8a
 +          : theme.text.base
 +
 +  const glyph = (status: string) =>
-+    status === "completed" ? "■" : status === "in_progress" ? "◐" : status === "cancelled" ? "×" : "□"
++    status === "failed" ? "!" : status === "completed" ? "■" : status === "in_progress" ? "◐" : status === "cancelled" ? "×" : "□"
 +
 +  const counts = createMemo(() => {
 +    const tally = new Map<string, number>()

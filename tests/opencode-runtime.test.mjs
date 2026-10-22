@@ -6,7 +6,7 @@ import { getEventListeners } from 'node:events';
 import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { nativeCommandConfig } from '../lib/opencode/compatibility.mjs';
-import { CTG_RUNTIME_LOCK_SHA256, CTG_RUNTIME_PATCH_SHA256, CTG_RUNTIME_SOURCE, CTG_RUNTIME_VERSION, OPENCODE_VERSION, provisionRuntime, readRuntimeReleaseManifest, resolveOpenCode, resolveOwnedOpenCode, resolvePathCommand, runtimeEnvironment, runtimeIdentity, runtimePaths, withFileLock, workspaceEnvironment } from '../lib/opencode/runtime.mjs';
+import { CTG_RUNTIME_LOCK_SHA256, CTG_RUNTIME_PATCH_SHA256, CTG_RUNTIME_SOURCE, CTG_RUNTIME_VERSION, OPENCODE_VERSION, provisionRuntime, readRuntimeReleaseManifest, resolveOpenCode, resolveOwnedOpenCode, resolvePathCommand, runtimeEnvironment, runtimeIdentity, runtimePaths, withFileLock, workspaceEnvironment, processAlive } from '../lib/opencode/runtime.mjs';
 import { cancelSession, createSession, ensureService, getSession, launchTui, promptSession, serviceRequest, sessionMessages, setSessionEnvironment, stopService } from '../lib/opencode/service.mjs';
 import { runHeadless } from '../lib/opencode/headless.mjs';
 
@@ -856,4 +856,32 @@ test('accepted timeout does not inherit the previous session outcome and keeps t
     assert.deepEqual(result.messages.map(message => message.id), ['user-new', 'assistant-new']);
     assert.notEqual(result.result?.text, 'stale prior result', 'previous assistant response is never reused');
   } finally { globalThis.fetch = original; }
+});
+
+
+test('runtime liveness treats an unreaped Linux zombie as stopped but preserves live processes', { skip: process.platform !== 'linux' }, async t => {
+  const { once } = await import('node:events');
+  const child = spawn('python3', ['-c', `import os,time
+pid=os.fork()
+if pid == 0: os._exit(0)
+print(pid,flush=True)
+time.sleep(30)`]);
+  t.after(() => child.kill());
+  let output = '';
+  const zombie = await new Promise((resolvePID, reject) => {
+    child.stdout.on('data', chunk => { output += chunk; if (output.includes('\n')) resolvePID(Number(output.trim())); });
+    child.once('error', reject);
+  });
+  for (let i = 0; i < 100; i++) {
+    const status = await readFile(`/proc/${zombie}/stat`, 'utf8');
+    if (/\) Z /.test(status)) break;
+    await new Promise(resolveDelay => setTimeout(resolveDelay, 10));
+  }
+  assert.match(await readFile(`/proc/${zombie}/stat`, 'utf8'), /\) Z /);
+  assert.equal(processAlive(process.pid), true);
+  assert.equal(processAlive(child.pid), true);
+  assert.equal(processAlive(zombie), false);
+  const exited = once(child, 'exit');
+  child.kill();
+  await exited;
 });

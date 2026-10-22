@@ -1,25 +1,33 @@
 import { randomUUID } from "node:crypto"
 import type { Context } from "@opencode/plugin/promise/plugin"
-import type { ToolContext } from "@opencode/plugin/promise/tool"
+import { Error as NativeToolError, type ToolContext } from "@opencode/plugin/promise/tool"
 import type { Tool } from "@opencode/schema/tool"
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
 import { basename, join, resolve } from "node:path"
-import { DELIVERY_INVARIANTS, TEST_INFRASTRUCTURE_GUIDANCE, deliveryPhaseGuidance } from "../../../../lib/delivery-guidance.mjs"
-import { deliveryRecovery, designReceipt, recoveryMessages } from "../../../../lib/delivery-context.mjs"
+import { deliveryPhaseGuidance } from "../../../../lib/delivery-guidance.mjs"
+import { contextMetrics, deliveryRecovery, designReceipt, recoveryMessages } from "../../../../lib/delivery-context.mjs"
 import { validatePlanning, inspectPlanning, recordPlanReview, approvePlanning, planningStatus, startImplementation } from "../../../../lib/planning.mjs"
-import { PLANNING_START, planningGuide, planningNext } from "../../../../lib/planning-guide.mjs"
+import { planningGuide, planningNext } from "../../../../lib/planning-guide.mjs"
 import { newDiscovery, restoreDiscovery, discoveryCheckpoint, discoveryEvent } from "../../../../lib/planning-discovery.mjs"
 import { budgetLimits, newBudget, budgetReason, budgetSnapshot } from "../../../../lib/budget.mjs"
-import { validatePlan, fingerprint, runCommand, pendingChecks, validateRevision, bindRequiredChecks, loadRequiredChecks, updateStepStatus, verificationMode, looksInformational, revisePlan, mergePlanPatch, completionIssues, planSteps, pendingRequirements, planD2WithProgress, evidenceIdentity } from "../../../../lib/delivery.mjs"
+import { validatePlan, fingerprint, runCommand, pendingChecks, shouldContinue, validateRevision, bindRequiredChecks, loadRequiredChecks, updateStepStatus, verificationMode, looksInformational, revisePlan, mergePlanPatch, completionIssues, planSteps, pendingRequirements, planD2WithProgress, evidenceIdentity } from "../../../../lib/delivery.mjs"
 import { captureDeliveryReview, recordDeliveryReview } from "../../../../lib/delivery-review.mjs"
-import { formatGuidance, loadGuidanceProfiles, routeGuidance } from "../../../../lib/guidance.mjs"
+import { loadGuidanceProfiles, routeGuidance } from "../../../../lib/guidance.mjs"
 import { saveReport, reconcileReport } from "../../../../lib/reports.mjs"
 import { lockWorkspace, selectReport, assertActiveReport } from "../../../../lib/workspace.mjs"
-import { enforceToolPolicy, policyDescription } from "./policy.ts"
+import { enforceToolPolicy, requiresPlanApproval } from "./policy.ts"
 import { effectiveSessionOptions } from "../../../../lib/opencode/session-options.mjs"
+import { archiveContext } from "../../../../lib/context-archive.mjs"
+import { probeDiagnostics } from "../../../../lib/probe-diagnostics.mjs"
+import { configuredAdvisor, inspectAdvice } from "../../../../lib/planning-advice.mjs"
+import { createShipJev } from "../../../../lib/ship-jev.mjs"
+import { cloudGatewayUrl } from "../../../../lib/providers/experiential.mjs"
+import { isShipAgent } from "./ship-agents.ts"
+import { originalTask, shipGuidance } from "./ship-guidance.ts"
+import { archiveDeliveryExchanges, localToolName, normalizeDesignReview, shellProtection } from "./ship-context.mjs"
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- Existing workflow snapshots mirror evolving JS domain schemas. */
-type SessionState = { state: any; discovery: any; nudges: number; touched: boolean; budget: any; required: any[]; configError?: string; extraGuidance?: string; initialFiles: string[]; lastPrompt?: string; guidance?: string; writeCounts?: Record<string, number>; outcome?: string; cwd?: string }
+type SessionState = { state: any; discovery: any; nudges: number; touched: boolean; budget: any; required: any[]; configError?: string; extraGuidance?: string; initialFiles: string[]; lastPrompt?: string; guidance?: string; writeCounts?: Record<string, number>; outcome?: string; cwd?: string; guidanceProfiles?: string[]; probeState?: { failures: number; family: string | null }; statusPoll?: { key: string; count: number }; contextBytes?: number; recovery?: Record<string, any>; initialFilesCaptured?: boolean; model?: { providerID: string; id: string } }
 type DeliveryOptions = Record<string, unknown>
 type Schema = Record<string, unknown>
 type DeliveryInput = Record<string, any>
@@ -97,7 +105,10 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
         try { data.extraGuidance = readFileSync(resolve(cwd, opts.context), "utf8") }
         catch (error) { data.configError = `Invalid delivery context: ${error}` }
       }
-      if (opts.protectExisting) data.initialFiles = readdirSync(cwd, { withFileTypes: true }).filter(e => e.isFile()).map(e => resolve(cwd, e.name))
+      if (opts.protectExisting && !data.initialFilesCaptured) {
+        data.initialFiles = readdirSync(cwd, { withFileTypes: true }).filter(e => e.isFile()).map(e => resolve(cwd, e.name))
+        data.initialFilesCaptured = true
+      }
     }
     if (data.state && data.required.length) {
       for (const check of data.required) {
@@ -106,7 +117,7 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
       }
       data.state.plan = bindRequiredChecks(data.state.plan, data.required)
     }
-    return { session, cwd, data, options: opts }
+    return { session, cwd, data, options: opts, active: Boolean(opts.delivery) && isShipAgent(session.agent) }
   }
   function runDirectory(cwd: string, sessionID: string, runId: string) { return join(cwd, ".harness", sessionID, runId) }
   async function persist(cwd: string, sessionID: string, data: SessionState) {
@@ -141,9 +152,15 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
   const add = (editor: Parameters<Parameters<Context["tool"]["transform"]>[0]>[0], name: string, description: string, input: Schema, execute: (input: DeliveryInput, toolContext: RegisteredToolContext) => Promise<{ content: string }>) => editor.add({
     name, description, input: input as Tool.ValueSchema<DeliveryInput>, execute: async (rawValue, tool) => {
       const value = rawValue as DeliveryInput
-      const { options: opts } = await scope(tool.sessionID)
-      if (!opts.delivery) throw Error("Carthagent delivery tools are disabled for this session.")
-      return execute(value, tool)
+      const { active } = await scope(tool.sessionID)
+      if (!active || !isShipAgent(tool.agent)) throw Error("Carthagent delivery tools are disabled for this session; select Ship mode to use them.")
+      try {
+        const result = await execute(value, tool)
+        const { data } = await scope(tool.sessionID)
+        if (!data.state) return result
+        return { ...result, metadata: { deliveryPlan: planSnapshot(data.state) } }
+      }
+      catch (error) { throw new NativeToolError({ message: error instanceof Error ? error.message : String(error) }) }
     }, options: { namespace: "carthagent", codemode: true },
   })
 
@@ -154,7 +171,7 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
       const plan = validatePlan(bindRequiredChecks({ ...input, verification: input.verification ?? "required" }, data.required), cwd)
       validateRevision(data.state, plan)
       if (data.state && !["verified", "blocked"].includes(data.state.status)) data.state = revisePlan(data.state, plan, { cwd, hash: fingerprint(cwd, ["."]), reason: "Active plan replaced via delivery_plan" })
-      else data.state = { version: 1, workflowMode: opts.workflow === "strict" ? "strict" : "standard", reviewRequired: opts.workflow !== "strict", runId: randomUUID(), revision: (data.state?.revision || 0) + 1, plan, evidence: {}, status: "implementing", createdAt: new Date().toISOString(), stepStatus: {} }
+      else data.state = { version: 1, workflowMode: opts.workflow === "strict" ? "strict" : "standard", reviewRequired: opts.workflow !== "strict", runId: randomUUID(), revision: (data.state?.revision || 0) + 1, plan, evidence: {}, status: "implementing", createdAt: new Date().toISOString(), stepStatus: {}, guidanceProfiles: data.guidanceProfiles || [] }
       data.discovery = newDiscovery(); const dir = runDirectory(cwd, tool.sessionID, data.state.runId)
       mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, "plan.d2"), planD2WithProgress(data.state.plan, data.state.stepStatus))
       await persist(cwd, tool.sessionID, data)
@@ -172,23 +189,51 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
       await persist(cwd, tool.sessionID, data)
       return text({ revision: data.state.revision, pendingChecks: pendingChecks(data.state, hash), unverifiedRequirements: pendingRequirements(data.state, hash), next: data.state.workflowMode === "standard" ? "Continue implementation; changed checks require fresh evidence." : "Revision relocks implementation; validate and re-approve." })
     }))
-    add(editor, "delivery_design", "Strict workflow design gate. Guide, validate, inspect, adversarially review every scenario, then approve. Review is model-authored, not independent proof.", O({ action: { type: "string", enum: ["guide", "validate", "inspect", "review", "approve"] }, captureId: short, review: { type: "object", additionalProperties: true } }, ["action"]), async (input, tool) => {
+    add(editor, "delivery_design", "Strict workflow design gate. Guide, validate, inspect, adversarially review every scenario, then approve. Review is model-authored, not independent proof.", O({ action: { type: "string", enum: ["guide", "validate", "inspect", "review", "approve"] }, captureId: short, review: { type: "object", additionalProperties: true }, challenges: A(short, 40), walkthroughs: A({ type: "object", additionalProperties: true }, 80), findings: A({ type: "object", additionalProperties: true }, 80), limitations: A(short) }, ["action"]), async (input, tool) => {
       if (input.action === "guide") return text(planningGuide())
-      return operate(tool.sessionID, async ({ cwd, data }) => {
+      return operate(tool.sessionID, async ({ session, cwd, data, options: opts }) => {
         if (!data.state) throw Error("Call delivery_plan first")
         const hash = fingerprint(cwd, ["."]); let result
         if (input.action === "validate") result = validatePlanning(data.state, hash)
         else if (input.action === "inspect") result = inspectPlanning(data.state, hash)
-        else if (input.action === "review") result = recordPlanReview(data.state, hash, { ...input.review, captureId: input.review?.captureId ?? input.captureId })
+        else if (input.action === "review") result = recordPlanReview(data.state, hash, normalizeDesignReview(input))
         else if (input.action === "approve") result = approvePlanning(data.state, hash)
         else throw Error("Unknown delivery_design action")
+        let advice
+        if (input.action === "inspect") {
+          const ship = (session.model ?? data.model)?.providerID === "experiential-labs"
+          const enabled = opts.jev === undefined ? ship : opts.jev === true
+          const createAdvisor = () => {
+            if (opts.jevProvider === "ship" || (ship && !opts.jevProvider)) {
+              return { classify: async (plan: unknown) => {
+                const active = await ctx.integration.connection.active("experiential-labs")
+                if (!active || active.type !== "credential" || active.method !== "oauth") throw Error("Ship OAuth connection required")
+                const credential = await ctx.integration.connection.resolve(active)
+                if (credential?.type !== "oauth" || credential.methodID !== "carthagent-device" || !credential.access) throw Error("Ship OAuth credential required")
+                return createShipJev({ fetchImpl: globalThis.fetch, ...{ accessToken: credential.access, baseUrl: cloudGatewayUrl(), signal: tool.signal } }).classify(plan)
+              } }
+            }
+            return configuredAdvisor({ ...{ enabled, provider: String(opts.jevProvider || "openrouter"), signal: tool.signal } })
+          }
+          advice = await inspectAdvice(data.state, result, { ...{ enabled, createAdvisor, persist: () => persist(cwd, tool.sessionID, data) } })
+        }
+        let receipt = designReceipt(input.action, result)
+        if (input.action === "inspect" && JSON.stringify(result).length > 16000) {
+          try {
+            const archive = archiveContext(cwd, runDirectory(cwd, tool.sessionID, data.state.runId), result)
+            receipt = { ...result, plan: undefined, capturePath: archive.path, captureDigest: archive.digest, captureBytes: archive.bytes, instruction: "Read the complete capturePath before reviewing. This is not an approval." }
+          } catch { /* Retain the original capture if archival fails. */ }
+        }
         await persist(cwd, tool.sessionID, data)
-        return text({ result: designReceipt(input.action, result), ...(input.action === "inspect" ? { captureId: result.id } : {}), ...(input.action === "validate" ? planningNext(data.state, result) : {}), planningStatus: planningStatus(data.state, hash) })
+        return text({ result: receipt, ...(advice ? { advice } : {}), ...(input.action === "inspect" ? { captureId: result.id } : {}), ...(input.action === "validate" ? planningNext(data.state, result) : {}), planningStatus: planningStatus(data.state, hash) })
       })
     })
     add(editor, "delivery_status", "Show delivery state, stale/failed checks and next action. Call finish instead of polling when readyToFinish is true.", empty, async (_input, tool) => operate(tool.sessionID, async ({ cwd, data }) => {
       if (!data.state) return text("No delivery contract.")
-      const dir = runDirectory(cwd, tool.sessionID, data.state.runId); const hash = fingerprint(cwd, ["."])
+      const dir = runDirectory(cwd, tool.sessionID, data.state.runId)
+      let hash: string
+      try { hash = fingerprint(cwd, ["."]) }
+      catch (error) { return text({ ...deliveryRecovery(data.state, { report: join(dir, "report.json") }), pendingChecks: [`[scope error: ${error}]`], readyToFinish: false, next: 'Evidence scope could not be established. Call delivery_finish with status="blocked" and specific limitations.' }) }
       const issues = completionIssues(data.state, cwd, hash); const readyToFinish = Object.values(issues).every(items => !items.length)
       return text({ ...deliveryRecovery(data.state, { report: join(dir, "report.json") }), pendingChecks: pendingChecks(data.state, hash), completionIssues: issues, readyToFinish, next: readyToFinish ? "Call delivery_finish; do not poll again." : "Run declared checks, complete steps/outputs, and resolve outstanding requirements." })
     }))
@@ -212,10 +257,25 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
       for (const check of selected) {
         if (tool.signal.aborted) throw Error("Check cancelled before execution")
         const identity = evidenceIdentity(data.state, check); data.state.status = "verifying"; data.state.verificationStarted = true; delete data.state.evidence[check.id]
-        const before = fingerprint(cwd, ["."]); await persist(cwd, tool.sessionID, data)
+        let before: string
+        try { before = fingerprint(cwd, ["."]) }
+        catch (error) {
+          data.state.evidence[check.id] = { passed: false, ...identity, fingerprint: null, code: 1, outputTail: `Evidence scope error: ${error}` }
+          await persist(cwd, tool.sessionID, data)
+          throw Error(`Evidence scope error: ${error}. Call delivery_finish with status="blocked" and specific limitations rather than retrying.`)
+        }
+        await persist(cwd, tool.sessionID, data)
+        await tool.progress?.({ title: `Running ${check.id}`, description: JSON.stringify(check.argv) })
         const dir = runDirectory(cwd, tool.sessionID, data.state.runId)
         const result = await runCommand(check.argv, { cwd, timeoutSeconds: check.timeoutSeconds, signal: tool.signal, logPath: join(dir, `${check.id}-${randomUUID()}.log`) } as Parameters<typeof runCommand>[1])
-        const after = fingerprint(cwd, ["."]); const passed = result.code === 0 && !result.timedOut && !result.cancelled && !result.outputLimit && before === after
+        let after: string
+        try { after = fingerprint(cwd, ["."]) }
+        catch (error) {
+          data.state.evidence[check.id] = { passed: false, ...identity, fingerprint: null, code: result.code, logPath: result.logPath, outputTail: `Post-check evidence scope error: ${error}\n${result.output.slice(-800)}` }
+          await persist(cwd, tool.sessionID, data)
+          throw Error(`Post-check evidence scope error: ${error}. Call delivery_finish with status="blocked" and specific limitations.`)
+        }
+        const passed = result.code === 0 && !result.timedOut && !result.cancelled && !result.outputLimit && before === after
         data.state.evidence[check.id] = { passed, ...identity, executedRevision: data.state.revision, fingerprint: after, code: result.code, timedOut: result.timedOut, cancelled: result.cancelled, logPath: result.logPath, durationMs: result.durationMs, changedDuringCheck: before !== after, outputTail: result.output.slice(-1200) }
         results.push({ id: check.id, advisory: verification !== "required", ...data.state.evidence[check.id], outputTail: result.output })
         await persist(cwd, tool.sessionID, data)
@@ -223,7 +283,7 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
       const failures = results.filter(r => !r.passed && verification === "required")
       if (failures.length) throw Error(JSON.stringify({ failures, next: "Repair actual failures; do not weaken obligations." }))
       const hash = fingerprint(cwd, ["."]); const issues = completionIssues(data.state, cwd, hash)
-      return text({ results, pendingChecks: pendingChecks(data.state, hash), completionIssues: issues, readyToFinish: Object.values(issues).every(items => !items.length) })
+      return text({ results, pendingChecks: pendingChecks(data.state, hash), completionIssues: issues, readyToFinish: Object.values(issues).every(items => !items.length), next: "Complete pending steps, review the evidence, then call delivery_finish." })
     }))
     add(editor, "delivery_review", "Inspect final diff or record assertion coverage, boundary probes and findings. Required for structured plans; assertions are model-authored.", O({ action: { type: "string", enum: ["inspect", "record"] }, captureId: short, coverage: A({ type: "object", additionalProperties: true }, 64), resolutions: A({ type: "object", additionalProperties: true }, 40), outcomes: A({ type: "object", additionalProperties: true }, 32), probes: A(short, 40), findings: A(short, 40), limitations: A(short) }, ["action"]), async (input, tool) => operate(tool.sessionID, async ({ cwd, data }) => {
       if (!data.state) throw Error("Call delivery_plan first")
@@ -235,17 +295,20 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
       if (data.configError) throw Error(data.configError)
       const verification = verificationMode(data.state.plan); let hash: string | null = null
       if (input.status === "verified") {
-        hash = fingerprint(cwd, ["."])
         if (verification === "required") {
+          hash = fingerprint(cwd, ["."])
           const issues = completionIssues(data.state, cwd, hash)
           if (Object.values(issues).some(items => items.length)) throw Error(`Cannot verify: ${JSON.stringify(issues)}`)
-        }
+        } else { try { hash = fingerprint(cwd, ["."]) } catch { hash = null } }
       } else {
         if (!input.limitations.length) throw Error("Blocked delivery requires an explicit limitation/reason")
         try { hash = fingerprint(cwd, ["."]) } catch { hash = "unfingerprinted:scope_exceeded" }
       }
-      data.state.status = input.status; data.state.handoff = { ...input, verification, advisory: verification !== "required", fingerprint: hash, at: new Date().toISOString(), evidence: structuredClone(data.state.evidence), reviewEvidence: data.state.reviewEvidence || null }
-      await persist(cwd, tool.sessionID, data); return text({ status: data.state.status, verification, report: join(runDirectory(cwd, tool.sessionID, data.state.runId), "report.json") })
+      const advisory = verification !== "required"
+      const advisoryFailures = Object.entries(data.state.evidence).filter(([, value]) => !(value as { passed: boolean }).passed).map(([id]) => id)
+      data.state.status = input.status; data.state.handoff = { ...input, verification, advisory, advisoryFailures, fingerprint: hash, at: new Date().toISOString(), evidence: structuredClone(data.state.evidence), reviewEvidence: structuredClone(data.state.reviewEvidence || null) }
+      await persist(cwd, tool.sessionID, data)
+      return text({ status: data.state.status, verification, advisory, advisoryFailures, note: advisory ? "Informational/advisory finish: recorded checks are context, not a delivery guarantee. Distinguish them from unperformed manual/visual review." : "Evidence covers declared checks, not a guarantee of correctness. Distinguish automated evidence from unperformed manual/visual review.", report: join(runDirectory(cwd, tool.sessionID, data.state.runId), "report.json") })
     }))
   }))
 
@@ -256,36 +319,50 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
     // share the outer call ID/message ID while still being distinct invocations.
     const callKey = `${event.sessionID}\0${event.messageID}\0${event.id}\0${event.tool}`
     if (admittedCalls.has(callKey)) return
-    const { cwd, data, options: opts } = await scope(event.sessionID)
-    if (!opts.delivery && Number(data.budget.limits.tools) === 0 && Number(data.budget.limits.seconds) === 0 && Number(data.budget.limits.repairs) === 0) return
+    const { cwd, data, options: opts, active: selected } = await scope(event.sessionID)
+    const active = selected && isShipAgent(event.agent)
+    const toolName = localToolName(event.tool)
+    if (toolName.startsWith("delivery_") && !active) throw Error("Delivery tools require Ship mode.")
+    if (!active && Number(data.budget.limits.tools) === 0 && Number(data.budget.limits.seconds) === 0 && Number(data.budget.limits.repairs) === 0) return
     let persistenceAttempted = false
     try {
       const nativeShell = ["bash", "shell", "powershell"].includes(event.tool)
       const input = event.input && typeof event.input === "object" ? event.input as Record<string, unknown> : {}
-      if (opts.delivery && event.tool !== "execute" && requiresImplementationTool(event.tool)) {
-        if (!data.state) throw Error(`Implementation locked: call delivery_plan first (tool ${event.tool}).`)
+      if (active && toolName === "delivery_status" && data.state) {
+        let source
+        try { source = fingerprint(cwd, ["."]) } catch (error) { source = String(error) }
+        const key = JSON.stringify([data.state.runId, data.state.revision, source, data.state.evidence, data.state.stepStatus, data.state.reviewEvidence, data.state.planning, data.state.status])
+        data.statusPoll = { key, count: data.statusPoll?.key === key ? data.statusPoll.count + 1 : 1 }
+        if (data.statusPoll.count > 3) throw Error("Repeated unchanged delivery_status polling is blocked. Execute the next action or finish instead.")
+      } else if (active && (toolName.startsWith("delivery_") || ["write", "edit", "patch"].includes(toolName))) data.statusPoll = undefined
+      if (active && event.tool !== "execute" && requiresImplementationTool(toolName)) {
+        if (!data.state) {
+          data.discovery = discoveryEvent(data.discovery, "blocked")
+          throw Error(`Implementation locked: call delivery_plan first (tool ${event.tool}). ${discoveryCheckpoint(data.discovery) || ""}`)
+        }
         const release = lockWorkspace(cwd)
         try {
           const dir = runDirectory(cwd, event.sessionID, data.state.runId)
           assertActiveReport(cwd, join(dir, "report.json"))
           data.state = reconcileReport(join(dir, "report.json"), data.state)
-          enforceToolPolicy(event.tool, data.state, cwd)
+          enforceToolPolicy(toolName, data.state, cwd)
           await persist(cwd, event.sessionID, data)
         } finally { release() }
       }
-      if ((event.tool === "write" || event.tool === "edit") && typeof input.path === "string") {
+      if (active && (event.tool === "write" || event.tool === "edit") && typeof input.path === "string") {
         const path = input.path.replaceAll("\\", "/"), cwdPath = cwd.replaceAll("\\", "/").replace(/^\/+/, ""), name = basename(cwd)
         if ([cwdPath, name].some(prefix => path === prefix || path.startsWith(`${prefix}/`))) throw Error("Path recreates working directory inside itself; use a workspace-relative product path.")
         if (event.tool === "write" && data.initialFiles.includes(resolve(cwd, input.path))) throw Error(`Preserve existing ${input.path}; use focused edits.`)
       }
       const cap = Number(opts.bashCap) || 0
-      if (nativeShell) {
+      if (active && nativeShell) {
         const command = String(input.command ?? "")
-        if (/\b(?:pkill|killall)\b|\bkill\s+(?:-\S+\s+)*(?:-1|0)(?:\s|$)/i.test(command)) throw Error("Broad process termination is prohibited; terminate only a captured child PID.")
+        const protection = shellProtection(command, opts.protectExisting ? data.initialFiles : [])
+        if (protection) throw Error(protection)
         const capMilliseconds = cap * 1000
         if (cap > 0 && (typeof input.timeout !== "number" || input.timeout === 0 || input.timeout > capMilliseconds)) input.timeout = capMilliseconds
       }
-      if (["write", "edit", "patch"].includes(event.tool) && opts.rewriteCap && Number(opts.rewriteCap) > 0) {
+      if (active && event.tool === "write" && opts.rewriteCap && Number(opts.rewriteCap) > 0) {
         data.writeCounts ||= {}
         const path = String(input.path || "")
         const count = data.writeCounts[path] || 0
@@ -318,35 +395,39 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
   })))
 
   registrations.push(await ctx.tool.hook("execute.after", async event => serialized(event.sessionID, async () => {
-    const { cwd, data } = await scope(event.sessionID)
-    if (!sessionOptions(await ctx.session.get({ sessionID: event.sessionID })).delivery) {
-      await ctx.storage.set(sessionKey(event.sessionID), data)
-      return
-    }
+    const { cwd, data, options: opts, active } = await scope(event.sessionID)
+    if (!active || !isShipAgent(event.agent)) return
+    const tool = localToolName(event.tool)
     const failed = event.status === "error"
-    if (!failed && ["write", "edit"].includes(event.tool)) data.touched = true
-    if (data.discovery.active && ["read", "ls", "find", "grep", "code_nav"].includes(event.tool)) data.discovery = discoveryEvent(data.discovery, "read")
-    if (data.state && ["delivery_check", "delivery_progress", "delivery_review", "delivery_finish", "delivery_revise", "delivery_design", "delivery_plan"].includes(event.tool)) {
-      const dir = runDirectory(cwd, event.sessionID, data.state.runId)
-      if (existsSync(join(dir, "report.json"))) data.state = reconcileReport(join(dir, "report.json"), data.state)
+    if (!failed && ["write", "edit", "patch"].includes(tool)) data.touched = true
+    if (data.discovery.active && ["read", "ls", "glob", "find", "grep", "code_nav"].includes(tool)) data.discovery = discoveryEvent(data.discovery, "read")
+    const rawContent = event.status === "error" ? event.error.message : event.result?.content
+    const content = typeof rawContent === "string" ? [{ type: "text", text: rawContent }] : rawContent || []
+    const diagnostic = probeDiagnostics(data.probeState as Parameters<typeof probeDiagnostics>[0], { toolName: tool === "shell" ? "bash" : tool, isError: failed, content })
+    data.probeState = diagnostic.state
+    const cap = Math.max(0, Number(opts.toolOutputCap) || 0)
+    if (cap && event.status === "completed" && ["bash", "shell", "read", "grep", "glob", "find", "ls", "code_nav"].includes(tool)) {
+      event.result = { ...event.result, content: (typeof event.result.content === "string" ? [{ type: "text" as const, text: event.result.content }] : event.result?.content || []).map(part => part.type === "text" && part.text.length > cap ? { ...part, text: `${part.text.slice(-cap)}\n[output capped at ${cap} characters; request a targeted slice]` } : part) }
     }
-    const { options: opts } = await scope(event.sessionID)
-    const outputCap = Math.max(0, Number(opts.toolOutputCap) || 0)
-    if (!failed && outputCap > 0 && event.result?.content) {
-      if (!Array.isArray(event.result.content)) {
-        await ctx.storage.set(sessionKey(event.sessionID), data)
-        return
-      }
-      const content = event.result.content.map(item => {
-        if (item.type !== "text" || item.text.length <= outputCap) return item
-        const marker = `\n...[${item.text.length - outputCap} chars omitted; rerun a narrower command]...\n`
-        const head = Math.floor(Math.max(0, outputCap - marker.length) / 3)
-        const tail = Math.max(0, outputCap - marker.length - head)
-        return { ...item, text: outputCap <= marker.length ? item.text.slice(0, outputCap) : item.text.slice(0, head) + marker + item.text.slice(-tail) }
-      })
-      event.result = { ...event.result, content }
+    if (diagnostic.message) {
+      if (event.status === "completed") event.result = { ...event.result, content: [...(typeof event.result.content === "string" ? [{ type: "text" as const, text: event.result.content }] : event.result?.content || []), { type: "text", text: diagnostic.message }] }
+      else event.error = new NativeToolError({ message: `${event.error.message}\n\n${diagnostic.message}` })
+    }
+    if (data.state && ["delivery_check", "delivery_progress", "delivery_review", "delivery_finish", "delivery_revise", "delivery_design", "delivery_plan"].includes(tool)) {
+      const dir = runDirectory(cwd, event.sessionID, data.state.runId)
+      const release = lockWorkspace(cwd)
+      try {
+        assertActiveReport(cwd, join(dir, "report.json"))
+        data.state = reconcileReport(join(dir, "report.json"), data.state)
+        writeFileSync(join(dir, "plan.d2"), planD2WithProgress(data.state.plan, data.state.stepStatus))
+      } finally { release() }
+    }
+    if (event.status === "completed" && data.state && (tool === "execute" || tool.startsWith("delivery_"))) {
+      event.result = { ...event.result, metadata: { ...event.result.metadata, deliveryPlan: planSnapshot(data.state) } }
     }
     await ctx.storage.set(sessionKey(event.sessionID), data)
+    const delay = Math.min(30000, Math.max(0, Number(opts.turnDelayMs) || 0) * Math.max(1, Math.ceil((data.contextBytes || 0) / 4 / 50000)))
+    if (delay) await new Promise(resolve => setTimeout(resolve, delay))
   })))
 
   registrations.push(await ctx.shell.hook("create.before", async event => {
@@ -358,52 +439,71 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
     if (/\b(?:pkill|killall)\b|\bkill\s+(?:-\S+\s+)*(?:-1|0)(?:\s|$)/i.test(event.command)) throw Error("Broad process termination is prohibited; terminate only a captured child PID.")
   }))
 
-  for (const kind of ["context", "compaction"] as const) registrations.push(await ctx.session.hook(kind, async event => {
-    const { cwd, data } = await scope(event.sessionID)
-    if (!sessionOptions(await ctx.session.get({ sessionID: event.sessionID })).delivery) return
-    // Prevent bypass through built-in shell/edit, plugin and child-session tools,
-    // and Code Mode while the participating-tool policy is locked. Runtime hooks
-    // still repeat the check at invocation time; hiding a model tool is not the
-    // authorization boundary by itself.
-    const locked = !data.state || planningStatus(data.state, fingerprint(cwd, ["."])).locked
-     if (locked && event.tools && typeof event.tools === "object") {
-      for (const name of Object.keys(event.tools)) if (requiresImplementationTool(name)) delete event.tools[name]
-    }
-    if (!data.state || ["verified", "blocked"].includes(data.state.status)) {
-      const checkpoint = discoveryCheckpoint(data.discovery)
-      if (checkpoint) event.system.push({ type: "text", text: checkpoint })
-      return
-    }
-    const dir = runDirectory(cwd, event.sessionID, data.state.runId)
-    const recovery = deliveryRecovery(data.state, { report: join(dir, "report.json"), planningStatus: planningStatus(data.state, fingerprint(cwd, ["."])) })
-    const checkpoint = recoveryMessages([], recovery).map((message: { content: string }) => message.content).join("\n")
-    event.system.push({ type: "text", text: `${data.guidance || DELIVERY_INVARIANTS}\n\nCurrent delivery recovery record (not authorization; recompute freshness before checks/finish):\n${checkpoint}\n\n${deliveryPhaseGuidance(data.state)}` })
-  }))
-
   registrations.push(await ctx.session.hook("prompt", async event => serialized(event.sessionID, async () => {
-    const { cwd, data, options: opts } = await scope(event.sessionID)
-    if (!opts.delivery) return
-    const workflow = data.state && !["verified", "blocked"].includes(data.state.status) ? data.state.workflowMode : opts.workflow
-    const routed = routeGuidance(event.prompt.text, { cwd, profiles })
-    let guidance = DELIVERY_INVARIANTS + "\n" + deliveryPhaseGuidance(data.state) + "\n" + policyDescription(workflow)
-    if (workflow === "standard") guidance += "\nA valid required plan allows implementation; final evidence and review stay mandatory."
-    if (/\b(test|typescript|route|backend|api)\b/i.test(event.prompt.text)) guidance += `\n${TEST_INFRASTRUCTURE_GUIDANCE}`
-    if (data.discovery.active && workflow === "strict") guidance += `\n${PLANNING_START}`
-    const routedText = formatGuidance(routed); if (routedText) guidance += `\n${routedText}`
-    if (data.extraGuidance) guidance += `\nTask-specific delivery context:\n${data.extraGuidance}`
-    if (data.required.length) guidance += `\nUser-owned required validators are enforced: ${JSON.stringify(data.required)}. Run every required check; do not bypass.`
-    if (looksInformational(event.prompt.text)) guidance += `\nReceipt check: informational/read-only ask; answer directly or use verification none/advisory. Do not enter a repair loop.`
-    data.lastPrompt = event.prompt.text
-    data.guidance = `${guidance}\n\n${data.state ? deliveryRecovery(data.state, { report: join(runDirectory(cwd, event.sessionID, data.state.runId), "report.json") }) ? "Existing delivery state remains authoritative; do not trust summary claims over current report/fingerprint." : "" : ""}`
-    const internal = event.metadata?.carthagentRecovery === true || event.metadata?.carthagentBudget === true
-    if (!internal) { data.discovery = newDiscovery(!looksInformational(event.prompt.text)); data.nudges = 0; data.touched = false }
+    const { cwd, data, active } = await scope(event.sessionID)
+    if (!active) return
+    const prompt = originalTask(event.prompt.text)
+    const routed = routeGuidance(prompt, { cwd, profiles })
+    const prior = data.state && !["verified", "blocked"].includes(data.state.status) ? data.guidanceProfiles || data.state.guidanceProfiles || [] : []
+    data.guidanceProfiles = [...new Set([...prior, ...routed.map(profile => profile.id)])]
+    data.lastPrompt = prompt
+    if (!data.state || ["verified", "blocked"].includes(data.state.status)) data.discovery = newDiscovery(!looksInformational(prompt))
+    data.touched = false
+    data.statusPoll = undefined
     await ctx.storage.set(sessionKey(event.sessionID), data)
   })))
-
+  registrations.push(await ctx.session.hook("context", async event => serialized(event.sessionID, async () => {
+    const { session, cwd, data, options: opts, active } = await scope(event.sessionID)
+    const reason = budgetReason(data.budget)
+    if (reason) {
+      data.budget.stopped ||= reason
+      await ctx.storage.set(sessionKey(event.sessionID), data)
+      await ctx.session.interrupt({ sessionID: event.sessionID, resume: false })
+      throw Error(`Delivery budget exhausted: ${reason}. Do not dispatch another model request until an explicit delivery-budget-reset.`)
+    }
+    if (!active || !isShipAgent(event.agent)) {
+      if (event.tools) for (const name of Object.keys(event.tools)) if (localToolName(name).startsWith("delivery_")) delete event.tools[name]
+      return
+    }
+    data.model = { providerID: event.model.providerID, id: event.model.id }
+    let imageInput: boolean | undefined
+    if (ctx.model) {
+      const models = await ctx.model.list({ location: { directory: session.location.directory } })
+      imageInput = models.data.find(model => model.providerID === event.model.providerID && model.id === event.model.id)?.capabilities.input.includes("image")
+    }
+    const activeProfiles = profiles.filter(profile => (data.guidanceProfiles || data.state?.guidanceProfiles || []).includes(profile.id))
+    event.system.push({ type: "text", text: shipGuidance({ state: data.state, workflow: String(opts.workflow || "standard"), prompt: data.lastPrompt, profiles: activeProfiles, discovery: data.discovery, extraGuidance: data.extraGuidance, required: data.required, imageInput }) })
+    if (data.budget.limits.tools || data.budget.limits.seconds || data.budget.limits.repairs) event.system.push({ type: "text", text: `Delivery budget: ${JSON.stringify(budgetSnapshot(data.budget))}. Reserve tools for verification/review/handoff; stop at exhaustion. Only the explicit delivery-budget-reset command authorizes a new budget.` })
+    const checkpoint = discoveryCheckpoint(data.discovery)
+    if (checkpoint) event.system.push({ type: "text", text: checkpoint })
+    if (event.tools && !data.state) for (const name of Object.keys(event.tools)) if (requiresImplementationTool(name) && name !== "execute") delete event.tools[name]
+    if (data.state && !["verified", "blocked"].includes(data.state.status)) {
+      const dir = runDirectory(cwd, event.sessionID, data.state.runId)
+      const archived = archiveDeliveryExchanges(event.messages, { cwd, directory: dir, allow: Boolean(data.state.planning?.approval) })
+      event.messages = archived.messages
+      const summary = deliveryRecovery(data.state, { report: join(dir, "report.json") })
+      data.recovery ||= {}
+      const records = recoveryMessages([], summary, data.recovery)
+      const pressure = (data.contextBytes || 0) > 240000 ? "Context pressure: inspect the current recovery record and targeted source slices; avoid repeating whole captures." : ""
+      event.system.push({ type: "text", text: `${records.map((record: { content: string }) => record.content).join("\n")}\nInspect freshness before execution/finish; readyToFinish means finish, not polling.\n${pressure}\n${archived.failed ? "Archive unavailable: affected originals retained." : ""}\n${deliveryPhaseGuidance(data.state)}` })
+      try {
+        const metrics = contextMetrics({ system: event.system, messages: event.messages })
+        data.contextBytes = metrics.totalBytes
+        appendFileSync(join(dir, "context-metrics.jsonl"), JSON.stringify(metrics) + "\n")
+      } catch { /* Metrics are advisory, never an execution gate. */ }
+      if (!data.state.planning?.approval && data.state.workflowMode !== "standard" && event.tools) for (const name of Object.keys(event.tools)) if (requiresImplementationTool(name) && name !== "execute") delete event.tools[name]
+    }
+    await ctx.storage.set(sessionKey(event.sessionID), data)
+  })))
+  registrations.push(await ctx.session.hook("compaction", async event => {
+    const { data, active } = await scope(event.sessionID)
+    if (!active || !isShipAgent(event.agent) || !data.state || ["verified", "blocked"].includes(data.state.status)) return
+    event.system.push({ type: "text", text: JSON.stringify(deliveryRecovery(data.state, { report: join(runDirectory(data.cwd!, event.sessionID, data.state.runId), "report.json") })) })
+  }))
   registrations.push(await ctx.command.transform(editor => {
     editor.add({ name: "delivery-budget-status", description: "Show this session's persistent delivery budget", execute: async ({ sessionID }) => {
       const { data } = await scope(sessionID)
-      await ctx.session.prompt({ sessionID, delivery: "steer", metadata: { carthagentBudget: true }, text: `Delivery budget status: ${JSON.stringify(budgetSnapshot(data.budget))}` })
+      await ctx.session.synthetic({ sessionID, resume: false, metadata: { carthagentBudget: true }, text: `Delivery budget status: ${JSON.stringify(budgetSnapshot(data.budget))}` })
     } })
     editor.add({ name: "delivery-budget-reset", description: "Explicitly authorize a fresh budget for this session", execute: async ({ sessionID }) => {
       const snapshot = await serialized(sessionID, async () => {
@@ -411,7 +511,7 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
         for (const key of admittedCalls) if (key.startsWith(`${sessionID}\0`)) admittedCalls.delete(key)
         return budgetSnapshot(data.budget)
       })
-      await ctx.session.prompt({ sessionID, delivery: "steer", metadata: { carthagentBudget: true }, text: `Delivery budget explicitly reset: ${JSON.stringify(snapshot)}` })
+      await ctx.session.synthetic({ sessionID, resume: false, metadata: { carthagentBudget: true }, text: `Delivery budget explicitly reset: ${JSON.stringify(snapshot)}` })
     } })
   }))
 
@@ -423,7 +523,8 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
           const sessionID = event.data.sessionID
           let followup: string | undefined
           await serialized(sessionID, async () => {
-            const { cwd, data, session } = await scope(sessionID)
+            const { cwd, data, session, active } = await scope(sessionID)
+            if (!active) return
             const reason = budgetReason(data.budget)
             if (reason && !data.budget.stopped) {
               data.budget.stopped = reason
@@ -433,7 +534,7 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
             }
             if (data.discovery.active) data.discovery = discoveryEvent(data.discovery, "blocked")
             const state = data.state
-            if (!state || data.nudges >= 2 || ["verified", "blocked"].includes(state.status) || !data.touched || verificationMode(state.plan) !== "required" || session.outcome !== "succeeded") {
+            if (!state || !shouldContinue({ state, touched: data.touched, nudges: data.nudges, stopReason: session.outcome === "succeeded" ? "stop" : "error", pendingMessages: false, fresh: false })) {
               await ctx.storage.set(sessionKey(sessionID), data)
               return
             }
@@ -460,7 +561,11 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
               data.nudges++
               const pending = issues.pendingChecks.join(", ") || "none"
               await ctx.storage.set(sessionKey(sessionID), data)
-              followup = `Delivery follow-up ${data.nudges}/2: the required contract has no fresh verified handoff. Pending checks: ${pending}. Inspect current delivery_status, repair the actual cause, rerun checks and finish verified, or record status=blocked with specific limitations. Do not repeat a success claim or weaken obligations.`
+              const failures = Object.entries(data.state.evidence || {}).filter(([, e]) => !(e as { passed: boolean }).passed).map(([id, e]) => {
+                const evidence = e as { code: number; outputTail?: string }
+                return `${id}: exit ${evidence.code}\n${evidence.outputTail || ""}`
+              }).join("\n")
+              followup = `${failures}\nDelivery follow-up ${data.nudges}/2: the required contract has no fresh verified handoff. Pending checks: ${pending}. Inspect current delivery_status, repair the actual cause, rerun checks and finish verified, or record status=blocked with specific limitations. Do not repeat a success claim or weaken obligations.`
             } catch (error) {
               console.error("Carthagent delivery recovery failed closed", error)
             } finally { release() }
@@ -485,5 +590,10 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
 function requiresImplementationTool(name: string) {
   // V2 exposes namespaced tools as `namespace_name` in model context and hooks.
   const toolName = name.startsWith("carthagent_") ? name.slice("carthagent_".length) : name
-  return !["read", "ls", "find", "grep", "execute", "code_nav", "delivery_probe", "delivery_plan", "delivery_revise", "delivery_design", "delivery_status", "delivery_finish", "delivery-budget-status", "delivery-budget-reset"].includes(toolName)
+  return toolName !== "execute" && !["delivery-budget-status", "delivery-budget-reset"].includes(toolName) && requiresPlanApproval(toolName)
+}
+
+function planSnapshot(state: SessionState["state"]) {
+  const items = planSteps(state.plan).map((step: { id: string; title: string }, i: number) => ({ id: step.id, content: step.title, status: state.stepStatus[`step${i}`] || "pending" }))
+  return { runId: state.runId, revision: state.revision, status: state.status, items }
 }
