@@ -157,6 +157,7 @@ try {
 
   const result = runResult = await runNativeEvaluation({
     client, directory,
+    agent: 'ship',
     metadata: { 'carthagent.options': { maxTools:60, maxSeconds:180, maxRepairs:20 } },
     prompt: `CTG_SWE_DELIVERY_FIXTURE. Discover the registered CTG tools with search; author and follow a valid required-verification delivery plan with a declared test check. Respect standard production tool policy: observe the failing baseline, make the native edit only after the plan unlocks it, run a distinct passing native shell check, record progress, run the declared check, inspect and record honest review coverage/probes, and finish with limitations. Do not claim independent review or delivery-policy enforcement.\nFIXTURE_ROOT=${directory}`,
     provider: model.providerID, model: model.id, timeoutSeconds: 180, maxTurns: 30, maxCost: 1,
@@ -178,6 +179,9 @@ try {
   assert.match(final.stdout, /(?:# pass 1|ℹ pass 1)/);
   assert.equal(await readFile(join(directory, 'src/value.mjs'), 'utf8'), 'export const value = 42;\n');
   const aggregate = await client.session.get({ sessionID: result.sessionID }, request());
+  assert.equal(aggregate.agent, 'ship', 'delivery evaluation must explicitly select Ship');
+  assert.deepEqual(aggregate.metadata['carthagent.options'], { maxTools:60, maxSeconds:180, maxRepairs:20 }, 'caller delivery options must survive evaluation admission');
+  assert.deepEqual(aggregate.metadata['ctg.evaluation.budget'], { maxTurns:30, maxCost:1 }, 'evaluation admission retains its authoritative budget');
   assert.equal(result.cost, aggregate.cost);
   assert.ok(result.tokens > 0);
   const timeline = [];
