@@ -9,7 +9,7 @@ import { join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { promisify } from 'node:util';
 import { OpenCode } from '@opencode/client';
-import { resolveOpenCode, runtimePaths } from '../lib/opencode/runtime.mjs';
+import { provisionRuntime, resolveOpenCode, runtimePaths } from '../lib/opencode/runtime.mjs';
 import { preflightNativeTestRuntimeArtifact } from './native-runtime-identity.mjs';
 
 const root = resolve(import.meta.dirname, '..');
@@ -49,7 +49,11 @@ try {
   await once(cloud, 'listening');
   await mkdir(cwd);
   await mkdir(config, { recursive: true });
-  await writeFile(join(config, 'opencode.json'), JSON.stringify({ plugins: [join(root, 'plugins/carthagent')], update: 'disable' }));
+  await writeFile(join(config, 'opencode.json'), JSON.stringify({ plugins: [
+    join(temp, 'deleted-pr-checkout/plugins/carthagent'),
+    { package: join(temp, 'deleted-install/plugins/carthagent'), options: {} },
+  ], update: 'disable' }));
+  await provisionRuntime({ root: temp, pluginPath: join(root, 'plugins/carthagent') });
   const env = Object.fromEntries(['PATH', 'SystemRoot', 'WINDIR', 'ComSpec', 'PATHEXT'].filter(key => process.env[key]).map(key => [key, process.env[key]]));
   Object.assign(env, {
     HOME: join(temp, 'home'), USERPROFILE: join(temp, 'home'),
@@ -84,7 +88,11 @@ try {
   while (true) {
     const plugins = await client.plugin.list({ location }, request);
     const plugin = plugins.data.find(item => item.id === 'carthagent');
-    if (plugin?.state.status === 'active') break;
+    if (plugin?.state.status === 'active') {
+      assert.equal(plugins.data.filter(item => item.id === 'carthagent').length, 1, 'Migrated profile must load exactly one Carthagent plugin');
+      assert.ok(!plugins.data.some(item => item.state.status === 'failed' || item.state.status === 'error'), 'Migrated profile must not leave stale or duplicate plugin failures');
+      break;
+    }
     assert.notEqual(plugin?.state.status, 'error', 'Carthagent plugin setup failed');
     assert.ok(Date.now() - startedAt < 15000, 'Carthagent plugin did not become active');
     await new Promise(resolve => setTimeout(resolve, 100));
