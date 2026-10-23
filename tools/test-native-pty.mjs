@@ -24,15 +24,15 @@ const selection = await selectNativePtyRuntime({
 const binary = selection.binary;
 const plugin = resolve(process.argv[2] ?? resolve(root, 'plugins/carthagent'));
 const probes = [
-  { command: '/ctg-status', expect: `OpenCode ${selection.identity.version}` },
+  { command: '/ctg-status', expect: `Carthagent ${selection.identity.version}` },
   { command: '/ctg-workspace', expect: 'Workspace native sessions', postSubmitMarker: 'Workspace native sessions', dismissCompletion: true },
   { command: '/help', expect: 'Carthagent commands', postSubmitMarker: '(/ctg-help)', dismissCompletion: true },
   { command: '/ctg-help', expect: 'Carthagent commands', dismissCompletion: true },
   { command: '/compact', expect: '/compact requires an open session.', secondEnter: true, dismissCompletion: true },
   {
-    command: '/theme carthage', expect: 'Theme “carthage” saved', postSubmitMarker: 'OpenCode reloads valid theme selections', expectedTheme: 'carthage', dismissCompletion: true,
+    command: '/theme carthage', expect: 'Theme “carthage” saved', postSubmitMarker: 'Carthagent reloads valid theme selections', expectedTheme: 'carthage', dismissCompletion: true,
   },
-  { command: '/ctg-status', expect: `OpenCode ${selection.identity.version}`, initialTheme: 'carthage', color: '213,175,102' },
+  { command: '/ctg-status', expect: `Carthagent ${selection.identity.version}`, initialTheme: 'carthage', color: '213,175,102' },
 ];
 
 for (const probe of probes) {

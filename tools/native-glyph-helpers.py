@@ -8,7 +8,7 @@ from pathlib import Path
 
 USER_MARKER = 'CTG_GLYPH_PAYLOAD'
 USER_TEXT = USER_MARKER + ' 漢字 café → • − …'
-CHROME_PAIRS = [('█▀▀', 'C A R T H')]
+CHROME_PAIRS = [('▄▀▀▀ ▄▀▀▄', 'C A R T H')]
 
 
 class GlyphScreen:

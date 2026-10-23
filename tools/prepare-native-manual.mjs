@@ -13,9 +13,9 @@ import { preflightNativeTestRuntimeArtifact } from './native-runtime-identity.mj
 import { createManualProjects } from './native-manual-projects.mjs';
 
 const root = resolve(import.meta.dirname, '..');
-export const MANUAL_RUNTIME_RUN = '39339973598';
+export const MANUAL_RUNTIME_RUN = '39869144800';
 const manifestSha256 =
-  'cf885e8a63ef925a732b08d1dcfebda20d9b43fc7b0fd58d69b4ac483c905d42';
+  '37116cdf559d80f8edfba3c7a35c0c9148729fb104f17ac53387dee6e74f12bf';
 
 export async function prepareManualKit(
   directory,
@@ -24,6 +24,21 @@ export async function prepareManualKit(
   if (!Number.isInteger(packages) || packages < 2 || packages > 1024)
     throw Error('packages must be an integer from 2 to 1024');
   const kit = resolve(directory);
+  // Refuse an existing destination before candidate validation so callers get
+  // EEXIST for the common mistake even when the pinned candidate is stale.
+  await mkdir(kit, { mode: 0o700 });
+  try {
+    return await prepareManualKitInPlace(kit, { assetsDirectory, packages });
+  } catch (error) {
+    await rm(kit, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+async function prepareManualKitInPlace(
+  kit,
+  { assetsDirectory, packages = 128 } = {},
+) {
   const manifestPath = join(root, 'lib/opencode/runtime-release.json');
   const manifestBytes = await readFile(manifestPath);
   if (
@@ -41,8 +56,7 @@ export async function prepareManualKit(
     throw Error(
       `The reviewed candidate does not support ${target}; Windows arm64 needs an x64 Node installation or WSL`,
     );
-  await mkdir(kit, { mode: 0o700 });
-  try {
+  {
     let assets = assetsDirectory && resolve(assetsDirectory);
     if (!assets) {
       assets = join(kit, 'download');
@@ -64,7 +78,7 @@ export async function prepareManualKit(
       if (
         String(info.id) !== MANUAL_RUNTIME_RUN ||
         info.conclusion !== 'success' ||
-        info.head_sha !== 'b7ca498f51ee6473f9d33ae59d2568e95a76f9bf' ||
+        info.head_sha !== '7754c00553ed837a3e28369c7b818ca10f122874' ||
         info.path !== '.github/workflows/publish-owned-opencode-runtime.yml'
       )
         throw Error('Unexpected CI runtime provenance');
@@ -144,9 +158,6 @@ export async function prepareManualKit(
       `Manual kit ready: ${kit}\nVerified ${target}: ${identity.binarySha256}\nOffline UI: node tools/native-manual.mjs ${JSON.stringify(kit)} tiny\nRead docs/native-manual-testing.md before --live. This is not a released/default install.`,
     );
     return record;
-  } catch (error) {
-    await rm(kit, { recursive: true, force: true });
-    throw error;
   }
 }
 
