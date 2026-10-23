@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { getEventListeners } from 'node:events';
 import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
@@ -186,7 +187,7 @@ test('profile provisioning replaces stale CTG checkout plugins and preserves unr
     model: 'kept/model', providers: { custom: { name: 'Keep me' } },
     plugins: ['before-plugin', '/deleted/pr169/plugins/carthagent', unrelated,
       '/old/checkout/plugins/carthagent/index.ts', '/old/checkout/plugins/carthagent/src/index.ts',
-      'file:///deleted/review/plugins/carthagent', 'C:\\old\\checkout\\plugins\\carthagent\\',
+      pathToFileURL(path.join(root, 'deleted/review/plugins/carthagent')).href, 'C:\\old\\checkout\\plugins\\carthagent\\',
       pluginPath, 'after-plugin', '/unrelated/plugins/carthagent-extra'],
   }));
   await provisionRuntime({ root, pluginPath });
@@ -211,12 +212,17 @@ test('managed plugin replacement retains object options and prefers the selected
   await writeFile(paths.configFile, JSON.stringify({ plugins: [
     '/deleted/plugins/carthagent', chosen,
     { package: '/another/plugins/carthagent', options: { maxTools: 10 } },
+    '/last/deleted/plugins/carthagent',
   ] }));
   await provisionRuntime({ root, pluginPath });
   assert.deepEqual(JSON.parse(await readFile(paths.configFile, 'utf8')).plugins, [chosen]);
   const next = path.join(root, 'next/plugins/carthagent');
   await provisionRuntime({ root, pluginPath: next });
   assert.deepEqual(JSON.parse(await readFile(paths.configFile, 'utf8')).plugins, [{ ...chosen, package: next }]);
+  await writeFile(paths.configFile, JSON.stringify({ plugins: [chosen, '/last/deleted/plugins/carthagent'] }));
+  await provisionRuntime({ root, pluginPath: next });
+  assert.deepEqual(JSON.parse(await readFile(paths.configFile, 'utf8')).plugins, [{ ...chosen, package: next }],
+    'a trailing string reference must not discard saved plugin options');
 });
 
 test('workspace environment records workspace without leaking CTG XDG overrides', () => {
