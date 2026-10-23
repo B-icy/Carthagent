@@ -2,14 +2,14 @@
 import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { promisify } from 'node:util';
 import { OpenCode } from '@opencode/client';
-import { resolveOpenCode, runtimePaths } from '../lib/opencode/runtime.mjs';
+import { provisionRuntime, resolveOpenCode, runtimePaths } from '../lib/opencode/runtime.mjs';
 import { preflightNativeTestRuntimeArtifact } from './native-runtime-identity.mjs';
 
 const root = resolve(import.meta.dirname, '..');
@@ -26,12 +26,13 @@ const config = join(temp, 'config/opencode');
 const password = randomBytes(24).toString('hex');
 const token = `fixture.${Buffer.from(JSON.stringify({ sub: 'offline-user', sid: 'offline-session', scope: 'gateway:invoke', exp: Math.floor(Date.now() / 1000) + 3600 })).toString('base64url')}.fixture`;
 let modelRequests = 0;
+let verificationUri;
 const cloud = createServer((req, res) => {
   req.resume();
   req.on('end', () => {
     let status = 200, body;
     if (req.url === '/v1/device/authorizations') {
-      body = { deviceCode: 'offline-device', userCode: 'OFFLINE', verificationUri: 'http://127.0.0.1/verify', expiresIn: 120, interval: 1 };
+      body = { deviceCode: 'offline-device', userCode: 'OFFLINE', verificationUri, expiresIn: 120, interval: 1 };
     } else if (req.url === '/v1/device/token') {
       body = { accessToken: token, refreshToken: 'offline-refresh', expiresIn: 3600 };
     } else if (req.url === '/v1/models' && req.headers.authorization === `Bearer ${token}`) {
@@ -47,9 +48,14 @@ let output = '';
 try {
   cloud.listen(0, '127.0.0.1');
   await once(cloud, 'listening');
+  verificationUri = `http://127.0.0.1:${cloud.address().port}/verify-${randomBytes(16).toString('hex')}`;
   await mkdir(cwd);
   await mkdir(config, { recursive: true });
-  await writeFile(join(config, 'opencode.json'), JSON.stringify({ plugins: [join(root, 'plugins/carthagent')], update: 'disable' }));
+  await writeFile(join(config, 'opencode.json'), JSON.stringify({ plugins: [
+    join(temp, 'deleted-pr-checkout/plugins/carthagent'),
+    { package: join(temp, 'deleted-install/plugins/carthagent'), options: {} },
+  ], update: 'disable' }));
+  await provisionRuntime({ root: temp, pluginPath: join(root, 'plugins/carthagent') });
   const env = Object.fromEntries(['PATH', 'SystemRoot', 'WINDIR', 'ComSpec', 'PATHEXT'].filter(key => process.env[key]).map(key => [key, process.env[key]]));
   Object.assign(env, {
     HOME: join(temp, 'home'), USERPROFILE: join(temp, 'home'),
@@ -84,7 +90,11 @@ try {
   while (true) {
     const plugins = await client.plugin.list({ location }, request);
     const plugin = plugins.data.find(item => item.id === 'carthagent');
-    if (plugin?.state.status === 'active') break;
+    if (plugin?.state.status === 'active') {
+      assert.equal(plugins.data.filter(item => item.id === 'carthagent').length, 1, 'Migrated profile must load exactly one Carthagent plugin');
+      assert.ok(!plugins.data.some(item => item.state.status === 'failed' || item.state.status === 'error'), 'Migrated profile must not leave stale or duplicate plugin failures');
+      break;
+    }
     assert.notEqual(plugin?.state.status, 'error', 'Carthagent plugin setup failed');
     assert.ok(Date.now() - startedAt < 15000, 'Carthagent plugin did not become active');
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -134,17 +144,30 @@ try {
 
 } finally {
   if (child && child.exitCode === null && child.signalCode === null) {
-    const closed = once(child, 'close');
-    if (process.platform === 'win32') {
-      await promisify(execFile)('taskkill.exe', ['/PID', String(child.pid), '/T', '/F']).catch(() => {});
-      await closed;
-    } else {
-      child.kill('SIGTERM');
-      const timer = setTimeout(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); }, 5000);
-      await closed; clearTimeout(timer);
-    }
+    const closed = once(child, 'close', { signal: AbortSignal.timeout(10_000) });
+    // No PTYs are spawned here; stop this exact server like the service-stop command does.
+    child.kill('SIGTERM');
+    const timer = setTimeout(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); }, 5000);
+    try { await closed; }
+    finally { clearTimeout(timer); }
   }
   cloud.closeAllConnections();
   await new Promise(resolve => cloud.close(resolve));
+  if (process.platform === 'win32' && verificationUri) {
+    const stopFixtureBrowser = `
+      $ErrorActionPreference = 'Stop'
+      Get-CimInstance Win32_Process | Where-Object {
+        $_.Name -ieq 'msedge.exe' -and $_.CommandLine -and $_.CommandLine.Contains($env:CTG_NATIVE_FIXTURE_URL)
+      } | ForEach-Object {
+        & taskkill.exe /PID $_.ProcessId /T /F
+        if ($LASTEXITCODE -ne 0) { throw "Could not stop fixture browser PID $($_.ProcessId)" }
+      }
+    `;
+    await promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', stopFixtureBrowser], {
+      env: { ...process.env, CTG_NATIVE_FIXTURE_URL: verificationUri }, windowsHide: true, timeout: 20_000,
+    });
+  }
   await rm(temp, { recursive: true, force: true, maxRetries: 12, retryDelay: 250 });
+  await assert.rejects(access(temp), { code: 'ENOENT' });
+  console.log('Native Ship fixture shutdown and temporary-directory cleanup completed.');
 }

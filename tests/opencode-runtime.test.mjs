@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { getEventListeners } from 'node:events';
 import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
@@ -174,6 +175,54 @@ test('profile provisioning creates private isolated profile and absolute plugin 
     assert.deepEqual(updated.commands, { keep: 'hello' });
     assert.deepEqual(updated.plugins, ['kept-plugin', path.join(root, 'plugins/carthagent')]);
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('profile provisioning replaces stale CTG checkout plugins and preserves unrelated settings', async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-plugin-migration-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const pluginPath = path.join(root, 'installed/plugins/carthagent');
+  const paths = await provisionRuntime({ root });
+  const unrelated = { package: 'other-plugin', options: { enabled: true } };
+  await writeFile(paths.configFile, JSON.stringify({
+    model: 'kept/model', providers: { custom: { name: 'Keep me' } },
+    plugins: ['before-plugin', '/deleted/pr169/plugins/carthagent', unrelated,
+      '/old/checkout/plugins/carthagent/index.ts', '/old/checkout/plugins/carthagent/src/index.ts',
+      pathToFileURL(path.join(root, 'deleted/review/plugins/carthagent')).href, 'C:\\old\\checkout\\plugins\\carthagent\\',
+      pluginPath, 'after-plugin', '/unrelated/plugins/carthagent-extra'],
+  }));
+  await provisionRuntime({ root, pluginPath });
+  const updated = JSON.parse(await readFile(paths.configFile, 'utf8'));
+  assert.deepEqual(updated.plugins, ['before-plugin', pluginPath, unrelated, 'after-plugin', '/unrelated/plugins/carthagent-extra']);
+  assert.equal(updated.model, 'kept/model');
+  assert.deepEqual(updated.providers, { custom: { name: 'Keep me' } });
+  await provisionRuntime({ root, pluginPath });
+  assert.deepEqual(JSON.parse(await readFile(paths.configFile, 'utf8')), updated, 'repeated launch is idempotent');
+  const next = path.join(root, 'next-install/plugins/carthagent');
+  await provisionRuntime({ root, pluginPath: next });
+  assert.deepEqual(JSON.parse(await readFile(paths.configFile, 'utf8')).plugins,
+    ['before-plugin', next, unrelated, 'after-plugin', '/unrelated/plugins/carthagent-extra']);
+});
+
+test('managed plugin replacement retains object options and prefers the selected installation', async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-plugin-options-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const pluginPath = path.join(root, 'installed/plugins/carthagent');
+  const paths = await provisionRuntime({ root });
+  const chosen = { package: pluginPath, options: { maxTools: 42 } };
+  await writeFile(paths.configFile, JSON.stringify({ plugins: [
+    '/deleted/plugins/carthagent', chosen,
+    { package: '/another/plugins/carthagent', options: { maxTools: 10 } },
+    '/last/deleted/plugins/carthagent',
+  ] }));
+  await provisionRuntime({ root, pluginPath });
+  assert.deepEqual(JSON.parse(await readFile(paths.configFile, 'utf8')).plugins, [chosen]);
+  const next = path.join(root, 'next/plugins/carthagent');
+  await provisionRuntime({ root, pluginPath: next });
+  assert.deepEqual(JSON.parse(await readFile(paths.configFile, 'utf8')).plugins, [{ ...chosen, package: next }]);
+  await writeFile(paths.configFile, JSON.stringify({ plugins: [chosen, '/last/deleted/plugins/carthagent'] }));
+  await provisionRuntime({ root, pluginPath: next });
+  assert.deepEqual(JSON.parse(await readFile(paths.configFile, 'utf8')).plugins, [{ ...chosen, package: next }],
+    'a trailing string reference must not discard saved plugin options');
 });
 
 test('workspace environment records workspace without leaking CTG XDG overrides', () => {
