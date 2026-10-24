@@ -16,13 +16,16 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 test('provider shares actual legacy auth.json coordination lease and rejects old unbound receipt before HTTP', async t => {
   const directory = await mkdtemp(join(os.tmpdir(), 'ctg-refresh-legacy-path-'));
-  t.after(() => rm(directory, { recursive: true, force: true }));
+  let db;
+  t.after(async () => {
+    // after hooks run FIFO: close SQLite before Windows unlinks its files.
+    try { db?.close(); } finally { await rm(directory, { recursive: true, force: true }); }
+  });
   const env = { XDG_DATA_HOME: directory, OPENCODE_DB: join(directory, 'native.sqlite') };
   const vaultFile = nativeCredentialDatabaseFile(env, 'ctg.2.0.32');
   const coordinationFile = nativeCredentialFile(env);
   assert.notEqual(vaultFile, coordinationFile);
-  const db = new DatabaseSync(vaultFile);
-  t.after(() => db.close());
+  db = new DatabaseSync(vaultFile);
   db.exec('CREATE TABLE credential (id TEXT PRIMARY KEY, integration_id TEXT, value TEXT)');
   const credential = { type: 'oauth', methodID: 'carthagent-device', access: 'fixture-a', refresh: 'fixture-old', expires: 1 };
   db.prepare('INSERT INTO credential VALUES (?, ?, ?)').run('A', 'experiential-labs', JSON.stringify(credential));
@@ -60,10 +63,12 @@ test('native vault paths follow runtime channel, XDG data and explicit database 
 
 test('expired native resolution refreshes once without reentering resolve and preserves native persistence', { timeout: 5000 }, async t => {
   const directory = await mkdtemp(join(os.tmpdir(), 'ctg-provider-reentry-'));
-  t.after(() => rm(directory, { recursive: true, force: true }));
+  let db;
+  t.after(async () => {
+    try { db?.close(); } finally { await rm(directory, { recursive: true, force: true }); }
+  });
   const credentialFile = join(directory, 'native.sqlite');
-  const db = new DatabaseSync(credentialFile);
-  t.after(() => db.close());
+  db = new DatabaseSync(credentialFile);
   db.exec('CREATE TABLE credential (id TEXT PRIMARY KEY, integration_id TEXT, value TEXT)');
   const expired = { type: 'oauth', methodID: 'carthagent-device', access: 'expired', refresh: 'old-refresh', expires: 1 };
   db.prepare('INSERT INTO credential VALUES (?, ?, ?)').run('cred_fixture', 'experiential-labs', JSON.stringify(expired));
@@ -107,10 +112,12 @@ test('expired native resolution refreshes once without reentering resolve and pr
 
 test('refresh pins original A despite active B before lock and during receipt wait; legacy receipts fail closed', async t => {
   const directory = await mkdtemp(join(os.tmpdir(), 'ctg-refresh-account-'));
-  t.after(() => rm(directory, { recursive: true, force: true }));
+  let db;
+  t.after(async () => {
+    try { db?.close(); } finally { await rm(directory, { recursive: true, force: true }); }
+  });
   const credentialFile = join(directory, 'native.sqlite');
-  const db = new DatabaseSync(credentialFile);
-  t.after(() => db.close());
+  db = new DatabaseSync(credentialFile);
   db.exec('CREATE TABLE credential (id TEXT PRIMARY KEY, integration_id TEXT, value TEXT)');
   const a = { type: 'oauth', methodID: 'carthagent-device', access: 'a', refresh: 'refresh-a', expires: 1 };
   const b = { ...a, access: 'b', refresh: 'refresh-b' };
@@ -265,13 +272,22 @@ test('parallel token refresh callers share one rotation result and failures can 
 
 test('native SQLite vault rereads after cross-process lease acquisition and rotates once', async t => {
   const directory = await mkdtemp(join(os.tmpdir(), 'ctg-refresh-vault-'));
-  t.after(() => rm(directory, { recursive: true, force: true }));
+  let db;
+  const children = [];
+  const childClosures = [];
+  t.after(async () => {
+    // Stop and reap workers even when an assertion fails before outputsPromise.
+    for (const child of children) {
+      if (child.exitCode === null && child.signalCode === null) child.kill();
+    }
+    await Promise.all(childClosures);
+    try { db?.close(); } finally { await rm(directory, { recursive: true, force: true }); }
+  });
   const vault = join(directory, 'native.sqlite');
   const profile = vault;
-  const db = new DatabaseSync(vault);
+  db = new DatabaseSync(vault);
   db.exec('PRAGMA journal_mode=WAL; CREATE TABLE credential (id TEXT PRIMARY KEY, integration_id TEXT, value TEXT)');
   db.prepare('INSERT INTO credential VALUES (?, ?, ?)').run('cred_fixture', 'experiential-labs', JSON.stringify({ type: 'oauth', methodID: 'carthagent-device', refresh: 'issued-old-token', access: 'old-access', expires: 1 }));
-  t.after(() => db.close());
   const moduleUrl = new URL('../lib/opencode/credentials.mjs', import.meta.url).href;
   const worker = join(directory, 'worker.mjs');
   await writeFile(worker, `
@@ -309,7 +325,11 @@ test('native SQLite vault rereads after cross-process lease acquisition and rota
   `);
   const rotating = join(directory, 'rotating');
   const resultFiles = ['one', 'two'].map(name => join(directory, `${name}.result`));
-  const children = ['one', 'two'].map((name, index) => spawn(process.execPath, [worker, vault, profile, name, join(directory, 'go'), rotating, resultFiles[index]], { stdio: ['ignore', 'pipe', 'pipe'] }));
+  for (const [index, name] of ['one', 'two'].entries()) {
+    const child = spawn(process.execPath, [worker, vault, profile, name, join(directory, 'go'), rotating, resultFiles[index]], { stdio: ['ignore', 'pipe', 'pipe'] });
+    children.push(child);
+    childClosures.push(new Promise(resolve => child.once('close', resolve)));
+  }
   const outputsPromise = Promise.all(children.map(child => new Promise((resolve, reject) => {
     let stdout = '';
     let stderr = '';

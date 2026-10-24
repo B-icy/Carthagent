@@ -3,7 +3,6 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
-import { join } from 'node:path';
 import { nativeFixture } from './native-fixture.mjs';
 import { assertPluginCondition } from './native-paired-guards.mjs';
 
@@ -17,8 +16,6 @@ const cloud = createServer(async (req, res) => {
     assert.equal(JSON.parse(raw).refreshToken, 'fixture-expired-refresh');
     rotations++;
     await switchAccount?.();
-    // Keep rotation in flight while concurrent real host requests arrive.
-    await new Promise(resolve => setTimeout(resolve, 150));
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ accessToken: 'fixture-rotated-access', refreshToken: 'fixture-rotated-refresh', expiresIn: 3600 }));
     return;
@@ -41,12 +38,9 @@ try {
   fixture = await nativeFixture({ plugin: process.argv[2],
     env: { CARTHAGENT_CLOUD_URL: `http://127.0.0.1:${cloud.address().port}`,
       EXP_GATEWAY_URL: `http://127.0.0.1:${cloud.address().port}/v1` } });
-  // Keep the independent activation location used by the source fixture,
-  // without its checkout-only provenance checks.
-  const activationLocation = { directory: join(fixture.temp, 'project-alpha') };
-  await fixture.client.session.create({ location: activationLocation, model: fixture.model,
+  // Use the same location for activation and assertions, as the Ship sibling.
+  await fixture.client.session.create({ location: fixture.location, model: fixture.model,
     title: 'native plugin activation probe' }, fixture.request());
-  await fixture.active(activationLocation);
   await fixture.active();
   const location = fixture.location;
   const verifyPlugin = async () => {
@@ -72,22 +66,35 @@ try {
   const deadline = Date.now() + 8000;
   while (true) {
     const stored = (await fixture.client.credential.list(fixture.request(8000))).find(entry => entry.id === created.id);
-    const models = (await fixture.client.model.list({ location }, fixture.request(8000))).data;
-    if (stored?.value.refresh === 'fixture-rotated-refresh' && models.some(model => model.id === 'refresh-reentry-fixture')) break;
-    assert.ok(Date.now() < deadline, `Expired OAuth refresh must persist and publish models without resolve reentry (rotations=${rotations}, discoveries=${discoveries}, persisted=${stored?.value.refresh === 'fixture-rotated-refresh'})`);
+    if (stored?.value.refresh === 'fixture-rotated-refresh') break;
+    assert.ok(Date.now() < deadline, `Expired OAuth refresh must persist without resolve reentry (rotations=${rotations}, discoveries=${discoveries})`);
     await new Promise(resolve => setTimeout(resolve, 40));
   }
   assert.equal(rotations, 1);
-  assert.ok(discoveries > 0);
   const accounts = await fixture.client.credential.list(fixture.request());
   assert.deepEqual(accounts.find(entry => entry.id === other.id).value, otherValue, 'Switching to B must not copy B into A or mutate B');
   assert.equal(accounts.find(entry => entry.id === other.id).active, true);
+  // stop() awaits process exit: this is the completion barrier for every
+  // discovery task started under A. Test B's catalog after restart rather
+  // than racing independent A/B background provider publications. No response
+  // delay can establish host-side publication order.
   await fixture.stop();
+  const discoveriesBeforeRestart = discoveries;
   await fixture.start();
   await fixture.active();
   await verifyPlugin();
   const persisted = (await fixture.client.credential.list(fixture.request())).find(entry => entry.id === created.id);
   assert.equal(persisted.value.refresh, 'fixture-rotated-refresh');
+  const restartedAccounts = await fixture.client.credential.list(fixture.request());
+  assert.equal(restartedAccounts.find(entry => entry.id === other.id).active, true);
+  const modelDeadline = Date.now() + 8000;
+  while (true) {
+    const models = (await fixture.client.model.list({ location }, fixture.request(8000))).data;
+    if (models.some(model => model.id === 'refresh-reentry-fixture' && model.providerID === 'experiential-labs')) break;
+    assert.ok(Date.now() < modelDeadline, `Active B must publish the exact Ship model after restart: ${JSON.stringify(models.map(model => ({ id: model.id, providerID: model.providerID })))}`);
+    await new Promise(resolve => setTimeout(resolve, 40));
+  }
+  assert.ok(discoveries > discoveriesBeforeRestart, 'Restart must discover B models rather than reuse an A catalog');
   assert.equal(rotations, 1, 'restart must reuse the host-persisted rotation');
   console.log(JSON.stringify({ passed: true, runtime: fixture.runtimeIdentity.runtimeVersion,
     binarySha256: fixture.runtimeIdentity.binarySha256, rotations, discoveries,

@@ -6,6 +6,7 @@ input/submit round trip, not the JavaScript key parser in isolation.
 """
 import argparse
 import base64
+import codecs
 import fcntl
 import errno
 import hashlib
@@ -60,6 +61,9 @@ class Screen:
 
     def __init__(self, rows=32, columns=100, title=ORIGINAL_TITLE, clipboard=ORIGINAL_CLIPBOARD):
         self.rows, self.columns = rows, columns
+        self.decoder = codecs.getincrementaldecoder('utf8')(errors='replace')
+        self.sync_open = False
+        self.queries = []
         self.cells = [[' '] * columns for _ in range(rows)]
         self.x = self.y = 0
         self.mode = 'text'
@@ -87,7 +91,7 @@ class Screen:
         self.y = min(self.y, rows - 1)
 
     def feed(self, data):
-        text = data.decode('utf8', errors='replace')
+        text = self.decoder.decode(data)
         for char in text:
             if self.mode == 'osc':
                 if char == '\x07' or (self.osc_escape and char == '\\'):
@@ -131,6 +135,12 @@ class Screen:
                 self.x += 1
 
     def _csi(self, final, params):
+        if params == '?2026' and final in ('h', 'l'):
+            self.sync_open = final == 'h'
+        if final == 'n' and params == '6':
+            self.queries.append(b'\x1b[1;1R')
+        if final == 'c' and params == '':
+            self.queries.append(b'\x1b[?1;2c')
         values = [int(value) if value.isdigit() else 0 for value in params.lstrip('?').split(';')]
         n = values[0] if values and values[0] else 1
         if final in ('H', 'f'):
@@ -296,6 +306,34 @@ def write_pty_input(master, data, deadline, on_output, child):
         fcntl.fcntl(master, fcntl.F_SETFL, flags)
 
 
+def drain_terminal_snapshot(master, screen, deadline, on_output, write_input, child):
+    """Consume queued output and finish an active paint before observing state.
+
+    No idle sleep or new timeout: an incomplete synchronized paint/control/UTF-8
+    sequence must complete within the caller's existing input deadline. Queries
+    parsed from every read (including duplex input reads) are answered exactly
+    once; chunk boundaries are not terminal protocol boundaries.
+    """
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError('coherent terminal snapshot exceeded existing input deadline')
+        if child.poll() is not None:
+            raise RuntimeError(f'native host exited during terminal snapshot: {child.returncode}')
+        if screen.queries:
+            write_input(screen.queries.pop(0))
+            continue
+        incomplete = screen.sync_open or screen.mode != 'text' or bool(screen.decoder.getstate()[0])
+        if not select.select([master], [], [], min(.05, remaining) if incomplete else 0)[0]:
+            if incomplete:
+                continue
+            return
+        chunk = os.read(master, 65536)
+        if not chunk:
+            raise RuntimeError('PTY reached EOF during terminal snapshot')
+        on_output(chunk)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--binary', default=os.environ.get('CTG_OPENCODE_BIN'))
@@ -444,15 +482,13 @@ def main():
                             raise RuntimeError(f'native host exited {child.returncode}; '
                                                f'transcript={bytes(output[-5000:])!r}') from error
                         raise
-                    output.extend(chunk)
-                    screen.feed(chunk)
-                    if b'\x1b[6n' in chunk:
-                        write_input(b'\x1b[1;1R')
-                    if b'\x1b[c' in chunk:
-                        write_input(b'\x1b[?1;2c')
+                    capture_output(chunk)
+                drain_terminal_snapshot(master, screen, input_deadline, capture_output, write_input, child)
                 elapsed = time.monotonic() - start
                 visible = screen.visible().lower()
                 visible_original = screen.visible()
+                if 'connection lost' in visible or 'reconnecting to the server' in visible:
+                    raise RuntimeError(f'native host reconnect overlay during terminal acceptance: {visible_original!r}')
                 home_ready = 'shift+tab agents' in visible and 'ctrl+p commands' in visible
                 onboarding_visible = ('connect opencode go' in visible or
                                       'connect an integration to' in visible or
@@ -509,9 +545,13 @@ def main():
                                   'Escape was sent to dismiss any command menu',
                         'providerRequestsBeforePrompt': len(Provider.received)}
                 if not sent and not picker_only and (((not focused_case) and
-                                  picker_cancelled and elapsed > 5 and home_ready) or
+                                  picker_cancelled and
+                                  result['checks'].get('pickerEscapeCancel', {}).get('status') != 'PENDING' and
+                                  elapsed > 5 and home_ready) or
                                  (args.focused_host_roundtrip and elapsed > 2 and home_ready) or
                                  (layout_only and elapsed > 2 and home_ready)):
+                    # Finish picker acceptance on the original home screen before
+                    # resizing/pasting: its footer remains visible under the picker.
                     # Narrow terminal stress is an actual resize on the PTY.
                     if resize_case:
                         fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', 12, 40, 0, 0))
