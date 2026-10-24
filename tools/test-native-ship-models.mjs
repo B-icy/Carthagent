@@ -11,6 +11,7 @@ import { promisify } from 'node:util';
 import { OpenCode } from '@opencode/client';
 import { provisionRuntime, resolveOpenCode, runtimePaths } from '../lib/opencode/runtime.mjs';
 import { preflightNativeTestRuntimeArtifact } from './native-runtime-identity.mjs';
+import { stopFixtureBrowser } from './native-fixture-browser-cleanup.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const runtimeOptions = { runtimeCacheRoot: process.env.CTG_RUNTIME_TEST_CACHE };
@@ -154,15 +155,6 @@ try {
   cloud.closeAllConnections();
   await new Promise(resolve => cloud.close(resolve));
   if (process.platform === 'win32' && verificationUri) {
-    const stopFixtureBrowser = `
-      $ErrorActionPreference = 'Stop'
-      Get-CimInstance Win32_Process | Where-Object {
-        $_.Name -ieq 'msedge.exe' -and $_.CommandLine -and $_.CommandLine.Contains($env:CTG_NATIVE_FIXTURE_URL)
-      } | ForEach-Object {
-        & taskkill.exe /PID $_.ProcessId /T /F
-        if ($LASTEXITCODE -ne 0) { throw "Could not stop fixture browser PID $($_.ProcessId)" }
-      }
-    `;
     await promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', stopFixtureBrowser], {
       env: { ...process.env, CTG_NATIVE_FIXTURE_URL: verificationUri }, windowsHide: true, timeout: 20_000,
     });
