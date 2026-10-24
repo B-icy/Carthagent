@@ -37,6 +37,30 @@ The native CLI retains command aliases such as `ui`/`interactive`, `sessions`, `
 
 Each experimental release must pass its exact installed-package gate before publication. Earlier migration findings and remaining platform caveats are recorded in: [Native migration ledger](docs/opencode-migration.md#delivery-ledger), [native compatibility matrix](docs/native-compatibility.md), and [terminal evidence status](docs/native-terminal-semantics.md#evidence-status-pr-162).
 
+### Voyages in the native TUI
+
+`/voyages` opens the account's live Voyages profile, coin wallet, equipment and
+shop. Use the normal `/login` browser device approval and choose Carthagent;
+Voyages uses the approving browser user's existing player, not a separate CLI
+wallet. Older account-only Ship sessions may require a new device sign-in.
+Voyages does not require a paid model call or award coins for coding.
+
+Customization and equipment changes require confirmation. Paid items require a
+server quote showing the coin price and expiry, followed by explicit purchase
+confirmation. Cancel does not purchase. The server validates funds, ownership,
+eligibility and profile version; refresh after a conflict rather than silently
+overwriting another client. Equip a purchased item separately.
+
+If a purchase response is lost, the TUI keeps a pending request across restart.
+Use its recovery action to retry the same quote and request key, not to create
+a second purchase. Do not delete profile state to resolve an uncertain debit.
+The server remains authoritative; unavailable or signed-out state must not be
+treated as a saved balance. Browser cookies are never imported into CLI auth.
+
+This source feature is not a release claim. Published runtime availability and
+live terminal/web acceptance remain gates of the next experimental candidate;
+an older immutable release tag does not acquire changes from current main.
+
 ## Install and update
 
 The package requires Node ≥ 22.19. A published stable release is installed from its exact release tag, not an unpinned branch:

@@ -119,9 +119,15 @@ function oauthMethod({ env, fetchImpl, sleep, now, openBrowserImpl, agentDir, st
   const client = new CloudClient({ baseUrl: cloudControlUrl(env), fetchImpl, sleep: ms => sleep(ms) });
   return {
     integrationID: IntegrationSchema.ID.make(SHIP_INTEGRATION_ID),
-    method: { id: OAUTH_METHOD, type: 'oauth' as const, label: 'Sign in with Carthagent Ship' },
-    authorize: async (_answer: Form.Answer) => {
-      const legacy = await legacyOAuthForOpenCode({ agentDir });
+    method: {
+      id: OAUTH_METHOD, type: 'oauth' as const, label: 'Sign in with Carthagent Ship',
+      form: [{ type: 'boolean' as const, key: 'importLegacy', title: 'Import a legacy Ship credential instead of signing in?',
+        description: 'Leave disabled for fresh browser approval and updated account permissions.', default: false }] satisfies Form.Fields,
+    },
+    authorize: async (answer: Form.Answer) => {
+      // The legacy file intentionally survives migration. Never let its presence
+      // short-circuit an explicit sign-in or recovery from revoked/old scopes.
+      const legacy = answer.importLegacy === true ? await legacyOAuthForOpenCode({ agentDir }) : undefined;
       if (legacy) {
         return {
           mode: 'auto' as const,

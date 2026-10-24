@@ -5,10 +5,12 @@ import { SessionControls } from "../session-rpc.js";
 import { PullRequests, type PullRequestRecord } from "../pull-request-rpc.js";
 import { Archive } from "../archive-rpc.js";
 import { Carthagent } from "../rpc.js";
+import { Voyages, type VoyagesSnapshot, type VoyagesProfile, type VoyagesItem, type VoyagesQuote } from "../voyages-rpc.js";
 import { formatCloudAccount, formatCloudUsage } from "../../../../lib/cloud/client.mjs";
 
 export { Workspace, SessionControls, PullRequests, Archive };
 export type { WorkspaceDelivery, WorkspaceSnapshot, PullRequestRecord };
+export type { VoyagesSnapshot, VoyagesProfile, VoyagesItem, VoyagesQuote };
 
 const REQUEST_TIMEOUT_MS = 15_000;
 
@@ -21,6 +23,18 @@ function requestOptions(context: RpcContext, selectedLocation?: SelectedLocation
   return {
     location: location ?? context.location ?? context.data.location.default(),
     signal: signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  };
+}
+
+export function voyagesClient(context: RpcContext, selectedLocation?: SelectedLocation) {
+  const rpc = context.client.rpc(Voyages);
+  return {
+    snapshot: (signal?: AbortSignal) => rpc.snapshot({}, requestOptions(context, selectedLocation, signal)) as Promise<VoyagesSnapshot>,
+    customize: (input: { version: number; name?: string; shipName?: string; skin?: string; hair?: string; pattern?: string }, signal?: AbortSignal) => rpc.customize(input, requestOptions(context, selectedLocation, signal)),
+    equip: (input: { version: number; slot: string; item: string }, signal?: AbortSignal) => rpc.equip(input, requestOptions(context, selectedLocation, signal)),
+    quote: (input: { slot: string; item: string }, signal?: AbortSignal) => rpc.quote(input, requestOptions(context, selectedLocation, signal)),
+    purchase: (input: { quoteId: string }, signal?: AbortSignal) => rpc.purchase(input, requestOptions(context, selectedLocation, signal)),
+    retryPurchase: (input: { quoteId: string }, signal?: AbortSignal) => rpc.retryPurchase(input, requestOptions(context, selectedLocation, signal)),
   };
 }
 

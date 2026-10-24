@@ -353,6 +353,61 @@ test('legacy credential migration reads Ship OAuth and BYOK without writing Pi s
   assert.throws(() => credentialStorageKey('../auth'), /Invalid/);
 });
 
+test('native sign-in starts fresh device authorization after opt-in legacy migration and on reconnect', async t => {
+  const directory = await mkdtemp(join(os.tmpdir(), 'ctg-signin-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const legacyFile = join(directory, 'auth.json');
+  const source = JSON.stringify({ 'experiential-labs': { type: 'oauth', access: 'legacy-access', refresh: 'legacy-refresh', expires: 123 } });
+  await writeFile(legacyFile, source, { mode: 0o600 });
+  const connections = {};
+  const fake = fakeContext({ connections });
+  const requests = [];
+  const browserUrls = [];
+  let generation = 0;
+  const cleanup = await registerProviders(fake.ctx, {
+    env: { CARTHAGENT_CLOUD_URL: 'https://cloud.test' }, agentDir: directory, now: () => 1000,
+    openBrowser: url => { browserUrls.push(url); return false; },
+    fetchImpl: async (url, init) => {
+      requests.push({ url: String(url), body: JSON.parse(init.body) });
+      if (String(url).endsWith('/v1/device/authorizations')) {
+        generation++;
+        return Response.json({ deviceCode: `device-${generation}`, userCode: `CODE-${generation}`,
+          verificationUri: 'https://verify.test', verificationUriComplete: `https://verify.test/${generation}`, expiresIn: 60, interval: 1 });
+      }
+      assert.equal(String(url), 'https://cloud.test/v1/device/token');
+      const device = JSON.parse(init.body).deviceCode;
+      return Response.json({ accessToken: `access-${device}`, refreshToken: `refresh-${device}`, expiresIn: 3600 });
+    },
+  });
+  t.after(cleanup);
+  const method = fake.integrationTransforms[0][0];
+  assert.equal(method.method.form[0].default, false);
+  const imported = await method.authorize({ importLegacy: true });
+  assert.deepEqual(await imported.callback, { type: 'oauth', methodID: 'carthagent-device', access: 'legacy-access', refresh: 'legacy-refresh', expires: 123 });
+  assert.equal(requests.length, 0, 'one-way compatibility import remains available without browser authorization');
+
+  // Model the native host committing callback results to its active connection.
+  // The plugin must not create a second credential store or modify legacy auth.
+  connections['experiential-labs'] = { connection: { id: 'native-ship', credential: await imported.callback } };
+  for (const expected of [1, 2]) {
+    const authorization = await method.authorize({});
+    assert.equal(authorization.mode, 'auto');
+    assert.equal(authorization.url, `https://verify.test/${expected}`);
+    assert.equal(authorization.expiresAt, 61_000);
+    assert.match(authorization.instructions, new RegExp(`CODE-${expected}`));
+    const credential = await authorization.callback;
+    assert.deepEqual(credential, { type: 'oauth', methodID: 'carthagent-device',
+      access: `access-device-${expected}`, refresh: `refresh-device-${expected}`, expires: 3_601_000 });
+    connections['experiential-labs'].connection.credential = credential;
+    assert.deepEqual(await fake.ctx.integration.connection.resolve(await fake.ctx.integration.connection.active('experiential-labs')), credential);
+  }
+  assert.deepEqual(browserUrls, ['https://verify.test/1', 'https://verify.test/2']);
+  assert.equal(requests.filter(request => request.url.endsWith('/v1/device/authorizations')).length, 2);
+  assert.equal(requests.filter(request => request.url.endsWith('/v1/device/token')).length, 2);
+  assert.equal(fake.storage.size, 0, 'credentials are returned to native storage, not plugin storage');
+  assert.equal(await readFile(legacyFile, 'utf8'), source, 'migration and reconnect leave legacy credentials untouched');
+});
+
 test('provider registration uses native provider transforms and cleanup; refresh discovers subscriptions through injected APIs', async () => {
   const token = `x.${Buffer.from(JSON.stringify({ sub: 'acct', sid: 'sid', scope: 'gateway:invoke' })).toString('base64url')}.x`;
   const connections = {
