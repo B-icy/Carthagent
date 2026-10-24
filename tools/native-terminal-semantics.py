@@ -6,6 +6,7 @@ input/submit round trip, not the JavaScript key parser in isolation.
 """
 import argparse
 import base64
+import codecs
 import fcntl
 import errno
 import hashlib
@@ -60,6 +61,9 @@ class Screen:
 
     def __init__(self, rows=32, columns=100, title=ORIGINAL_TITLE, clipboard=ORIGINAL_CLIPBOARD):
         self.rows, self.columns = rows, columns
+        self.decoder = codecs.getincrementaldecoder('utf8')(errors='replace')
+        self.sync_open = False
+        self.queries = []
         self.cells = [[' '] * columns for _ in range(rows)]
         self.x = self.y = 0
         self.mode = 'text'
@@ -87,7 +91,7 @@ class Screen:
         self.y = min(self.y, rows - 1)
 
     def feed(self, data):
-        text = data.decode('utf8', errors='replace')
+        text = self.decoder.decode(data)
         for char in text:
             if self.mode == 'osc':
                 if char == '\x07' or (self.osc_escape and char == '\\'):
@@ -131,6 +135,12 @@ class Screen:
                 self.x += 1
 
     def _csi(self, final, params):
+        if params == '?2026' and final in ('h', 'l'):
+            self.sync_open = final == 'h'
+        if final == 'n' and params == '6':
+            self.queries.append(b'\x1b[1;1R')
+        if final == 'c' and params == '':
+            self.queries.append(b'\x1b[?1;2c')
         values = [int(value) if value.isdigit() else 0 for value in params.lstrip('?').split(';')]
         n = values[0] if values and values[0] else 1
         if final in ('H', 'f'):
@@ -244,6 +254,86 @@ def sha256_file(path):
             digest.update(chunk)
     return digest.hexdigest()
 
+
+def write_pty_input(master, data, deadline, on_output, child):
+    """Deliver every byte while draining output; never block past the phase deadline.
+
+    PTYs have bounded queues in both directions. A blocking large paste can
+    deadlock against the host's paint writes, even inside a timed outer loop.
+    Restore descriptor flags on every exit so the normal read/drain paths retain
+    their existing EOF handling. The caller owns child termination and fd cleanup.
+    """
+    flags = fcntl.fcntl(master, fcntl.F_GETFL)
+    pending = memoryview(data)
+    written = 0
+    try:
+        fcntl.fcntl(master, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+        while written < len(pending):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(f'PTY input deadline exceeded: {written}/{len(pending)} bytes written; '
+                                   f'child status={child.poll()}')
+            if child.poll() is not None:
+                raise RuntimeError(f'native host exited during PTY input: {child.returncode}; '
+                                   f'{written}/{len(pending)} bytes written')
+            try:
+                readable, writable, _ = select.select([master], [master], [], min(.05, remaining))
+                if readable:
+                    try:
+                        chunk = os.read(master, 65536)
+                    except BlockingIOError:
+                        chunk = None
+                    if chunk == b'':
+                        raise RuntimeError('PTY reached EOF during input')
+                    if chunk:
+                        on_output(chunk)
+                if writable:
+                    try:
+                        count = os.write(master, pending[written:])
+                    except BlockingIOError:
+                        continue
+                    if count == 0:
+                        raise RuntimeError('PTY input write made no progress')
+                    written += count
+            except InterruptedError:
+                continue
+            except OSError as error:
+                if error.errno == errno.EIO:
+                    raise RuntimeError(f'PTY closed during input: {written}/{len(pending)} bytes written; '
+                                       f'child status={child.poll()}') from error
+                raise
+    finally:
+        fcntl.fcntl(master, fcntl.F_SETFL, flags)
+
+
+def drain_terminal_snapshot(master, screen, deadline, on_output, write_input, child):
+    """Consume queued output and finish an active paint before observing state.
+
+    No idle sleep or new timeout: an incomplete synchronized paint/control/UTF-8
+    sequence must complete within the caller's existing input deadline. Queries
+    parsed from every read (including duplex input reads) are answered exactly
+    once; chunk boundaries are not terminal protocol boundaries.
+    """
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError('coherent terminal snapshot exceeded existing input deadline')
+        if child.poll() is not None:
+            raise RuntimeError(f'native host exited during terminal snapshot: {child.returncode}')
+        if screen.queries:
+            write_input(screen.queries.pop(0))
+            continue
+        incomplete = screen.sync_open or screen.mode != 'text' or bool(screen.decoder.getstate()[0])
+        if not select.select([master], [], [], min(.05, remaining) if incomplete else 0)[0]:
+            if incomplete:
+                continue
+            return
+        chunk = os.read(master, 65536)
+        if not chunk:
+            raise RuntimeError('PTY reached EOF during terminal snapshot')
+        on_output(chunk)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--binary', default=os.environ.get('CTG_OPENCODE_BIN'))
@@ -344,6 +434,15 @@ def main():
         initial_title = screen.title
         errors = bytearray()
         start = time.monotonic()
+        input_deadline = start + args.timeout
+
+        def capture_output(chunk):
+            output.extend(chunk)
+            screen.feed(chunk)
+
+        def write_input(data):
+            write_pty_input(master, data, input_deadline, capture_output, child)
+
         sent = False
         resized = False
         picker_started = False
@@ -383,21 +482,19 @@ def main():
                             raise RuntimeError(f'native host exited {child.returncode}; '
                                                f'transcript={bytes(output[-5000:])!r}') from error
                         raise
-                    output.extend(chunk)
-                    screen.feed(chunk)
-                    if b'\x1b[6n' in chunk:
-                        os.write(master, b'\x1b[1;1R')
-                    if b'\x1b[c' in chunk:
-                        os.write(master, b'\x1b[?1;2c')
+                    capture_output(chunk)
+                drain_terminal_snapshot(master, screen, input_deadline, capture_output, write_input, child)
                 elapsed = time.monotonic() - start
                 visible = screen.visible().lower()
                 visible_original = screen.visible()
+                if 'connection lost' in visible or 'reconnecting to the server' in visible:
+                    raise RuntimeError(f'native host reconnect overlay during terminal acceptance: {visible_original!r}')
                 home_ready = 'shift+tab agents' in visible and 'ctrl+p commands' in visible
                 onboarding_visible = ('connect opencode go' in visible or
                                       'connect an integration to' in visible or
                                       'send prompts' in visible)
                 if focused_case and not auth_dismissed and onboarding_visible:
-                    os.write(master, b'\x1b')
+                    write_input(b'\x1b')
                     auth_dismissed = True
                     auth_dismissed_at = time.monotonic()
                 if focused_case and auth_dismissed and time.monotonic() - auth_dismissed_at > .4:
@@ -407,14 +504,14 @@ def main():
                     # Ctrl+O opens OpenCode's recent sessions/projects menu.
                     # Ctrl+P is command completion on this runtime and must not
                     # be mistaken for a session picker.
-                    os.write(master, b'\x0f')
+                    write_input(b'\x0f')
                     picker_started = True
                     picker_home_before = home_ready
                     picker_at = time.monotonic()
                 if picker_started and not picker_cancelled and (
                         'recent sessions' in visible or 'sessions and projects' in visible or
                         'select session' in visible):
-                    os.write(master, b'\x1b')
+                    write_input(b'\x1b')
                     picker_cancelled = True
                     picker_heading = next(heading for heading in
                                           ('recent sessions', 'sessions and projects', 'select session')
@@ -440,7 +537,7 @@ def main():
                 if picker_started and not picker_cancelled and time.monotonic() - picker_at > 3:
                     # Escape regardless, so a command completion/menu cannot
                     # linger into the subsequent prompt entry.
-                    os.write(master, b'\x1b')
+                    write_input(b'\x1b')
                     picker_cancelled = True
                     result['checks']['pickerEscapeCancel'] = {
                         'status': 'UNSUPPORTED',
@@ -448,9 +545,13 @@ def main():
                                   'Escape was sent to dismiss any command menu',
                         'providerRequestsBeforePrompt': len(Provider.received)}
                 if not sent and not picker_only and (((not focused_case) and
-                                  picker_cancelled and elapsed > 5 and home_ready) or
+                                  picker_cancelled and
+                                  result['checks'].get('pickerEscapeCancel', {}).get('status') != 'PENDING' and
+                                  elapsed > 5 and home_ready) or
                                  (args.focused_host_roundtrip and elapsed > 2 and home_ready) or
                                  (layout_only and elapsed > 2 and home_ready)):
+                    # Finish picker acceptance on the original home screen before
+                    # resizing/pasting: its footer remains visible under the picker.
                     # Narrow terminal stress is an actual resize on the PTY.
                     if resize_case:
                         fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', 12, 40, 0, 0))
@@ -459,23 +560,26 @@ def main():
                         os.kill(child.pid, signal.SIGWINCH)
                         resized = True
                         time.sleep(.25)
-                    os.write(master, b'\x1b[200~' + payload + b'\x1b[201~')
+                    write_input(b'\x1b[200~' + payload + b'\x1b[201~')
                     sent = True
                     pasted_at = time.monotonic()
                 if sent and time.monotonic() - pasted_at > 1.5 and not Provider.received:
                     # Home prompt's first Enter opens a session; submit staged
                     # prompt only after the session composer is visible.
-                    os.write(master, b'\r')
+                    write_input(b'\r')
                     first_enter_at = time.monotonic()
                     pasted_at = time.monotonic() + 1e6
                 if sent and not Provider.received and 'first_enter_at' in locals() and time.monotonic() - first_enter_at > .75:
-                    os.write(master, b'\r')
+                    write_input(b'\r')
                     first_enter_at = time.monotonic() + 1e6
                 if Provider.received and 'provider_received_at' not in locals():
                     provider_received_at = time.monotonic()
                 visible_lines = screen.visible().splitlines()
                 mouse_mode = (b'\x1b[?1000h' in output or b'\x1b[?1002h' in output or
                               b'\x1b[?1006h' in output)
+                # Native Markdown renders [SNIP] as SNIP in the response body;
+                # the literal bracketed fixture also appears in the session
+                # header, which must not be mistaken for selectable response.
                 response_rows = [index for index, line in enumerate(visible_lines, 1)
                                  if ('FINAL' + selection_target + 'END' in line and
                                      1 <= index <= screen.rows - 4)]
@@ -500,7 +604,7 @@ def main():
                     for event in (f'\x1b[<0;{start_col};{target_row}M',
                                   f'\x1b[<32;{end_col};{target_row}M',
                                   f'\x1b[<0;{end_col};{target_row}m'):
-                        os.write(master, event.encode())
+                        write_input(event.encode())
                         time.sleep(.12)
                     selection_sent = True
                     selection_sent_at = time.monotonic()
@@ -515,7 +619,7 @@ def main():
                         selection_observed and
                         not args.assertion_regression_only):
                     copy_clipboard_count = len(screen.clipboard_history)
-                    os.write(master, b'/copy\r')
+                    write_input(b'/copy\r')
                     copy_invoked = True
                     copy_sent_at = time.monotonic()
                 if selection_sent and not selection_confirmed and time.monotonic() - selection_sent_at > .3:
@@ -629,23 +733,24 @@ def main():
                 'reason': 'native home screen did not become interactive; no picker was opened'})
             # Ask the TUI to exit through its own quit command so screen cleanup
             # and title restoration run before inspecting final output.
+            exit_deadline = time.monotonic() + 5
+            input_deadline = exit_deadline
             if child.poll() is None:
                 # Clear any remaining command/editor text, then request a normal
                 # TUI exit. Do not use a signal as a success-path substitute.
-                os.write(master, b'\x15/quit\r')
-            exit_deadline = time.monotonic() + 5
+                write_input(b'\x15/quit\r')
             second_enter_sent = False
             ctrl_c_sent = False
             exit_actions = ['ctrl-u+quit+enter']
             while child.poll() is None and time.monotonic() < exit_deadline:
                 remaining = exit_deadline - time.monotonic()
                 if not second_enter_sent and remaining < 4.2:
-                    os.write(master, b'\r')
+                    write_input(b'\r')
                     second_enter_sent = True
                     exit_actions.append('enter')
                 elif not ctrl_c_sent and remaining < 3.3:
                     # Ctrl-C is a TUI key in raw mode and calls the normal cleanup path.
-                    os.write(master, b'\x03')
+                    write_input(b'\x03')
                     ctrl_c_sent = True
                     exit_actions.append('ctrl-c')
                 if select.select([master], [], [], .05)[0]:

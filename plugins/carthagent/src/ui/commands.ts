@@ -3,7 +3,7 @@ export type CommandId =
   | "help" | "resume" | "new" | "restart" | "theme" | "model" | "thinking"
   | "compact" | "autocompact" | "review" | "export" | "copy" | "stats"
   | "clear" | "abort" | "raw" | "guide" | "workflow" | "architecture" | "evidence"
-  | "login" | "account" | "usage" | "billing" | "logout-cloud" | "archive" | "demo"
+  | "login" | "account" | "usage" | "billing" | "logout-cloud" | "archive" | "demo" | "voyages"
   | "ctg-workspace" | "ctg-open" | "ctg-preview" | "ctg-review" | "ctg-worktree" | "ctg-task";
 
 export interface CarthagentCommand {
@@ -39,6 +39,7 @@ export const COMMANDS: readonly CarthagentCommand[] = [
   { id: "evidence", name: "evidence", description: "Open observed delivery evidence" },
   { id: "login", name: "login", aliases: ["auth"], description: "Connect Ship, Claude, xAI, Codex/OpenAI, or Gemini" },
   { id: "account", name: "account", aliases: ["cloud"], description: "Show Ship account, credits, plan, and sessions" },
+  { id: "voyages", name: "voyages", description: "Open live Voyages profile, wallet, equipment, and shop" },
   { id: "usage", name: "usage", description: "Show recent Ship usage from the control plane" },
   { id: "billing", name: "billing", args: "[checkout|portal]", description: "Open Ship checkout or billing portal" },
   { id: "logout-cloud", name: "logout-cloud", args: "[session-id]", description: "Revoke a Ship session or sign out this profile" },

@@ -25,7 +25,7 @@ import {
 import { catalogModels } from '../../../../lib/providers/model-catalog.mjs';
 import { shipAgentDir } from '../../../../lib/ship-auth.mjs';
 import { createHash } from 'node:crypto';
-import { legacyOAuthForOpenCode, nativeCredentialFile, refreshNativeCredential, refreshSingleFlight } from '../../../../lib/opencode/credentials.mjs';
+import { legacyOAuthForOpenCode, nativeCredentialFile, nativeCredentialDatabaseFile, readNativeOAuthCredential, refreshNativeCredential, refreshSingleFlight } from '../../../../lib/opencode/credentials.mjs';
 import { createDeviceAuthController } from './device-auth.ts';
 import { createSessionIdentity, isManagedShipCredential, shipTelemetryHeaders } from './telemetry.ts';
 import { nativeLoginProvider } from '../../../../lib/opencode/provider-policy.mjs';
@@ -105,7 +105,7 @@ function mapCompatibility(compat: Record<string, unknown>): NonNullable<Model.In
   return Object.fromEntries(keys.flatMap(key => key in compat ? [[key, compat[key]]] : [])) as NonNullable<Model.Info['compatibility']>;
 }
 
-function oauthMethod({ env, fetchImpl, sleep, now, openBrowserImpl, agentDir, startDeviceFlow, rereadCredential, credentialFile }: {
+function oauthMethod({ env, fetchImpl, sleep, now, openBrowserImpl, agentDir, startDeviceFlow, credentialFile, coordinationFile }: {
   env: NodeJS.ProcessEnv;
   fetchImpl: typeof fetch;
   sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
@@ -113,15 +113,21 @@ function oauthMethod({ env, fetchImpl, sleep, now, openBrowserImpl, agentDir, st
   openBrowserImpl: typeof openBrowser;
   agentDir: string;
   startDeviceFlow: () => Promise<{ authorization: { userCode: string; verificationUri: string; verificationUriComplete?: string; expiresIn: number; interval: number; deviceCode: string }; callback: Promise<Credential.OAuth> }>;
-  rereadCredential: () => Promise<Credential.OAuth | undefined>;
   credentialFile: string;
+  coordinationFile: string;
 }) {
   const client = new CloudClient({ baseUrl: cloudControlUrl(env), fetchImpl, sleep: ms => sleep(ms) });
   return {
     integrationID: IntegrationSchema.ID.make(SHIP_INTEGRATION_ID),
-    method: { id: OAUTH_METHOD, type: 'oauth' as const, label: 'Sign in with Carthagent Ship' },
-    authorize: async (_answer: Form.Answer) => {
-      const legacy = await legacyOAuthForOpenCode({ agentDir });
+    method: {
+      id: OAUTH_METHOD, type: 'oauth' as const, label: 'Sign in with Carthagent Ship',
+      form: [{ type: 'boolean' as const, key: 'importLegacy', title: 'Import a legacy Ship credential instead of signing in?',
+        description: 'Leave disabled for fresh browser approval and updated account permissions.', default: false }] satisfies Form.Fields,
+    },
+    authorize: async (answer: Form.Answer) => {
+      // The legacy file intentionally survives migration. Never let its presence
+      // short-circuit an explicit sign-in or recovery from revoked/old scopes.
+      const legacy = answer.importLegacy === true ? await legacyOAuthForOpenCode({ agentDir }) : undefined;
       if (legacy) {
         return {
           mode: 'auto' as const,
@@ -147,15 +153,21 @@ function oauthMethod({ env, fetchImpl, sleep, now, openBrowserImpl, agentDir, st
       };
     },
     refresh: (credential: Credential.OAuth) => refreshSingleFlight(
-      `${credential.methodID}:${credential.refresh}`,
-      () => refreshNativeCredential({
-        credential,
-        credentialFile,
-        reread: rereadCredential,
-        refresh: async (current: Credential.OAuth) => ({ type: 'oauth' as const, methodID: IntegrationSchema.MethodID.make(OAUTH_METHOD),
-          ...oauthCredentials(await client.refresh({ refreshToken: current.refresh }), now()),
-          ...(current.metadata ? { metadata: current.metadata } : {}) }),
-      }),
+      `${coordinationFile}:${credential.methodID}:${credential.refresh}`,
+      async () => {
+        const credentialID = await readNativeOAuthCredential({ credentialFile,
+          integrationID: SHIP_INTEGRATION_ID, methodID: credential.methodID, refreshToken: credential.refresh });
+        return refreshNativeCredential({
+          credential,
+          credentialFile: coordinationFile,
+          credentialID,
+          reread: () => readNativeOAuthCredential({ credentialFile, credentialID,
+            integrationID: SHIP_INTEGRATION_ID, methodID: credential.methodID }),
+          refresh: async (current: Credential.OAuth) => ({ type: 'oauth' as const, methodID: IntegrationSchema.MethodID.make(OAUTH_METHOD),
+            ...oauthCredentials(await client.refresh({ refreshToken: current.refresh, signal: AbortSignal.timeout(10_000) }), now()),
+            ...(current.metadata ? { metadata: current.metadata } : {}) }),
+        });
+      },
     ),
     label: () => 'Carthagent Ship',
   };
@@ -201,6 +213,7 @@ interface ProviderRegistrationOptions {
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
   agentDir?: string;
   credentialFile?: string;
+  vaultFile?: string;
   openBrowser?: typeof openBrowser;
   telemetryIdentity?: ReturnType<typeof createSessionIdentity>;
   sessionIdentity?: (event: SessionModelRequest) => string;
@@ -217,12 +230,10 @@ export async function registerProviders(ctx: Context, options: ProviderRegistrat
   const agentDir = options.agentDir ?? shipAgentDir(env);
   const openBrowserImpl = options.openBrowser ?? openBrowser;
   const deviceAuth = options.deviceAuth ?? createDeviceAuthController({ env, fetchImpl, agentDir, now, sleep });
-  const rereadCredential = async (): Promise<Credential.OAuth | undefined> => {
-    const active = await ctx.integration.connection.active(SHIP_INTEGRATION_ID);
-    if (!active) return undefined;
-    const value = await ctx.integration.connection.resolve(active);
-    return value?.type === 'oauth' && value.methodID === OAUTH_METHOD ? value : undefined;
-  };
+  // credentialFile historically selects the coordination namespace. Retain
+  // the fixture shorthand (one explicit path for both) unless vaultFile is set.
+  const coordinationFile = options.credentialFile ?? nativeCredentialFile(env);
+  const credentialFile = options.vaultFile ?? options.credentialFile ?? nativeCredentialDatabaseFile(env, ctx.app.channel);
   const requestIdentity = options.sessionIdentity;
   const identity = options.telemetryIdentity ?? createSessionIdentity();
   const requestSecret = options.requestSecret ?? `${ctx.location?.project?.id || ctx.location?.directory || 'ctg'}:request-v1`;
@@ -242,8 +253,8 @@ export async function registerProviders(ctx: Context, options: ProviderRegistrat
   const integration = await ctx.integration.transform(editor => {
     integrationDefinitions(editor, {
     env, fetchImpl, sleep, now, openBrowserImpl, agentDir, startDeviceFlow: deviceAuth.start,
-    rereadCredential,
-    credentialFile: options.credentialFile ?? nativeCredentialFile(env),
+    credentialFile,
+    coordinationFile,
     });
     for (const integration of editor.list()) {
       const supported = nativeLoginProvider(integration.id);

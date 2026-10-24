@@ -10,6 +10,7 @@ import { createDeviceAuthController } from './server/device-auth.ts';
 import { shipAgentDir } from '../../../lib/ship-auth.mjs';
 import { registerNativeDelivery } from './server/native-delivery';
 import { createShipRpcHandlers } from './server/ship-rpc';
+import { registerVoyagesRpc } from './server/voyages-rpc';
 import { registerShipAgents, registerShipSkills } from './server/ship-agents';
 
 export async function setupCarthagent(
@@ -42,6 +43,8 @@ export async function setupCarthagent(
       if (!Array.isArray(roots) || roots.some(root => typeof root !== 'string')) throw new Error('Invalid native archive roots from the CTG host');
       const archive = await registerArchive(context, { ...context.options, archiveRoots: roots });
       cleanups.push(() => archive.dispose());
+      const voyages = await registerVoyagesRpc(context);
+      cleanups.push(() => voyages.dispose());
       const shipHandlers = createShipRpcHandlers(context);
       const registration = await context.rpc.register(Carthagent, {
         health: async () => ({
