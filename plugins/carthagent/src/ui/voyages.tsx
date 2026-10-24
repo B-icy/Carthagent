@@ -1,5 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import { Show, createSignal, onCleanup, onMount } from "solid-js";
+import type { ScrollBoxRenderable } from "@opentui/core";
 import { usePlugin } from "@opencode/plugin/tui";
 import { voyagesClient, type VoyagesSnapshot, type VoyagesProfile, type VoyagesItem, type VoyagesQuote } from "./client.js";
 import { canEquip, createVoyagesState, handleVoyagesEvent, voyagesCatalogLabel } from "./voyages-state.mjs";
@@ -13,6 +14,13 @@ export function VoyagesPage(props: { sessionID?: string }) {
   const [view, setView] = createSignal<ViewState>({ busy: false, error: "", notice: "" });
   const controller = createVoyagesState({ api: voyagesClient(context, location), changed: (next: ViewState) => setView(next) });
   const back = () => context.ui.router.navigate(props.sessionID ? { type: "session", sessionID: props.sessionID } : { type: "home" });
+  let summary: ScrollBoxRenderable | undefined;
+  context.keymap.layer(() => ({
+    commands: [
+      { bind: "ctrl+u", title: "Scroll Voyages profile up", run: () => { summary?.scrollBy(-1); } },
+      { bind: "ctrl+d", title: "Scroll Voyages profile down", run: () => { summary?.scrollBy(1); } },
+    ],
+  }));
   let activeDialog: symbol | undefined;
   const ownDialog = async <T,>(show: () => Promise<T>): Promise<T> => {
     const token = Symbol();
@@ -89,22 +97,26 @@ export function VoyagesPage(props: { sessionID?: string }) {
     onCleanup(() => { stop(); controller.dispose(); closeOwnDialog(); });
   });
   return <box flexDirection="column" flexGrow={1} padding={1}>
-    <text fg={context.theme.text.action.primary.base}>CARTHAGENT · VOYAGES</text>
-    <text fg={context.theme.text.muted}>Live profile · coins · owned equipment · shop. No coding rewards or grants.</text>
-    <Show when={view().busy}><text fg={context.theme.text.feedback.warning.base}>Loading / awaiting confirmation… other actions are locked.</text></Show>
-    <Show when={view().error}><text fg={context.theme.text.feedback.error.base}>{view().error}</text></Show>
-    <Show when={view().notice}><text fg={context.theme.text.feedback.success.base}>{view().notice}</text></Show>
-    <Show when={view().snapshot} fallback={<text fg={context.theme.text.muted}>Protected profile hidden until a successful refresh. Use Sign in for expired, revoked or legacy credentials.</text>}>{(snapshot) => <box flexDirection="column">
-      <text fg={context.theme.text.base}>{snapshot().profile.name} · ship {snapshot().profile.shipName} · version {snapshot().profile.version}</text>
-      <text fg={context.theme.text.action.primary.base}>Wallet: {snapshot().profile.coins} coins · Level {snapshot().profile.level} · XP {snapshot().profile.totalXp} ({snapshot().profile.xpIntoLevel}/{snapshot().profile.xpForLevel})</text>
-      <text fg={context.theme.text.muted}>Distance {snapshot().profile.km} km · weekly {snapshot().profile.weeklyKm} km</text>
-      <text fg={context.theme.text.muted}>Skin {snapshot().profile.config.skin} · hair {snapshot().profile.config.hair} · pattern {snapshot().profile.config.pattern} · {snapshot().profile.owned.length} owned items</text>
-      <text fg={context.theme.text.muted}>Equipped: hairStyle {snapshot().profile.config.hairStyle} · hat {snapshot().profile.config.hat} · shirt {snapshot().profile.config.shirt}</text>
-      <text fg={context.theme.text.muted}>Bottoms {snapshot().profile.config.bottoms} · shoes {snapshot().profile.config.shoes} · pet {snapshot().profile.config.pet}</text>
-      <text fg={context.theme.text.muted}>Hull {snapshot().profile.config.hull} · sail {snapshot().profile.config.sail} · setting {snapshot().profile.config.setting}</text>
-      <Show when={snapshot().pending}><text fg={context.theme.text.feedback.warning.base}>Purchase pending / outcome unknown. Resolve the saved purchase explicitly; new purchases are blocked.</text></Show>
-    </box>}</Show>
-    <text fg={context.theme.text.faint}>↑/↓ select · Enter act · PageUp/PageDown scroll choices · choose Back to return. Cancel in dialogs never saves or purchases.</text>
-    <select flexGrow={1} minHeight={3} showScrollIndicator keyBindings={[{ name: "pageup", action: "move-up-fast" }, { name: "pagedown", action: "move-down-fast" }]} options={options()} focused={context.keymap.mode.current() === "base"} onSelect={(_index, option) => select(option?.value)} />
+    <text flexShrink={0} fg={context.theme.text.action.primary.base}>CARTHAGENT · VOYAGES</text>
+    {/* Split the remaining height: wrapped profile rows scroll instead of shrinking over one another. */}
+    <scrollbox ref={summary} flexBasis={0} flexGrow={1} minHeight={1} contentOptions={{ flexDirection: "column" }}>
+      <Show when={view().busy}><text flexShrink={0} fg={context.theme.text.feedback.warning.base}>Loading / awaiting confirmation… other actions are locked.</text></Show>
+      <Show when={view().error}><text flexShrink={0} fg={context.theme.text.feedback.error.base}>{view().error}</text></Show>
+      <Show when={view().notice}><text flexShrink={0} fg={context.theme.text.feedback.success.base}>{view().notice}</text></Show>
+      <Show when={view().snapshot} fallback={<text flexShrink={0} fg={context.theme.text.muted}>Protected profile hidden until a successful refresh. Use Sign in for expired, revoked or legacy credentials.</text>}>{(snapshot) => <box flexDirection="column" flexShrink={0}>
+        <text flexShrink={0} fg={context.theme.text.base}>{snapshot().profile.name} · ship {snapshot().profile.shipName} · version {snapshot().profile.version}</text>
+        <text flexShrink={0} fg={context.theme.text.action.primary.base}>Wallet: {snapshot().profile.coins} coins · Level {snapshot().profile.level} · XP {snapshot().profile.totalXp} ({snapshot().profile.xpIntoLevel}/{snapshot().profile.xpForLevel})</text>
+        <text flexShrink={0} fg={context.theme.text.muted}>Distance {snapshot().profile.km} km · weekly {snapshot().profile.weeklyKm} km</text>
+        <text flexShrink={0} fg={context.theme.text.muted}>Skin {snapshot().profile.config.skin} · hair {snapshot().profile.config.hair} · pattern {snapshot().profile.config.pattern} · {snapshot().profile.owned.length} owned items</text>
+        <text flexShrink={0} fg={context.theme.text.muted}>Equipped: hairStyle {snapshot().profile.config.hairStyle} · hat {snapshot().profile.config.hat} · shirt {snapshot().profile.config.shirt}</text>
+        <text flexShrink={0} fg={context.theme.text.muted}>Bottoms {snapshot().profile.config.bottoms} · shoes {snapshot().profile.config.shoes} · pet {snapshot().profile.config.pet}</text>
+        <text flexShrink={0} fg={context.theme.text.muted}>Hull {snapshot().profile.config.hull} · sail {snapshot().profile.config.sail} · setting {snapshot().profile.config.setting}</text>
+        <Show when={snapshot().pending}><text flexShrink={0} fg={context.theme.text.feedback.warning.base}>Purchase pending / outcome unknown. Resolve the saved purchase explicitly; new purchases are blocked.</text></Show>
+      </box>}</Show>
+      <text flexShrink={0} fg={context.theme.text.muted}>Live profile · coins · owned equipment · shop. No coding rewards or grants.</text>
+      <text flexShrink={0} fg={context.theme.text.faint}>Choose Back to return. Cancel in dialogs never saves or purchases.</text>
+    </scrollbox>
+    <text flexShrink={0} fg={context.theme.text.faint}>↑/↓ Enter · PgUp/Dn choices · Ctrl+U/D profile</text>
+    <select flexBasis={0} flexGrow={1} flexShrink={0} minHeight={3} showScrollIndicator keyBindings={[{ name: "pageup", action: "move-up-fast" }, { name: "pagedown", action: "move-down-fast" }]} options={options()} focused={context.keymap.mode.current() === "base"} onSelect={(_index, option) => select(option?.value)} />
   </box>;
 }

@@ -318,8 +318,11 @@ test('profile journal is fresh across workspace contexts, private, bounded and p
   const directory = join(s.profileRoot, 'state', 'carthagent', 'voyages');
   const [name] = (await readdir(directory)).filter(n => n.endsWith('.json'));
   const file = join(directory, name), saved = JSON.parse(await readFile(file, 'utf8'));
-  assert.equal((await stat(file)).mode & 0o777, 0o600);
-  assert.equal((await stat(directory)).mode & 0o777, 0o700);
+  // Windows uses inherited ACLs; stat mode bits cannot verify owner-only access there.
+  if (process.platform !== 'win32') {
+    assert.equal((await stat(file)).mode & 0o777, 0o600);
+    assert.equal((await stat(directory)).mode & 0o777, 0o700);
+  }
   assert.equal(JSON.stringify(saved).includes('secret-fixture'), false);
   const otherWorkspace = { ...s.ctx, storage: { get() { throw new Error('location storage must not be used'); } } };
   let pair;

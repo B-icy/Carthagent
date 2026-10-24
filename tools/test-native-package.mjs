@@ -56,6 +56,7 @@ try {
   assert.ok(paths.includes('plugins/carthagent/index.ts'), 'pack must include plugin server entrypoint');
   assert.ok(paths.includes('plugins/carthagent/tui.ts'), 'pack must include plugin TUI entrypoint');
   assert.ok(paths.includes('tests/native-cli-host-smoke.mjs'), 'pack must include the production-backed native CLI smoke');
+  assert.ok(paths.includes('tools/test-native-refresh-reentry.mjs'), 'pack must include the expired native OAuth refresh regression');
   assert.ok(paths.includes('tests/fixtures/native-discovery-plugin/server.ts'), 'pack must include the exact project-discovery fixture required by the native CLI smoke');
   assert.ok(paths.includes('tests/fixtures/archive-plugin/index.ts'), 'pack must retain the separately allowlisted archive fixture');
   assert.ok(!paths.includes('tests/fixtures/plan-advisor-corpus.json'), 'pack must not broaden fixture inclusion beyond explicitly required package fixtures');
@@ -168,7 +169,8 @@ try {
     'test-native-ship-walkthrough.mjs', 'test-native-default-cli.mjs',
     'test-owned-host-controls.mjs', 'test-native-glyph-pty.mjs',
     'test-native-terminal-semantics-installed.mjs', 'test-native-visual-clear-installed.mjs',
-    'test-native-host.mjs', 'test-native-ship-models.mjs', 'test-native-controls.mjs', 'test-native-outcomes.mjs',
+    'test-native-host.mjs', 'test-native-ship-models.mjs', 'test-native-refresh-reentry.mjs',
+    'test-native-controls.mjs', 'test-native-outcomes.mjs',
     'test-native-product.mjs', 'test-native-runtime.mjs', 'test-native-tasks.mjs',
     'test-native-review.mjs', 'test-native-swe-host.mjs', 'test-native-pty.mjs',
     'test-native-evaluation.mjs', 'test-native-swe.mjs',

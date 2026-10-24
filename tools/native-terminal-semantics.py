@@ -244,6 +244,58 @@ def sha256_file(path):
             digest.update(chunk)
     return digest.hexdigest()
 
+
+def write_pty_input(master, data, deadline, on_output, child):
+    """Deliver every byte while draining output; never block past the phase deadline.
+
+    PTYs have bounded queues in both directions. A blocking large paste can
+    deadlock against the host's paint writes, even inside a timed outer loop.
+    Restore descriptor flags on every exit so the normal read/drain paths retain
+    their existing EOF handling. The caller owns child termination and fd cleanup.
+    """
+    flags = fcntl.fcntl(master, fcntl.F_GETFL)
+    pending = memoryview(data)
+    written = 0
+    try:
+        fcntl.fcntl(master, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+        while written < len(pending):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(f'PTY input deadline exceeded: {written}/{len(pending)} bytes written; '
+                                   f'child status={child.poll()}')
+            if child.poll() is not None:
+                raise RuntimeError(f'native host exited during PTY input: {child.returncode}; '
+                                   f'{written}/{len(pending)} bytes written')
+            try:
+                readable, writable, _ = select.select([master], [master], [], min(.05, remaining))
+                if readable:
+                    try:
+                        chunk = os.read(master, 65536)
+                    except BlockingIOError:
+                        chunk = None
+                    if chunk == b'':
+                        raise RuntimeError('PTY reached EOF during input')
+                    if chunk:
+                        on_output(chunk)
+                if writable:
+                    try:
+                        count = os.write(master, pending[written:])
+                    except BlockingIOError:
+                        continue
+                    if count == 0:
+                        raise RuntimeError('PTY input write made no progress')
+                    written += count
+            except InterruptedError:
+                continue
+            except OSError as error:
+                if error.errno == errno.EIO:
+                    raise RuntimeError(f'PTY closed during input: {written}/{len(pending)} bytes written; '
+                                       f'child status={child.poll()}') from error
+                raise
+    finally:
+        fcntl.fcntl(master, fcntl.F_SETFL, flags)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--binary', default=os.environ.get('CTG_OPENCODE_BIN'))
@@ -344,6 +396,15 @@ def main():
         initial_title = screen.title
         errors = bytearray()
         start = time.monotonic()
+        input_deadline = start + args.timeout
+
+        def capture_output(chunk):
+            output.extend(chunk)
+            screen.feed(chunk)
+
+        def write_input(data):
+            write_pty_input(master, data, input_deadline, capture_output, child)
+
         sent = False
         resized = False
         picker_started = False
@@ -386,9 +447,9 @@ def main():
                     output.extend(chunk)
                     screen.feed(chunk)
                     if b'\x1b[6n' in chunk:
-                        os.write(master, b'\x1b[1;1R')
+                        write_input(b'\x1b[1;1R')
                     if b'\x1b[c' in chunk:
-                        os.write(master, b'\x1b[?1;2c')
+                        write_input(b'\x1b[?1;2c')
                 elapsed = time.monotonic() - start
                 visible = screen.visible().lower()
                 visible_original = screen.visible()
@@ -397,7 +458,7 @@ def main():
                                       'connect an integration to' in visible or
                                       'send prompts' in visible)
                 if focused_case and not auth_dismissed and onboarding_visible:
-                    os.write(master, b'\x1b')
+                    write_input(b'\x1b')
                     auth_dismissed = True
                     auth_dismissed_at = time.monotonic()
                 if focused_case and auth_dismissed and time.monotonic() - auth_dismissed_at > .4:
@@ -407,14 +468,14 @@ def main():
                     # Ctrl+O opens OpenCode's recent sessions/projects menu.
                     # Ctrl+P is command completion on this runtime and must not
                     # be mistaken for a session picker.
-                    os.write(master, b'\x0f')
+                    write_input(b'\x0f')
                     picker_started = True
                     picker_home_before = home_ready
                     picker_at = time.monotonic()
                 if picker_started and not picker_cancelled and (
                         'recent sessions' in visible or 'sessions and projects' in visible or
                         'select session' in visible):
-                    os.write(master, b'\x1b')
+                    write_input(b'\x1b')
                     picker_cancelled = True
                     picker_heading = next(heading for heading in
                                           ('recent sessions', 'sessions and projects', 'select session')
@@ -440,7 +501,7 @@ def main():
                 if picker_started and not picker_cancelled and time.monotonic() - picker_at > 3:
                     # Escape regardless, so a command completion/menu cannot
                     # linger into the subsequent prompt entry.
-                    os.write(master, b'\x1b')
+                    write_input(b'\x1b')
                     picker_cancelled = True
                     result['checks']['pickerEscapeCancel'] = {
                         'status': 'UNSUPPORTED',
@@ -459,23 +520,26 @@ def main():
                         os.kill(child.pid, signal.SIGWINCH)
                         resized = True
                         time.sleep(.25)
-                    os.write(master, b'\x1b[200~' + payload + b'\x1b[201~')
+                    write_input(b'\x1b[200~' + payload + b'\x1b[201~')
                     sent = True
                     pasted_at = time.monotonic()
                 if sent and time.monotonic() - pasted_at > 1.5 and not Provider.received:
                     # Home prompt's first Enter opens a session; submit staged
                     # prompt only after the session composer is visible.
-                    os.write(master, b'\r')
+                    write_input(b'\r')
                     first_enter_at = time.monotonic()
                     pasted_at = time.monotonic() + 1e6
                 if sent and not Provider.received and 'first_enter_at' in locals() and time.monotonic() - first_enter_at > .75:
-                    os.write(master, b'\r')
+                    write_input(b'\r')
                     first_enter_at = time.monotonic() + 1e6
                 if Provider.received and 'provider_received_at' not in locals():
                     provider_received_at = time.monotonic()
                 visible_lines = screen.visible().splitlines()
                 mouse_mode = (b'\x1b[?1000h' in output or b'\x1b[?1002h' in output or
                               b'\x1b[?1006h' in output)
+                # Native Markdown renders [SNIP] as SNIP in the response body;
+                # the literal bracketed fixture also appears in the session
+                # header, which must not be mistaken for selectable response.
                 response_rows = [index for index, line in enumerate(visible_lines, 1)
                                  if ('FINAL' + selection_target + 'END' in line and
                                      1 <= index <= screen.rows - 4)]
@@ -500,7 +564,7 @@ def main():
                     for event in (f'\x1b[<0;{start_col};{target_row}M',
                                   f'\x1b[<32;{end_col};{target_row}M',
                                   f'\x1b[<0;{end_col};{target_row}m'):
-                        os.write(master, event.encode())
+                        write_input(event.encode())
                         time.sleep(.12)
                     selection_sent = True
                     selection_sent_at = time.monotonic()
@@ -515,7 +579,7 @@ def main():
                         selection_observed and
                         not args.assertion_regression_only):
                     copy_clipboard_count = len(screen.clipboard_history)
-                    os.write(master, b'/copy\r')
+                    write_input(b'/copy\r')
                     copy_invoked = True
                     copy_sent_at = time.monotonic()
                 if selection_sent and not selection_confirmed and time.monotonic() - selection_sent_at > .3:
@@ -629,23 +693,24 @@ def main():
                 'reason': 'native home screen did not become interactive; no picker was opened'})
             # Ask the TUI to exit through its own quit command so screen cleanup
             # and title restoration run before inspecting final output.
+            exit_deadline = time.monotonic() + 5
+            input_deadline = exit_deadline
             if child.poll() is None:
                 # Clear any remaining command/editor text, then request a normal
                 # TUI exit. Do not use a signal as a success-path substitute.
-                os.write(master, b'\x15/quit\r')
-            exit_deadline = time.monotonic() + 5
+                write_input(b'\x15/quit\r')
             second_enter_sent = False
             ctrl_c_sent = False
             exit_actions = ['ctrl-u+quit+enter']
             while child.poll() is None and time.monotonic() < exit_deadline:
                 remaining = exit_deadline - time.monotonic()
                 if not second_enter_sent and remaining < 4.2:
-                    os.write(master, b'\r')
+                    write_input(b'\r')
                     second_enter_sent = True
                     exit_actions.append('enter')
                 elif not ctrl_c_sent and remaining < 3.3:
                     # Ctrl-C is a TUI key in raw mode and calls the normal cleanup path.
-                    os.write(master, b'\x03')
+                    write_input(b'\x03')
                     ctrl_c_sent = True
                     exit_actions.append('ctrl-c')
                 if select.select([master], [], [], .05)[0]:
