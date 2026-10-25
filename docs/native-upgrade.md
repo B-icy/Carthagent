@@ -1,9 +1,14 @@
 # Native OpenCode preview: upgrade and migration guide
 
-Experimental preview.8 uses native by default. `ctg native` is a compatibility
+The unpublished **1.1.0-preview.9 candidate** inherits native by default from
+preview.8. This is not an installable-release announcement. `ctg native` is a compatibility
 alias; `CTG_NATIVE` no longer selects a different console. Stable 1.0.7 remains
 the legacy release. Install previews only through an explicit experimental
 channel switch or an exact published tag.
+
+See the [preview.9 candidate notes](release-notes-preview.9.md) for current
+evidence. Until publication, use the explicit reviewed-artifact procedure in
+the [manual testing guide](native-manual-testing.md), not the public resolver.
 
 ## Before you try it
 
@@ -119,13 +124,14 @@ ctg update --channel experimental
 ctg
 ```
 
-The exact-tag installation form for a published release is:
+Only after `v1.1.0-preview.9` and its reviewed assets are published, its exact-tag
+installation form will be:
 
 ```sh
-npm install -g --install-links=true github:B-icy/Carthagent#vX.Y.Z
+npm install -g --install-links=true github:B-icy/Carthagent#v1.1.0-preview.9
 ```
 
-Substitute only a real published `vX.Y.Z` tag. `ctg update --check` checks for
+Do not run this for the unpublished candidate. `ctg update --check` checks for
 an available release. `lib/opencode/update.mjs` contains the shared,
 release-validated update operation: for npm-installed Carthagent it installs
 the validated exact release spec; for a source clone it requires a clean
@@ -143,7 +149,7 @@ first:
 git status --short
 git diff                         # review and preserve any edits before proceeding
 git fetch origin --tags
-git checkout --detach vX.Y.Z     # use an actual published tag; no force option
+git checkout --detach v1.1.0-preview.9  # only after publication; no force option
 npm ci
 ```
 
@@ -151,7 +157,7 @@ Do not discard or overwrite local changes to make this procedure succeed. If
 the checkout has work you need, commit it or preserve it outside the checkout
 before changing revisions; resolve conflicts or recovery deliberately rather
 than using a destructive reset. The updater is Carthagent's updater, not a
-regular OpenCode updater. In preview.8 the installed CLI is native by default.
+regular OpenCode updater. Preview.9 inherits the native-default CLI from preview.8.
 Use `ctg update --channel stable` to return to the legacy stable release; neither
 channel switching nor service refresh deletes profiles or legacy transcripts.
 Do not install a moving branch or guess an unpublished version.
@@ -160,10 +166,11 @@ Do not install a moving branch or guess an unpublished version.
 
 The current acceptance contract and evidence are maintained in:
 
-- [Migration delivery ledger](opencode-migration.md#delivery-ledger)
+- [Preview.9 candidate notes and remaining release gates](release-notes-preview.9.md)
+- [Historical migration delivery ledger](opencode-migration.md#delivery-ledger)
 - [Native runtime acceptance matrix](native-compatibility.md)
 - [Terminal probe and evidence caveats](native-terminal-semantics.md)
-- [Unreleased native migration release-notes draft](release-notes-native-draft.md)
+- [Historical native migration draft (not current routing/install guidance)](release-notes-native-draft.md)
 
 These documents intentionally distinguish component/test results from complete
 installed-product acceptance. A command's presence, successful unit test, or

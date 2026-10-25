@@ -1,20 +1,27 @@
 # Native OpenCode manual-test candidate
 
-This is a GitHub experimental prerelease, not a stable 1.1.0 release. Install it
-only through explicit `ctg update --channel experimental` after the stable updater
-bootstrap. The regular OpenCode installation is never replaced. Native is the
-default interface in preview.8 (`ctg native` remains an alias). The fixture runner
+This is the **unpublished 1.1.0-preview.9 release candidate**, not a stable 1.1.0
+release or an available GitHub prerelease. The experimental updater selects
+published releases only; it cannot install this candidate yet. Use the explicit
+reviewed-artifact path below. The regular OpenCode installation is never replaced.
+Native remains the default, inherited from preview.8 (`ctg native` remains an alias). The fixture runner
 below uses a separately verified owned binary and isolated profiles. Agent/tool execution is **not an OS
 sandbox**. Start with these disposable projects.
 
 ## 1. Get the candidate source
 
-For the published preview, use `ctg update --channel experimental` after installing
-the stable 1.0.7 updater. Launch the native interface with `ctg`.
-For the fixture generator, check out its exact source tag:
+For current candidate work, use the reviewed `release/preview-9-candidate`
+checkout and record its exact commit and dirty state. The prebuild source is
+`c51c5ae11293e63b658df297abc732db88d9109a`; final package/manifest and documentation
+changes are separate from that prebuild source. See the
+[candidate notes](release-notes-preview.9.md).
+
+The following exact-tag clone is **for future use only, after publication**.
+After publication, `ctg update --channel experimental` can select the published
+preview; it does not select a branch or prebuild. Launch with `ctg`.
 
 ```sh
-git -c core.autocrlf=false clone -c core.autocrlf=false --branch v1.1.0-preview.8 https://github.com/B-icy/Carthagent.git ctg-native-manual
+git -c core.autocrlf=false clone -c core.autocrlf=false --branch v1.1.0-preview.9 https://github.com/B-icy/Carthagent.git ctg-native-manual
 cd ctg-native-manual
 npm ci
 ```
@@ -39,6 +46,9 @@ silently selecting an upstream/system binary.
 node tools/prepare-native-manual.mjs ../ctg-manual-kit
 ```
 
+That default command requires published assets. For preview.9 before publication,
+use the explicit candidate manifest and archive command below instead.
+
 Supported targets: Linux x64/arm64, macOS x64/arm64, Windows x64. Use matching Node
 architecture; native Windows arm64 is not in the reviewed candidate. WSL is Linux,
 not proof of Windows terminal behavior. The commands also work in PowerShell.
@@ -53,8 +63,20 @@ For an unpublished prebuild, obtain the matching artifact and its complete candi
 manifest from the reviewed build. Supply an independently checked manifest digest:
 
 ```sh
-node tools/prepare-native-manual.mjs ../ctg-candidate-kit --assets /path/to/archives --manifest /path/to/runtime-release.json.candidate --manifest-sha256 <reviewed-sha256>
+node tools/prepare-native-manual.mjs ../ctg-candidate-kit --assets /path/to/archives --manifest /path/to/runtime-release.json.candidate --manifest-sha256 aa5de65b633219423d21b1cc645945028a2d5565714b71760cbcc18badc5f4e5
+node tools/native-manual.mjs ../ctg-candidate-kit tiny --manifest /path/to/runtime-release.json.candidate --manifest-sha256 aa5de65b633219423d21b1cc645945028a2d5565714b71760cbcc18badc5f4e5
 ```
+
+These pins identify prebuild run `40151970983` for preview.9. Its original
+13-file bundle was independently verified through the production acquirer, and
+manifest regeneration was byte-identical. The new Linux ARM64 bytes passed
+isolated staged native-host and Ship-model probes; other platforms' execution
+remains unverified here. Setup above executes a verified `--version`;
+neither that nor archive verification substitutes for full installed acceptance.
+Use the same `--manifest` and `--manifest-sha256` on **every** candidate-kit
+invocation below (including `--smoke`, `--live`, and `--stop`), and replace
+`../ctg-manual-kit` with `../ctg-candidate-kit`. Retain `--assets` and both manifest
+arguments when preparing a larger unpublished kit too.
 
 Do not derive the expected digest from an untrusted download without reviewing it.
 The helper prints the same manifest arguments to use with `native-manual.mjs`.
@@ -159,8 +181,11 @@ kit manifest hash, and executable SHA-256 from `manual-kit.json`.
   controlled paired performance acceptance remain manual/release gates.
 - Linux automated success does not establish macOS/Windows native UI acceptance.
 - GitHub draft/public release installation is not tested by this development
-  override. Use the v1.1.0-preview.8 assets, not the unshipped v1.1.0 stable tag. Do not run the final
-  release/package gate and mistake a missing asset for a manual-kit setup failure.
+  override. Use the reviewed preview.9 prebuild assets and manifest together;
+  do not substitute preview.8 assets or the unshipped v1.1.0 stable tag. Final-tag
+  draft and anonymous-public default-resolver acceptance are still pending.
+- Actual 60x12 terminal navigation was functional in development-runtime tests;
+  that is not model-based visual approval or full cross-OS UI acceptance.
 
 ## 5. Explicit live-provider testing
 
@@ -177,7 +202,9 @@ node tools/native-manual.mjs ../ctg-manual-kit tiny --live -- --max-tools 40 --m
 
 Choose a provider/model explicitly if needed by appending `--provider` and `--model`.
 These are tool/time limits, **not a monetary cap**. Set a provider-side spending
-limit before running. No paid-provider tests were run for this handoff.
+limit before running. The scripted fixture is not paid-provider evidence. The
+live Voyages development-runtime observations in the candidate notes are account
+and equipment tests, not a paid-model benchmark or proof of paid purchases.
 
 Repeat on `product`, then `scale`, increasing limits only deliberately. For strict
 workflow use `--workflow strict`. Do not treat a deterministic offline fixture's
@@ -215,8 +242,8 @@ candidate checkout and test kit after saving wanted work; no global binary chang
 POSIX example (adjust paths; do not export these persistently):
 
 ```sh
-export CTG_OWNED_OPENCODE_RUNTIME="$(pwd)/../ctg-manual-kit/runtimes/1.1.0-preview.8/linux-x64"
-export CTG_TEST_RUNTIME_RELEASE_MANIFEST="$(pwd)/lib/opencode/runtime-release.json"
+export CTG_OWNED_OPENCODE_RUNTIME="$(pwd)/../ctg-candidate-kit/runtimes/1.1.0-preview.9/linux-x64"
+export CTG_TEST_RUNTIME_RELEASE_MANIFEST="/path/to/runtime-release.json.candidate"
 node tools/test-native-swe-host.mjs
 node tools/test-native-public-repo.mjs
 node tools/test-native-delivery-host.mjs
