@@ -11,8 +11,30 @@ an error, not permission to fall back to a different executable.
 `CTG_OWNED_OPENCODE_RUNTIME` is a separate staging/developer selector, not the
 normal end-user installation path. An explicit directory must contain the
 matching `ctg-runtime.json`, `SHA256SUMS`, and platform artifact. Native is the
-CLI default in experimental preview.8; `ctg native` remains an alias. The legacy
+CLI default in the unpublished preview.9 candidate, inherited from preview.8;
+`ctg native` remains an alias. The legacy
 `--engine-cli` option cannot restore the retired console.
+
+## Current preview.9 candidate (unpublished)
+
+Prebuild run `40151970983` succeeded for all five native targets and assembly
+using source `c51c5ae11293e63b658df297abc732db88d9109a` for package
+`1.1.0-preview.9`. The original 13-file bundle was independently verified with
+the production acquirer; regenerated manifest bytes matched exactly. Candidate
+manifest SHA-256:
+`aa5de65b633219423d21b1cc645945028a2d5565714b71760cbcc18badc5f4e5`.
+Upstream, patch, lock and detached runtime identity are unchanged from preview.8;
+the release-bound archive set and manifest must still be treated as preview.9
+artifacts, never replaced with preview.8 assets.
+
+The new Linux ARM64 bytes passed isolated staged native-host and Ship-model
+probes. Other platforms' independent execution, final-tag/default-resolver
+acceptance against a draft, and anonymous public installed acceptance remain
+pending. No preview.9 tag, draft, asset upload or publication is included in
+this candidate preparation. See the [current notes](release-notes-preview.9.md)
+and [explicit unpublished-artifact instructions](native-manual-testing.md).
+The older source/build observations below are historical, not claims that all
+preview.8 or preview.9 acceptance gates have passed.
 
 ## Pinned inputs and reproducible source application
 
@@ -20,7 +42,8 @@ CLI default in experimental preview.8; `ctg native` remains an alias. The legacy
 - Tag/revision: `v2.0.32` / `843a6c514e606b436a7fe713422ace0a93ad3d61`
 - CTG patch candidate: `docs/patches/opencode-v2.0.32-session-ui-combined-v3.patch` (approved session/runtime + `/help` + live-theme + glyph-v4, spinner test-isolation fix, real-provider theme integration proof, runtime-resolved glyph separators)
 - Candidate patch SHA-256: `b4238d77827d7ccf8f87fb0326551eaa62268d9387cd89e29bd0cf12bd6dafaa`
-- Combined preview.8 source verification: 136 retained TUI rendering/loader/theme/selection
+- Lock SHA-256: `9d78379cd264584a495440a217b9d2ecab524c9a56f7f8b4b5bed3926daa330d`
+- Historical combined preview.8 source verification: 136 retained TUI rendering/loader/theme/selection
   regressions, 24 core recovery/shell regressions, and core/server/plugin/client/tui
   typechecks passed. Exact five-platform archives and full installed-package
   acceptance remain per-release gates; source tests alone do not satisfy them.
@@ -80,7 +103,8 @@ runtime binary digest, and fail clearly offline or on unsupported platforms.
 It must never silently fall back to `@opencode/cli` after selecting the owned
 runtime, nor rewrite that package's binary. The release gate must install the
 normal package with no runtime environment override and prove it starts this
-owned runtime. No release asset has yet been published.
+owned runtime. Preview.9 assets have not yet been published; historical preview
+assets do not satisfy its release gate.
 
 Use a matching native OS/architecture for other upstream-supported targets;
 cross-compilation is rejected. The script fails closed on source revision,
@@ -136,14 +160,16 @@ asset reads; checkout credentials are not persisted. The workflow checks the
 same draft ID and tag target again after acceptance.
 
 Only after that gate succeeds and the release owner approves should the release
-be published. The existing `Release` workflow is the post-publication gate: it
-requires a published release, performs the full installed acceptance and
-five-platform-archive manifest verification with `CTG_RUNTIME_GITHUB_TOKEN` explicitly
-empty (proving the ordinary anonymous public resolver path), and only then
-publishes the control-plane manifest. Neither workflow creates a release,
+be published. The existing `Release` workflow is the post-publication gate. Its
+installed-package acceptance uses `CTG_RUNTIME_GITHUB_TOKEN` explicitly empty,
+proving the ordinary anonymous public resolver path. Its stable-only
+`publish-release-manifest` job verifies the published asset set and five-platform
+manifest before publishing the control-plane manifest. Prerelease tags such as
+preview.9 skip that job and never advance the stable control-plane pointer;
+experimental selection reads published prereleases from GitHub. Neither workflow creates a release,
 uploads assets, publishes a release, or dispatches another workflow. This
-sequence is proposed automation until reviewed and run against the final
-release artifacts.
+sequence still requires separate approval and execution against the final
+preview.9 release artifacts; candidate prebuild verification is not that gate.
 
 When a release is still a GitHub draft, CI may opt in to authenticated asset
 retrieval by setting `CTG_RUNTIME_GITHUB_TOKEN` for the resolver/verifier
@@ -160,7 +186,11 @@ existing packaged runtime-release manifest remains the sole source of archive,
 executable, and provenance trust pins. The normal no-token installed-package
 acceptance remains required after publication.
 
-## Full-TUI glyph compatibility
+## Historical source-level full-TUI glyph evidence
+
+The pending-build statements in this section describe the original composition
+checkpoint, not the current preview.9 prebuild status above. They do not establish
+complete acceptance of any later release.
 
 The approved glyph-v4 patch is composed into the reviewed `81e` base patch. A
 combined candidate adds the separately approved spinner test-isolation
@@ -189,9 +219,10 @@ dispatch and restores native help when an extension claim is removed. The help
 author reports the parent’s full keymap suite passed 5/5. The exact final binary
 still must demonstrate the agreed bare-help UI behavior before release claims.
 
-## Recorded artifact and bounded title evidence
+## Historical artifact and bounded title evidence
 
-No binary has been built from this final composed patch yet. Earlier Linux
+At this historical checkpoint, no binary had been built from the final composed
+patch yet. Earlier Linux
 artifact and PTY title observations used the pre-composition patch and are
 superseded for release acceptance. Build, executable digest, runtime manifest,
 full-TUI glyph/help/theme proofs, and title restore/readback must all be recorded
