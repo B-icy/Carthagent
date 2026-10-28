@@ -44,6 +44,9 @@ jobs:
       - run: npm run test:native-host
         env:
           CTG_RUNTIME_GITHUB_TOKEN: ${{ github.token }}
+      - run: node tools/test-native-daily-quests.mjs
+        env:
+          CTG_RUNTIME_GITHUB_TOKEN: ${{ github.token }}
       - run: npm run test:native-controls
         env:
           CTG_RUNTIME_GITHUB_TOKEN: ${{ github.token }}

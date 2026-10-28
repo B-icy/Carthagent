@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { JsonSchema, Schema, SchemaRepresentation } from 'effect';
@@ -23,7 +23,9 @@ const rejected = (promise, code) => assert.rejects(promise, error => {
 const check = id => ({ id, kind: 'test', argv: ['never-execute-this', 'sensitive-argv'], timeoutSeconds: 20 });
 
 function fixture(t, checks = [check('unit')]) {
-  const base = mkdtempSync(join(tmpdir(), 'daily-source-'));
+  // Match the native canonical location, including macOS /var -> /private/var.
+  // The source boundary must still reject a linked authoritative path.
+  const base = realpathSync(mkdtempSync(join(tmpdir(), 'daily-source-')));
   t.after(() => rmSync(base, { recursive: true, force: true }));
   const root = join(base, 'project'); mkdirSync(root);
   writeFileSync(join(root, 'source.txt'), 'actual source');
@@ -243,6 +245,23 @@ test('foreign sessions, mismatched IDs, forged task worktrees and arbitrary path
   // The journal must agree with the native session location even for a known worktree.
   f.session.location.directory = f.root;
   await rejected(f.read(), 'not_owned');
+});
+
+test('canonical native locations remain readable through a linked temporary namespace without accepting linked authority', async t => {
+  const f = fixture(t);
+  const alias = join(f.base, 'temporary-alias');
+  symlinkSync(f.base, alias, 'junction');
+  const aliasedRoot = join(alias, 'project');
+  const canonical = realpathSync(aliasedRoot);
+  assert.equal(canonical, f.root);
+  f.ctx.location.directory = canonical;
+  f.ctx.location.project.canonical = canonical;
+  f.session.location.directory = canonical;
+  assert.equal((await f.read()).source.runId, f.state.runId);
+  f.ctx.location.directory = aliasedRoot;
+  f.ctx.location.project.canonical = aliasedRoot;
+  f.session.location.directory = aliasedRoot;
+  await rejected(f.read(), 'invalid_source');
 });
 
 test('symlink components, final files and directory reports are rejected without following local secrets', async t => {

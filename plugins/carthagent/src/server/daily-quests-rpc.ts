@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
-import { open } from 'node:fs/promises';
+import { lstat, open } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { Context } from '@opencode/plugin/promise/plugin';
 import { CloudClient, cloudControlUrl } from '../../../../lib/cloud/client.mjs';
@@ -82,14 +82,23 @@ const terminal = (r: DailyRecord) => r.submission?.status === 'graded' || r.subm
 const fileJournal: Journal = {
   cleanup: cleanupAtomicWriteStaging,
   async get(file) {
-    let handle;
-    try { handle = await open(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)); }
+    let entry;
+    try { entry = await lstat(file, { bigint: true }); }
     catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined; throw error; }
+    check(entry.isFile() && entry.size <= BigInt(MAX_FILE));
+    const handle = await open(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
     try {
-      const details = await handle.stat(); check(details.isFile() && details.size <= MAX_FILE);
+      const details = await handle.stat({ bigint: true });
+      // Windows lacks O_NOFOLLOW. Reject links before opening and verify that
+      // the opened handle and current directory entry still identify the same
+      // regular file before reading any bytes. Keep POSIX's atomic nofollow too.
+      const current = await lstat(file, { bigint: true });
+      check(details.isFile() && details.size <= BigInt(MAX_FILE) && current.isFile()
+        && entry.dev === details.dev && entry.ino === details.ino
+        && current.dev === details.dev && current.ino === details.ino);
       const bytes = Buffer.alloc(MAX_FILE + 1);
       const { bytesRead } = await handle.read(bytes, 0, bytes.length, 0);
-      check(bytesRead <= MAX_FILE && bytesRead === details.size);
+      check(bytesRead <= MAX_FILE && BigInt(bytesRead) === details.size);
       return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, bytesRead)));
     } finally { await handle.close(); }
   },

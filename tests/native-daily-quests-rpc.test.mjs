@@ -330,7 +330,15 @@ test('private disk journal, corrupt and oversized files, symlinks fail closed an
     assert.equal(s.requests.length, before);
   }
   await rm(file); const target = join(s.profileRoot, 'target.json'); await writeFile(target, saved); await symlink(target, file);
-  await rejected(s.handlers.snapshot({}, call), 'journal_invalid'); assert.equal(await readFile(target, 'utf8'), saved);
+  const before = s.requests.length;
+  for (const invoke of [
+    () => s.handlers.snapshot({}, call),
+    () => s.handlers.submit({ accountKey: name.slice(0, -5), questId: QID, id: ID2, consent: true, evidence }, call),
+  ]) await rejected(invoke(), 'journal_invalid');
+  assert.equal(s.requests.length, before); assert.equal(await readFile(target, 'utf8'), saved);
+  await rm(target); // A dangling link must not be mistaken for an absent journal.
+  await rejected(s.handlers.snapshot({}, call), 'journal_invalid');
+  assert.equal(s.requests.length, before);
 });
 test('locked journal access erases only exact account staging files, with main present or absent, without following symlinks', async () => {
   for (const mode of ['absent', 'expired', 'forget']) {
