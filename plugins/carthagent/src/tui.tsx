@@ -12,6 +12,7 @@ import { findNativeResumeSession } from "./ui/resume-session.mjs";
 import { cliConfigDirectory, cliConfigPath, readCliConfig, writeNativeTheme } from "./ui/host-state.js";
 import { WorkspacePage } from "./ui/workspace.js";
 import { VoyagesPage } from "./ui/voyages.js";
+import { DailyQuestsPage } from "./ui/daily-quests.js";
 import { provisionNativeThemes } from "./ui/theme-provision.mjs";
 import { setSessionAutoCompaction } from "./ui/session-preferences.mjs";
 import { createNativeReviewConsumer, nativeReviewMode, sendNativeReviewKickoff, subscribeNativeReviewEvents } from "./ui/native-review.mjs";
@@ -25,6 +26,7 @@ export default Plugin.define({
     const unregister = context.ui.router.register({ name: "carthagent", render: ({ data }) => <WorkspacePage view={String(data?.view ?? "workspace")} refreshKey={String(data?.refresh ?? "")} sessionID={typeof data?.sessionID === "string" ? data.sessionID : undefined} /> });
     const cleanups = [unregister];
     cleanups.push(context.ui.router.register({ name: "voyages", render: ({ data }) => <VoyagesPage sessionID={typeof data?.sessionID === "string" ? data.sessionID : undefined} /> }));
+    cleanups.push(context.ui.router.register({ name: "daily-quests", render: ({ data }) => <DailyQuestsPage sessionID={typeof data?.sessionID === "string" ? data.sessionID : undefined} /> }));
     const lifecycle = new AbortController();
     cleanups.push(() => lifecycle.abort());
     const [reviewLoopState, updateReviewLoopState] = context.storage.store("carthagent.native-review-loops", { initial: { sessions: [] as string[] } });
@@ -57,7 +59,7 @@ export default Plugin.define({
       // Promise RPC exposes the server event envelope (including location)
       // separately from the declared event data ({ revision }).
       const route = context.ui.router.current();
-      const sessionID = route.type === "session" ? route.sessionID : route.type === "plugin" && ["carthagent", "voyages"].includes(route.name) && typeof route.data?.sessionID === "string" ? route.data.sessionID : undefined;
+      const sessionID = route.type === "session" ? route.sessionID : route.type === "plugin" && ["carthagent", "voyages", "daily-quests"].includes(route.name) && typeof route.data?.sessionID === "string" ? route.data.sessionID : undefined;
       const expected = (sessionID ? context.data.session.get(sessionID)?.location : undefined) ?? context.location ?? context.data.location.default();
       if (event.location?.directory === expected.directory) context.data.project.invalidate();
     }, rpcEventOptions(context, lifecycle.signal)));
@@ -87,7 +89,7 @@ export default Plugin.define({
 
     async function dispatch(id: string, input: string) {
       const route = context.ui.router.current();
-      const sessionID = route.type === "session" ? route.sessionID : route.type === "plugin" && ["carthagent", "voyages"].includes(route.name) && typeof route.data?.sessionID === "string" ? route.data.sessionID : undefined;
+      const sessionID = route.type === "session" ? route.sessionID : route.type === "plugin" && ["carthagent", "voyages", "daily-quests"].includes(route.name) && typeof route.data?.sessionID === "string" ? route.data.sessionID : undefined;
       const activeSession = sessionID ? context.data.session.get(sessionID) : undefined;
       const location = activeSession?.location ?? context.location ?? context.data.location.default();
       const arg = input.trim();

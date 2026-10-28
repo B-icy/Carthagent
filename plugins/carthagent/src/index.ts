@@ -11,6 +11,8 @@ import { shipAgentDir } from '../../../lib/ship-auth.mjs';
 import { registerNativeDelivery } from './server/native-delivery';
 import { createShipRpcHandlers } from './server/ship-rpc';
 import { registerVoyagesRpc } from './server/voyages-rpc';
+import { registerDailyQuestsRpc } from './server/daily-quests-rpc';
+import { registerDailySourceRpc } from './server/daily-source-rpc';
 import { registerShipAgents, registerShipSkills } from './server/ship-agents';
 
 export async function setupCarthagent(
@@ -45,6 +47,10 @@ export async function setupCarthagent(
       cleanups.push(() => archive.dispose());
       const voyages = await registerVoyagesRpc(context);
       cleanups.push(() => voyages.dispose());
+      const daily = await registerDailyQuestsRpc(context);
+      cleanups.push(() => daily.dispose());
+      const dailySource = await registerDailySourceRpc(context);
+      cleanups.push(() => dailySource.dispose());
       const shipHandlers = createShipRpcHandlers(context);
       const registration = await context.rpc.register(Carthagent, {
         health: async () => ({
