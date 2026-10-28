@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { JsonSchema, Schema, SchemaRepresentation } from 'effect';
@@ -23,8 +23,8 @@ const rejected = (promise, code) => assert.rejects(promise, error => {
 const check = id => ({ id, kind: 'test', argv: ['never-execute-this', 'sensitive-argv'], timeoutSeconds: 20 });
 
 function fixture(t, checks = [check('unit')]) {
-  // Match the native canonical location, including macOS /var -> /private/var.
-  // The source boundary must still reject a linked authoritative path.
+  // Keep the baseline canonical; explicit cases below exercise native ancestor
+  // aliases such as macOS /var -> /private/var, distinct from linked leaves.
   const base = realpathSync(mkdtempSync(join(tmpdir(), 'daily-source-')));
   t.after(() => rmSync(base, { recursive: true, force: true }));
   const root = join(base, 'project'); mkdirSync(root);
@@ -247,43 +247,106 @@ test('foreign sessions, mismatched IDs, forged task worktrees and arbitrary path
   await rejected(f.read(), 'not_owned');
 });
 
-test('canonical native locations remain readable through a linked temporary namespace without accepting linked authority', async t => {
+test('native ancestor aliases use canonical root/location/session identity, including an absent active report', async t => {
   const f = fixture(t);
   const alias = join(f.base, 'temporary-alias');
   symlinkSync(f.base, alias, 'junction');
   const aliasedRoot = join(alias, 'project');
-  const canonical = realpathSync(aliasedRoot);
-  assert.equal(canonical, f.root);
-  f.ctx.location.directory = canonical;
-  f.ctx.location.project.canonical = canonical;
-  f.session.location.directory = canonical;
-  assert.equal((await f.read()).source.runId, f.state.runId);
-  f.ctx.location.directory = aliasedRoot;
-  f.ctx.location.project.canonical = aliasedRoot;
-  f.session.location.directory = aliasedRoot;
-  await rejected(f.read(), 'invalid_source');
+  assert.equal(realpathSync(aliasedRoot), f.root);
+  f.state.evidence.unit = f.receipt(); f.save();
+  const baseline = await f.read();
+  for (let mask = 0; mask < 8; mask++) {
+    f.ctx.location.project.canonical = mask & 1 ? aliasedRoot : f.root;
+    f.ctx.location.directory = mask & 2 ? aliasedRoot : f.root;
+    f.session.location.directory = mask & 4 ? aliasedRoot : f.root;
+    assert.deepEqual(await f.read(), baseline, `native aliases ${mask}`);
+    rmSync(join(f.root, '.harness', 'active.json'));
+    assert.deepEqual(await f.read(), { source: null });
+    selectReport(f.root, f.report.path);
+  }
 });
 
-test('symlink components, final files and directory reports are rejected without following local secrets', async t => {
-  for (const target of ['report', 'run', 'session', 'harness', 'pointer', 'journal', 'root', 'ancestor']) {
+test('task and operation worktrees require canonically matching session, journal and native inventory', async t => {
+  const f = fixture(t);
+  const worktree = join(f.base, 'worktree'); mkdirSync(worktree);
+  const foreign = join(f.base, 'foreign'); mkdirSync(foreign);
+  const alias = join(f.base, 'namespace'); symlinkSync(f.base, alias, 'junction');
+  const foreignAlias = join(f.base, 'foreign-namespace'); symlinkSync(foreign, foreignAlias, 'junction');
+  // Both paths have the same suffix, but different canonical targets.
+  const foreignWorktree = join(foreign, 'worktree'); mkdirSync(foreignWorktree);
+  const aliased = join(alias, 'worktree'), foreignAliased = join(foreignAlias, 'worktree');
+  const report = createReport(worktree, f.state, f.sessionID); selectReport(worktree, report.path);
+  const journal = join(f.root, '.harness', 'opencode-tasks.json');
+  const saveJournal = (kind, directory) => writeFileSync(journal, JSON.stringify({ version: 1, tasks: [], operations: [], [kind]: [{ sessionID: f.sessionID, worktree: directory }] }));
+  f.ctx.location.project.canonical = join(alias, 'project');
+  f.ctx.location.directory = join(alias, 'project');
+  for (const kind of ['tasks', 'operations']) {
+    for (let mask = 0; mask < 8; mask++) {
+      f.session.location.directory = mask & 1 ? aliased : worktree;
+      saveJournal(kind, mask & 2 ? aliased : worktree);
+      f.nativeWorktrees.splice(0, Infinity, mask & 4 ? aliased : worktree);
+      assert.equal((await f.read()).source.runId, f.state.runId, `${kind} aliases ${mask}`);
+    }
+    f.session.location.directory = aliased;
+    f.nativeWorktrees.splice(0, Infinity, foreignAliased);
+    await rejected(f.read(), 'not_owned'); // Journal alone cannot grant authority.
+    f.nativeWorktrees.splice(0, Infinity, aliased);
+    saveJournal(kind, foreignAliased);
+    await rejected(f.read(), 'not_owned'); // Native inventory alone is insufficient.
+    saveJournal(kind, aliased);
+    f.session.location.directory = foreignAliased;
+    await rejected(f.read(), 'not_owned');
+  }
+  f.session.location.directory = aliased;
+  rmSync(journal);
+  await rejected(f.read(), 'not_owned', 'inventory without any journal cannot authorize a task worktree');
+  f.session.location.directory = join(foreignAlias, 'worktree');
+  await rejected(f.read(), 'not_owned', 'an ancestor alias cannot authorize a foreign canonical target');
+});
+
+test('linked native directory leaves are rejected even when they resolve to an owned directory', async t => {
+  for (const target of ['root', 'location', 'session', 'journal', 'inventory']) {
     await t.test(target, async t => {
       const f = fixture(t);
+      const leaf = join(f.base, 'linked-leaf');
+      if (['root', 'location', 'session'].includes(target)) {
+        symlinkSync(f.root, leaf, 'junction');
+        if (target === 'root') f.ctx.location.project.canonical = leaf;
+        if (target === 'location') f.ctx.location.directory = leaf;
+        if (target === 'session') f.session.location.directory = leaf;
+      } else {
+        const worktree = join(f.base, 'worktree'); mkdirSync(worktree);
+        symlinkSync(worktree, leaf, 'junction');
+        f.session.location.directory = worktree;
+        writeFileSync(join(f.root, '.harness', 'opencode-tasks.json'), JSON.stringify({ version: 1, tasks: [{ sessionID: f.sessionID, worktree: target === 'journal' ? leaf : worktree }], operations: [] }));
+        f.nativeWorktrees.push(target === 'inventory' ? leaf : worktree);
+      }
+      await rejected(f.read(), 'invalid_source');
+    });
+  }
+});
+
+test('evidence symlink components and final files stay forbidden under canonical or ancestor-aliased authority', async t => {
+  for (const aliased of [false, true]) for (const target of ['report', 'run', 'session', 'harness', 'pointer', 'journal', 'root']) {
+    await t.test(`${aliased ? 'aliased' : 'canonical'} ${target}`, async t => {
+      const f = fixture(t);
+      if (aliased) {
+        const alias = join(f.base, 'alias'); symlinkSync(f.base, alias, 'junction');
+        f.ctx.location.directory = join(alias, 'project');
+        f.ctx.location.project.canonical = f.ctx.location.directory;
+        f.session.location.directory = f.ctx.location.directory;
+      }
+      writeFileSync(join(f.root, '.harness', 'opencode-tasks.json'), JSON.stringify({ version: 1, tasks: [], operations: [] }));
       const replacements = {
         report: f.report.path, run: f.report.dir, session: join(f.root, '.harness', f.sessionID),
         harness: join(f.root, '.harness'), pointer: join(f.root, '.harness', 'active.json'), journal: join(f.root, '.harness', 'opencode-tasks.json'), root: f.root,
       };
-      if (target === 'ancestor') {
-        const alias = join(f.base, 'alias'); symlinkSync(f.base, alias);
-        f.ctx.location.directory = join(alias, 'project');
-        f.ctx.location.project.canonical = f.ctx.location.directory;
-        f.session.location.directory = f.ctx.location.directory;
-      } else {
-        const path = replacements[target];
-        rmSync(path, { recursive: true, force: true });
-        const elsewhere = join(f.base, 'secret');
-        if (['report', 'pointer', 'journal'].includes(target)) writeFileSync(elsewhere, '{"private":"must not follow"}'); else mkdirSync(elsewhere);
-        symlinkSync(elsewhere, path);
-      }
+      const path = replacements[target];
+      // Preserve fully valid content: a followed link must not merely fail later
+      // because its target contains malformed evidence or a missing pointer.
+      const elsewhere = join(f.base, 'private-target');
+      renameSync(path, elsewhere);
+      symlinkSync(elsewhere, path, ['report', 'pointer', 'journal'].includes(target) ? 'file' : 'junction');
       await rejected(f.read(), 'invalid_source');
     });
   }

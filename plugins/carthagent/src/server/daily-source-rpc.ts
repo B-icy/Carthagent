@@ -1,6 +1,6 @@
 import type { Context } from '@opencode/plugin/promise/plugin';
 import type { RpcCallContext } from '@opencode/plugin/promise/rpc';
-import { constants, closeSync, fstatSync, lstatSync, openSync, readSync } from 'node:fs';
+import { constants, closeSync, fstatSync, lstatSync, openSync, readSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 import { checkDigest, evidenceFresh, fingerprint, requiresReview, reviewFresh, validatePlan } from '../../../../lib/delivery.mjs';
 import { DailySource, type DailySourceReport } from '../daily-source-rpc';
@@ -14,7 +14,16 @@ const safeID = (value: unknown): value is string => typeof value === 'string' &&
 const invalid = () => new Error('invalid_source');
 const missing = (error: unknown) => record(error) && error.code === 'ENOENT';
 
-/** Check every component, including ancestors of the authoritative native location. */
+/** Match native directory identities through ancestor aliases (macOS /var, /tmp),
+ * never a linked directory leaf. Keep this local: importing pull-request-rpc's
+ * equivalent helper would also import unrelated process/review integrations. */
+function canonicalDirectory(path: string) {
+  const absolute = resolve(path);
+  if (!lstatSync(absolute).isDirectory()) throw invalid();
+  return realpathSync(absolute);
+}
+
+/** Evidence paths use canonical native roots, then reject every linked component. */
 function noLinks(path: string) {
   const absolute = resolve(path);
   let cursor = parse(absolute).root;
@@ -152,12 +161,11 @@ export function createDailySourceRpcHandlers(ctx: SourceContext) {
       call.signal.throwIfAborted();
       if (!record(input) || !safeID(input.sessionID) || Object.keys(input).some(key => key !== 'sessionID')) return call.error('dailySourceError', 'invalid_request', { code: 'invalid_request' });
       try {
-        const root = resolve(ctx.location.project.canonical);
-        const location = resolve(ctx.location.directory);
-        noLinks(root); noLinks(location);
+        const root = canonicalDirectory(ctx.location.project.canonical);
+        const location = canonicalDirectory(ctx.location.directory);
         const session = await ctx.session.get({ sessionID: input.sessionID }, { signal: call.signal });
         if (session.id !== input.sessionID || session.projectID !== ctx.location.project.id || !isAbsolute(session.location.directory)) throw new Error('not_owned');
-        const directory = resolve(session.location.directory);
+        const directory = canonicalDirectory(session.location.directory);
         // Ownership mirrors workspace-rpc. Durable task records alone cannot authorize
         // a forged worktree: also require the native project's authoritative inventory.
         const journal = localJson(join(root, '.harness', 'opencode-tasks.json'))?.value;
@@ -165,11 +173,11 @@ export function createDailySourceRpcHandlers(ctx: SourceContext) {
         const tasks = record(journal) ? journal.tasks as unknown[] : [];
         const operations = record(journal) ? journal.operations as unknown[] : [];
         const owned = [...tasks, ...operations].find(item => record(item) && item.sessionID === session.id && typeof item.worktree === 'string');
-        const expected = record(owned) && typeof owned.worktree === 'string' ? resolve(owned.worktree) : location;
+        const expected = record(owned) && typeof owned.worktree === 'string' ? canonicalDirectory(owned.worktree) : location;
         if (directory !== expected) throw new Error('not_owned');
         if (directory !== root && directory !== location) {
           const native = await ctx.worktree.list({ projectID: ctx.location.project.id }, { signal: call.signal });
-          if (!native.some(entry => resolve(entry.directory) === directory)) throw new Error('not_owned');
+          if (!native.some(entry => canonicalDirectory(entry.directory) === directory)) throw new Error('not_owned');
         }
         noLinks(directory);
         call.signal.throwIfAborted();
