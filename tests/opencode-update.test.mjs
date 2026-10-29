@@ -51,7 +51,45 @@ test('force remains bound to the validated version and command', async () => {
     platform: 'linux',
     runCommand: async (argv, options) => { calls.push({ argv, options }); return { code: 0, output: '' }; },
   });
-  assert.deepEqual(calls[0].argv, ['npm', 'install', '-g', '--install-links=true', release.installSpec]);
+  assert.deepEqual(calls.map(call => call.argv), [
+    ['npm', 'view', `carthagent@${release.version}`, 'version', '--json'],
+    ['npm', 'install', '-g', '--install-links=true', `carthagent@${release.version}`],
+  ]);
+});
+
+test('npm update falls back to the validated GitHub spec when npm view fails', async () => {
+  const calls = [];
+  await runNativeUpdate({
+    io: noopIo, currentVersion: '1.0.0', fetchLatestRelease: async () => ({ release }),
+    detectInstallMethod: () => 'npm', platform: 'linux',
+    runCommand: async (argv, options) => {
+      calls.push({ argv, options });
+      return argv[1] === 'view' ? { code: 1, output: 'E404' } : { code: 0, output: '' };
+    },
+  });
+  assert.deepEqual(calls.map(call => call.argv), [
+    ['npm', 'view', `carthagent@${release.version}`, 'version', '--json'],
+    ['npm', 'install', '-g', '--install-links=true', release.installSpec],
+  ]);
+  assert.equal(calls[0].options.timeoutSeconds, 10);
+});
+
+test('clone update does not query the registry', async () => {
+  const calls = [];
+  await runNativeUpdate({
+    io: noopIo, currentVersion: '1.0.0', fetchLatestRelease: async () => ({ release }),
+    detectInstallMethod: () => 'clone',
+    runCommand: async argv => {
+      calls.push(argv);
+      if (argv[1] === 'status') return { code: 0, output: '' };
+      if (argv[1] === 'fetch') return { code: 0, output: '' };
+      if (argv[1] === 'rev-parse') return { code: 0, output: `${'a'.repeat(40)}\n` };
+      if (argv[1] === 'checkout') return { code: 0, output: '' };
+      if (argv[0] === 'npm') return { code: 0, output: '' };
+      throw new Error(`unexpected command ${argv.join(' ')}`);
+    },
+  });
+  assert.equal(calls.some(argv => argv[0] === 'npm' && argv[1] === 'view'), false);
 });
 
 test('clone update refuses dirty changes and preserves the dirty file', () => tempDir(async base => {
@@ -273,9 +311,13 @@ test('failed update command stops later steps and includes bounded failure outpu
   const calls = [];
   await assert.rejects(runNativeUpdate({
     io: noopIo, currentVersion: '1.0.0', fetchLatestRelease: async () => ({ release }),
-    detectInstallMethod: () => 'npm', runCommand: async argv => { calls.push(argv); return { code: 2, output: 'npm failure' }; },
+    detectInstallMethod: () => 'npm', runCommand: async argv => {
+      calls.push(argv);
+      return argv[1] === 'view' ? { code: 0, output: '"1.2.0"' } : { code: 2, output: 'npm failure' };
+    },
   }), /npm install .* failed:\nnpm failure/);
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[1], ['npm', 'install', '-g', '--install-links=true', 'carthagent@1.2.0']);
 });
 
 test('runUpdateCommand strips runtime download tokens from child env case-insensitively without mutating caller env', async () => {
@@ -338,9 +380,13 @@ test('zero exit code with timeout or cancellation is failure and prevents later 
     const calls = [];
     await assert.rejects(runNativeUpdate({
       io: noopIo, currentVersion: '1.0.0', fetchLatestRelease: async () => ({ release }),
-      detectInstallMethod: () => 'npm', runCommand: async argv => { calls.push(argv); return result; },
+      detectInstallMethod: () => 'npm', runCommand: async argv => {
+        calls.push(argv);
+        return argv[1] === 'view' ? { code: 0, output: '"1.2.0"' } : result;
+      },
     }), result.timedOut ? /timed out/ : /cancelled/);
-    assert.equal(calls.length, 1);
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1][1], 'install');
   }
 });
 
@@ -402,8 +448,9 @@ test('runNativeUpdate passes npm operations through the Windows cmd shim', async
     detectInstallMethod: () => 'npm', platform: 'win32',
     runCommand: async (argv, options) => { calls.push({ argv, options }); return { code: 0, output: '' }; },
   });
-  assert.deepEqual(calls[0].argv, [
-    'cmd.exe', '/d', '/s', '/c', 'npm', 'install', '-g', '--install-links=true', release.installSpec,
+  assert.deepEqual(calls.map(call => call.argv), [
+    ['cmd.exe', '/d', '/s', '/c', 'npm', 'view', `carthagent@${release.version}`, 'version', '--json'],
+    ['cmd.exe', '/d', '/s', '/c', 'npm', 'install', '-g', '--install-links=true', `carthagent@${release.version}`],
   ]);
 });
 

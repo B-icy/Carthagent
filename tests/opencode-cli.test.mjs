@@ -1131,7 +1131,7 @@ test('native demo runs a clearly labeled offline fixture without starting OpenCo
   assert.match(output.output.stdout.join('\n'), /disposable demo fixture/);
 });
 
-test('native update installs the validated package spec', async () => {
+test('native update prefers the exact published registry package', async () => {
   const calls = [];
   const runtime = await createOpenCodeCliRuntime({ cwd: '/demo/workspace', native: {
     runtime: {}, service: { ensureService: async () => { throw new Error('demo must not launch the native service'); } }, headless: {},
@@ -1147,7 +1147,10 @@ test('native update installs the validated package spec', async () => {
   assert.equal(await runtime.command({ command: 'update', args: [] }), 0);
   const npmPrefix = process.platform === 'win32' ? ['cmd.exe', '/d', '/s', '/c', 'npm'] : ['npm'];
   assert.deepEqual(calls, [{
-    argv: [...npmPrefix, 'install', '-g', '--install-links=true', 'github:B-icy/Carthagent#v1.0.4'],
+    argv: [...npmPrefix, 'view', 'carthagent@1.0.4', 'version', '--json'],
+    options: { cwd: '/package/root', timeoutSeconds: 10 },
+  }, {
+    argv: [...npmPrefix, 'install', '-g', '--install-links=true', 'carthagent@1.0.4'],
     options: { cwd: '/package/root', timeoutSeconds: 600 },
   }]);
 });
@@ -1183,7 +1186,10 @@ test('native updater force-reinstalls only the canonical validated release tag o
   assert.equal(await runtime.command({ command: 'update', args: ['--force'] }), 0);
   const npmPrefix = process.platform === 'win32' ? ['cmd.exe', '/d', '/s', '/c', 'npm'] : ['npm'];
   assert.deepEqual(installs, [{
-    argv: [...npmPrefix, 'install', '-g', '--install-links=true', 'github:B-icy/Carthagent#v1.0.4'],
+    argv: [...npmPrefix, 'view', 'carthagent@1.0.4', 'version', '--json'],
+    options: { cwd: '/package/root', timeoutSeconds: 10 },
+  }, {
+    argv: [...npmPrefix, 'install', '-g', '--install-links=true', 'carthagent@1.0.4'],
     options: { cwd: '/package/root', timeoutSeconds: 600 },
   }]);
 });

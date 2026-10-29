@@ -15,20 +15,10 @@ downloads `chrome-headless-shell` on first use to `~/.carthagent/browser/`; no
 local browser installation is needed. An external WebDriver endpoint is also
 supported.
 
-Install the currently-default CLI from GitHub:
+Install Carthagent:
 
 ```sh
-npm install -g --install-links=true github:B-icy/Carthagent
-ctg
-```
-
-With npm 11, `--install-links=true` is required for this `github:` global
-install. Without it, npm can leave `ctg` linked to a temporary clone that is
-removed after install. To persist the setting:
-
-```sh
-npm config set install-links true --location=user
-npm install -g github:B-icy/Carthagent
+npm install -g carthagent
 ctg
 ```
 
@@ -44,7 +34,7 @@ moving only the identified stale entries out of the way; then retry:
 ```sh
 npm root -g
 # After reviewing the exact paths, move the stale carthagent entry/stash aside.
-npm install -g --install-links=true github:B-icy/Carthagent
+npm install -g carthagent
 ```
 
 The regular CLI's `ctg update` has cleanup-and-retry behavior for these stale

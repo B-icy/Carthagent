@@ -69,7 +69,8 @@ try {
   const manifest = JSON.parse(await readFile(join(install, 'node_modules/carthagent/package.json'), 'utf8'));
   const installed = join(install, 'node_modules/carthagent');
   const installedPlugin = join(installed, 'plugins/carthagent');
-  assert.equal(manifest.dependencies['@opencode/cli'], '2.0.32');
+  assert.equal(manifest.devDependencies['@opencode/cli'], '2.0.32');
+  assert.equal(Object.hasOwn(manifest.dependencies, '@opencode/cli'), false, '@opencode/cli must not ship as a runtime dependency');
   assert.equal(manifest.dependencies['@opencode/theme'], '2.0.32');
   assert.equal(manifest.dependencies['@opentui/core'], '0.5.17');
   assert.equal(manifest.dependencies['@opentui/solid'], '0.5.17');
@@ -78,7 +79,7 @@ try {
   assert.equal(manifest.dependencies['web-tree-sitter-legacy'], 'npm:web-tree-sitter@0.22.6');
   const sharedRuntime = ['@opentui/core', '@opentui/solid', 'solid-js'];
   for (const name of sharedRuntime) {
-    const hostResolution = createRequire(join(install, 'node_modules/@opencode/cli/package.json')).resolve(name);
+    const hostResolution = createRequire(join(installed, 'package.json')).resolve(name);
     const pluginResolution = createRequire(join(installedPlugin, 'package.json')).resolve(name);
     assert.equal(pluginResolution, hostResolution, `${name} must resolve to the same host and plugin runtime instance`);
   }
@@ -151,17 +152,11 @@ try {
       'a release package manifest or --require-owned requires the default resolver to acquire its package-pinned CTG runtime; upstream-compatible mode is preview-only');
   }
 
-  // Independently check that the normal installation did acquire the upstream
-  // dependency executable: it remains a compatibility check, not the selected
-  // binary override used by the acceptance probes.
-  const cliPackageJson = createRequire(join(install, 'node_modules/carthagent/package.json')).resolve('@opencode/cli/package.json');
-  const cliManifest = JSON.parse(await readFile(cliPackageJson, 'utf8'));
-  const cliBin = typeof cliManifest.bin === 'string' ? cliManifest.bin : cliManifest.bin?.opencode;
-  assert.equal(typeof cliBin, 'string', '@opencode/cli must expose its executable through package metadata');
-  const packagedBinary = resolve(dirname(cliPackageJson), cliBin);
-  if (manifest.dependencies['@opencode/cli']) {
-    assert.ok((await stat(packagedBinary)).isFile(), 'normal npm install must materialize the declared OpenCode dependency');
-  }
+  assert.throws(
+    () => createRequire(join(installed, 'package.json')).resolve('@opencode/cli/package.json'),
+    { code: 'MODULE_NOT_FOUND' },
+    'installed package must not include the 203 MB OpenCode CLI fallback',
+  );
   // Run the acceptance harness from the installed artifact itself so its
   // imports (including @opencode/client) resolve only through that install.
   const probes = [];

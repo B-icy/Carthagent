@@ -1,7 +1,6 @@
 {
   "name": "carthagent",
   "version": "1.1.0-preview.9",
-  "private": true,
   "workspaces": [
     "plugins/carthagent"
   ],
@@ -91,7 +90,6 @@
     "manual:run": "node tools/native-manual.mjs"
   },
   "dependencies": {
-    "@opencode/cli": "2.0.32",
     "@opencode/client": "2.0.32",
     "@opencode/plugin": "2.0.32",
     "@opencode/theme": "2.0.32",
@@ -109,6 +107,7 @@
     "seroval": "1.6.9"
   },
   "devDependencies": {
+    "@opencode/cli": "2.0.32",
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.3.0",
     "eslint": "^10.11.0",

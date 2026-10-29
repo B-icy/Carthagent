@@ -18,6 +18,22 @@ test('published release runtime verification explicitly uses the anonymous asset
   assert.match(verify, /CTG_RUNTIME_GITHUB_TOKEN:\s*['"]{2}/);
 });
 
+test('npm publication is guarded by release verification and selects latest or next', () => {
+  const publish = workflow.match(/  publish-npm:\n([\s\S]*?)(?=\n  publish-release-manifest:)/)?.[1];
+  assert.ok(publish, 'npm publication job exists');
+  assert.match(publish, /needs: verify-release/);
+  assert.match(publish, /id-token:\s*write/);
+  assert.match(publish, /node-version: 24/);
+  assert.match(publish, /registry-url: https:\/\/registry\.npmjs\.org/);
+  assert.match(publish, /refs\/tags\/\$\{RELEASE_TAG\}/);
+  assert.match(publish, /\[ "\$tag_sha" != "\$EXPECTED_SHA" \]/);
+  assert.match(publish, /Set the NPM_TOKEN repository secret/);
+  assert.match(publish, /npm view "carthagent@\$\{version\}" version --json/);
+  assert.match(publish, /dist_tag=latest/);
+  assert.match(publish, /dist_tag=next/);
+  assert.match(publish, /npm publish --provenance --access public --tag "\$dist_tag"/);
+});
+
 test('the final publish step resolves the remote lightweight or annotated tag immediately before POST', () => {
   const publish = workflow.match(/- name: Publish the CLI release manifest to the control plane([\s\S]*)/)?.[1];
   assert.ok(publish, 'publish step exists');
