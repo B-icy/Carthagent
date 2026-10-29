@@ -57,6 +57,7 @@ export function VoyagesPage(props: { sessionID?: string }) {
     const snapshot = view().snapshot;
     const basic = [
       { name: "Refresh authoritative state", description: "Reload live profile and catalog", value: "refresh" },
+      { name: "Daily coding quests", description: "Server assignments · selected evidence · explicit external JEV consent", value: "daily" },
       { name: "Sign in / reconnect", description: "Native provider connection · choose Carthagent Ship device sign-in", value: "signin" },
       { name: "Back", description: props.sessionID ? "Return to selected session" : "Return home", value: "back" },
     ];
@@ -76,6 +77,7 @@ export function VoyagesPage(props: { sessionID?: string }) {
       return;
     }
     if (value === "refresh") { void controller.refresh(); return; }
+    if (value === "daily") { context.ui.router.navigate({ type: "plugin", name: "daily-quests", data: { ...(props.sessionID ? { sessionID: props.sessionID } : {}) } }); return; }
     if (value === "customize") { void customize(); return; }
     if (value === "retry") { void retry(); return; }
     const item = view().snapshot?.items.find((entry) => `item:${entry.item}` === value);
