@@ -8,7 +8,7 @@ Carthagent is a delivery-focused AI coding console and CLI built on a bundled de
 
 ## Native Carthagent preview
 
-The **1.1.0-preview.9 release candidate is not yet published**. It inherits native as the default `ctg` interface from preview.8. Ship retains the legacy delivery workflow, including approval, checks, review, repair, recovery, and resume; Lite remains direct execution. Installing the experimental channel is still explicit and selects published releases only, not this candidate. Stable 1.0.7 retains the legacy console. See the [preview.9 candidate notes](docs/release-notes-preview.9.md) for evidence and outstanding release gates.
+The **1.1.0-preview.10 release candidate is not yet published**. It adds native daily coding quests with selected evidence, exact-payload preview, fresh per-submission consent, and durable recovery; assessments do not award rewards. Native remains the default `ctg` interface inherited from preview.8. Ship retains approval, checks, review, repair, recovery, and resume; Lite remains direct execution. Published preview.9 remains immutable and does not gain candidate changes. Experimental-channel installation is explicit and selects published releases only, not this candidate. Stable 1.0.7 retains the legacy console. See the [preview.10 candidate notes](docs/release-notes-preview.10.md) for evidence and outstanding release gates.
 
 ```sh
 ctg
@@ -61,9 +61,12 @@ Native Voyages landed in PR #225. Live development-runtime testing exercised
 browser device approval, name cancel/save, owned Beanie equip, restart and web
 persistence, expiry recovery, and revocation. The approving web player remains
 authoritative. The tested wallet had 10 coins and no affordable paid quote:
-no live paid debit or replay was proven. These are bounded source/runtime
-results, not published preview.9 acceptance; an older immutable release tag
-does not acquire changes from current main.
+no live paid debit or replay was proven. These are historical, bounded source/runtime
+results, not preview.10 installed-package acceptance. Subsequent development-runtime
+testing completed one explicitly authorized 40-coin purchase and restart
+persistence; see the [preview.10 candidate notes](docs/release-notes-preview.10.md)
+for its limits. Published preview.9 remains immutable and does not acquire
+changes from current main.
 
 ## Install and update
 
@@ -76,7 +79,7 @@ ctg
 
 Replace `vX.Y.Z` with a published release tag. npm 11 requires the per-command `--install-links=true` flag for this GitHub global install. Native releases acquire and verify their own platform runtime from the exact tagged assets; they never fall back to an unrelated system binary. See the [native upgrade guide](docs/native-upgrade.md) for source-checkout and profile-preservation instructions, or [legacy CLI instructions](docs/legacy-cli.md) for stable 1.0.7.
 
-`ctg update --check` checks for a published release without installing. Select `--channel experimental` to include published previews; drafts are never installed. The legacy stable updater can update a clean source clone. The native updater differs: it refuses to check out a release into any active source clone, including a clean one; it installs package releases only from an npm installation. Preserve local changes and use the manual exact-tag checkout procedure in the [native upgrade guide](docs/native-upgrade.md) when updating a development checkout. Do not treat this documentation change as a release: tagging, draft creation, asset upload, final-tag acceptance, and publication remain pending and require separate approval. See the [preview.9 candidate notes](docs/release-notes-preview.9.md); the older [native migration draft](docs/release-notes-native-draft.md) is historical, not current installation guidance.
+`ctg update --check` checks for a published release without installing. Select `--channel experimental` to include published previews; drafts are never installed. The legacy stable updater can update a clean source clone. The native updater differs: it refuses to check out a release into any active source clone, including a clean one; it installs package releases only from an npm installation. Preserve local changes and use the manual exact-tag checkout procedure in the [native upgrade guide](docs/native-upgrade.md) when updating a development checkout. Preview.9 is published and immutable; preview.10 is a candidate, not an installable published release. Its tag, draft/assets, exact-tag installed default-resolver acceptance, public release, and anonymous public default-resolver acceptance remain pending. See the [preview.10 candidate notes](docs/release-notes-preview.10.md); the older [native migration draft](docs/release-notes-native-draft.md) is historical, not current installation guidance.
 
 ## Update channels
 
