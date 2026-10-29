@@ -12,6 +12,8 @@ npm install -g carthagent
 
 Node.js 22.19+ is required for the npm install. From source: `npm install -g --install-links=true github:B-icy/Carthagent#vX.Y.Z` (replace with a published tag).
 
+See [workflow.svg](docs/workflow.svg) for the flow and [evaluation history](docs/evaluation.md) for trials, including failures.
+
 ## Native CLI
 
 ```sh
@@ -24,7 +26,7 @@ The old `CTG_NATIVE` toggle no longer changes routing. The native route launches
 
 Native projects use the native project/session model. CTG task creation associates a task with an independent native session and native worktree; task relations are CTG metadata, not parent/child native sessions. Native session resume/continue is scoped to the active workspace. Legacy Pi transcripts can be listed, searched, read, and exported with `ctg archive`; they are **read-only archives** and cannot be resumed or imported as native sessions. See the [native upgrade and migration guide](docs/native-upgrade.md) before switching workflows.
 
-The native TUI exposes CTG workspace/task actions such as `/ctg-workspace`, `/ctg-open`, `/ctg-worktree`, and `/ctg-task`, alongside delivery and session commands. The native runtime owns the terminal renderer and lifecycle.
+The native TUI exposes CTG workspace/task actions such as `/ctg-workspace`, `/ctg-open`, `/ctg-worktree`, and `/ctg-task`, alongside delivery and session commands. The native runtime owns the terminal renderer and lifecycle. Do not assume a listed command overrides a built-in host command: submitted `/help` precedence is a known unresolved acceptance gate.
 
 ```sh
 node bin/ctg.mjs                         # native interactive TUI
@@ -63,15 +65,18 @@ Native Voyages landed in PR #225. Live development-runtime testing exercised
 browser device approval, name cancel/save, owned Beanie equip, restart and web
 persistence, expiry recovery, and revocation. The approving web player remains
 authoritative. The tested wallet had 10 coins and no affordable paid quote:
-no live paid debit or replay was proven. These are bounded source/runtime
-results, not published preview.9 acceptance; an older immutable release tag
-does not acquire changes from current main.
+no live paid debit or replay was proven. These are historical, bounded source/runtime
+results, not preview.10 installed-package acceptance. Subsequent development-runtime
+testing completed one explicitly authorized 40-coin purchase and restart
+persistence; see the [preview.10 candidate notes](docs/release-notes-preview.10.md)
+for its limits. Published preview.9 remains immutable and does not acquire
+changes from current main.
 
 ## Install and update
 
 The installer selects an exact published release and acquires its pinned native runtime; it never falls back to an unrelated system binary. See the [native upgrade guide](docs/native-upgrade.md) for source-checkout and profile-preservation instructions, or [legacy CLI instructions](docs/legacy-cli.md) for stable 1.0.7.
 
-`ctg update --check` checks for a published release without installing. Select `--channel experimental` to include published previews; drafts are never installed. The legacy stable updater can update a clean source clone. The native updater differs: it refuses to check out a release into any active source clone, including a clean one; it installs package releases only from an npm installation. Preserve local changes and use the manual exact-tag checkout procedure in the [native upgrade guide](docs/native-upgrade.md) when updating a development checkout. Do not treat this documentation change as a release: tagging, draft creation, asset upload, final-tag acceptance, and publication remain pending and require separate approval. See the [preview.9 candidate notes](docs/release-notes-preview.9.md); the older [native migration draft](docs/release-notes-native-draft.md) is historical, not current installation guidance.
+`ctg update --check` checks for a published release without installing. Select `--channel experimental` to include published previews; drafts are never installed. The legacy stable updater can update a clean source clone. The native updater differs: it refuses to check out a release into any active source clone, including a clean one; it installs package releases only from an npm installation. Preserve local changes and use the manual exact-tag checkout procedure in the [native upgrade guide](docs/native-upgrade.md) when updating a development checkout. Preview.9 is published and immutable; preview.10 is a candidate, not an installable published release. Its tag, draft/assets, exact-tag installed default-resolver acceptance, public release, and anonymous public default-resolver acceptance remain pending. See the [preview.10 candidate notes](docs/release-notes-preview.10.md); the older [native migration draft](docs/release-notes-native-draft.md) is historical, not current installation guidance.
 
 ## Update channels
 
@@ -101,20 +106,23 @@ Experimental software may still contain bugs; read its release notes first.
 
 ## Release status
 
-The 1.1.0-preview.9 release candidate is not yet published. It inherits native
-as the default `ctg` interface from preview.8. Ship retains the legacy delivery
-workflow, including approval, checks, review, repair, recovery, and resume;
-Lite remains direct execution. Installing the experimental channel is still
-explicit and selects published releases only, not this candidate. Stable 1.0.7
-retains the legacy console. See the [preview.9 candidate notes](docs/release-notes-preview.9.md)
-for evidence and outstanding release gates. Do not assume a listed command
-overrides a built-in host command: submitted `/help` precedence remains an
-unresolved acceptance gate. Each experimental release must pass its exact
-installed-package gate before publication. Earlier migration findings and
-remaining platform caveats are recorded in the [Native migration
-ledger](docs/opencode-migration.md#delivery-ledger), [native compatibility
-matrix](docs/native-compatibility.md), and [terminal evidence
-status](docs/native-terminal-semantics.md#evidence-status-pr-162).
+The 1.1.0-preview.10 release candidate is not yet published. It adds native daily
+coding quests with selected evidence, exact-payload preview, fresh per-submission
+consent, and durable recovery; assessments do not award rewards. Native remains
+the default `ctg` interface inherited from preview.8. Ship retains approval,
+checks, review, repair, recovery, and resume; Lite remains direct execution.
+Published preview.9 is immutable and does not gain candidate changes. Experimental
+installation is explicit and selects published releases only; stable 1.0.7
+retains the legacy console.
+
+Preview.10's tag, draft/assets, exact-tag installed default-resolver acceptance,
+public release, and anonymous public default-resolver acceptance remain pending.
+Each experimental release must pass its exact installed-package gate before
+publication. See the [preview.10 candidate notes](docs/release-notes-preview.10.md)
+for evidence and gates; earlier migration findings and remaining platform caveats
+are in the [Native migration ledger](docs/opencode-migration.md#delivery-ledger),
+[native compatibility matrix](docs/native-compatibility.md), and [terminal
+evidence status](docs/native-terminal-semantics.md#evidence-status-pr-162).
 
 ## Regular CLI
 

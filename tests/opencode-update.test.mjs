@@ -78,7 +78,7 @@ test('clone update does not query the registry', async () => {
   const calls = [];
   await runNativeUpdate({
     io: noopIo, currentVersion: '1.0.0', fetchLatestRelease: async () => ({ release }),
-    detectInstallMethod: () => 'clone',
+    detectInstallMethod: () => 'clone', platform: 'linux',
     runCommand: async argv => {
       calls.push(argv);
       if (argv[1] === 'status') return { code: 0, output: '' };
@@ -311,7 +311,7 @@ test('failed update command stops later steps and includes bounded failure outpu
   const calls = [];
   await assert.rejects(runNativeUpdate({
     io: noopIo, currentVersion: '1.0.0', fetchLatestRelease: async () => ({ release }),
-    detectInstallMethod: () => 'npm', runCommand: async argv => {
+    detectInstallMethod: () => 'npm', platform: 'linux', runCommand: async argv => {
       calls.push(argv);
       return argv[1] === 'view' ? { code: 0, output: '"1.2.0"' } : { code: 2, output: 'npm failure' };
     },
@@ -380,7 +380,7 @@ test('zero exit code with timeout or cancellation is failure and prevents later 
     const calls = [];
     await assert.rejects(runNativeUpdate({
       io: noopIo, currentVersion: '1.0.0', fetchLatestRelease: async () => ({ release }),
-      detectInstallMethod: () => 'npm', runCommand: async argv => {
+      detectInstallMethod: () => 'npm', platform: 'linux', runCommand: async argv => {
         calls.push(argv);
         return argv[1] === 'view' ? { code: 0, output: '"1.2.0"' } : result;
       },
