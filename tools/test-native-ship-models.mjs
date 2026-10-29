@@ -12,6 +12,7 @@ import { OpenCode } from '@opencode/client';
 import { provisionRuntime, resolveOpenCode, runtimePaths } from '../lib/opencode/runtime.mjs';
 import { preflightNativeTestRuntimeArtifact } from './native-runtime-identity.mjs';
 import { stopFixtureBrowser } from './native-fixture-browser-cleanup.mjs';
+import { fixtureStopDiagnostics } from './native-fixture-stop-diagnostics.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const runtimeOptions = { runtimeCacheRoot: process.env.CTG_RUNTIME_TEST_CACHE };
@@ -134,9 +135,19 @@ try {
   await mkdir(join(temp, 'state/opencode'), { recursive: true });
   await writeFile(paths.serviceFile, JSON.stringify({ id: 'ship-model-regression', pid: child.pid, url: endpoint, password, runtimeIdentity: { version: info.version } }), { mode: 0o600 });
   const closed = once(child, 'close');
-  const stopped = await promisify(execFile)(process.execPath, [join(root, 'bin/ctg.mjs'), 'native', 'service', 'stop'], { cwd, env: { ...env, CTG_OPENCODE_HOME: temp }, timeout: 15000 });
-  assert.match(stopped.stdout, /Stopped the registered native service/);
-  await closed;
+  const stopStartedAt = performance.now();
+  try {
+    const stopped = await promisify(execFile)(process.execPath, [join(root, 'bin/ctg.mjs'), 'native', 'service', 'stop'], { cwd, env: { ...env, CTG_OPENCODE_HOME: temp }, timeout: 15000 });
+    assert.match(stopped.stdout, /Stopped the registered native service/);
+    await closed;
+  } catch (error) {
+    try {
+      console.error('Native Ship fixture service-stop failure evidence:', JSON.stringify(await fixtureStopDiagnostics({ child, output, elapsedMs: performance.now() - stopStartedAt })));
+    } catch {
+      console.error('Native Ship fixture service-stop failure evidence unavailable.');
+    }
+    throw error;
+  }
   const restarted = await startHost();
   const credentialAfterStop = (await restarted.client.credential.list(request)).find(entry => entry.id === credentialBeforeStop.id);
   assert.deepEqual(credentialAfterStop, credentialBeforeStop, 'Explicit service stop must preserve the active authenticated credential across restart');
