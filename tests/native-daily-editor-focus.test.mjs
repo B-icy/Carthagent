@@ -200,7 +200,7 @@ test('page wires focus lifecycle and selection guard; pinned renderer exposes th
   const page = await readFile(new URL('../plugins/carthagent/src/ui/daily-quests.tsx', import.meta.url), 'utf8');
   assert.match(page, /createEffect\(\(\) => focus\.reconcile\(\)\)/);
   assert.match(page, /mode: context\.keymap\.mode\.current\(\)/);
-  assert.match(page, /ref=\{\(node\) => focus\.attachActions\(node\)\}/);
+  assert.match(page, /ref=\{\(node\) => \{ actions = node; focus\.attachActions\(node\); \}\}/);
   assert.match(page, /if \(!value \|\| !focus\.actionsEnabled\(\)\) return/);
   assert.match(page, /onCleanup\(\(\) => \{ focus\.dispose\(\)/);
   const api = await readFile(new URL('../node_modules/@opentui/core/Renderable.d.ts', import.meta.url), 'utf8');
@@ -208,4 +208,6 @@ test('page wires focus lifecycle and selection guard; pinned renderer exposes th
   assert.match(api, /focus\(\): void/);
   assert.match(api, /blur\(\): void/);
   assert.match(api, /get isDestroyed\(\): boolean/);
+  const selectApi = await readFile(new URL('../node_modules/@opentui/core/renderables/Select.d.ts', import.meta.url), 'utf8');
+  assert.match(selectApi, /setSelectedIndex\(index: number\): void/);
 });

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createDailyQuestsState, dailyErrorCode, dailySubmissionLabel } from '../plugins/carthagent/src/ui/daily-quests-state.mjs';
 import { dailyRequest } from '../plugins/carthagent/src/daily-evidence.mjs';
+import { dailyCancellationNotice, handleDailyQuestsEvent } from '../plugins/carthagent/src/ui/daily-quests-events.mjs';
 
 const ACCOUNT = 'a'.repeat(64);
 const OTHER = 'b'.repeat(64);
@@ -45,6 +46,201 @@ async function compose(f) {
   await f.controller.compose(async () => ({ id: SUB, evidence: evidence(), provenance: 'Selected local result; review before sharing.' }));
 }
 async function preview(f) { await compose(f); f.controller.preview(); }
+
+// Model the pinned SelectRenderable's numeric-index retention/clamping. The
+// production helper must call its real setSelectedIndex before options shrink.
+function eventPage(f, { selectedIndex = 4, interrupted = true } = {}) {
+  let options = ['refresh', 'signin', 'back', 'quest', 'submit'];
+  let notice = '';
+  let closed = 0;
+  const order = [];
+  const collapse = () => { options = options.slice(0, 3); selectedIndex = Math.min(selectedIndex, options.length - 1); };
+  const actions = {
+    isDestroyed: false,
+    setSelectedIndex(index) {
+      order.push('reset');
+      assert.ok(f.view().snapshot, 'reset happens before protected state is cleared');
+      if (index >= 0 && index < options.length) selectedIndex = index;
+    },
+  };
+  const handle = (event, changedLocation = false) => handleDailyQuestsEvent({
+    controller: {
+      invalidate: () => { order.push('invalidate'); f.controller.invalidate(); collapse(); },
+      refresh: () => { order.push('refresh'); return f.controller.refresh(); },
+    },
+    event, location: { directory: '/selected', workspaceID: 'w1' }, changedLocation, interrupted, actions,
+    clearReplay: () => { order.push('clearReplay'); collapse(); },
+    closeDialog: () => { order.push('closeDialog'); closed++; },
+    notice: text => { notice = text; },
+  });
+  return { handle, actions, order, notice: () => notice, closed: () => closed, selected: () => options[selectedIndex] };
+}
+
+for (const event of [
+  { type: 'credential.switched', data: { integrationID: 'experiential-labs' } },
+  { type: 'credential.updated' }, { type: 'provider.updated' },
+  { type: 'integration.updated' }, { type: 'server.connected' }, { type: 'server.disconnected' },
+  { type: 'session.updated', changedLocation: true },
+  { type: 'server.disconnected', changedLocation: true },
+]) {
+  test(`daily ${event.type}${event.changedLocation ? ' with changed location' : ''} cancels confirmation and resets late Enter to Refresh`, async () => {
+    const f = fixture();
+    await preview(f);
+    const confirmation = deferred(), next = deferred();
+    let live;
+    const submitting = f.controller.submit((_shown, isLive) => { live = isLive; return confirmation.promise; });
+    assert.equal(f.view().busy, true);
+    const page = eventPage(f);
+    f.api.snapshot = () => next.promise;
+    const refreshing = page.handle(event, event.changedLocation);
+    assert.equal(live(), false);
+    assert.equal(f.view().snapshot, undefined);
+    assert.equal(f.view().draft, undefined);
+    assert.equal(f.view().preview, undefined);
+    assert.equal(f.view().detail, undefined);
+    assert.equal(page.closed(), 1);
+    assert.deepEqual(page.order.slice(0, 4), ['reset', 'clearReplay', 'invalidate', 'closeDialog']);
+    assert.equal(page.selected(), 'refresh', 'delayed Enter cannot activate Back');
+    assert.equal(page.notice(), dailyCancellationNotice);
+    const clearing = event.type === 'server.disconnected';
+    assert.equal(f.view().busy, !clearing);
+    confirmation.resolve(true);
+    await submitting;
+    assert.deepEqual(f.writes, [], 'a late true consent must never call api.submit');
+    assert.equal(f.view().busy, !clearing, 'stale callback cannot unlock the new refresh');
+    next.resolve({ ...snapshot(), accountKey: OTHER });
+    await refreshing;
+    assert.equal(f.view().busy, false);
+    assert.equal(f.view().snapshot?.accountKey, clearing ? undefined : OTHER);
+    assert.equal(page.notice(), dailyCancellationNotice, 'notice survives background refresh');
+    f.controller.dispose();
+  });
+}
+
+test('unrelated or differently scoped events leave confirmation, selection and notice untouched', async () => {
+  const f = fixture();
+  await preview(f);
+  const confirmation = deferred();
+  const pending = f.controller.submit(() => confirmation.promise);
+  const page = eventPage(f);
+  for (const event of [
+    { type: 'session.updated' },
+    { type: 'credential.switched', data: { integrationID: 'anthropic' } },
+    { type: 'provider.updated', location: { directory: '/other', workspaceID: 'w1' } },
+    { type: 'credential.updated', location: { directory: '/selected', workspaceID: 'w2' } },
+  ]) await page.handle(event);
+  assert.equal(f.view().busy, true);
+  assert.equal(f.view().phase, 'preview');
+  assert.equal(page.selected(), 'submit');
+  assert.deepEqual(page.order, []);
+  assert.equal(page.notice(), '');
+  assert.equal(page.closed(), 0);
+  confirmation.resolve(false);
+  await pending;
+  assert.deepEqual(f.writes, []);
+  f.controller.dispose();
+});
+
+test('event during dispatched submit aborts UI lifetime without claiming it withdrew evidence or replaying', async () => {
+  const f = fixture();
+  await preview(f);
+  const sent = deferred(), result = deferred();
+  let signal;
+  f.api.submit = async (input, abortSignal) => {
+    signal = abortSignal;
+    f.writes.push(['submit', clone(input)]);
+    // Model the durable journal written before the request was dispatched.
+    f.remote().records.push(record());
+    sent.resolve();
+    return result.promise;
+  };
+  const pending = f.controller.submit(async () => true);
+  await sent.promise;
+  const page = eventPage(f);
+  await page.handle({ type: 'credential.updated' });
+  assert.equal(signal.aborted, true);
+  assert.equal(page.selected(), 'refresh');
+  assert.match(page.notice(), /Nothing was resent automatically/);
+  assert.match(page.notice(), /check the recovery journal for any request already started/);
+  assert.doesNotMatch(page.notice(), /nothing (?:was )?(?:sent|uploaded)|no (?:upload|request was sent)/i);
+  assert.equal(f.view().draft, undefined);
+  assert.equal(f.view().preview, undefined);
+  assert.equal(f.view().snapshot.records[0].id, SUB);
+  assert.equal(f.view().snapshot.records[0].submission, null);
+  const reads = f.reads.length;
+  result.resolve({ submission: submission('graded', 'assessed_complete') });
+  await pending;
+  assert.equal(f.reads.length, reads, 'no stale reconciliation after the late result');
+  assert.equal(f.writes.length, 1, 'never resubmit an already-started request');
+  assert.equal(f.view().snapshot.records[0].submission, null, 'no success assumed');
+  assert.equal(f.view().busy, false);
+  f.controller.dispose();
+});
+
+test('compose and recovery dialogs are canceled even without an evidence draft', async () => {
+  for (const action of ['compose', 'retry', 'forget']) {
+    const f = fixture();
+    f.remote().records.push(record());
+    await f.controller.refresh();
+    await f.controller.select(QUEST);
+    const waiting = deferred();
+    const callback = () => waiting.promise;
+    const pending = action === 'compose' ? f.controller.compose(callback) : f.controller[action](SUB, callback);
+    assert.equal(f.view().draft, undefined);
+    const page = eventPage(f);
+    await page.handle({ type: 'credential.updated' });
+    waiting.resolve(action === 'compose' ? { id: SUB, evidence: evidence() } : true);
+    await pending;
+    assert.equal(page.closed(), 1);
+    assert.equal(page.notice(), dailyCancellationNotice);
+    assert.equal(page.selected(), 'refresh');
+    assert.deepEqual(f.writes, []);
+    assert.equal(f.view().draft, undefined);
+    f.controller.dispose();
+  }
+});
+
+for (const phase of ['edit', 'preview', 'replay']) {
+  test(`background invalidation visibly cancels ${phase} even without an active dialog`, async () => {
+    const f = fixture();
+    if (phase === 'replay') { f.remote().records.push(record()); await f.controller.refresh(); }
+    else if (phase === 'edit') await compose(f);
+    else await preview(f);
+    assert.equal(f.view().busy, false);
+    const page = eventPage(f);
+    await page.handle({ type: 'server.disconnected' });
+    assert.equal(page.notice(), dailyCancellationNotice);
+    assert.equal(page.selected(), 'refresh');
+    assert.equal(f.view().snapshot, undefined);
+    assert.equal(f.view().draft, undefined);
+    assert.equal(f.view().preview, undefined);
+    assert.deepEqual(f.writes, []);
+    f.controller.dispose();
+  });
+}
+
+test('ordinary background refresh needs no cancellation notice', async () => {
+  const f = fixture();
+  await f.controller.refresh();
+  const page = eventPage(f, { interrupted: false });
+  await page.handle({ type: 'credential.updated' });
+  assert.equal(page.notice(), '');
+  assert.equal(page.selected(), 'refresh');
+  assert.ok(f.view().snapshot);
+  f.controller.dispose();
+});
+
+test('destroyed actions are never touched during background refresh', async () => {
+  const f = fixture();
+  await f.controller.refresh();
+  const page = eventPage(f, { interrupted: false });
+  page.actions.isDestroyed = true;
+  await page.handle({ type: 'credential.updated' });
+  assert.equal(page.notice(), '');
+  assert.equal(page.order.includes('reset'), false);
+  assert.ok(f.view().snapshot);
+  f.controller.dispose();
+});
 
 test('selecting accepted detail immediately erases matching in-memory recovery evidence', async () => {
   const accepted = submission();

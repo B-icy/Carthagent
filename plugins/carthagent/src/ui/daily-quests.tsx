@@ -1,13 +1,13 @@
 /** @jsxImportSource @opentui/solid */
 import { For, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { createHash, randomUUID } from "node:crypto";
-import type { ScrollBoxRenderable, TextareaRenderable } from "@opentui/core";
+import type { ScrollBoxRenderable, SelectRenderable, TextareaRenderable } from "@opentui/core";
 import { usePlugin } from "@opencode/plugin/tui";
 import { dailyQuestsClient, dailySourceClient } from "./client.js";
 import type { DailyEvidence, DailyQuestDetail, DailySnapshot, DailySubmission, DailyRecord } from "../daily-quests-rpc.js";
 import type { DailySourceReport } from "../daily-source-rpc.js";
 import { createDailyQuestsState, dailySubmissionLabel } from "./daily-quests-state.mjs";
-import { voyagesEventAction } from "./voyages-state.mjs";
+import { handleDailyQuestsEvent } from "./daily-quests-events.mjs";
 import { syncDailyEditor } from "./daily-editor.mjs";
 import { createDailyEditorFocus } from "./daily-editor-focus.mjs";
 
@@ -32,10 +32,12 @@ export function DailyQuestsPage(props: { sessionID?: string }) {
   const [view, setView] = createSignal<View>({ busy: false, error: "", phase: "overview" });
   const [editorFocus, setEditorFocus] = createSignal(true);
   const [replayID, setReplayID] = createSignal<string>();
+  const [cancellationNotice, setCancellationNotice] = createSignal("");
   const controller = createDailyQuestsState({ api: dailyQuestsClient(context, location), changed: (next: View) => setView(next) });
   const sourceApi = dailySourceClient(context, location);
   let summary: ScrollBoxRenderable | undefined;
   let editor: TextareaRenderable | undefined;
+  let actions: SelectRenderable | undefined;
   const focus = createDailyEditorFocus({
     state: () => ({ phase: view().phase, hasDraft: !!view().draft, busy: view().busy, editorFocus: editorFocus(), mode: context.keymap.mode.current() }),
     editor: () => editor,
@@ -162,7 +164,7 @@ export function DailyQuestsPage(props: { sessionID?: string }) {
     if (value === "back") { context.ui.router.navigate({ type: "plugin", name: "voyages", data: { ...(props.sessionID ? { sessionID: props.sessionID } : {}) } }); return; }
     if (value === "signin") { controller.invalidate(); closeOwnDialog(); context.keymap.dispatch("provider.connect"); return; }
     if (value === "refresh") { setReplayID(undefined); void controller.refresh(); return; }
-    if (value === "compose") { setEditorFocus(true); void compose(); return; }
+    if (value === "compose") { setCancellationNotice(""); setEditorFocus(true); void compose(); return; }
     if (value === "preview") { preview(); return; }
     if (value === "submit") { void submit(); return; }
     if (value === "edit") { setEditorFocus(true); controller.backToEdit(); return; }
@@ -172,25 +174,29 @@ export function DailyQuestsPage(props: { sessionID?: string }) {
     const colon = value.indexOf(":"), id = value.slice(colon + 1);
     if (value.startsWith("quest:")) void controller.select(id);
     if (value.startsWith("poll:")) void controller.poll(id);
-    if (value.startsWith("retry:")) { controller.cancelDraft(); setReplayID(id); }
+    if (value.startsWith("retry:")) { setCancellationNotice(""); controller.cancelDraft(); setReplayID(id); }
     if (value.startsWith("forget:")) void forget(id);
   };
   onMount(() => {
     let binding = JSON.stringify(location());
     const stop = context.data.listen(({ details }) => {
-      const changedLocation = binding !== JSON.stringify(location());
-      const action = changedLocation ? String(details.type) === "server.disconnected" ? "clear" : "refresh" : voyagesEventAction(details, location());
-      if (action === "ignore") return;
-      binding = JSON.stringify(location()); setReplayID(undefined); controller.invalidate(); closeOwnDialog();
-      if (action === "refresh") void controller.refresh();
+      const nextBinding = JSON.stringify(location());
+      const changedLocation = binding !== nextBinding;
+      binding = nextBinding;
+      void handleDailyQuestsEvent({
+        controller, event: details, location: location(), changedLocation, actions,
+        interrupted: !!(view().draft || view().preview || replayID() || activeDialog),
+        clearReplay: () => setReplayID(undefined), closeDialog: closeOwnDialog, notice: setCancellationNotice,
+      });
     });
     void controller.refresh();
-    onCleanup(() => { focus.dispose(); stop(); controller.dispose(); closeOwnDialog(); });
+    onCleanup(() => { focus.dispose(); stop(); actions = undefined; controller.dispose(); closeOwnDialog(); });
   });
   return <box flexDirection="column" flexGrow={1} padding={1}>
     <text flexShrink={0} fg={context.theme.text.action.primary.base}>CARTHAGENT · DAILY CODING QUESTS</text>
     <scrollbox ref={summary} flexBasis={0} flexGrow={1} minHeight={1} contentOptions={{ flexDirection: "column" }}>
       <text flexShrink={0} fg={context.theme.text.muted}>Classifier-assessed submitted evidence, not independent verification. No rewards. Refresh/poll never uploads evidence.</text>
+      <Show when={cancellationNotice()}><text flexShrink={0} fg={context.theme.text.feedback.warning.base}>{cancellationNotice()}</text></Show>
       <Show when={view().busy}><text flexShrink={0} fg={context.theme.text.feedback.warning.base}>Awaiting response / explicit selection or consent. Other actions locked.</text></Show>
       <Show when={view().error}><text flexShrink={0} fg={context.theme.text.feedback.error.base}>{view().error}</text></Show>
       <Show when={view().snapshot} fallback={<text flexShrink={0} fg={context.theme.text.muted}>Protected assignments and evidence hidden until successful authentication and refresh.</text>}>{(snapshot) => <box flexDirection="column" flexShrink={0}>
@@ -219,6 +225,6 @@ export function DailyQuestsPage(props: { sessionID?: string }) {
       <textarea ref={editor} flexBasis={0} flexGrow={1} minHeight={2} initialValue={view().draft?.text ?? ""} focused={focus.editorEnabled()} onContentChange={() => syncDailyEditor(editor, controller)} keyBindings={[{ name: "p", ctrl: true, action: "submit" }]} onSubmit={preview} />
     </Show>
     <text flexShrink={0} fg={context.theme.text.faint}>↑/↓ Enter · PgUp/Dn · Ctrl+U/D details · Cancel: no send</text>
-    <select ref={(node) => focus.attachActions(node)} flexBasis={0} flexGrow={1} flexShrink={0} minHeight={3} showScrollIndicator options={options()} focused={focus.actionsEnabled()} keyBindings={[{ name: "pageup", action: "move-up-fast" }, { name: "pagedown", action: "move-down-fast" }]} onSelect={(_index, option) => select(option?.value)} />
+    <select ref={(node) => { actions = node; focus.attachActions(node); }} flexBasis={0} flexGrow={1} flexShrink={0} minHeight={3} showScrollIndicator options={options()} focused={focus.actionsEnabled()} keyBindings={[{ name: "pageup", action: "move-up-fast" }, { name: "pagedown", action: "move-down-fast" }]} onSelect={(_index, option) => select(option?.value)} />
   </box>;
 }

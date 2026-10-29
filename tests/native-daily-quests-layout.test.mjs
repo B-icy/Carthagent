@@ -25,6 +25,15 @@ test('evidence editing and the complete outbound preview remain native and scrol
   for (const text of page.matchAll(/<text\b([^>]*)>/g)) assert.match(text[1], /flexShrink=\{0\}/);
 });
 
+test('daily cancellation helper is wired to the actual actions ref and page-scoped notice', () => {
+  assert.match(page, /actions = node; focus.attachActions\(node\)/);
+  assert.match(page, /handleDailyQuestsEvent\(\{\s*controller, event: details, location: location\(\), changedLocation, actions/);
+  assert.match(page, /interrupted: !!\(view\(\).draft \|\| view\(\).preview \|\| replayID\(\) \|\| activeDialog\)/);
+  assert.match(page, /notice: setCancellationNotice/);
+  assert.match(page, /<Show when=\{cancellationNotice\(\)\}>/);
+  assert.match(page, /stop\(\); actions = undefined; controller.dispose\(\)/);
+});
+
 test('selection starts empty and external consent, retention, uncertainty and no-reward limits are explicit', () => {
   assert.match(page, /let goal = false, change = false/);
   assert.match(page, /new Set<string>\(\), findings = new Set<string>\(\)/);

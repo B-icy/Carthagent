@@ -27,6 +27,14 @@ not consent to grading and never automatically uploads evidence.
 5. Choose **Consent and submit this preview**, then explicitly **Consent and
    send**. This grants consent for this submission only. Cancel never sends.
 
+Account, connection or location invalidation clears the local draft/preview and
+closes this page's pending dialogs; it never preserves old consent. If evidence
+selection or confirmation was interrupted, a page notice explains the cancellation
+and the actions selection resets to **Refresh**, not Back. Refresh and review
+again before giving fresh consent. No request is resent automatically. A request
+that already started may still have reached the server: check its stable ID in
+the recovery journal rather than assuming cancellation withdrew it.
+
 The report's integer plan revision is not a source revision. The source-backed
 projection uses the actual workspace fingerprint. A current report does not
 retain a complete check history, so failed-before execution is **not recorded**
