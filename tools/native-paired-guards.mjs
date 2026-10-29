@@ -46,7 +46,8 @@ export function hashDependencyPackages(nodeModulesRoot, sourcePackageJson, sourc
     const lockVersion = name === '@opencode/plugin'
       ? lock.packages?.['node_modules/@opencode/plugin']?.version ?? lock.packages?.['plugins/carthagent']?.dependencies?.[name]
       : lock.packages?.[`node_modules/${name}`]?.version;
-    const sourceRequirement = sourceManifest.dependencies?.[name] ?? pluginManifest.dependencies?.[name] ?? lock.packages?.['']?.dependencies?.[name];
+    const sourceRequirement = sourceManifest.dependencies?.[name] ?? sourceManifest.devDependencies?.[name] ??
+      pluginManifest.dependencies?.[name] ?? lock.packages?.['']?.dependencies?.[name] ?? lock.packages?.['']?.devDependencies?.[name];
     if (sourceRequirement !== manifest.version) {
       throw new Error(`Installed ${name}@${manifest.version} does not match source requirement ${sourceRequirement ?? '<missing>'}`);
     }

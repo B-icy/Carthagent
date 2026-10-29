@@ -1,14 +1,20 @@
 # Carthagent
 
-> **Evidence-driven software delivery, from plan to proof.**
+Carthagent checks software work against real acceptance tests and re-proves it whenever source changes.
 
-Carthagent is a delivery-focused AI coding console and CLI built on a bundled delivery engine. It turns “here’s my code, trust me” into an auditable delivery: the agent declares an acceptance contract, runs real checks, and re-proves them whenever source changes.
+## Install
 
-`docs/workflow.svg` shows the flow; `docs/evaluation.md` has the honest trial history, failures included.
+```sh
+curl -fsSL https://carthagent.xyz/install | sh
+irm https://carthagent.xyz/install.ps1 | iex
+npm install -g carthagent
+```
 
-## Native Carthagent preview
+Node.js 22.19+ is required for the npm install. From source: `npm install -g --install-links=true github:B-icy/Carthagent#vX.Y.Z` (replace with a published tag).
 
-The **1.1.0-preview.10 release candidate is not yet published**. It adds native daily coding quests with selected evidence, exact-payload preview, fresh per-submission consent, and durable recovery; assessments do not award rewards. Native remains the default `ctg` interface inherited from preview.8. Ship retains approval, checks, review, repair, recovery, and resume; Lite remains direct execution. Published preview.9 remains immutable and does not gain candidate changes. Experimental-channel installation is explicit and selects published releases only, not this candidate. Stable 1.0.7 retains the legacy console. See the [preview.10 candidate notes](docs/release-notes-preview.10.md) for evidence and outstanding release gates.
+See [workflow.svg](docs/workflow.svg) for the flow and [evaluation history](docs/evaluation.md) for trials, including failures.
+
+## Native CLI
 
 ```sh
 ctg
@@ -34,8 +40,6 @@ node bin/ctg.mjs archive list            # legacy archive (read-only)
 ```
 
 The native CLI retains command aliases such as `ui`/`interactive`, `sessions`, `s`, `c`, `fingerprint`, `auth`, `cloud`, `web`, `start`, and `upgrade`. `--json` with a headless prompt emits JSONL records for native tool start/end, assistant message completion, and terminal outcome; it is not the text `-p` stream. Headless success requires the native completed assistant turn and successful terminal outcome. Options whose enforcement is not advertised by the active native plugin fail closed; in particular `--bash-cap` and `--isolate` are currently unsupported. Refer to [native CLI compatibility details](docs/native-cli.md).
-
-Each experimental release must pass its exact installed-package gate before publication. Earlier migration findings and remaining platform caveats are recorded in: [Native migration ledger](docs/opencode-migration.md#delivery-ledger), [native compatibility matrix](docs/native-compatibility.md), and [terminal evidence status](docs/native-terminal-semantics.md#evidence-status-pr-162).
 
 ### Voyages in the native TUI
 
@@ -70,14 +74,7 @@ changes from current main.
 
 ## Install and update
 
-The package requires Node ≥ 22.19. A published stable release is installed from its exact release tag, not an unpinned branch:
-
-```sh
-npm install -g --install-links=true github:B-icy/Carthagent#vX.Y.Z
-ctg
-```
-
-Replace `vX.Y.Z` with a published release tag. npm 11 requires the per-command `--install-links=true` flag for this GitHub global install. Native releases acquire and verify their own platform runtime from the exact tagged assets; they never fall back to an unrelated system binary. See the [native upgrade guide](docs/native-upgrade.md) for source-checkout and profile-preservation instructions, or [legacy CLI instructions](docs/legacy-cli.md) for stable 1.0.7.
+The installer selects an exact published release and acquires its pinned native runtime; it never falls back to an unrelated system binary. See the [native upgrade guide](docs/native-upgrade.md) for source-checkout and profile-preservation instructions, or [legacy CLI instructions](docs/legacy-cli.md) for stable 1.0.7.
 
 `ctg update --check` checks for a published release without installing. Select `--channel experimental` to include published previews; drafts are never installed. The legacy stable updater can update a clean source clone. The native updater differs: it refuses to check out a release into any active source clone, including a clean one; it installs package releases only from an npm installation. Preserve local changes and use the manual exact-tag checkout procedure in the [native upgrade guide](docs/native-upgrade.md) when updating a development checkout. Preview.9 is published and immutable; preview.10 is a candidate, not an installable published release. Its tag, draft/assets, exact-tag installed default-resolver acceptance, public release, and anonymous public default-resolver acceptance remain pending. See the [preview.10 candidate notes](docs/release-notes-preview.10.md); the older [native migration draft](docs/release-notes-native-draft.md) is historical, not current installation guidance.
 
@@ -106,6 +103,26 @@ can isolate this preference for testing. `--channel stable` explicitly authorize
 a downgrade, so recovery from an experimental build does not require `--force`.
 Your sessions and provider credentials are not deleted by switching channels.
 Experimental software may still contain bugs; read its release notes first.
+
+## Release status
+
+The 1.1.0-preview.10 release candidate is not yet published. It adds native daily
+coding quests with selected evidence, exact-payload preview, fresh per-submission
+consent, and durable recovery; assessments do not award rewards. Native remains
+the default `ctg` interface inherited from preview.8. Ship retains approval,
+checks, review, repair, recovery, and resume; Lite remains direct execution.
+Published preview.9 is immutable and does not gain candidate changes. Experimental
+installation is explicit and selects published releases only; stable 1.0.7
+retains the legacy console.
+
+Preview.10's tag, draft/assets, exact-tag installed default-resolver acceptance,
+public release, and anonymous public default-resolver acceptance remain pending.
+Each experimental release must pass its exact installed-package gate before
+publication. See the [preview.10 candidate notes](docs/release-notes-preview.10.md)
+for evidence and gates; earlier migration findings and remaining platform caveats
+are in the [Native migration ledger](docs/opencode-migration.md#delivery-ledger),
+[native compatibility matrix](docs/native-compatibility.md), and [terminal
+evidence status](docs/native-terminal-semantics.md#evidence-status-pr-162).
 
 ## Regular CLI
 

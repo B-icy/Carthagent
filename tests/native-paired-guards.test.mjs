@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { aggregateConditionExit, assertCompletePluginSource, assertWorkspacePluginResolution, assertDependencyPackageIdentity, assertPluginCondition, assertPluginImportDependencies, assertSelectedSourceHead, assertSnapshotProvenance, resolveFixtureSourceRoot, verifySnapshotIdentity, isPathWithinRoot } from '../tools/native-paired-guards.mjs';
+import { aggregateConditionExit, assertCompletePluginSource, assertWorkspacePluginResolution, assertDependencyPackageIdentity, assertPluginCondition, assertPluginImportDependencies, assertSelectedSourceHead, assertSnapshotProvenance, hashDependencyPackages, resolveFixtureSourceRoot, verifySnapshotIdentity, isPathWithinRoot } from '../tools/native-paired-guards.mjs';
 
 function shellPath(path) {
   return process.platform === 'win32'
@@ -28,6 +28,33 @@ test('plugin identity accepts npm hoisting but rejects a shadow workspace depend
   assert.equal(assertWorkspacePluginResolution(root), true);
   await mkdir(join(root, 'plugins/carthagent/node_modules/@opencode/plugin'), { recursive: true });
   assert.throws(() => assertWorkspacePluginResolution(root), /dependency identity mismatch/);
+});
+
+test('paired dependency provenance accepts the OpenCode CLI pin from devDependencies', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'native-dev-cli-pin-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const modules = join(root, 'node_modules');
+  await mkdir(join(root, 'plugins/carthagent'), { recursive: true });
+  for (const name of ['@opencode/cli', '@opencode/client', '@opencode/plugin']) {
+    await mkdir(join(modules, name), { recursive: true });
+    await writeFile(join(modules, name, 'package.json'), JSON.stringify({ name, version: '2.0.32' }));
+  }
+  await writeFile(join(root, 'package.json'), JSON.stringify({
+    dependencies: { '@opencode/client': '2.0.32' },
+    devDependencies: { '@opencode/cli': '2.0.32' },
+  }));
+  await writeFile(join(root, 'plugins/carthagent/package.json'), JSON.stringify({
+    dependencies: { '@opencode/plugin': '2.0.32' },
+  }));
+  await writeFile(join(root, 'package-lock.json'), JSON.stringify({
+    packages: {
+      '': { dependencies: { '@opencode/client': '2.0.32' }, devDependencies: { '@opencode/cli': '2.0.32' } },
+      'node_modules/@opencode/cli': { version: '2.0.32' },
+      'node_modules/@opencode/client': { version: '2.0.32' },
+      'node_modules/@opencode/plugin': { version: '2.0.32' },
+    },
+  }));
+  assert.equal(Object.keys(hashDependencyPackages(modules, join(root, 'package.json'), root)).length, 3);
 });
 
 test('paired CTG fixture fails closed unless inventory says active', () => {

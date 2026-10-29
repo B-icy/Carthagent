@@ -10,6 +10,7 @@ import {
   fetchLatestRelease,
   latestReleaseCached,
   normalizeRelease,
+  npmInstallSpec,
   staleGlobalInstallPaths,
   updateCheckEnabled,
 } from '../lib/update.mjs';
@@ -172,6 +173,15 @@ test('detectInstallMethod distinguishes clones from packed installs', () => with
   mkdirSync(join(dir, '.git'));
   assert.equal(detectInstallMethod(dir), 'clone');
 }));
+
+test('npmInstallSpec prefers an exact registry version and falls back when lookup fails', async () => {
+  const release = { version: '1.2.3', installSpec: 'github:B-icy/Carthagent#v1.2.3' };
+  let lookedUp;
+  assert.equal(await npmInstallSpec(release, async spec => { lookedUp = spec; return true; }), 'carthagent@1.2.3');
+  assert.equal(lookedUp, 'carthagent@1.2.3');
+  assert.equal(await npmInstallSpec(release, async () => false), release.installSpec);
+  assert.equal(await npmInstallSpec(release, async () => { throw new Error('npm unavailable'); }), release.installSpec);
+});
 
 // ---- staleGlobalInstallPaths / cleanStaleGlobalInstall
 

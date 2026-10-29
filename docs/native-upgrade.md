@@ -128,7 +128,7 @@ Only after `v1.1.0-preview.9` and its reviewed assets are published, its exact-t
 installation form will be:
 
 ```sh
-npm install -g --install-links=true github:B-icy/Carthagent#v1.1.0-preview.9
+npm install -g carthagent@1.1.0-preview.9
 ```
 
 Do not run this for the unpublished candidate. `ctg update --check` checks for
