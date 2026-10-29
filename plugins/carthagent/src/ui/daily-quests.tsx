@@ -1,5 +1,5 @@
 /** @jsxImportSource @opentui/solid */
-import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
+import { For, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { createHash, randomUUID } from "node:crypto";
 import type { ScrollBoxRenderable, TextareaRenderable } from "@opentui/core";
 import { usePlugin } from "@opencode/plugin/tui";
@@ -9,6 +9,7 @@ import type { DailySourceReport } from "../daily-source-rpc.js";
 import { createDailyQuestsState, dailySubmissionLabel } from "./daily-quests-state.mjs";
 import { voyagesEventAction } from "./voyages-state.mjs";
 import { syncDailyEditor } from "./daily-editor.mjs";
+import { createDailyEditorFocus } from "./daily-editor-focus.mjs";
 
 type Request = NonNullable<DailyRecord['request']>;
 type View = {
@@ -35,6 +36,11 @@ export function DailyQuestsPage(props: { sessionID?: string }) {
   const sourceApi = dailySourceClient(context, location);
   let summary: ScrollBoxRenderable | undefined;
   let editor: TextareaRenderable | undefined;
+  const focus = createDailyEditorFocus({
+    state: () => ({ phase: view().phase, hasDraft: !!view().draft, busy: view().busy, editorFocus: editorFocus(), mode: context.keymap.mode.current() }),
+    editor: () => editor,
+  });
+  createEffect(() => focus.reconcile());
   const preview = () => { if (view().phase === "edit") syncDailyEditor(editor, controller); controller.preview(); };
   let activeDialog: symbol | undefined;
   const ownDialog = async <T,>(show: () => Promise<T>): Promise<T> => {
@@ -151,7 +157,8 @@ export function DailyQuestsPage(props: { sessionID?: string }) {
     ];
   };
   const select = (value?: string) => {
-    if (!value || view().busy) return;
+    // A stale native refocus must not turn editor Enter into an action.
+    if (!value || !focus.actionsEnabled()) return;
     if (value === "back") { context.ui.router.navigate({ type: "plugin", name: "voyages", data: { ...(props.sessionID ? { sessionID: props.sessionID } : {}) } }); return; }
     if (value === "signin") { controller.invalidate(); closeOwnDialog(); context.keymap.dispatch("provider.connect"); return; }
     if (value === "refresh") { setReplayID(undefined); void controller.refresh(); return; }
@@ -178,7 +185,7 @@ export function DailyQuestsPage(props: { sessionID?: string }) {
       if (action === "refresh") void controller.refresh();
     });
     void controller.refresh();
-    onCleanup(() => { stop(); controller.dispose(); closeOwnDialog(); });
+    onCleanup(() => { focus.dispose(); stop(); controller.dispose(); closeOwnDialog(); });
   });
   return <box flexDirection="column" flexGrow={1} padding={1}>
     <text flexShrink={0} fg={context.theme.text.action.primary.base}>CARTHAGENT · DAILY CODING QUESTS</text>
@@ -208,10 +215,10 @@ export function DailyQuestsPage(props: { sessionID?: string }) {
       </box>}</Show>
     </scrollbox>
     <Show when={view().phase === "edit" && view().draft}>
-      <text flexShrink={0} fg={context.theme.text.faint}>Redact JSON · Tab actions · Ctrl+P preview, never sends</text>
-      <textarea ref={editor} flexBasis={0} flexGrow={1} minHeight={2} initialValue={view().draft?.text ?? ""} focused={editorFocus() && !view().busy && context.keymap.mode.current() === "base"} onContentChange={() => syncDailyEditor(editor, controller)} keyBindings={[{ name: "p", ctrl: true, action: "submit" }]} onSubmit={preview} />
+      <text flexShrink={0} fg={context.theme.text.faint}>Ctrl+J newline · Tab actions · Ctrl+P preview, never sends</text>
+      <textarea ref={editor} flexBasis={0} flexGrow={1} minHeight={2} initialValue={view().draft?.text ?? ""} focused={focus.editorEnabled()} onContentChange={() => syncDailyEditor(editor, controller)} keyBindings={[{ name: "p", ctrl: true, action: "submit" }]} onSubmit={preview} />
     </Show>
     <text flexShrink={0} fg={context.theme.text.faint}>↑/↓ Enter · PgUp/Dn · Ctrl+U/D details · Cancel: no send</text>
-    <select flexBasis={0} flexGrow={1} flexShrink={0} minHeight={3} showScrollIndicator options={options()} focused={(view().phase !== "edit" || !editorFocus()) && context.keymap.mode.current() === "base"} keyBindings={[{ name: "pageup", action: "move-up-fast" }, { name: "pagedown", action: "move-down-fast" }]} onSelect={(_index, option) => select(option?.value)} />
+    <select ref={(node) => focus.attachActions(node)} flexBasis={0} flexGrow={1} flexShrink={0} minHeight={3} showScrollIndicator options={options()} focused={focus.actionsEnabled()} keyBindings={[{ name: "pageup", action: "move-up-fast" }, { name: "pagedown", action: "move-down-fast" }]} onSelect={(_index, option) => select(option?.value)} />
   </box>;
 }

@@ -17,6 +17,9 @@ not consent to grading and never automatically uploads evidence.
 3. Edit the evidence JSON. Remove or redact sensitive material yourself. No
    automatic secret detection is promised. Use **Tab** to switch between the
    editor and actions, and **Ctrl+P** to validate and preview, never to submit.
+   With the native runtime's default input bindings, **Enter** also previews;
+   **Ctrl+J** inserts a newline (as do **Shift/Ctrl/Alt+Enter**). These follow
+   the runtime's configured input-submit and input-newline shortcuts.
 4. Inspect the complete canonical outbound JSON in the scrollable preview.
    **Ctrl+U/D** scrolls details and preview. Unknown fields, invalid references,
    unsupported controls, mismatched passing-check revisions and UTF-8 size
