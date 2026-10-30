@@ -8,7 +8,7 @@ import { canEquip, createVoyagesState, handleVoyagesEvent, voyagesCatalogLabel }
 type ViewState = { snapshot?: VoyagesSnapshot; busy: boolean; error: string; notice: string };
 
 /** All mutations go through the lifetime-guarded controller, including dialogs. */
-export function VoyagesPage(props: { sessionID?: string }) {
+export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "equipment" }) {
   const context = usePlugin();
   const location = () => (props.sessionID ? context.data.session.get(props.sessionID)?.location : undefined) ?? context.location ?? context.data.location.default();
   const [view, setView] = createSignal<ViewState>({ busy: false, error: "", notice: "" });
@@ -60,16 +60,17 @@ export function VoyagesPage(props: { sessionID?: string }) {
       { name: "Daily coding quests", description: "Server assignments · selected evidence · explicit external JEV consent", value: "daily" },
       { name: "Sign in / reconnect", description: "Native provider connection · choose Carthagent Ship device sign-in", value: "signin" },
       { name: "Back", description: props.sessionID ? "Return to selected session" : "Return home", value: "back" },
+      ...(props.section ? [{ name: props.section === "profile" ? "Equipment & shop" : "Profile & wallet", description: "Open the other Voyages detail view", value: "section" }] : []),
     ];
     if (!snapshot) return basic;
     return [...basic,
-      { name: "Customize captain and ship", description: "Preview names, then explicitly Save", value: "customize" },
+      ...(props.section !== "equipment" ? [{ name: "Customize captain and ship", description: "Preview names, then explicitly Save", value: "customize" }] : []),
       ...(snapshot.pending ? [{ name: "Resolve pending purchase", description: "Explicit same-pair replay; no automatic new charge", value: "retry" }] : []),
-      ...snapshot.items.map((item) => ({ name: voyagesCatalogLabel(snapshot, item), description: `${item.slot} · ${item.itemKey} · ${!item.available ? "unavailable" : !item.eligible ? "ineligible" : canEquip(snapshot, item) ? "confirm equip" : item.price === null ? "purchase unavailable" : "request quote"}${item.reason ? ` · ${item.reason}` : ""}`, value: `item:${item.item}` })),
+      ...(props.section !== "profile" ? snapshot.items.map((item) => ({ name: voyagesCatalogLabel(snapshot, item), description: `${item.slot} · ${item.itemKey} · ${!item.available ? "unavailable" : !item.eligible ? "ineligible" : canEquip(snapshot, item) ? "confirm equip" : item.price === null ? "purchase unavailable" : "request quote"}${item.reason ? ` · ${item.reason}` : ""}`, value: `item:${item.item}` })) : []),
     ];
   };
   const select = (value?: string) => {
-    if (!value || view().busy) return;
+    if (!value || view().busy || context.keymap.mode.current() !== "base") return;
     if (value === "back") { back(); return; }
     if (value === "signin") {
       controller.invalidate();
@@ -77,6 +78,7 @@ export function VoyagesPage(props: { sessionID?: string }) {
       return;
     }
     if (value === "refresh") { void controller.refresh(); return; }
+    if (value === "section") { context.ui.router.navigate({ type: "plugin", name: "voyages", data: { ...(props.sessionID ? { sessionID: props.sessionID } : {}), section: props.section === "profile" ? "equipment" : "profile" } }); return; }
     if (value === "daily") { context.ui.router.navigate({ type: "plugin", name: "daily-quests", data: { ...(props.sessionID ? { sessionID: props.sessionID } : {}) } }); return; }
     if (value === "customize") { void customize(); return; }
     if (value === "retry") { void retry(); return; }
@@ -100,6 +102,7 @@ export function VoyagesPage(props: { sessionID?: string }) {
   });
   return <box flexDirection="column" flexGrow={1} padding={1}>
     <text flexShrink={0} fg={context.theme.text.action.primary.base}>CARTHAGENT · VOYAGES</text>
+    <Show when={props.section}><text flexShrink={0} fg={context.theme.text.muted}>{props.section === "profile" ? "Profile & wallet" : "Equipment & shop"}</text></Show>
     {/* Split the remaining height: wrapped profile rows scroll instead of shrinking over one another. */}
     <scrollbox ref={summary} flexBasis={0} flexGrow={1} minHeight={1} contentOptions={{ flexDirection: "column" }}>
       <Show when={view().busy}><text flexShrink={0} fg={context.theme.text.feedback.warning.base}>Loading / awaiting confirmation… other actions are locked.</text></Show>

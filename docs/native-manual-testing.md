@@ -260,3 +260,55 @@ contract. Test default release acquisition separately only after publication.
 Share sanitized observations: exact command, expected/actual result, terminal and
 platform, source commit, runtime hash, and minimal reproduction. Do not attach
 profiles, auth files, raw environments, or private-session exports.
+
+## 7. Checked-in development runtime provenance
+
+An explicitly selected owned root (`CTG_OWNED_OPENCODE_RUNTIME` or the internal
+`ownedRuntime` option) may use either the published runtime patch provenance or
+the checked-in development patch provenance. Both paths still require the
+pinned Carthagent owner, upstream source repository/revision, lock digest,
+compatibility/runtime versions, channel, host platform, disabled web UI, exact
+`cli-<platform>/bin/opencode[.exe]` layout, matching executable `SHA256SUMS`
+entry and actual bytes, and exact owned `--version` output. An adjacent
+`runtime-release.json` cannot authorize a different source, lock, or patch.
+The explicit root is a development selector: its local checksum detects byte
+changes but does not independently establish a published binary's provenance.
+
+The update point for a reviewed local patch is
+`CTG_DEVELOPMENT_RUNTIME_PATCH_SHA256` in `lib/opencode/runtime.mjs`. Initially
+it equals the published patch digest; after generating and reviewing new patch
+bytes, update **only this development constant** and the build recipe's
+`EXPECTED_PATCH` to their actual SHA-256. The regression test in
+`tests/native-ship-plan.test.mjs` requires both to match the checked-in patch.
+Do not change `CTG_RUNTIME_PATCH_SHA256`, the published
+`lib/opencode/runtime-release.json`, its archive/executable pins, or historical
+release documentation to make a development build pass. Promotion to a public
+release requires its separate release-verification process.
+
+The default manual-kit manifest is validated against the same immutable
+published pins, not the advancing development recipe. Explicit manual-kit
+candidate manifests must match the current recipe as well as their independently
+supplied manifest digest. This keeps existing published kits usable without
+allowing candidate provenance through the published path.
+
+The normal public resolver continues to acquire and verify the published
+release pins only. It will not accept development patch provenance or changed
+executable bytes, even when the cache's adjacent manifest/checksums agree.
+`CTG_OPENCODE_BIN` / the `binary` option retain their separate
+upstream-compatible behavior and are not owned development provenance selectors.
+
+Native development tests need an **independently reviewed test manifest** via
+`CTG_TEST_RUNTIME_RELEASE_MANIFEST`. Its source/lock/patch/version/platform and
+asset executable digest must describe the selected development artifact, not
+the unchanged published artifact. `preflightNativeTestRuntimeArtifact` checks
+that test record against provenance and actual bytes before executing
+`--version`. `CTG_TEST_RUNTIME_SHA256` can explicitly override only the expected
+test executable digest; it cannot override patch/source/lock/version checks.
+Keep the test manifest separate from the released manifest; do not derive trust
+solely from an artifact's self-declared `ctg-runtime.json`.
+
+For PTY tests, keep using `CTG_TEST_RUNTIME_ARTIFACT_ROOT` plus the trusted test
+manifest as described above, not the developer selector. A passing explicit
+development-root test is **not** installed-default/public-release acceptance;
+run that acceptance separately with all developer/test selectors unset against
+the immutable released artifacts.

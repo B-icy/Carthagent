@@ -26,7 +26,7 @@ function reference(...parts: string[]) {
 
 const privacy = "Only the exact preview below is sent to Carthagent. External JEV receives the revision, goal, change, checks, findings and server rubric, not project/outcome/run IDs. No transcript or whole project is uploaded. Review and remove secrets yourself; automatic secret detection is not provided.\n\nBackend raw evidence: pending up to 24 hours, erased on terminal processing (outages can delay cleanup). Metadata: 90 days. Provider policy applies; immediate provider/backup deletion is not promised. Unknown-send recovery stores this exact payload in a private local journal until acceptance is known or for up to 24 hours on the next journal access, not a background deletion timer. You can erase its local payload while retaining the submission ID.\n\nClassifier assessment is not independent verification. No coins, XP, distance, inventory or other rewards. Signing in or running Ship is not consent.";
 
-export function DailyQuestsPage(props: { sessionID?: string }) {
+export function DailyQuestsPage(props: { sessionID?: string; questID?: string }) {
   const context = usePlugin();
   const location = () => (props.sessionID ? context.data.session.get(props.sessionID)?.location : undefined) ?? context.location ?? context.data.location.default();
   const [view, setView] = createSignal<View>({ busy: false, error: "", phase: "overview" });
@@ -189,7 +189,9 @@ export function DailyQuestsPage(props: { sessionID?: string }) {
         clearReplay: () => setReplayID(undefined), closeDialog: closeOwnDialog, notice: setCancellationNotice,
       });
     });
-    void controller.refresh();
+    // A navigator link selects only an assignment in the authenticated slate.
+    // It never composes evidence or opens a consent dialog.
+    void controller.refresh().then(() => { if (props.questID) return controller.select(props.questID); });
     onCleanup(() => { focus.dispose(); stop(); actions = undefined; controller.dispose(); closeOwnDialog(); });
   });
   return <box flexDirection="column" flexGrow={1} padding={1}>

@@ -106,7 +106,7 @@ function workflowJob(name) {
   return lines.slice(start, end).join('\n');
 }
 
-const combinedPatchPath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v3.patch';
+const combinedPatchPath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v4.patch';
 
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
@@ -250,7 +250,7 @@ const patch=await readFile(path.join(repo,${JSON.stringify(combinedPatchPath)}))
 const expected=recipe.match(/^EXPECTED_PATCH="([^"]+)"$/m)?.[1];
 if(!expected || sha(patch)!==expected) throw new Error('recipe patch digest mismatch: expected='+expected+' actual='+sha(patch)+' path='+${JSON.stringify(combinedPatchPath)});
 const runtimeSource=await readFile(path.join(repo,'lib/opencode/runtime.mjs'),'utf8');
-const runtimePatch=runtimeSource.match(/CTG_RUNTIME_PATCH_SHA256 = '([a-f0-9]{64})'/)?.[1];
+const runtimePatch=runtimeSource.match(/CTG_DEVELOPMENT_RUNTIME_PATCH_SHA256 = '([a-f0-9]{64})'/)?.[1];
 if(runtimePatch!==expected) throw new Error('fixture packaged runtime trust root patch digest mismatch');
 const manifest={version:1,releaseVersion:version,compatibilityVersion:'2.0.32',runtimeVersion:'0.0.0-ctg.2.0.32',sourceRevision:'${sourceCommit}',patchSha256:expected,lockSha256:'${lockSha256}',assets:Object.fromEntries(keys.map((key,i)=>[key,{name:names[i],archiveSha256:'0'.repeat(64),executableSha256:'0'.repeat(64)}]))};
 for(let i=0;i<names.length;i++) {
@@ -403,9 +403,9 @@ test('draft metadata validation has scoped write capability; artifact mutation s
   assert.doesNotMatch(assembly, /contents: write/);
   assert.match(publish, /contents: write/);
   assert.match(uploadBlock, /gh release upload/);
-  assert.match(workflow, /git -C ctg show HEAD:docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v3\.patch > opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v3\.patch/);
-  assert.match(workflow, /patch_sha256="\$\(hash_file opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v3\.patch\)"/);
-  assert.equal((workflow.match(/git -C ctg show HEAD:docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v3\.patch > ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui\.patch/g) ?? []).length, 1,
+  assert.match(workflow, /git -C ctg show HEAD:docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v4\.patch > opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v4\.patch/);
+  assert.match(workflow, /patch_sha256="\$\(hash_file opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v4\.patch\)"/);
+  assert.equal((workflow.match(/git -C ctg show HEAD:docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v4\.patch > ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui\.patch/g) ?? []).length, 1,
     'candidate assembly must extract exact committed bytes at the pinned historical path');
   assert.match(verifyBlock, /git -C ctg show HEAD:script\/ctg\/build-owned-runtime\.sh/);
   assert.match(verifyBlock, /git -C ctg show "HEAD:\$patch_file" > ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui\.patch/);
@@ -413,7 +413,7 @@ test('draft metadata validation has scoped write capability; artifact mutation s
   assert.match(workflow, /chmod \+x opencode\/script\/ctg\/build-owned-runtime\.sh/);
   assert.match(workflow, /GIT_CONFIG_KEY_0:\s*core\.autocrlf[\s\S]*?GIT_CONFIG_VALUE_0:\s*'false'/);
   assert.match(workflow, /git -C opencode config --local core\.autocrlf false/);
-  assert.match(workflow, /patch_sha256="\$\(hash_file opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v3\.patch\)"/);
+  assert.match(workflow, /patch_sha256="\$\(hash_file opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v4\.patch\)"/);
 });
 
 test('review-branch prebuild source is exact dispatch SHA; publish validation is default-branch-only', { skip: requiresUbuntuWorkflowShell, timeout: 60000 }, async (t) => {

@@ -13,6 +13,8 @@ import { cliConfigDirectory, cliConfigPath, readCliConfig, writeNativeTheme } fr
 import { WorkspacePage } from "./ui/workspace.js";
 import { VoyagesPage } from "./ui/voyages.js";
 import { DailyQuestsPage } from "./ui/daily-quests.js";
+import { VoyagesNavigation } from "./ui/voyages-navigation.js";
+import { nativeNavigation } from "./ui/native-navigation.js";
 import { provisionNativeThemes } from "./ui/theme-provision.mjs";
 import { setSessionAutoCompaction } from "./ui/session-preferences.mjs";
 import { createNativeReviewConsumer, nativeReviewMode, sendNativeReviewKickoff, subscribeNativeReviewEvents } from "./ui/native-review.mjs";
@@ -25,8 +27,10 @@ export default Plugin.define({
   setup(context) {
     const unregister = context.ui.router.register({ name: "carthagent", render: ({ data }) => <WorkspacePage view={String(data?.view ?? "workspace")} refreshKey={String(data?.refresh ?? "")} sessionID={typeof data?.sessionID === "string" ? data.sessionID : undefined} /> });
     const cleanups = [unregister];
-    cleanups.push(context.ui.router.register({ name: "voyages", render: ({ data }) => <VoyagesPage sessionID={typeof data?.sessionID === "string" ? data.sessionID : undefined} /> }));
-    cleanups.push(context.ui.router.register({ name: "daily-quests", render: ({ data }) => <DailyQuestsPage sessionID={typeof data?.sessionID === "string" ? data.sessionID : undefined} /> }));
+    cleanups.push(context.ui.router.register({ name: "voyages", render: ({ data }) => <VoyagesPage sessionID={typeof data?.sessionID === "string" ? data.sessionID : undefined} section={data?.section === "profile" || data?.section === "equipment" ? data.section : undefined} /> }));
+    cleanups.push(context.ui.router.register({ name: "daily-quests", render: ({ data }) => <DailyQuestsPage sessionID={typeof data?.sessionID === "string" ? data.sessionID : undefined} questID={typeof data?.questID === "string" ? data.questID : undefined} /> }));
+    const navigation = nativeNavigation(context);
+    if (navigation) cleanups.push(navigation.register({ name: "voyages", title: "Voyages", render: (input) => <VoyagesNavigation {...input} /> }));
     const lifecycle = new AbortController();
     cleanups.push(() => lifecycle.abort());
     const [reviewLoopState, updateReviewLoopState] = context.storage.store("carthagent.native-review-loops", { initial: { sessions: [] as string[] } });
@@ -99,6 +103,9 @@ export default Plugin.define({
       switch (id) {
         case "voyages":
           context.ui.router.navigate({ type: "plugin", name: "voyages", data: { ...(sessionID ? { sessionID } : {}) } });
+          return;
+        case "quests":
+          context.ui.router.navigate({ type: "plugin", name: "daily-quests", data: { ...(sessionID ? { sessionID } : {}) } });
           return;
         case "login":
           context.keymap.dispatch("provider.connect");
