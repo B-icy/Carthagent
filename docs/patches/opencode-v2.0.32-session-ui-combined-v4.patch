@@ -8699,7 +8699,7 @@ index 9be3ac94e35be246de4817c8175c03d54fbbaf5a..f30280e2e7933d0d2c4c428e4ac1468a
      async [Symbol.asyncDispose]() {
 diff --git a/packages/tui/test/fixture/plugin/navigation/tui.tsx b/packages/tui/test/fixture/plugin/navigation/tui.tsx
 new file mode 100644
-index 0000000000000000000000000000000000000000..082c03f7e743daed7d4c62b56072451115d85716
+index 0000000000000000000000000000000000000000..de206f8efb32ed70da9d429a9dbfff8d66c216af
 --- /dev/null
 +++ b/packages/tui/test/fixture/plugin/navigation/tui.tsx
 @@ -0,0 +1,51 @@
@@ -8747,7 +8747,7 @@ index 0000000000000000000000000000000000000000..082c03f7e743daed7d4c62b560724511
 +function Detail() {
 +  const context = usePlugin()
 +  const [arrows, setArrows] = createSignal(0)
-+  context.keymap.layer(() => ({ commands: [{ bind: "down", run: () => setArrows((value) => value + 1) }] }))
++  context.keymap.layer(() => ({ commands: [{ bind: "down", run: () => { setArrows((value) => value + 1) } }] }))
 +  let editor: InputRenderable
 +  return <box>
 +    <text id="fixture-detail">Voyage detail page arrows {arrows()}</text>
