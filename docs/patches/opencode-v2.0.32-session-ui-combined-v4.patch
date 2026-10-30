@@ -7327,7 +7327,7 @@ index b85074c491e86c1e34b646db5b09697df43b9950..00badea28607a4cc3471c906d6588f7d
        </box>
      </DialogLayout>
 diff --git a/packages/tui/src/ui/dialog-select.tsx b/packages/tui/src/ui/dialog-select.tsx
-index f86d8b507f79920ac75de168f1cd1b1076a70380..acf4b6d5285c7478182c845f6847fc95d4a17c58 100644
+index f86d8b507f79920ac75de168f1cd1b1076a70380..f014e88097b3ab3575303c8247b27a250c6051a7 100644
 --- a/packages/tui/src/ui/dialog-select.tsx
 +++ b/packages/tui/src/ui/dialog-select.tsx
 @@ -22,6 +22,7 @@ import { Locale } from "../util/locale"
@@ -7338,7 +7338,26 @@ index f86d8b507f79920ac75de168f1cd1b1076a70380..acf4b6d5285c7478182c845f6847fc95
  
  export interface DialogSelectProps<T> {
    title: string
-@@ -789,7 +790,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
+@@ -247,6 +248,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
+ 
+   const dimensions = useTerminalDimensions()
+   const limit = createMemo(() => Math.floor(dimensions().height / 2) - 6)
++  const detailWidth = createMemo(() => dialogSelectContentWidth(Math.min(dialogWidth(dialog.size), dimensions().width)))
+   // Under new designs an overflowing list gives its last row to a "…" indicator.
+   const overflows = createMemo(() => newDesigns() && rows() > limit())
+   const height = createMemo(() => Math.min(rows(), limit()) - (overflows() ? 1 : 0))
+@@ -778,7 +780,9 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
+                             gutter={option.gutter}
+                             margin={option.margin}
+                           />
+-                          <DialogSelectDetails details={option.details} />
++                          <Show when={option.details?.length}>
++                            <DialogSelectDetails details={option.details} width={detailWidth()} />
++                          </Show>
+                         </box>
+                       )
+                     }}
+@@ -789,7 +793,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
            </scrollbox>
            <Show when={overflows()}>
              <box paddingLeft={DIALOG_LIST_INSET} flexShrink={0}>
@@ -7347,7 +7366,7 @@ index f86d8b507f79920ac75de168f1cd1b1076a70380..acf4b6d5285c7478182c845f6847fc95
              </box>
            </Show>
          </Show>
-@@ -855,7 +856,7 @@ function DialogSelectRow(props: {
+@@ -855,7 +859,7 @@ function DialogSelectRow(props: {
        </Show>
        <Show when={props.current && !props.gutter}>
          <text flexShrink={0} fg={newDesigns() ? theme.text.formfield.selected : text()}>
@@ -7356,7 +7375,7 @@ index f86d8b507f79920ac75de168f1cd1b1076a70380..acf4b6d5285c7478182c845f6847fc95
          </text>
        </Show>
        <Show when={props.gutter}>
-@@ -873,8 +874,8 @@ function DialogSelectRow(props: {
+@@ -873,8 +877,8 @@ function DialogSelectRow(props: {
            (props.truncateTitle === false
              ? props.title
              : props.truncateTitle === "left"
@@ -7367,7 +7386,7 @@ index f86d8b507f79920ac75de168f1cd1b1076a70380..acf4b6d5285c7478182c845f6847fc95
          <Show when={props.description}>
            <span style={{ fg: props.active ? secondary() : theme.text.muted }}>{" " + props.description}</span>
          </Show>
-@@ -891,7 +892,7 @@ function DialogSelectRow(props: {
+@@ -891,7 +895,7 @@ function DialogSelectRow(props: {
      <Show when={newDesigns()} fallback={row()}>
        <box flexDirection="row">
          <text width={1} flexShrink={0} fg={theme.text.formfield.focused}>
@@ -7376,12 +7395,26 @@ index f86d8b507f79920ac75de168f1cd1b1076a70380..acf4b6d5285c7478182c845f6847fc95
          </text>
          {row()}
        </box>
-@@ -913,7 +914,7 @@ function DialogSelectDetails(props: { details?: string[] }) {
+@@ -899,11 +903,9 @@ function DialogSelectRow(props: {
+   )
+ }
+ 
+-function DialogSelectDetails(props: { details?: string[] }) {
++// Width comes from the parent dialog so rows do not each register a resize listener.
++function DialogSelectDetails(props: { details?: string[]; width: number }) {
+   const theme = useTheme().surface("dialog")
+-  const dialog = useDialog()
+-  const dimensions = useTerminalDimensions()
+-  const width = createMemo(() => dialogSelectContentWidth(Math.min(dialogWidth(dialog.size), dimensions().width)))
+   const newDesigns = useNewDesigns()
+   return (
+     <For each={props.details}>
+@@ -913,7 +915,7 @@ function DialogSelectDetails(props: { details?: string[] }) {
            paddingRight={DIALOG_LIST_INSET - (newDesigns() ? 0 : 1)}
          >
            <text fg={theme.text.muted} wrapMode="none">
 -            {Locale.truncateMiddle(detail, Math.max(1, width()))}
-+            {Locale.truncateMiddle(detail, Math.max(1, width()), chromeEllipsis())}
++            {Locale.truncateMiddle(detail, Math.max(1, props.width), chromeEllipsis())}
            </text>
          </box>
        )}
@@ -8280,6 +8313,50 @@ index b53525df46f035d74985d4994dbc26d9507d05b0..5fd351ae4c4899409dd86ab634858fff
  
  test("/new keeps the active session tab", async () => {
    await using state = await tmpdir()
+diff --git a/packages/tui/test/cli/tui/dialog-select.test.tsx b/packages/tui/test/cli/tui/dialog-select.test.tsx
+index cd97565f0aa792aa07b37bf30a1a65149de596b8..58873e88e9e616cf161f3481bf087f5feb8d60d9 100644
+--- a/packages/tui/test/cli/tui/dialog-select.test.tsx
++++ b/packages/tui/test/cli/tui/dialog-select.test.tsx
+@@ -305,6 +305,39 @@ test("renders the complete truncated footer within the option row", async () =>
+   }
+ })
+ 
++test("option rows share one resize subscription and details follow terminal width", async () => {
++  await using tmp = await tmpdir()
++  const detail = "detail-" + "x".repeat(200) + "-tail"
++  const options = Array.from({ length: 30 }, (_, index) => ({
++    title: `Option ${index}`,
++    value: `option-${index}`,
++    details: index === 0 ? [detail] : undefined,
++  }))
++  const select = await mountSelect(tmp.path, options)
++
++  try {
++    await select.app.waitForFrame((frame) => frame.includes("-tail"))
++    const before = select.app.renderer.listenerCount("resize")
++    expect(before).toBeLessThan(10)
++    const wide = select.app
++      .captureCharFrame()
++      .split("\n")
++      .find((line) => line.includes("-tail"))!
++      .trim().length
++    select.app.resize(50, 20)
++    await select.app.waitFor(() => {
++      const line = select.app
++        .captureCharFrame()
++        .split("\n")
++        .find((row) => row.includes("-tail"))
++      return !!line && line.trim().length < wide
++    })
++    expect(select.app.renderer.listenerCount("resize")).toBe(before)
++  } finally {
++    select.app.renderer.destroy()
++  }
++})
++
+ test("renders actions with a current selection", async () => {
+   await using tmp = await tmpdir()
+   const app = await renderSelect(
 diff --git a/packages/tui/test/component/plan-view.test.tsx b/packages/tui/test/component/plan-view.test.tsx
 new file mode 100644
 index 0000000000000000000000000000000000000000..c2cf606b6ff85b47527d6054447b8c649e9f1cd3
