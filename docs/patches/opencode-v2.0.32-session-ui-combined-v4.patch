@@ -9102,10 +9102,10 @@ index 0000000000000000000000000000000000000000..af838e8effc5ad19f4b6c2e04762365a
 +})
 diff --git a/packages/tui/test/navigation-rail.test.tsx b/packages/tui/test/navigation-rail.test.tsx
 new file mode 100644
-index 0000000000000000000000000000000000000000..5054914d61f70a7dd4ad8a26dafa3c7c2838ed21
+index 0000000000000000000000000000000000000000..8003e423f64dc7afa9e5c48bc0e0e43f1558c9d1
 --- /dev/null
 +++ b/packages/tui/test/navigation-rail.test.tsx
-@@ -0,0 +1,340 @@
+@@ -0,0 +1,342 @@
 +import { expect, test } from "bun:test"
 +import { InputRenderable, ScrollBoxRenderable, SelectRenderable, TextareaRenderable, TextRenderable, type Renderable } from "@opentui/core"
 +import type { SessionInfo } from "@opencode/client"
@@ -9367,7 +9367,9 @@ index 0000000000000000000000000000000000000000..5054914d61f70a7dd4ad8a26dafa3c7c
 +  await setup.waitFor(() => setup.renderer.currentFocusedRenderable === input)
 +  await setup.mockInput.typeText("first click input")
 +  expect(input.value).toBe("first click input")
-+  expect((node(setup, "fixture-voyage-scope") as TextRenderable).plainText).toContain(":false:ses_navigation_0:")
++  // Text renderables refresh plainText on the next render pass.
++  await setup.waitFor(() => (node(setup, "fixture-voyage-scope") as TextRenderable).plainText.includes(":false:ses_navigation_0:"))
++  expect(setup.renderer.currentFocusedRenderable).toBe(input)
 +})
 +
 +test("normal shutdown preserves selected mode, and restart restores it without a detail route", async () => {
@@ -9548,7 +9550,7 @@ index 0790e9a689d478ef4a60d4bef0da9a7c0242b99c..fa236930c683a0b4f260830eb8b33fdc
 +  await setup.mockInput.typeText(query)
  }
 diff --git a/packages/tui/test/plugin-source.test.ts b/packages/tui/test/plugin-source.test.ts
-index 2f4d396a6155750228ca92fa3ee07ddce562f3f8..4f47fdf888bad408a36a17e29bce35d0c5031563 100644
+index 2f4d396a6155750228ca92fa3ee07ddce562f3f8..a7eb1a3a47561dbfba2e67d794adedf9a71f6122 100644
 --- a/packages/tui/test/plugin-source.test.ts
 +++ b/packages/tui/test/plugin-source.test.ts
 @@ -7,7 +7,8 @@ import { Host } from "@opencode/plugin/host"
@@ -9608,6 +9610,27 @@ index 2f4d396a6155750228ca92fa3ee07ddce562f3f8..4f47fdf888bad408a36a17e29bce35d0
        "tui.ts": [
          "import { createSignal }",
          'from "solid-js"',
+@@ -294,10 +326,19 @@ test("real watchers observe atomic saves to nested, outside-root, and symlinked
+   await Bun.write(entry, 'export { value as default } from "./link"')
+   await symlink(fileURLToPath(helper), fileURLToPath(new URL("plugin/link.ts", sources.url)))
+   expect((await sources.read(entry.href)).module).toMatchObject({ default: 1 })
++  // macOS FSEvents streams start asynchronously and can miss writes made right
++  // after arming on a loaded machine. Prove the helper watch is live first.
++  const live = Date.now() + 10000
++  while (changes === 0 && Date.now() < live) {
++    await Bun.write(helper, "export const value = 1")
++    await Bun.sleep(100)
++  }
++  expect(changes).toBeGreaterThan(0)
++  await Bun.sleep(100)
+   const count = changes
+   await Bun.write(new URL(helper.href + ".new"), "export const value = 2")
+   await rename(new URL(helper.href + ".new"), helper)
+-  const deadline = Date.now() + 3000
++  const deadline = Date.now() + 10000
+   while (Date.now() < deadline) {
+     if (changes > count) break
+     await Bun.sleep(10)
 diff --git a/packages/tui/test/plugin-theme-provider.test.tsx b/packages/tui/test/plugin-theme-provider.test.tsx
 new file mode 100644
 index 0000000000000000000000000000000000000000..ff8cbeabb00abf008453a9c31a8eec04ef08a2c5
