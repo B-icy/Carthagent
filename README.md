@@ -72,6 +72,63 @@ persistence; see the [preview.10 candidate notes](docs/release-notes-preview.10.
 for its limits. Published preview.9 remains immutable and does not acquire
 changes from current main.
 
+### Projects sidebar source preview (development only)
+
+The redesigned Projects sidebar (folder card, folder browser, and folder/model
+setup for new sessions) exists only as source. It is **not** in any published
+`ctg` release, and the steps below do not build or update the published native
+runtime. The published runtime stays pinned to
+`docs/patches/opencode-v2.0.32-session-ui-combined-v4.patch` and
+`lib/opencode/runtime-release.json`.
+
+Requirements: Git, a POSIX shell, `sha256sum` or `shasum`, Bun 1.4.2 (the
+OpenCode `packageManager` pin), and this checkout with `npm ci` already run. No
+native compilation is needed.
+
+1. Prepare a clean OpenCode checkout at the pinned upstream and apply the
+   development patch (v5 replaces v4 and applies directly to upstream):
+
+   ```sh
+   git clone https://github.com/anomalyco/opencode "$HOME/src/opencode preview"
+   git -C "$HOME/src/opencode preview" checkout 843a6c514e606b436a7fe713422ace0a93ad3d61
+   script/ctg/prepare-development-runtime.sh "$HOME/src/opencode preview"
+   (cd "$HOME/src/opencode preview" && /path/to/bun-1.4.2 install)
+   ```
+
+2. Launch from any directory with explicit paths (spaces are fine):
+
+   ```sh
+   /path/to/carthagent/script/ctg/source-preview.sh \
+     --source "$HOME/src/opencode preview" \
+     --profile "$HOME/.carthagent/source-preview" \
+     --bun /path/to/bun-1.4.2 \
+     --workspace "$HOME/projects/my project"
+   ```
+
+   The launcher runs `bun --no-env-file run src/index.ts --standalone <workspace>`
+   from `packages/cli` with only a private HOME, TMPDIR, XDG and OpenCode config
+   directory inside `--profile`. It disables project config and auto-update and
+   passes no inherited API keys. On first use it creates the profile (mode 0700)
+   with the Carthagent plugin, Carthage theme and CLI theme config. Existing
+   profile files are never rewritten. The private server listens on an ephemeral
+   loopback port and exits when the TUI exits.
+
+3. Sign in once inside the same profile. Enter secrets only at the terminal
+   prompt, never as arguments:
+
+   ```sh
+   script/ctg/source-preview.sh --source ... --profile ... --bun ... -- auth login
+   ```
+
+In the TUI, the folder card at the top of Projects shows the current folder and
+model. Use **Browse** (or `/browse`) to pick a folder and **Ctrl+S** to confirm.
+**New session** opens folder and model setup; the session is created only when
+you send the first message. Leave with `/exit` (or Ctrl+P, “Exit the app”); relaunch with
+the same `--profile` and choose the session in Projects to continue it.
+
+See [source preview](docs/source-preview.md) for testing, patch verification and
+limits.
+
 ## Install and update
 
 The installer selects an exact published release and acquires its pinned native runtime; it never falls back to an unrelated system binary. See the [native upgrade guide](docs/native-upgrade.md) for source-checkout and profile-preservation instructions, or [legacy CLI instructions](docs/legacy-cli.md) for stable 1.0.7.
