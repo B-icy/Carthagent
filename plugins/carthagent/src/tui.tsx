@@ -17,6 +17,7 @@ import { VoyagesNavigation } from "./ui/voyages-navigation.js";
 import { nativeNavigation } from "./ui/native-navigation.js";
 import { provisionNativeThemes } from "./ui/theme-provision.mjs";
 import { setSessionAutoCompaction } from "./ui/session-preferences.mjs";
+import { runModelCommand } from "./ui/model-command.js";
 import { createNativeReviewConsumer, nativeReviewMode, sendNativeReviewKickoff, subscribeNativeReviewEvents } from "./ui/native-review.mjs";
 
 const THEMES = ["carthage", "tokyonight", "nebula", "ember", "forest", "mono", "obsidian", "midnight", "solarized-dark", "nord", "contrast-dark", "okabe-dark", "paper", "daylight", "solarized-light", "contrast-light", "okabe-light", "solarized", "okabe", "contrast", "system"];
@@ -175,19 +176,17 @@ export default Plugin.define({
           }
           return;
         }
-        case "model": {
-          await context.data.location.model.sync(location);
-          const models = context.data.location.model.list(location) ?? [];
-          const query = arg.toLowerCase();
-          const options = models.filter((model) => !query || `${nativeProviderName(model.providerID)} ${model.providerID}/${model.modelID} ${model.name}`.toLowerCase().includes(query))
-            .map((model) => ({ title: `${nativeProviderName(model.providerID)}/${model.modelID}`, value: model, description: model.name }));
-          const selected = await context.ui.dialog.select({ title: "Select provider model", placeholder: "Search provider/model…", options });
-          if (selected && sessionID) {
-            await context.client.session.switchModel({ sessionID, model: { providerID: selected.providerID, id: selected.id } });
-            toast(`Selected ${nativeProviderName(selected.providerID)}/${selected.modelID}.`, "success");
-          } else if (selected) toast("Open or create a session before selecting its model.", "warning");
+        case "model":
+          await runModelCommand({
+            sync: () => context.data.location.model.sync(location),
+            list: () => context.data.location.model.list(location) ?? [],
+            select: (options) => context.ui.dialog.select({ title: "Select provider model", placeholder: "Search provider/model…", options }),
+            switchModel: (target, model) => context.client.session.switchModel({ sessionID: target, model }),
+            openNativePicker: (query) => context.keymap.dispatch("model.list", query),
+            providerName: nativeProviderName,
+            toast,
+          }, { sessionID, arg });
           return;
-        }
         case "thinking": {
           if (!selectedModel) { toast("Choose a model first.", "warning"); return; }
           const variants = context.ui.model.variant.list();

@@ -646,7 +646,7 @@ index 0000000..2f742d7
 +  }).pipe(Effect.scoped),
 +)
 diff --git a/packages/tui/src/app.tsx b/packages/tui/src/app.tsx
-index 88939eb..988aa4a 100644
+index 88939eb..5599a4f 100644
 --- a/packages/tui/src/app.tsx
 +++ b/packages/tui/src/app.tsx
 @@ -2,6 +2,7 @@ import { existsSync } from "fs"
@@ -665,12 +665,13 @@ index 88939eb..988aa4a 100644
    useTuiTerminalEnvironment,
    type TuiApp,
  } from "./context/runtime"
-@@ -71,11 +73,17 @@ import { DialogHighlights } from "./component/dialog-highlights"
+@@ -71,11 +73,18 @@ import { DialogHighlights } from "./component/dialog-highlights"
  import { claim } from "./util/highlights"
  import { DialogThemeList } from "./component/dialog-theme-list"
  import { DialogHelp } from "./ui/dialog-help"
 +import { DialogPrompt } from "./ui/dialog-prompt"
 +import { DialogFolderBrowser } from "./component/dialog-folder-browser"
++import { DialogNewSession, useNewSessionStart } from "./component/dialog-new-session"
  import { DialogAgent } from "./component/dialog-agent"
  import { DialogSessionList } from "./component/dialog-session-list"
  import { DialogOpen, DialogOpenKey, moveOpenSession } from "./component/dialog-open"
@@ -684,7 +685,7 @@ index 88939eb..988aa4a 100644
  import { createPaneResize } from "./ui/pane-resize"
  import { PaneResizeHandle } from "./ui/pane-resize-handle"
  import { clickedLink } from "./ui/link"
-@@ -95,13 +103,19 @@ import { Config, ConfigProvider, useConfig } from "./config"
+@@ -95,13 +104,19 @@ import { Config, ConfigProvider, useConfig } from "./config"
  import { newSessionLocation } from "./config/new-session-location"
  import { UpdateNotificationProvider, useUpdateNotification, type UpdateSource } from "./context/update-notification"
  import { PluginProvider, usePlugin, type PackageSource } from "./plugin/context"
@@ -705,7 +706,16 @@ index 88939eb..988aa4a 100644
  import { cliErrorMessage, errorFormat } from "./util/error"
  import { AttentionProvider } from "./context/attention"
  import { StorageProvider, useStorage } from "./context/storage"
-@@ -121,6 +135,9 @@ const sessionTabBindingCommands = [
+@@ -112,7 +127,7 @@ import { createTuiClipboard } from "./clipboard"
+ 
+ registerOpencodeSpinner()
+ 
+-const appGlobalBindingCommands = ["session.list", "session.new", "open.menu"] as const
++const appGlobalBindingCommands = ["session.list", "session.new", "session.new.setup", "open.menu"] as const
+ 
+ const sessionTabBindingCommands = [
+   "session.tab.next",
+@@ -121,6 +136,9 @@ const sessionTabBindingCommands = [
    "session.tab.previous_unread",
    "session.tab.close",
    "session.tab.reopen",
@@ -715,7 +725,7 @@ index 88939eb..988aa4a 100644
    "session.tab.select.1",
    "session.tab.select.2",
    "session.tab.select.3",
-@@ -252,6 +269,8 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
+@@ -252,6 +270,8 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
        const renderer = yield* Effect.gen(function* () {
          if (handoff) {
            handoff.renderer.useMouse = options.useMouse
@@ -724,7 +734,7 @@ index 88939eb..988aa4a 100644
            return yield* Effect.acquireRelease(Effect.succeed(handoff.renderer), (renderer) =>
              Effect.sync(() => destroyRenderer(renderer)),
            )
-@@ -260,13 +279,24 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
+@@ -260,13 +280,24 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
            const { Drive } = yield* Effect.promise(() => import("@opencode/simulation/frontend"))
            return yield* Drive.create(options, input.app.version)
          }
@@ -751,7 +761,7 @@ index 88939eb..988aa4a 100644
        })
        renderer.setMaxListeners(15)
        const clipboard = yield* Effect.acquireRelease(
-@@ -279,10 +309,11 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
+@@ -279,10 +310,11 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
        const finalizers = new Set<() => Promise<void>>()
        yield* Effect.addFinalizer(() =>
          Effect.promise(async () => {
@@ -767,7 +777,7 @@ index 88939eb..988aa4a 100644
          }),
        )
        const shutdown = yield* Latch.make()
-@@ -380,8 +411,9 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
+@@ -380,8 +412,9 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                                <PermissionProvider>
                                                  <DataProvider directory={directory}>
                                                    <LocationProvider>
@@ -779,7 +789,7 @@ index 88939eb..988aa4a 100644
                                                          <ThemeProvider
                                                            mode={mode}
                                                            source={createThemeSource(global.config)}
-@@ -399,12 +431,14 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
+@@ -399,12 +432,14 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                                                              updater={input.updater}
                                                                            >
                                                                              <PanelProvider>
@@ -800,7 +810,7 @@ index 88939eb..988aa4a 100644
                                                                              </PanelProvider>
                                                                            </UpdateNotificationProvider>
                                                                          </AttentionProvider>
-@@ -416,8 +450,9 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
+@@ -416,8 +451,9 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                                              </PromptStashProvider>
                                                            </LocalProvider>
                                                          </ThemeProvider>
@@ -812,7 +822,7 @@ index 88939eb..988aa4a 100644
                                                    </LocationProvider>
                                                  </DataProvider>
                                                </PermissionProvider>
-@@ -468,6 +503,7 @@ function App() {
+@@ -468,6 +504,7 @@ function App() {
    const local = useLocal()
    const sessionTabs = useSessionTabs()
    const panels = usePanel()
@@ -820,7 +830,7 @@ index 88939eb..988aa4a 100644
    const keymap = Keymap.use()
    const event = useEvent()
    const client = useClient()
-@@ -509,7 +545,7 @@ function App() {
+@@ -509,7 +546,7 @@ function App() {
    const tabsResize = createPaneResize({
      value: () => layout.verticalTabsWidth ?? SESSION_SIDEBAR_WIDTH,
      defaultValue: () => SESSION_SIDEBAR_WIDTH,
@@ -829,7 +839,7 @@ index 88939eb..988aa4a 100644
      fromMouse: (event) => event.x + 1,
      contains: (event, width) => event.x >= width - 1 && event.x <= width,
      onCommit: (width) => {
-@@ -579,16 +615,37 @@ function App() {
+@@ -579,16 +616,37 @@ function App() {
    const pasteSummaryEnabled = () => config.data.prompt?.paste !== "full"
    const tabsVertical = () =>
      config.data.tabs.layout === "vertical" && sessionTabsFitVertically(dimensions().width, tabsResize.size())
@@ -869,7 +879,7 @@ index 88939eb..988aa4a 100644
    createEffect(() => {
      const current = panels.current()
      if (!current || (route.data.type === "session" && route.data.sessionID === current.sessionID)) return
-@@ -607,23 +664,23 @@ function App() {
+@@ -607,23 +665,23 @@ function App() {
      if (!terminalTitleEnabled()) return
  
      if (route.data.type === "home") {
@@ -897,7 +907,7 @@ index 88939eb..988aa4a 100644
      }
    })
  
-@@ -692,6 +749,9 @@ function App() {
+@@ -692,6 +750,9 @@ function App() {
  
    // Opens the release highlights once after an update, but only into an idle home screen during startup.
    const storage = useStorage()
@@ -907,7 +917,15 @@ index 88939eb..988aa4a 100644
    const paths = useTuiPaths()
    let highlighted = false
    createEffect(() => {
-@@ -767,7 +827,6 @@ function App() {
+@@ -714,6 +775,7 @@ function App() {
+       .catch(toast.error)
+   })
+ 
++  const startNewSession = useNewSessionStart()
+   const connected = useConnected()
+   const appCommands = createMemo(() =>
+     [
+@@ -767,7 +829,6 @@ function App() {
          name: "session.clear",
          title: "Clear session",
          category: "Session",
@@ -915,7 +933,7 @@ index 88939eb..988aa4a 100644
          run: () => {
            const model = local.model.current()
            const agent = local.agent.current()
-@@ -857,6 +916,80 @@ function App() {
+@@ -857,6 +918,111 @@ function App() {
          enabled: sessionTabs.enabled,
          run: () => sessionTabs.reopen(),
        },
@@ -953,6 +971,37 @@ index 88939eb..988aa4a 100644
 +              }}
 +            />
 +          )),
++      },
++      {
++        name: "session.new.setup",
++        title: "New session in folder…",
++        category: "Session",
++        run: (input?: string) => {
++          // Project entries pass their folder; the global entry uses the folder a plain new session would use.
++          const directory =
++            input ||
++            (route.data.type === "home"
++              ? (location.ref ?? data.location.default()).directory
++              : newSessionLocation(
++                  config.data.session.new_location,
++                  data.location.default().directory,
++                  route.data.type === "session" ? data.session.get(route.data.sessionID)?.location : undefined,
++                  location.error?.location,
++                ).directory)
++          dialog.replace(
++            () => (
++              <DialogNewSession
++                file={client.api.file}
++                anchor={data.location.default().directory}
++                home={paths.home}
++                directory={directory}
++                onStart={(choice) => void startNewSession(choice)}
++              />
++            ),
++            undefined,
++            { size: "large" },
++          )
++        },
 +      },
 +      {
 +        name: "session.tab.directory.browse",
@@ -996,7 +1045,18 @@ index 88939eb..988aa4a 100644
        ...Array.from({ length: 10 }, (_, i) => ({
          name: `session.tab.select.${i + 1}`,
          title: `Switch to tab ${i + 1}`,
-@@ -1046,7 +1179,7 @@ function App() {
+@@ -871,8 +1037,8 @@ function App() {
+         suggested: true,
+         category: "Agent",
+         slash: { name: "models" },
+-        run: () => {
+-          dialog.replace(() => <DialogModel />)
++        run: (input?: string) => {
++          dialog.replace(() => <DialogModel query={input} />)
+         },
+       },
+       {
+@@ -1046,7 +1212,7 @@ function App() {
                  const restart = client.restart
                  if (!restart) return
                  dialog.clear()
@@ -1005,7 +1065,7 @@ index 88939eb..988aa4a 100644
                  // restart resolves once the replacement service is healthy; the
                  // event stream reattaches through the reconnect loop.
                  await restart()
-@@ -1063,7 +1196,7 @@ function App() {
+@@ -1063,7 +1229,7 @@ function App() {
          slash: { name: "reload" },
          run: async () => {
            dialog.clear()
@@ -1014,7 +1074,7 @@ index 88939eb..988aa4a 100644
            await client.api.location
              .reload()
              .then(() => {
-@@ -1272,7 +1405,7 @@ function App() {
+@@ -1272,7 +1438,7 @@ function App() {
  
    Keymap.createLayer(() => ({
      mode: "global",
@@ -1023,7 +1083,7 @@ index 88939eb..988aa4a 100644
      bindings: sessionTabBindingCommands,
    }))
  
-@@ -1387,13 +1520,22 @@ function App() {
+@@ -1387,13 +1553,22 @@ function App() {
          onMouseDragEnd={tabsResize.onMouseDragEnd}
          onMouseUp={tabsResize.onMouseUp}
        >
@@ -1049,7 +1109,7 @@ index 88939eb..988aa4a 100644
                  <SessionTabs />
                </Show>
                <Switch>
-@@ -1405,7 +1547,7 @@ function App() {
+@@ -1405,7 +1580,7 @@ function App() {
                      {(sessionID) => (
                        <SessionFrame
                          sessionID={sessionID}
@@ -1058,7 +1118,7 @@ index 88939eb..988aa4a 100644
                        />
                      )}
                    </Show>
-@@ -1421,9 +1563,10 @@ function App() {
+@@ -1421,9 +1596,10 @@ function App() {
              </box>
              <Slot path="app" />
            </Show>
@@ -1267,10 +1327,10 @@ index a883000..db00317 100644
            ? [
 diff --git a/packages/tui/src/component/dialog-folder-browser.tsx b/packages/tui/src/component/dialog-folder-browser.tsx
 new file mode 100644
-index 0000000..1cc9aa2
+index 0000000..6d0675d
 --- /dev/null
 +++ b/packages/tui/src/component/dialog-folder-browser.tsx
-@@ -0,0 +1,255 @@
+@@ -0,0 +1,258 @@
 +import { InputRenderable, ScrollBoxRenderable, TextAttributes } from "@opentui/core"
 +import { useTerminalDimensions } from "@opentui/solid"
 +import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js"
@@ -1291,6 +1351,8 @@ index 0000000..1cc9aa2
 +  start?: string
 +  title?: string
 +  onConfirm: (directory: string) => void
++  /** Embeds the browser in another dialog: Escape calls this and confirming leaves the dialog open for the caller. */
++  onCancel?: () => void
 +}) {
 +  const dialog = useDialog()
 +  const dimensions = useTerminalDimensions()
@@ -1329,7 +1391,7 @@ index 0000000..1cc9aa2
 +    const valid = await browser.refresh()
 +    setConfirming(false)
 +    if (!valid || closed || browser.state.directory !== directory) return
-+    dialog.clear()
++    if (!props.onCancel) dialog.clear()
 +    props.onConfirm(directory)
 +  }
 +
@@ -1357,6 +1419,7 @@ index 0000000..1cc9aa2
 +      { bind: "alt+up", title: "Parent folder", group: "Folder browser", run: () => void browser.up() },
 +      { bind: "alt+h", title: "Home folder", group: "Folder browser", run: () => void browser.home() },
 +      { bind: "ctrl+s", title: "Select this folder", group: "Folder browser", run: () => void confirm() },
++      ...(props.onCancel ? [{ bind: "escape", title: "Back", group: "Folder browser", run: props.onCancel }] : []),
 +    ],
 +  }))
 +
@@ -1722,6 +1785,292 @@ index 68e3778..aa0582b 100644
  }
  
  export function DialogMcp(props: { initialServer?: string; details?: boolean } = {}) {
+diff --git a/packages/tui/src/component/dialog-model.tsx b/packages/tui/src/component/dialog-model.tsx
+index 344d9fc..89cbcd2 100644
+--- a/packages/tui/src/component/dialog-model.tsx
++++ b/packages/tui/src/component/dialog-model.tsx
+@@ -10,8 +10,20 @@ import { useData } from "../context/data"
+ import { modelPreferenceKey } from "../model-preference"
+ import { useLocation } from "../context/location"
+ import { useNewDesigns } from "../config"
+-
+-export function DialogModel(props: { providerID?: string }) {
++import type { LocationRef } from "@opencode/client"
++
++export function DialogModel(props: {
++  providerID?: string
++  /** Catalog location; defaults to the current location. */
++  location?: LocationRef
++  /** Highlighted model; defaults to the composer's model. */
++  current?: { providerID: string; modelID: string }
++  /** Receives the pick instead of changing the composer's model. */
++  onSelect?: (model: { providerID: string; modelID: string }) => void
++  onCancel?: () => void
++  /** Initial search text, e.g. the argument of `/models <name>`. */
++  query?: string
++}) {
+   const local = useLocal()
+   const newDesigns = useNewDesigns()
+   const data = useData()
+@@ -19,12 +31,11 @@ export function DialogModel(props: { providerID?: string }) {
+   const location = useLocation()
+   const [query, setQuery] = createSignal("")
+   const favoritePriority = new Set(local.model.favorite().map(modelPreferenceKey))
++  const ref = () => props.location ?? location.ref
+ 
+   const connected = useConnected()
+-  const providers = createMemo(
+-    () => new Map((data.location.provider.list(location.ref) ?? []).map((item) => [item.id, item])),
+-  )
+-  const models = createMemo(() => data.location.model.list(location.ref) ?? [])
++  const providers = createMemo(() => new Map((data.location.provider.list(ref()) ?? []).map((item) => [item.id, item])))
++  const models = createMemo(() => data.location.model.list(ref()) ?? [])
+ 
+   const showExtra = createMemo(() => connected() && !props.providerID)
+ 
+@@ -126,6 +137,7 @@ export function DialogModel(props: { providerID?: string }) {
+   })
+ 
+   function onSelect(providerID: string, modelID: string) {
++    if (props.onSelect) return props.onSelect({ providerID, modelID })
+     local.model.set({ providerID, modelID }, { recent: true })
+     const list = local.model.variant.list()
+     const cur = local.model.variant.current()
+@@ -177,7 +189,11 @@ export function DialogModel(props: { providerID?: string }) {
+       flat={true}
+       skipFilter={true}
+       title={title()}
+-      current={local.model.current()}
++      onCancel={props.onCancel}
++      ref={(select) => {
++        if (props.query?.trim()) select.setFilter(props.query.trim())
++      }}
++      current={props.current ?? local.model.current()}
+       focusCurrent={false}
+     />
+   )
+diff --git a/packages/tui/src/component/dialog-new-session.tsx b/packages/tui/src/component/dialog-new-session.tsx
+new file mode 100644
+index 0000000..86a0a49
+--- /dev/null
++++ b/packages/tui/src/component/dialog-new-session.tsx
+@@ -0,0 +1,216 @@
++import { TextAttributes } from "@opentui/core"
++import { createMemo, createSignal, Match, onCleanup, onMount, Switch } from "solid-js"
++import type { OpenCodeClient } from "@opencode/client"
++import { useData } from "../context/data"
++import { useLocal } from "../context/local"
++import { useLocation } from "../context/location"
++import { Keymap } from "../context/keymap"
++import { useRoute } from "../context/route"
++import { useTheme } from "../context/theme"
++import type { ModelPreferenceModel } from "../model-preference"
++import { DialogHeader, DialogLayout, useDialog } from "../ui/dialog"
++import { chromeEllipsis, chromeLabel } from "../ui/glyphs"
++import { Locale } from "../util/locale"
++import { useTerminalDimensions } from "@opentui/solid"
++import { DialogFolderBrowser } from "./dialog-folder-browser"
++import { DialogModel } from "./dialog-model"
++
++export type NewSessionChoice = { directory: string; model: ModelPreferenceModel }
++
++/**
++ * Folder/model setup shown before a new session's first prompt. It only collects choices: the session
++ * is created by the normal first-message flow, so opening, confirming or cancelling creates nothing.
++ */
++export function DialogNewSession(props: {
++  file: Pick<OpenCodeClient["file"], "list">
++  home: string
++  directory: string
++  /** Location the folder check is anchored to; defaults to the checked folder itself. */
++  anchor?: string
++  onStart: (choice: NewSessionChoice) => void
++}) {
++  const dialog = useDialog()
++  const data = useData()
++  const local = useLocal()
++  const theme = useTheme().surface("dialog")
++  const dimensions = useTerminalDimensions()
++  // Large dialogs are at most 88 cells wide; subtract the side insets and the label column.
++  const fieldWidth = () => Math.max(10, Math.min(dimensions().width - 2, 88) - 14)
++  const [view, setView] = createSignal<"setup" | "folder" | "model">("setup")
++  const [directory, setDirectory] = createSignal(props.directory)
++  const [model, setModel] = createSignal<ModelPreferenceModel | undefined>(local.model.current())
++  const [check, setCheck] = createSignal<{ directory: string; error?: string; ready?: boolean }>({
++    directory: props.directory,
++  })
++  let generation = 0
++  let controller: AbortController | undefined
++  onCleanup(() => {
++    generation++
++    controller?.abort()
++  })
++
++  async function validate(target: string) {
++    controller?.abort()
++    const attempt = ++generation
++    const signal = (controller = new AbortController()).signal
++    setCheck({ directory: target })
++    const ref = { directory: target }
++    const error = await props.file
++      .list({ location: { directory: props.anchor ?? target }, path: target }, { signal })
++      .then(async () => {
++        if (attempt !== generation) return
++        await data.location.model.sync(ref)
++        await data.location.provider.sync(ref).catch(() => undefined)
++      })
++      .then(
++        () => undefined,
++        (cause: unknown) => (cause instanceof Error ? cause.message : String(cause)),
++      )
++    if (attempt !== generation) return
++    setCheck(error ? { directory: target, error } : { directory: target, ready: true })
++  }
++
++  const catalog = createMemo(() => (check().ready ? (data.location.model.list({ directory: directory() }) ?? []) : []))
++  const info = createMemo(() => {
++    const value = model()
++    return value && catalog().find((item) => item.providerID === value.providerID && item.id === value.modelID)
++  })
++  const provider = createMemo(() => {
++    const value = model()
++    if (!value) return
++    return data.location.provider.list({ directory: directory() })?.find((item) => item.id === value.providerID)?.name
++  })
++  const blocked = createMemo(() => {
++    const current = check()
++    if (current.error) return `Folder unavailable: ${current.error}`
++    if (!current.ready) return chromeLabel("Checking folder…")
++    if (catalog().length === 0) return "No models are available at this folder"
++    if (!model()) return "Choose a model to continue"
++    if (!info()) return "The selected model is unavailable at this folder; choose another"
++  })
++
++  function start() {
++    const value = model()
++    if (view() !== "setup" || blocked() || !value) return
++    dialog.clear()
++    props.onStart({ directory: directory(), model: { providerID: value.providerID, modelID: value.modelID } })
++  }
++
++  Keymap.createLayer(() => ({
++    mode: "modal",
++    enabled: view() === "setup",
++    commands: [
++      { bind: "return", title: "Start new session", group: "New session", run: start },
++      { bind: "f", title: "Change folder", group: "New session", run: () => setView("folder") },
++      { bind: "m", title: "Choose model", group: "New session", run: () => setView("model") },
++    ],
++  }))
++
++  onMount(() => {
++    dialog.setSize("large")
++    void validate(props.directory)
++  })
++
++  const label = (text: string) => (
++    <text flexShrink={0} width={8} fg={theme.text.muted} wrapMode="none">
++      {text}
++    </text>
++  )
++
++  return (
++    <Switch>
++      <Match when={view() === "folder"}>
++        <DialogFolderBrowser
++          file={props.file}
++          anchor={props.anchor ?? directory()}
++          home={props.home}
++          start={directory()}
++          title="Choose folder for new session"
++          onConfirm={(value) => {
++            setView("setup")
++            if (value === directory()) return
++            setDirectory(value)
++            void validate(value)
++          }}
++          onCancel={() => setView("setup")}
++        />
++      </Match>
++      <Match when={view() === "model"}>
++        <DialogModel
++          location={{ directory: directory() }}
++          current={model()}
++          onSelect={(value) => {
++            setModel(value)
++            setView("setup")
++          }}
++          onCancel={() => setView("setup")}
++        />
++      </Match>
++      <Match when={view() === "setup"}>
++        <DialogLayout
++          header={<DialogHeader title="New session" />}
++          footer={{
++            actions: {
++              secondary: [
++                { title: "folder", key: "f", onTrigger: () => setView("folder") },
++                { title: "model", key: "m", onTrigger: () => setView("model") },
++              ],
++              primary: [{ title: "start", key: "enter", disabled: !!blocked(), onTrigger: start }],
++            },
++          }}
++        >
++          <box flexDirection="column" gap={0}>
++            <box flexDirection="row" height={1}>
++              {label("Folder")}
++              <text fg={theme.text.base} wrapMode="none" overflow="hidden">
++                {Locale.truncateLeft(directory(), fieldWidth(), chromeEllipsis())}
++              </text>
++            </box>
++            <box flexDirection="row" height={1}>
++              {label("Model")}
++              <text fg={theme.text.base} wrapMode="none" overflow="hidden">
++                {Locale.truncate(modelLabel(), fieldWidth(), chromeEllipsis())}
++              </text>
++            </box>
++            <box height={1} />
++            <text fg={blocked() ? theme.text.feedback.warning.base : theme.text.muted} wrapMode="word">
++              {blocked() ?? "Ready. The session is created when you send the first message."}
++            </text>
++          </box>
++        </DialogLayout>
++      </Match>
++    </Switch>
++  )
++
++  function modelLabel() {
++    const value = model()
++    if (!value) return "None selected"
++    const name = info()?.name ?? value.modelID
++    const suffix = check().ready && !info() ? " (unavailable)" : ""
++    return `${provider() ?? value.providerID} · ${name} [${value.providerID}/${value.modelID}]${suffix}`
++  }
++}
++
++/**
++ * Applies a confirmed setup to Home: the chosen folder becomes the draft location and the chosen model
++ * becomes that location's new-session model. Existing sessions are left untouched.
++ */
++export function useNewSessionStart() {
++  const route = useRoute()
++  const location = useLocation()
++  const data = useData()
++  const local = useLocal()
++  const atHome = (directory: string) => route.data.type === "home" && route.data.location?.directory === directory
++  return async (choice: NewSessionChoice) => {
++    const ref = { directory: choice.directory }
++    // Home stays mounted across a Home-to-Home navigation, so its unsent text survives; a session's draft is
++    // stashed under that session by its own prompt.
++    route.navigate({ type: "home", location: ref })
++    location.set(ref)
++    await Promise.all([data.location.agent.sync(ref), data.location.model.sync(ref)])
++    // The user may have moved on while the catalog loaded; never apply the choice elsewhere.
++    if (!atHome(choice.directory) || location.ref?.directory !== choice.directory) return false
++    local.model.set(choice.model, { recent: true })
++    return true
++  }
++}
 diff --git a/packages/tui/src/component/dialog-open.tsx b/packages/tui/src/component/dialog-open.tsx
 index f6d6412..ddab0c6 100644
 --- a/packages/tui/src/component/dialog-open.tsx
@@ -3358,7 +3707,7 @@ index 8ecaa95..2fc1738 100644
    )
  }
 diff --git a/packages/tui/src/component/session-tabs.tsx b/packages/tui/src/component/session-tabs.tsx
-index fdd23a4..eb10456 100644
+index fdd23a4..dad1b1f 100644
 --- a/packages/tui/src/component/session-tabs.tsx
 +++ b/packages/tui/src/component/session-tabs.tsx
 @@ -20,6 +20,7 @@ import {
@@ -3434,7 +3783,7 @@ index fdd23a4..eb10456 100644
  }
  
  type ContextController = ReturnType<typeof useSessionTabs>
-@@ -118,7 +138,23 @@ export type SessionTabsController = Pick<ContextController, "tabs" | "current" |
+@@ -118,7 +138,25 @@ export type SessionTabsController = Pick<ContextController, "tabs" | "current" |
    detail?: (sessionID: string) => string | undefined
    rename?: (sessionID: string) => void
    search?: () => void
@@ -3443,6 +3792,8 @@ index fdd23a4..eb10456 100644
 +  directory?: () => string | undefined
 +  model?: () => string | undefined
 +  selectModel?: () => void
++  /** Opens folder/model setup for a new session, starting at `directory` when given. */
++  setup?: (directory?: string) => void
    status(sessionID: string): SessionTabsStatus
 +  folders?: ContextController["folders"]
 +  folderFor?: ContextController["folderFor"]
@@ -3458,7 +3809,7 @@ index fdd23a4..eb10456 100644
  }
  const NEW_SESSION_TAB: SessionTab = { sessionID: "new", title: NEW_SESSION_TAB_TITLE }
  const glowTextColor = (base: RGBA, glow: RGBA, index: number, width: number, level = 1) =>
-@@ -170,14 +206,16 @@ function TabIndicator(props: {
+@@ -170,14 +208,16 @@ function TabIndicator(props: {
      const flash = Math.max(0, 1 - Math.abs(opacity - 0.8) / 0.2)
      return tint(props.backgroundColor, tint(unreadColor(), props.flashColor, flash * 0.3), Math.min(1, opacity / 0.8))
    }
@@ -3477,7 +3828,7 @@ index fdd23a4..eb10456 100644
      return props.idleLabel ?? ""
    }
    return (
-@@ -382,10 +420,94 @@ function TabContextMenu(props: { state: TabContextMenuState; tabs: SessionTabsCo
+@@ -382,10 +422,100 @@ function TabContextMenu(props: { state: TabContextMenuState; tabs: SessionTabsCo
      mode: "menu",
      commands: [{ bind: "escape,ctrl+c", title: "Close tab menu", group: "Tabs", run: props.onClose }],
    }))
@@ -3538,8 +3889,14 @@ index fdd23a4..eb10456 100644
      const closed = (props.tabs.recentlyClosed?.() ?? []).slice(0, 10)
 +    if (folder) {
 +      return [
-+        ...(folder.path && props.tabs.newInDirectory
-+          ? [{ title: "New session here", run: () => props.tabs.newInDirectory?.(folder.path!) }]
++        ...(folder.path && (props.tabs.setup || props.tabs.newInDirectory)
++          ? [
++              {
++                title: "New session here",
++                run: () =>
++                  props.tabs.setup ? props.tabs.setup(folder.path!) : props.tabs.newInDirectory?.(folder.path!),
++              },
++            ]
 +          : []),
 +        {
 +          title: folder.collapsed ? "Expand folder" : "Collapse folder",
@@ -3572,7 +3929,7 @@ index fdd23a4..eb10456 100644
      return [
        ...(sessionID && props.tabs.add ? [{ title: NEW_SESSION_TAB_TITLE, run: () => props.tabs.add?.() }] : []),
        ...(sessionID
-@@ -395,6 +517,7 @@ function TabContextMenu(props: { state: TabContextMenuState; tabs: SessionTabsCo
+@@ -395,6 +525,7 @@ function TabContextMenu(props: { state: TabContextMenuState; tabs: SessionTabsCo
                run: () =>
                  props.tabs.rename ? props.tabs.rename(sessionID) : DialogSessionRename.show(dialog, sessionID, title),
              },
@@ -3580,7 +3937,7 @@ index fdd23a4..eb10456 100644
              {
                title: "Copy session ID",
                run: () =>
-@@ -405,7 +528,11 @@ function TabContextMenu(props: { state: TabContextMenuState; tabs: SessionTabsCo
+@@ -405,7 +536,11 @@ function TabContextMenu(props: { state: TabContextMenuState; tabs: SessionTabsCo
              },
              { title: "Close", run: () => props.tabs.close(sessionID) },
            ]
@@ -3593,7 +3950,7 @@ index fdd23a4..eb10456 100644
        ...(!sessionID && props.tabs.reopen
          ? [
              { title: "Recently closed tabs" },
-@@ -570,6 +697,106 @@ function VerticalSessionTabs(props: {
+@@ -570,6 +705,109 @@ function VerticalSessionTabs(props: {
    const separatorUpperPulseColor = createMemo(() => tint(background(), theme.text.base, 0.04))
    const separatorLowerPulseColor = createMemo(() => tint(background(), theme.text.base, 0.05))
    const [addHovered, setAddHovered] = createSignal(false)
@@ -3605,6 +3962,9 @@ index fdd23a4..eb10456 100644
 +  const local = props.controller ? undefined : useLocal()
 +  const location = props.controller ? undefined : useLocation()
 +  const selectModel = tabs.selectModel ?? (props.controller ? undefined : () => keymap.dispatch("model.list"))
++  const setup =
++    tabs.setup ??
++    (props.controller ? undefined : (directory?: string) => keymap.dispatch("session.new.setup", directory))
 +  const modelLabel = () => (tabs.model ? tabs.model() : local?.model.parsed().model)
 +  const currentDirectory = () => {
 +    if (tabs.directory) return tabs.directory()
@@ -3653,7 +4013,7 @@ index fdd23a4..eb10456 100644
 +        directory={currentDirectory()}
 +        model={modelLabel()}
 +        browse={canBrowse() ? runBrowse : undefined}
-+        add={tabs.add ? () => tabs.add?.() : undefined}
++        add={setup ? () => setup() : tabs.add ? () => tabs.add?.() : undefined}
 +        selectModel={selectModel}
 +        onMenu={(event) => {
 +          if (!rail) return
@@ -3700,7 +4060,7 @@ index fdd23a4..eb10456 100644
    const marquee = createTabMarquee(animations)
    const hovered = marquee.hovered
    createEffect(() => {
-@@ -604,6 +831,93 @@ function VerticalSessionTabs(props: {
+@@ -604,6 +842,95 @@ function VerticalSessionTabs(props: {
      return moveSessionTab(tabs.tabs(), pending.sessionID, pending.index)
    })
    const items = ordered
@@ -3750,6 +4110,8 @@ index fdd23a4..eb10456 100644
 +        width="100%"
 +        flexDirection="row"
 +        flexShrink={0}
++        // The first session's pulse overlay extends one row up; keep the heading's menu reachable above it.
++        zIndex={4}
 +        backgroundColor={hoveredHeader() ? actionHovered() : background()}
 +        onMouseOver={() => setHoveredHeader(true)}
 +        onMouseOut={() => setHoveredHeader(false)}
@@ -3794,7 +4156,7 @@ index fdd23a4..eb10456 100644
    const highlightColor = createMemo(() =>
      tint(background(), actionHovered(), actionHovered().a),
    )
-@@ -689,10 +1003,13 @@ function VerticalSessionTabs(props: {
+@@ -689,10 +1016,13 @@ function VerticalSessionTabs(props: {
      const source = dragging()
      if (!source) return
      didDrag = true
@@ -3810,7 +4172,7 @@ index fdd23a4..eb10456 100644
          Math.floor(
            (event.y - (scroll?.viewport.screenY ?? rail.screenY + 1) - (compact() ? 1 : 0) + (scroll?.scrollTop ?? 0)) /
              stride(),
-@@ -703,6 +1020,422 @@ function VerticalSessionTabs(props: {
+@@ -703,6 +1033,422 @@ function VerticalSessionTabs(props: {
      if (target !== sourceIndex && preview()?.index !== target) setPreview({ sessionID: source, index: target })
    }
  
@@ -4233,7 +4595,7 @@ index fdd23a4..eb10456 100644
    return (
      <box
        ref={(element) => (rail = element)}
-@@ -714,6 +1447,13 @@ function VerticalSessionTabs(props: {
+@@ -714,6 +1460,13 @@ function VerticalSessionTabs(props: {
        paddingTop={1}
        backgroundColor={background()}
        onMouseOut={marquee.leaveHovered}
@@ -4247,7 +4609,7 @@ index fdd23a4..eb10456 100644
        onMouseUp={(event) => {
          if (event.button === RIGHT_MOUSE_BUTTON) return
          release()
-@@ -725,8 +1465,9 @@ function VerticalSessionTabs(props: {
+@@ -725,8 +1478,9 @@ function VerticalSessionTabs(props: {
        onMouseDragEnd={release}
      >
        <Show when={compact()}>
@@ -4258,7 +4620,7 @@ index fdd23a4..eb10456 100644
        <scrollbox
          ref={(element) => {
            scroll = element
-@@ -739,411 +1480,26 @@ function VerticalSessionTabs(props: {
+@@ -739,411 +1493,26 @@ function VerticalSessionTabs(props: {
          scrollbarOptions={{ visible: false }}
        >
          <box flexShrink={0} flexDirection="column" gap={1} paddingY={compact() ? 1 : 0}>
@@ -4687,7 +5049,17 @@ index fdd23a4..eb10456 100644
              <box
                height={1}
                width="100%"
-@@ -1230,13 +1586,14 @@ function VerticalSessionTabs(props: {
+@@ -1176,7 +1545,8 @@ function VerticalSessionTabs(props: {
+                 if (suppressClick) return
+                 if (!addPressed) return
+                 addPressed = false
+-                if (!newTab()) tabs.add?.()
++                if (setup) setup()
++                else if (!newTab()) tabs.add?.()
+               }}
+               onMouseDragEnd={() => (addPressed = false)}
+             >
+@@ -1230,13 +1600,14 @@ function VerticalSessionTabs(props: {
                      tabs.close()
                    }}
                  >
@@ -4703,7 +5075,7 @@ index fdd23a4..eb10456 100644
        <Show when={compact() && !dragging() && !contextMenu() && hovered()}>
          {(sessionID) => (
            <box
-@@ -1262,6 +1619,7 @@ function VerticalSessionTabs(props: {
+@@ -1262,6 +1633,7 @@ function VerticalSessionTabs(props: {
                      items().find((tab) => tab.sessionID === sessionID())?.title ??
                      "Untitled session",
                    tooltipWidth() - 2,
@@ -4711,7 +5083,18 @@ index fdd23a4..eb10456 100644
                  )}
                </text>
                <text fg={theme.text.muted} wrapMode="none" selectable={false}>
-@@ -1556,7 +1914,7 @@ function HorizontalSessionTabs(props: {
+@@ -1279,7 +1651,9 @@ function VerticalSessionTabs(props: {
+         )}
+       </Show>
+       <Show when={contextMenu()}>
+-        {(state) => <TabContextMenu state={state()} tabs={tabs} onClose={() => setContextMenu(undefined)} />}
++        {(state) => (
++          <TabContextMenu state={state()} tabs={{ ...tabs, setup }} onClose={() => setContextMenu(undefined)} />
++        )}
+       </Show>
+     </box>
+   )
+@@ -1556,7 +1930,7 @@ function HorizontalSessionTabs(props: {
      >
        <Show when={layout().before > 0}>
          <text width={sessionTabOverflowWidth(layout().before)} fg={theme.text.muted} selectable={false}>
@@ -4720,7 +5103,7 @@ index fdd23a4..eb10456 100644
          </text>
        </Show>
        <For each={layout().tabs}>
-@@ -1753,7 +2111,7 @@ function HorizontalSessionTabs(props: {
+@@ -1753,7 +2127,7 @@ function HorizontalSessionTabs(props: {
                      tabs.close(tab === NEW_SESSION_TAB ? undefined : tab.sessionID)
                    }}
                  >
@@ -4729,7 +5112,7 @@ index fdd23a4..eb10456 100644
                  </text>
                </box>
              </box>
-@@ -1762,7 +2120,7 @@ function HorizontalSessionTabs(props: {
+@@ -1762,7 +2136,7 @@ function HorizontalSessionTabs(props: {
        </For>
        <Show when={layout().after > 0}>
          <text width={sessionTabOverflowWidth(layout().after)} fg={theme.text.muted} selectable={false}>
@@ -4859,10 +5242,18 @@ index 953d597..f053c38 100644
      },
    }
 diff --git a/packages/tui/src/config/keybind.ts b/packages/tui/src/config/keybind.ts
-index ef1cba9..2bd3f1a 100644
+index ef1cba9..db495c9 100644
 --- a/packages/tui/src/config/keybind.ts
 +++ b/packages/tui/src/config/keybind.ts
-@@ -118,6 +118,14 @@ export const Definitions = {
+@@ -108,6 +108,7 @@ export const Definitions = {
+   "session.copy.id": keybind("none", "Copy session ID"),
+   "session.move": keybind("none", "Manage workspaces"),
+   "session.new": keybind("<leader>n", "Create a new session"),
++  "session.new.setup": keybind("none", "Choose folder and model for a new session"),
+   "session.list": keybind("<leader>l", "List all sessions"),
+   "open.menu": keybind("ctrl+o", "Open recent sessions and projects"),
+   "session.tab.next": keybind("ctrl+tab,alt+down", "Switch to next open session tab"),
+@@ -118,6 +119,14 @@ export const Definitions = {
    "session.tab.previous_unread": keybind("alt+shift+up", "Switch to previous unread session tab"),
    "session.tab.close": keybind("<leader>w", "Close current session tab"),
    "session.tab.reopen": keybind("ctrl+shift+t", "Reopen last closed session tab"),
@@ -11508,13 +11899,440 @@ index 0000000..9dad9a8
 +    ctx.dispose()
 +  })
 +})
+diff --git a/packages/tui/test/sidebar/new-session-flow.test.tsx b/packages/tui/test/sidebar/new-session-flow.test.tsx
+new file mode 100644
+index 0000000..7a5506a
+--- /dev/null
++++ b/packages/tui/test/sidebar/new-session-flow.test.tsx
+@@ -0,0 +1,242 @@
++import { InputRenderable } from "@opentui/core"
++import { expect, test } from "bun:test"
++import { mkdir } from "node:fs/promises"
++import path from "node:path"
++import { createAppFixture } from "../fixture/app"
++import { tmpdir } from "../fixture/fixture"
++import { json } from "../fixture/tui-client"
++
++type Created = { id?: string; location?: { directory: string }; agent?: string; model?: { providerID: string; id: string } }
++
++const launch = "/tmp/opencode/packages/tui"
++
++function info(record: Created) {
++  return {
++    ...record,
++    location: record.location ?? { directory: launch },
++    projectID: "project",
++    cost: 0,
++    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
++    time: { created: 0, updated: 0 },
++  }
++}
++
++const existing: Created & { title: string } = {
++  id: "ses_existing",
++  title: "Original session",
++  location: { directory: launch },
++  agent: "build",
++  model: { providerID: "demo", id: "alpha" },
++}
++
++async function start(options: { existing?: boolean } = {}) {
++  const scratch = await tmpdir()
++  const chosen = path.join(scratch.path, "empty project")
++  await mkdir(chosen)
++  const created: Created[] = []
++  const prompts: { sessionID: string; body: unknown }[] = []
++  const mutations: string[] = []
++  const release = Promise.withResolvers<void>()
++  const setup = await createAppFixture({
++    config: { animations: false, keybinds: { "session.new.setup": "f6" } },
++    args: options.existing ? { sessionID: "ses_existing" } : {},
++    fetch: async (url, request) => {
++      if (request.method !== "GET" && url.pathname.includes("ses_existing")) mutations.push(url.pathname)
++      if (options.existing && url.pathname === "/api/session" && request.method === "GET")
++        return json({ data: [info(existing)], cursor: {} })
++      if (url.pathname === "/api/session/ses_existing") return json({ data: info(existing) })
++      if (url.pathname === "/api/session/ses_existing/message")
++        return json({
++          data: [{ id: "msg_original", type: "user", text: "Original transcript line", time: { created: 1 } }],
++          cursor: {},
++        })
++      const location = { directory: url.searchParams.get("location[directory]") ?? launch }
++      if (url.pathname === "/api/agent")
++        return json({ location, data: [{ id: "build", mode: "primary", hidden: false, permissions: [] }] })
++      if (url.pathname === "/api/provider") return json({ location, data: [{ id: "demo", name: "Demo" }] })
++      if (url.pathname === "/api/model")
++        return json({
++          location,
++          data: [
++            { id: "alpha", providerID: "demo", name: "Alpha Model", variants: [], time: { released: 2 }, cost: [] },
++            { id: "beta", providerID: "demo", name: "Beta Model", variants: [], time: { released: 1 }, cost: [] },
++          ],
++        })
++      if (url.pathname === "/api/fs/list") {
++        const target = url.searchParams.get("path") ?? location.directory
++        return json({ location: { directory: target }, data: [] })
++      }
++      if (url.pathname === "/api/session" && request.method === "POST") {
++        const record: Created = await request.json()
++        created.push(record)
++        await release.promise
++        return json({ data: info(record) })
++      }
++      if (/^\/api\/session\/[^/]+\/prompt$/.test(url.pathname)) {
++        prompts.push({ sessionID: url.pathname.split("/")[3] ?? "", body: await request.json() })
++        return json({ data: {} })
++      }
++      if (/^\/api\/session\/[^/]+\/(message|inbox|permission)$/.test(url.pathname))
++        return json({ data: [], cursor: {} })
++      if (/^\/api\/session\/[^/]+\/(agent|model)$/.test(url.pathname)) return new Response(null, { status: 204 })
++      if (/^\/api\/session\/[^/]+$/.test(url.pathname)) {
++        const record = created.find((item) => item.id === url.pathname.split("/")[3])
++        if (!record) return json({ message: "not found" }, { status: 404 })
++        return json({ data: info(record) })
++      }
++      return undefined
++    },
++  })
++  return { setup, scratch, chosen, created, prompts, mutations, release }
++}
++
++async function chooseFolder(run: Awaited<ReturnType<typeof start>>, frame: () => string) {
++  const setup = run.setup
++  setup.mockInput.pressKey("f")
++  await until(() => frame().includes("Choose folder for new session"), "folder picker", 5000, frame)
++  await until(() => setup.renderer.currentFocusedRenderable instanceof InputRenderable, "filter focus")
++  setup.mockInput.pressTab()
++  const pathInput = setup.renderer.currentFocusedRenderable as InputRenderable
++  pathInput.value = run.chosen
++  setup.mockInput.pressEnter()
++  // The launch folder is also empty, so the empty-state text alone does not prove the chosen folder has loaded.
++  await until(
++    () =>
++      frame().includes("No subfolders here") &&
++      frame()
++        .split("\n")
++        .some((line) => line.includes(" In ") && line.includes("empty project")),
++    "chosen listing",
++    5000,
++    frame,
++  )
++  setup.mockInput.pressKey("s", { ctrl: true })
++  await until(() => frame().includes("Ready.") && frame().includes("/empty project"), "chosen folder", 5000, frame)
++}
++
++async function until(fn: () => boolean, label: string, timeout = 5000, frame?: () => string) {
++  const begin = Date.now()
++  while (!fn()) {
++    if (Date.now() - begin > timeout) throw new Error(`timed out waiting for ${label}\n${frame?.() ?? ""}`)
++    await Bun.sleep(10)
++  }
++}
++
++test("setup opens and cancels without creating, then the first send creates one session with the chosen folder and model", async () => {
++  const run = await start()
++  await using scratch = run.scratch
++  await using setup = run.setup
++  const frame = () => setup.captureCharFrame()
++  await setup.ready
++  await setup.waitForFrame((value) => value.includes("Alpha Model"))
++  await setup.mockInput.typeText("draft marker")
++  await until(() => frame().includes("draft marker"), "draft")
++
++  setup.mockInput.pressKey("F6")
++  await until(() => frame().includes("Ready."), "setup ready")
++  expect(frame()).toContain(launch)
++  setup.mockInput.pressEscape()
++  await until(() => !frame().includes("Ready."), "setup closed")
++  await until(() => frame().includes("draft marker"), "draft kept")
++  expect(run.created).toEqual([])
++
++  setup.mockInput.pressKey("F6")
++  await until(() => frame().includes("Ready."), "setup reopened")
++  await chooseFolder(run, frame)
++
++  setup.mockInput.pressKey("m")
++  await until(() => setup.renderer.currentFocusedRenderable instanceof InputRenderable, "model focus")
++  await setup.mockInput.typeText("Beta")
++  await until(() => frame().includes("Beta Model"), "beta option")
++  setup.mockInput.pressEnter()
++  await until(() => frame().includes("Ready.") && frame().includes("demo/beta"), "beta chosen", 5000, frame)
++  expect(run.created).toEqual([])
++
++  setup.mockInput.pressEnter()
++  await until(() => !frame().includes("Ready.") && frame().includes("Beta Model"), "home with beta", 5000, frame)
++  await until(() => frame().includes("draft marker"), "draft carried", 5000, frame)
++  expect(run.created).toEqual([])
++
++  setup.mockInput.pressEnter()
++  setup.mockInput.pressEnter()
++  await until(() => run.created.length === 1, "create")
++  setup.mockInput.pressEnter()
++  run.release.resolve()
++  await until(() => run.prompts.length === 1, "prompt")
++  await Bun.sleep(100)
++  expect(run.created).toHaveLength(1)
++  expect(run.created[0]).toMatchObject({
++    location: { directory: run.chosen },
++    agent: "build",
++    model: { providerID: "demo", id: "beta" },
++  })
++  expect(run.prompts).toHaveLength(1)
++  expect(run.prompts[0]?.sessionID).toBe(run.created[0]?.id ?? "")
++  expect(JSON.stringify(run.prompts[0]?.body)).toContain("draft marker")
++})
++
++test("preparing a new session from an existing one leaves its model, transcript and draft untouched", async () => {
++  const run = await start({ existing: true })
++  await using scratch = run.scratch
++  await using setup = run.setup
++  const frame = () => setup.captureCharFrame()
++  await setup.ready
++  await until(() => frame().includes("Original transcript line") && frame().includes("Alpha Model"), "existing", 8000, frame)
++  await setup.mockInput.typeText("existing draft")
++  await until(() => frame().includes("existing draft"), "existing draft")
++
++  setup.mockInput.pressKey("F6")
++  await until(() => frame().includes("Ready."), "setup", 5000, frame)
++  setup.mockInput.pressKey("m")
++  await until(() => setup.renderer.currentFocusedRenderable instanceof InputRenderable, "model focus")
++  await setup.mockInput.typeText("Beta")
++  await until(() => frame().includes("Beta Model"), "beta option")
++  setup.mockInput.pressEnter()
++  await until(() => frame().includes("demo/beta"), "beta chosen", 5000, frame)
++  setup.mockInput.pressEscape()
++  await until(() => !frame().includes("Ready."), "setup cancelled")
++  await until(() => frame().includes("existing draft") && frame().includes("Alpha Model"), "existing kept", 5000, frame)
++  expect(frame()).toContain("Original transcript line")
++  expect(run.created).toEqual([])
++
++  setup.mockInput.pressKey("F6")
++  await until(() => frame().includes("Ready."), "setup again", 5000, frame)
++  await chooseFolder(run, frame)
++  setup.mockInput.pressKey("m")
++  await until(() => setup.renderer.currentFocusedRenderable instanceof InputRenderable, "model focus again")
++  await setup.mockInput.typeText("Beta")
++  await until(() => frame().includes("Beta Model"), "beta option again")
++  setup.mockInput.pressEnter()
++  await until(() => frame().includes("demo/beta"), "beta chosen again", 5000, frame)
++  setup.mockInput.pressEnter()
++  await until(() => !frame().includes("Original transcript line") && frame().includes("Beta Model"), "home", 5000, frame)
++  expect(frame()).not.toContain("existing draft")
++
++  await setup.mockInput.typeText("first new prompt")
++  setup.mockInput.pressEnter()
++  run.release.resolve()
++  await until(() => run.prompts.length === 1, "new prompt", 5000, frame)
++  expect(run.created[0]).toMatchObject({ location: { directory: run.chosen }, model: { providerID: "demo", id: "beta" } })
++  expect(run.prompts[0]?.sessionID).not.toBe("ses_existing")
++
++  await until(() => frame().includes("Original session"), "original tab", 5000, frame)
++  const returned = () => frame().includes("Original transcript line")
++  const begin = Date.now()
++  // The rail can still be settling after the new session appears, so a click may land before rows stop moving.
++  while (!returned() && Date.now() - begin < 5000) {
++    const lines = frame().split("\n")
++    const row = lines.findIndex((line) => line.includes("Original session"))
++    await setup.mockMouse.click(lines[row]!.indexOf("Original session") + 2, row)
++    await Bun.sleep(200)
++  }
++  await until(
++    () => frame().includes("Original transcript line") && frame().includes("existing draft"),
++    "returned",
++    5000,
++    frame,
++  )
++  expect(frame()).toContain("Alpha Model")
++  expect(run.mutations).toEqual([])
++  expect(run.created).toHaveLength(1)
++  expect(run.prompts).toHaveLength(1)
++})
+diff --git a/packages/tui/test/sidebar/new-session-preflight.test.tsx b/packages/tui/test/sidebar/new-session-preflight.test.tsx
+new file mode 100644
+index 0000000..56bafac
+--- /dev/null
++++ b/packages/tui/test/sidebar/new-session-preflight.test.tsx
+@@ -0,0 +1,172 @@
++/** @jsxImportSource @opentui/solid */
++import { InputRenderable } from "@opentui/core"
++import { expect, test } from "bun:test"
++import type { ModelInfo } from "@opencode/client"
++import { DialogNewSession, type NewSessionChoice } from "../../src/component/dialog-new-session"
++import { model, renderLocal } from "../fixture/local"
++import { directory, json } from "../fixture/tui-client"
++
++type File = Parameters<typeof DialogNewSession>[0]["file"]
++
++const other = "/tmp/opencode-other"
++const missing = "/tmp/opencode-missing"
++
++function folders(calls: string[]) {
++  return {
++    list: async (input) => {
++      const target = String(input?.path)
++      calls.push(target)
++      if (target === missing)
++        throw Object.assign(new Error(`Directory not found: ${target}`), { _tag: "FileNotFoundError" })
++      return {
++        location: { directory: target, project: { id: "proj", directory: target, canonical: target } },
++        data: [{ path: "child/", type: "directory" as const }],
++      }
++    },
++  } as File
++}
++
++async function wait(fn: () => boolean, label: string, timeout = 3000) {
++  const start = Date.now()
++  while (!fn()) {
++    if (Date.now() - start > timeout) throw new Error(`timed out waiting for ${label}`)
++    await Bun.sleep(10)
++  }
++}
++
++async function mount(input: { start?: string; catalogs?: Record<string, ModelInfo[]> } = {}) {
++  const creates: string[] = []
++  const catalogs = input.catalogs ?? {}
++  const setup = await renderLocal({
++    models: [model("first"), model("second")],
++    fetch: (url, request) => {
++      if (url.pathname === "/api/session" && request.method === "POST") {
++        creates.push(url.pathname)
++        return json({ message: "unexpected" }, { status: 500 })
++      }
++      const dir = url.searchParams.get("location[directory]")
++      if (url.pathname === "/api/model" && dir && catalogs[dir])
++        return json({ location: { directory: dir }, data: catalogs[dir] })
++    },
++  })
++  const calls: string[] = []
++  const started: NewSessionChoice[] = []
++  const frame = () => setup.captureCharFrame()
++  const open = () =>
++    setup.dialog.replace(
++      () => (
++        <DialogNewSession
++          file={folders(calls)}
++          home="/tmp"
++          directory={input.start ?? directory}
++          onStart={(choice) => started.push(choice)}
++        />
++      ),
++      undefined,
++      { size: "large" },
++    )
++  open()
++  return { setup, calls, started, creates, frame, open }
++}
++
++async function rendered(ui: Awaited<ReturnType<typeof mount>>, text: string) {
++  await wait(() => {
++    void ui.setup.renderOnce()
++    return ui.frame().includes(text)
++  }, text)
++}
++
++test("shows the validated folder and actual provider/model and starts with exact choices without creating", async () => {
++  const ui = await mount()
++  await using _ = ui.setup
++  await rendered(ui, "first")
++  await rendered(ui, "Ready")
++  expect(ui.frame()).toContain(directory)
++  expect(ui.frame()).toContain("provider")
++  expect(ui.calls).toEqual([directory])
++  ui.setup.mockInput.pressEnter()
++  await wait(() => ui.started.length === 1, "start")
++  expect(ui.started[0]).toEqual({ directory, model: { providerID: "provider", modelID: "first" } })
++  expect(ui.setup.dialog.stack.length).toBe(0)
++  expect(ui.creates).toEqual([])
++})
++
++test("an invalid folder shows an actionable error and blocks start instead of falling back", async () => {
++  const ui = await mount({ start: missing })
++  await using _ = ui.setup
++  await rendered(ui, "Directory not found")
++  ui.setup.mockInput.pressEnter()
++  await Bun.sleep(50)
++  expect(ui.started).toEqual([])
++  expect(ui.setup.dialog.stack.length).toBe(1)
++})
++
++test("a retained model unavailable at the chosen folder is explicit and blocks start until a valid choice", async () => {
++  const ui = await mount({ start: other, catalogs: { [other]: [model("second")] } })
++  await using _ = ui.setup
++  await rendered(ui, "unavailable")
++  ui.setup.mockInput.pressEnter()
++  await Bun.sleep(50)
++  expect(ui.started).toEqual([])
++
++  ui.setup.mockInput.pressKey("m")
++  await wait(
++    () => ui.setup.renderer.currentFocusedRenderable instanceof InputRenderable,
++    "model picker focus",
++  )
++  await ui.setup.mockInput.typeText("second")
++  await rendered(ui, "second")
++  ui.setup.mockInput.pressEnter()
++  await rendered(ui, "Ready")
++  // The pick is pending setup state; the composer's own model is untouched until start.
++  expect(ui.setup.local.model.current()?.modelID).toBe("first")
++  ui.setup.mockInput.pressEnter()
++  await wait(() => ui.started.length === 1, "start")
++  expect(ui.started[0]).toEqual({ directory: other, model: { providerID: "provider", modelID: "second" } })
++})
++
++test("cancelling nested model and folder pickers returns to setup with prior choices intact", async () => {
++  const ui = await mount()
++  await using _ = ui.setup
++  await rendered(ui, "Ready")
++
++  ui.setup.mockInput.pressKey("m")
++  await wait(() => ui.setup.renderer.currentFocusedRenderable instanceof InputRenderable, "model focus")
++  ui.setup.mockInput.pressEscape()
++  await rendered(ui, "Ready")
++  expect(ui.setup.dialog.stack.length).toBe(1)
++
++  ui.setup.mockInput.pressKey("f")
++  await rendered(ui, "Choose folder for new session")
++  await rendered(ui, "child/")
++  ui.setup.mockInput.pressEnter()
++  await wait(() => ui.calls.includes(`${directory}/child`), "child listing")
++  ui.setup.mockInput.pressEscape()
++  await rendered(ui, "Ready")
++  expect(ui.frame()).not.toContain(`${directory}/child`)
++
++  ui.setup.mockInput.pressEnter()
++  await wait(() => ui.started.length === 1, "start")
++  expect(ui.started[0]).toEqual({ directory, model: { providerID: "provider", modelID: "first" } })
++})
++
++test("confirming a nested folder keeps the explicit model and whole-setup cancel commits nothing", async () => {
++  const ui = await mount()
++  await using _ = ui.setup
++  await rendered(ui, "Ready")
++  ui.setup.mockInput.pressKey("f")
++  await rendered(ui, "child/")
++  ui.setup.mockInput.pressEnter()
++  await wait(() => ui.calls.includes(`${directory}/child`), "child listing")
++  await Bun.sleep(20)
++  ui.setup.mockInput.pressKey("s", { ctrl: true })
++  await rendered(ui, `${directory}/child`)
++  await rendered(ui, "Ready")
++  expect(ui.frame()).toContain("first")
++
++  ui.setup.mockInput.pressEscape()
++  await wait(() => ui.setup.dialog.stack.length === 0, "closed")
++  expect(ui.started).toEqual([])
++  expect(ui.creates).toEqual([])
++  expect(ui.setup.route.data).toEqual({ type: "home" })
++})
 diff --git a/packages/tui/test/sidebar/sidebar-hierarchy.test.tsx b/packages/tui/test/sidebar/sidebar-hierarchy.test.tsx
 new file mode 100644
-index 0000000..8ceaca4
+index 0000000..2ea08fd
 --- /dev/null
 +++ b/packages/tui/test/sidebar/sidebar-hierarchy.test.tsx
-@@ -0,0 +1,201 @@
+@@ -0,0 +1,232 @@
 +/** @jsxImportSource @opentui/solid */
++import { MouseButton } from "@opentui/core"
 +import { testRender } from "@opentui/solid"
 +import { expect, test } from "bun:test"
 +import { createSignal } from "solid-js"
@@ -11532,7 +12350,13 @@ index 0000000..8ceaca4
 +
 +const HOME = "/tmp/opencode/home"
 +
-+async function mount(options: { width: number; directory?: string; tabs?: SessionTab[]; active?: string }) {
++async function mount(options: {
++  width: number
++  directory?: string
++  tabs?: SessionTab[]
++  active?: string
++  setup?: (directory?: string) => void
++}) {
 +  const counts = { browse: 0, add: 0, model: 0, search: 0, group: 0 }
 +  const [active, setActive] = createSignal(options.active ?? "alpha")
 +  const [items] = createSignal<SessionTab[]>(
@@ -11549,6 +12373,7 @@ index 0000000..8ceaca4
 +    search: () => counts.search++,
 +    browse: () => counts.browse++,
 +    selectModel: () => counts.model++,
++    setup: options.setup,
 +    model: () => "DeepSeek V4.1 Flash",
 +    directory: () => options.directory ?? `${HOME}/work/project`,
 +    select: setActive,
@@ -11686,6 +12511,29 @@ index 0000000..8ceaca4
 +    await ui.app.mockMouse.click(4, path)
 +    await ui.app.mockMouse.moveTo(60, 20)
 +    await ui.app.waitForFrame((frame) => frame.includes(directory))
++    expect(ui.active()).toBe("alpha")
++  } finally {
++    ui.app.renderer.destroy()
++  }
++})
++
++test("global and project New session entries open the same setup with their own folders", async () => {
++  const setups: (string | undefined)[] = []
++  const ui = await mount({ width: 30, setup: (directory) => setups.push(directory) })
++  try {
++    await ui.app.waitForFrame((frame) => frame.includes("Alpha work"))
++    const global = ui.row("New session")
++    await ui.app.mockMouse.click(ui.rail()[global].indexOf("New session"), global)
++    expect(setups).toEqual([undefined])
++
++    const heading = ui.row("▾ project/")
++    await ui.app.mockMouse.click(4, heading, MouseButton.RIGHT)
++    await ui.app.waitForFrame((frame) => frame.includes("New session here"))
++    const lines = ui.app.captureCharFrame().split("\n")
++    const item = lines.findIndex((line) => line.includes("New session here"))
++    await ui.app.mockMouse.click(lines[item].indexOf("New session here") + 1, item)
++    expect(setups).toEqual([undefined, `${HOME}/work/project`])
++    expect(ui.counts.add).toBe(0)
 +    expect(ui.active()).toBe("alpha")
 +  } finally {
 +    ui.app.renderer.destroy()
