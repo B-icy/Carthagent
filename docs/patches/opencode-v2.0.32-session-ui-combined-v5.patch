@@ -4879,15 +4879,17 @@ index ef1cba9..2bd3f1a 100644
    "session.rename": keybind("ctrl+r", "Rename session"),
 diff --git a/packages/tui/src/context/folder-browser.ts b/packages/tui/src/context/folder-browser.ts
 new file mode 100644
-index 0000000..192e50a
+index 0000000..c60b599
 --- /dev/null
 +++ b/packages/tui/src/context/folder-browser.ts
-@@ -0,0 +1,144 @@
+@@ -0,0 +1,156 @@
 +import { ClientError, isFileNotFoundError, type OpenCodeClient } from "@opencode/client"
 +import path from "path"
 +import { createStore } from "solid-js/store"
 +
 +export type FolderBrowserEntry = { name: string; absolute: string }
++
++type History = "push" | "back" | "forward" | "replace"
 +
 +export type FolderBrowserError = {
 +  path: string
@@ -4911,7 +4913,11 @@ index 0000000..192e50a
 +    pending: undefined as string | undefined,
 +    error: undefined as FolderBrowserError | undefined,
 +  })
-+  const request = { generation: 0, controller: undefined as AbortController | undefined }
++  const request = {
++    generation: 0,
++    controller: undefined as AbortController | undefined,
++    failed: undefined as { target: string; history: History; index: number } | undefined,
++  }
 +
 +  const visible = () => {
 +    const query = state.filter.trim().toLowerCase()
@@ -4919,7 +4925,8 @@ index 0000000..192e50a
 +    return state.entries.filter((entry) => entry.name.toLowerCase().includes(query))
 +  }
 +
-+  async function load(target: string, history: "push" | "back" | "forward" | "replace") {
++  // `index` is the history position a traversal lands on; it is captured up front so a retry repeats the same move.
++  async function load(target: string, history: History, index = nextIndex(history)) {
 +    request.controller?.abort()
 +    const generation = ++request.generation
 +    const controller = new AbortController()
@@ -4933,9 +4940,11 @@ index 0000000..192e50a
 +    if (generation !== request.generation) return false
 +    request.controller = undefined
 +    if ("error" in result) {
++      request.failed = { target, history, index }
 +      setState({ pending: undefined, error: describeError(target, result.error) })
 +      return false
 +    }
++    request.failed = undefined
 +    const entries = result.value.data
 +      .filter((item) => item.type === "directory")
 +      .map((item) => path.resolve(result.value.location.directory, item.path))
@@ -4946,7 +4955,7 @@ index 0000000..192e50a
 +      directory: target,
 +      entries,
 +      history: branch ? [...state.history.slice(0, state.index + 1), target] : state.history,
-+      index: branch ? state.index + 1 : nextIndex(history),
++      index: branch ? state.index + 1 : index,
 +      input: target,
 +      filter: "",
 +      selected: 0,
@@ -4956,17 +4965,17 @@ index 0000000..192e50a
 +    return true
 +  }
 +
-+  function nextIndex(history: "push" | "back" | "forward" | "replace") {
++  function nextIndex(history: History) {
 +    if (history === "back") return state.index - 1
 +    if (history === "forward") return state.index + 1
 +    return state.index
 +  }
 +
++  // Leading/trailing whitespace is a significant part of filesystem names, so input is never trimmed.
 +  function resolve(value: string) {
-+    const trimmed = value.trim()
-+    if (trimmed === "~") return path.resolve(input.home)
-+    if (trimmed.startsWith("~/")) return path.resolve(input.home, trimmed.slice(2))
-+    return path.resolve(state.directory ?? input.location().directory, trimmed || ".")
++    if (value === "~") return path.resolve(input.home)
++    if (value.startsWith("~/")) return path.resolve(input.home, value.slice(2))
++    return path.resolve(state.directory ?? input.location().directory, value || ".")
 +  }
 +
 +  return {
@@ -4978,7 +4987,10 @@ index 0000000..192e50a
 +    canUp: () => state.directory !== undefined && path.dirname(state.directory) !== state.directory,
 +    open: (value: string) => load(resolve(value), "push"),
 +    submit: () => load(resolve(state.input), "push"),
-+    retry: () => (state.error ? load(state.error.path, "push") : Promise.resolve(false)),
++    retry: () =>
++      state.error && request.failed
++        ? load(request.failed.target, request.failed.history, request.failed.index)
++        : Promise.resolve(false),
 +    refresh: () => (state.directory ? load(state.directory, "replace") : Promise.resolve(false)),
 +    home: () => load(path.resolve(input.home), "push"),
 +    root: () => load(path.parse(state.directory ?? input.location().directory).root, "push"),
@@ -10943,10 +10955,10 @@ index 0000000..9c990eb
 +})
 diff --git a/packages/tui/test/sidebar/folder-browser.test.ts b/packages/tui/test/sidebar/folder-browser.test.ts
 new file mode 100644
-index 0000000..758f412
+index 0000000..9dad9a8
 --- /dev/null
 +++ b/packages/tui/test/sidebar/folder-browser.test.ts
-@@ -0,0 +1,347 @@
+@@ -0,0 +1,549 @@
 +import { describe, expect, test } from "bun:test"
 +import path from "path"
 +import { createRoot } from "solid-js"
@@ -11005,6 +11017,20 @@ index 0000000..758f412
 +}
 +
 +const dir = (name: string): Item => ({ path: name, type: "directory" })
++
++// Folders "/a", "/b", "/c", "/x" each contain one child; targets in `failing` reject like a transport failure.
++function traversal(failing: Set<string>) {
++  const calls: string[] = []
++  const file = {
++    list: async (input) => {
++      const target = String(input?.path)
++      calls.push(target)
++      if (failing.has(target)) throw new Error(`boom ${target}`)
++      return listing(target, [dir(`${path.basename(target)}-child/`)])
++    },
++  } as File
++  return { file, calls }
++}
 +
 +describe("folder browser", () => {
 +  test("lists one level of directories resolved against the returned location", async () => {
@@ -11129,6 +11155,194 @@ index 0000000..758f412
 +    await ctx.browser.enter()
 +    expect(ctx.browser.state.directory).toBe("/data/My Projects/Café Δ")
 +    expect(fixture.calls.map((call) => call.path)).toEqual(["/data/My Projects", "/data/My Projects/Café Δ"])
++    ctx.dispose()
++  })
++
++  test("significant leading, trailing and whitespace-only names are not trimmed into siblings", async () => {
++    const fixture = tree({
++      "/data": [dir("Project"), dir("Project "), dir(" lead"), dir("   ")],
++      "/data/Project": [dir("plain")],
++      "/data/Project ": [dir("spaced")],
++      "/data/ lead": [],
++      "/data/   ": [],
++      [home]: [],
++      "/home/user/code": [],
++    })
++    const ctx = setup(fixture.file)
++    const browser = ctx.browser
++    expect(await browser.open("/data/Project ")).toBe(true)
++    expect(browser.state.directory).toBe("/data/Project ")
++    expect(browser.state.entries.map((entry) => entry.absolute)).toEqual(["/data/Project /spaced"])
++    expect(await browser.open("/data/Project")).toBe(true)
++    expect(browser.state.directory).toBe("/data/Project")
++
++    browser.setInput("/data/Project ")
++    expect(await browser.submit()).toBe(true)
++    expect(browser.state.directory).toBe("/data/Project ")
++    expect(browser.state.input).toBe("/data/Project ")
++
++    await browser.open("/data")
++    expect(await browser.open("Project ")).toBe(true)
++    expect(browser.state.directory).toBe("/data/Project ")
++    await browser.open("/data")
++    browser.setInput(" lead")
++    expect(await browser.submit()).toBe(true)
++    expect(browser.state.directory).toBe("/data/ lead")
++    await browser.open("/data")
++    expect(await browser.open("   ")).toBe(true)
++    expect(browser.state.directory).toBe("/data/   ")
++
++    browser.setInput("")
++    expect(await browser.submit()).toBe(true)
++    expect(browser.state.directory).toBe("/data/   ")
++    await browser.open("~")
++    expect(browser.state.directory).toBe(home)
++    await browser.open("~/code")
++    expect(browser.state.directory).toBe("/home/user/code")
++
++    expect(fixture.calls.map((call) => call.path)).toEqual([
++      "/data/Project ",
++      "/data/Project",
++      "/data/Project ",
++      "/data",
++      "/data/Project ",
++      "/data",
++      "/data/ lead",
++      "/data",
++      "/data/   ",
++      "/data/   ",
++      home,
++      "/home/user/code",
++    ])
++    expect(browser.state.history).toEqual([
++      "/data/Project ",
++      "/data/Project",
++      "/data/Project ",
++      "/data",
++      "/data/Project ",
++      "/data",
++      "/data/ lead",
++      "/data",
++      "/data/   ",
++      home,
++      "/home/user/code",
++    ])
++    ctx.dispose()
++  })
++
++  test("an exact space-suffixed folder opens even when the trimmed sibling does not exist", async () => {
++    const fixture = tree({ "/data": [dir("Project ")], "/data/Project ": [] })
++    const ctx = setup(fixture.file)
++    expect(await ctx.browser.open("/data/Project ")).toBe(true)
++    expect(ctx.browser.state.directory).toBe("/data/Project ")
++    expect(ctx.browser.state.error).toBeUndefined()
++    await ctx.browser.open("/data")
++    ctx.browser.setInput("Project ")
++    expect(await ctx.browser.submit()).toBe(true)
++    expect(ctx.browser.state.directory).toBe("/data/Project ")
++    expect(fixture.calls.map((call) => call.path)).toEqual(["/data/Project ", "/data", "/data/Project "])
++    ctx.dispose()
++  })
++
++  test("filter matching still ignores surrounding whitespace", async () => {
++    const fixture = tree({ "/many": [dir("alpha"), dir("beta")] })
++    const ctx = setup(fixture.file)
++    await ctx.browser.open("/many")
++    ctx.browser.setFilter("  alp  ")
++    expect(ctx.browser.visible().map((entry) => entry.name)).toEqual(["alpha"])
++    ctx.dispose()
++  })
++
++  test("retrying a failed Back traverses the original history index without branching", async () => {
++    const failing = new Set<string>()
++    const fixture = traversal(failing)
++    const ctx = setup(fixture.file)
++    const browser = ctx.browser
++    await browser.open("/a")
++    await browser.open("/b")
++    await browser.open("/c")
++    expect(browser.state.index).toBe(2)
++
++    failing.add("/b")
++    expect(await browser.back()).toBe(false)
++    expect(browser.state.error).toMatchObject({ path: "/b", kind: "failed" })
++    expect(browser.state.directory).toBe("/c")
++    expect(browser.state.history).toEqual(["/a", "/b", "/c"])
++    expect(browser.state.index).toBe(2)
++    expect(browser.state.entries.map((entry) => entry.name)).toEqual(["c-child"])
++
++    failing.delete("/b")
++    expect(await browser.retry()).toBe(true)
++    expect(browser.state.directory).toBe("/b")
++    expect(browser.state.error).toBeUndefined()
++    expect(browser.state.history).toEqual(["/a", "/b", "/c"])
++    expect(browser.state.index).toBe(1)
++    expect(browser.canBack()).toBe(true)
++    expect(browser.canForward()).toBe(true)
++
++    expect(await browser.back()).toBe(true)
++    expect(browser.state.directory).toBe("/a")
++    expect(await browser.forward()).toBe(true)
++    expect(await browser.forward()).toBe(true)
++    expect(browser.state.directory).toBe("/c")
++    expect(browser.state.index).toBe(2)
++    expect(fixture.calls).toEqual(["/a", "/b", "/c", "/b", "/b", "/a", "/b", "/c"])
++    ctx.dispose()
++  })
++
++  test("retrying a failed Forward traverses the original history index and keeps later Forward entries", async () => {
++    const failing = new Set<string>()
++    const fixture = traversal(failing)
++    const ctx = setup(fixture.file)
++    const browser = ctx.browser
++    await browser.open("/a")
++    await browser.open("/b")
++    await browser.open("/c")
++    await browser.back()
++    await browser.back()
++    expect(browser.state.index).toBe(0)
++
++    failing.add("/b")
++    expect(await browser.forward()).toBe(false)
++    expect(browser.state.error).toMatchObject({ path: "/b" })
++    expect(browser.state.directory).toBe("/a")
++    expect(browser.state.history).toEqual(["/a", "/b", "/c"])
++    expect(browser.state.index).toBe(0)
++
++    failing.delete("/b")
++    expect(await browser.retry()).toBe(true)
++    expect(browser.state.directory).toBe("/b")
++    expect(browser.state.history).toEqual(["/a", "/b", "/c"])
++    expect(browser.state.index).toBe(1)
++    expect(browser.canForward()).toBe(true)
++    expect(await browser.forward()).toBe(true)
++    expect(browser.state.directory).toBe("/c")
++    expect(await browser.back()).toBe(true)
++    expect(await browser.back()).toBe(true)
++    expect(browser.state.directory).toBe("/a")
++    expect(fixture.calls).toEqual(["/a", "/b", "/c", "/b", "/a", "/b", "/b", "/c", "/b", "/a"])
++    ctx.dispose()
++  })
++
++  test("a newer failed navigation replaces the retry intent of a superseded failed Back", async () => {
++    const failing = new Set<string>(["/b", "/x"])
++    const fixture = traversal(failing)
++    const ctx = setup(fixture.file)
++    const browser = ctx.browser
++    failing.clear()
++    await browser.open("/a")
++    await browser.open("/b")
++    await browser.open("/c")
++    failing.add("/b")
++    expect(await browser.back()).toBe(false)
++    failing.add("/x")
++    expect(await browser.open("/x")).toBe(false)
++    expect(browser.state.error?.path).toBe("/x")
++    failing.clear()
++    expect(await browser.retry()).toBe(true)
++    expect(browser.state.directory).toBe("/x")
++    expect(browser.state.history).toEqual(["/a", "/b", "/c", "/x"])
++    expect(browser.state.index).toBe(3)
 +    ctx.dispose()
 +  })
 +
