@@ -1,5 +1,5 @@
 diff --git a/packages/cli/package.json b/packages/cli/package.json
-index fa062f5389a402d16e4b00061f8e5db2072a7dd1..4404b024231314dc29b186ac68c795175ccb90cf 100644
+index fa062f5..4404b02 100644
 --- a/packages/cli/package.json
 +++ b/packages/cli/package.json
 @@ -28,9 +28,9 @@
@@ -14,7 +14,7 @@ index fa062f5389a402d16e4b00061f8e5db2072a7dd1..4404b024231314dc29b186ac68c79517
      "@opencode/server": "workspace:*",
      "@opencode/tui": "workspace:*",
 diff --git a/packages/client/src/effect/api/api.ts b/packages/client/src/effect/api/api.ts
-index 4580c6bbfe302087fb66487abbd618a250814392..0f289bfc196cd50fe73fcb417f4a6be7de4fda9d 100644
+index 4580c6b..0f289bf 100644
 --- a/packages/client/src/effect/api/api.ts
 +++ b/packages/client/src/effect/api/api.ts
 @@ -48,7 +48,9 @@ export type ServerInfoOutput = {
@@ -29,7 +29,7 @@ index 4580c6bbfe302087fb66487abbd618a250814392..0f289bfc196cd50fe73fcb417f4a6be7
  export type ServerInfoOperation<E = never> = () => Effect.Effect<ServerInfoOutput, E>
  
 diff --git a/packages/client/src/promise/generated/types.ts b/packages/client/src/promise/generated/types.ts
-index 96ba475e5b7a56d720381fd7b51f5fb3a5914ab7..6b08478c30ec33cb7ee295e14bcf8f149247555a 100644
+index 96ba475..6b08478 100644
 --- a/packages/client/src/promise/generated/types.ts
 +++ b/packages/client/src/promise/generated/types.ts
 @@ -5,7 +5,7 @@ export type ServerInfo = {
@@ -42,7 +42,7 @@ index 96ba475e5b7a56d720381fd7b51f5fb3a5914ab7..6b08478c30ec33cb7ee295e14bcf8f14
  
  export type PairingCode = { code: string; expires_in: number }
 diff --git a/packages/core/src/codemode/tool.ts b/packages/core/src/codemode/tool.ts
-index ef0d5d635b1f7c6341da16ee610fd00621e1b65f..346cc6872c33d028ffa914902868269222241333 100644
+index ef0d5d6..346cc68 100644
 --- a/packages/core/src/codemode/tool.ts
 +++ b/packages/core/src/codemode/tool.ts
 @@ -92,7 +92,7 @@ export const create = (
@@ -55,7 +55,7 @@ index ef0d5d635b1f7c6341da16ee610fd00621e1b65f..346cc6872c33d028ffa9149028682692
                  typeof executed.content === "string"
                    ? [{ type: "text" as const, text: executed.content }]
 diff --git a/packages/core/src/session/compaction.ts b/packages/core/src/session/compaction.ts
-index 3cb52790295e7057d06573598a2928f3ea27b4cf..602114bb6b7e7d2791109ae52cd1fd96ef52c5f6 100644
+index 3cb5279..602114b 100644
 --- a/packages/core/src/session/compaction.ts
 +++ b/packages/core/src/session/compaction.ts
 @@ -205,9 +205,10 @@ export const layer = Layer.effect(
@@ -71,7 +71,7 @@ index 3cb52790295e7057d06573598a2928f3ea27b4cf..602114bb6b7e7d2791109ae52cd1fd96
          return { status: "skipped" }
        const native = context.model.compaction?.type === "native"
 diff --git a/packages/core/src/session/session.ts b/packages/core/src/session/session.ts
-index 3cd130086ddd5561501c4b6bc0a348f32b8bc9be..7d82de812fb92ac3583872b9342428e61247939b 100644
+index 3cd1300..7d82de8 100644
 --- a/packages/core/src/session/session.ts
 +++ b/packages/core/src/session/session.ts
 @@ -178,12 +178,17 @@ export const make = Effect.fn("Session.make")(function* () {
@@ -95,7 +95,7 @@ index 3cd130086ddd5561501c4b6bc0a348f32b8bc9be..7d82de812fb92ac3583872b9342428e6
          Effect.tapError((error) =>
            synthetic(sessionID, {
 diff --git a/packages/core/src/session/shell.ts b/packages/core/src/session/shell.ts
-index b4e2a1a7d3d98875a21d2d9e3169573aa201e8a7..ee9f13eb8302c8f2ea1d33545483961b1548351c 100644
+index b4e2a1a..ee9f13e 100644
 --- a/packages/core/src/session/shell.ts
 +++ b/packages/core/src/session/shell.ts
 @@ -7,14 +7,24 @@ import { Plugin } from "../plugin/service.js"
@@ -126,7 +126,7 @@ index b4e2a1a7d3d98875a21d2d9e3169573aa201e8a7..ee9f13eb8302c8f2ea1d33545483961b
    // Keep completion tied to the original shell even if the Session moves.
    return {
 diff --git a/packages/core/src/shell.ts b/packages/core/src/shell.ts
-index e1d1017bea23bf539f0930f6016fab1c8726d948..91b3d077267788c73427e0e93d1cb7d502eb7ab6 100644
+index e1d1017..91b3d07 100644
 --- a/packages/core/src/shell.ts
 +++ b/packages/core/src/shell.ts
 @@ -15,7 +15,7 @@ import { FileRetention } from "./file-retention.js"
@@ -184,7 +184,7 @@ index e1d1017bea23bf539f0930f6016fab1c8726d948..91b3d077267788c73427e0e93d1cb7d5
        })
  
 diff --git a/packages/core/src/tool/plugin/shell.ts b/packages/core/src/tool/plugin/shell.ts
-index af454a7d63391473d939436c87fff5c4b73eefb5..df3f45c7939ebe2c2822b0658e00927012d71d30 100644
+index af454a7..df3f45c 100644
 --- a/packages/core/src/tool/plugin/shell.ts
 +++ b/packages/core/src/tool/plugin/shell.ts
 @@ -206,7 +206,11 @@ export const Plugin = {
@@ -201,7 +201,7 @@ index af454a7d63391473d939436c87fff5c4b73eefb5..df3f45c7939ebe2c2822b0658e009270
                  (invocation) =>
                    Effect.gen(function* () {
 diff --git a/packages/core/test/plugin-failure.test.ts b/packages/core/test/plugin-failure.test.ts
-index a800b5d85782dd089ef17457d8926e0c42613563..5d05c4efef90d48e132a859a0417e10ce2cd0ada 100644
+index a800b5d..5d05c4e 100644
 --- a/packages/core/test/plugin-failure.test.ts
 +++ b/packages/core/test/plugin-failure.test.ts
 @@ -48,6 +48,9 @@ it.live("removes a failed plugin's hooks and RPC handlers without affecting heal
@@ -215,7 +215,7 @@ index a800b5d85782dd089ef17457d8926e0c42613563..5d05c4efef90d48e132a859a0417e10c
      yield* trigger
      expect(invoked).toEqual(["broken", "healthy"])
 diff --git a/packages/core/test/session-compaction.test.ts b/packages/core/test/session-compaction.test.ts
-index 1361a0bb7f4e79b0d89f6e82191ba9ac73fdd626..1cca9b38b164eaa58b20cec96a9e6909dfcf8a9b 100644
+index 1361a0b..1cca9b3 100644
 --- a/packages/core/test/session-compaction.test.ts
 +++ b/packages/core/test/session-compaction.test.ts
 @@ -205,6 +205,39 @@ it.effect("auto compaction estimates current content against the buffered prompt
@@ -259,7 +259,7 @@ index 1361a0bb7f4e79b0d89f6e82191ba9ac73fdd626..1cca9b38b164eaa58b20cec96a9e6909
      const inputLimited = { context: 400_000, input: 272_000, output: 128_000 }
      expect(yield* due(input(244_799, inputLimited))).toBe(false)
 diff --git a/packages/core/test/shell-retention.test.ts b/packages/core/test/shell-retention.test.ts
-index 3f776e4bb275345f7e9d7784d17bf32799d04acd..12df1e0dac5aedb6c8777c69cd1d763037b0fe32 100644
+index 3f776e4..12df1e0 100644
 --- a/packages/core/test/shell-retention.test.ts
 +++ b/packages/core/test/shell-retention.test.ts
 @@ -8,14 +8,90 @@ import { Environment } from "@opencode/core/environment/index"
@@ -354,7 +354,7 @@ index 3f776e4bb275345f7e9d7784d17bf32799d04acd..12df1e0dac5aedb6c8777c69cd1d7630
    Effect.gen(function* () {
      const completions = yield* Queue.unbounded<Effect.Effect<void>>()
 diff --git a/packages/plugin/src/effect/shell.ts b/packages/plugin/src/effect/shell.ts
-index d0e6ae71ed7afef83385782b097a3502f836f52f..74a3b04c86c0a7cccdc73ed63d5981f3ddfd906d 100644
+index d0e6ae7..74a3b04 100644
 --- a/packages/plugin/src/effect/shell.ts
 +++ b/packages/plugin/src/effect/shell.ts
 @@ -6,10 +6,28 @@ export interface ShellCreateBefore {
@@ -387,7 +387,7 @@ index d0e6ae71ed7afef83385782b097a3502f836f52f..74a3b04c86c0a7cccdc73ed63d5981f3
  
  export interface ShellDomain {
 diff --git a/packages/plugin/src/promise/shell.ts b/packages/plugin/src/promise/shell.ts
-index d0e6ae71ed7afef83385782b097a3502f836f52f..74a3b04c86c0a7cccdc73ed63d5981f3ddfd906d 100644
+index d0e6ae7..74a3b04 100644
 --- a/packages/plugin/src/promise/shell.ts
 +++ b/packages/plugin/src/promise/shell.ts
 @@ -6,10 +6,28 @@ export interface ShellCreateBefore {
@@ -420,7 +420,7 @@ index d0e6ae71ed7afef83385782b097a3502f836f52f..74a3b04c86c0a7cccdc73ed63d5981f3
  
  export interface ShellDomain {
 diff --git a/packages/plugin/src/tui/context.ts b/packages/plugin/src/tui/context.ts
-index fe641b39d5e9977af82de7f9eca049d69e0070dd..ea489ee2c166e74ee52915caf7dd5833e51d3c98 100644
+index fe641b3..ea489ee 100644
 --- a/packages/plugin/src/tui/context.ts
 +++ b/packages/plugin/src/tui/context.ts
 @@ -156,6 +156,23 @@ export interface Page {
@@ -492,7 +492,7 @@ index fe641b39d5e9977af82de7f9eca049d69e0070dd..ea489ee2c166e74ee52915caf7dd5833
 +  }
  }
 diff --git a/packages/protocol/src/groups/server.ts b/packages/protocol/src/groups/server.ts
-index 4b4cab189bf2c67029dc9e86ea4a615b5b14817b..e010fc17922ad6e29e8267f9250a8d483f5c5ff1 100644
+index 4b4cab1..e010fc1 100644
 --- a/packages/protocol/src/groups/server.ts
 +++ b/packages/protocol/src/groups/server.ts
 @@ -14,6 +14,7 @@ export const ServerInfo = Schema.Struct({
@@ -504,7 +504,7 @@ index 4b4cab189bf2c67029dc9e86ea4a615b5b14817b..e010fc17922ad6e29e8267f9250a8d48
    ),
  }).annotate({ identifier: "ServerInfo" })
 diff --git a/packages/protocol/src/groups/session.ts b/packages/protocol/src/groups/session.ts
-index a9ee5069e590f9c49077aea0a7c5270245eff3c0..03fb9d39a3575ec2754d3a3a1d6548d7d17bab29 100644
+index a9ee506..03fb9d3 100644
 --- a/packages/protocol/src/groups/session.ts
 +++ b/packages/protocol/src/groups/session.ts
 @@ -489,10 +489,9 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
@@ -522,7 +522,7 @@ index a9ee5069e590f9c49077aea0a7c5270245eff3c0..03fb9d39a3575ec2754d3a3a1d6548d7
          ),
      )
 diff --git a/packages/schema/src/tool.ts b/packages/schema/src/tool.ts
-index 06dec1c0c57c1a6c5809eae1bd61a89e1b9cd8c1..a515a736b44fb0ca083051603e5a0ee32f4e9f61 100644
+index 06dec1c..a515a73 100644
 --- a/packages/schema/src/tool.ts
 +++ b/packages/schema/src/tool.ts
 @@ -16,6 +16,8 @@ export interface Context {
@@ -535,7 +535,7 @@ index 06dec1c0c57c1a6c5809eae1bd61a89e1b9cd8c1..a515a736b44fb0ca083051603e5a0ee3
  }
  
 diff --git a/packages/server/src/handlers/server.ts b/packages/server/src/handlers/server.ts
-index d85594b38d426111155b67eb6d0e1853194d7f10..e618d004064edc87978afb979a3a9cc2c4080e06 100644
+index d85594b..e618d00 100644
 --- a/packages/server/src/handlers/server.ts
 +++ b/packages/server/src/handlers/server.ts
 @@ -17,12 +17,18 @@ export const ServerHandler = HttpApiBuilder.group(Api, "server.server", (handler
@@ -559,7 +559,7 @@ index d85594b38d426111155b67eb6d0e1853194d7f10..e618d004064edc87978afb979a3a9cc2
          }),
        )
 diff --git a/packages/server/src/handlers/session.ts b/packages/server/src/handlers/session.ts
-index dd85c2f4ff519635043c993f4cf39b52c42e999a..930d684d690d18d06693e8f6f58ca69f84826e66 100644
+index dd85c2f..930d684 100644
 --- a/packages/server/src/handlers/session.ts
 +++ b/packages/server/src/handlers/session.ts
 @@ -25,6 +25,7 @@ import {
@@ -586,7 +586,7 @@ index dd85c2f4ff519635043c993f4cf39b52c42e999a..930d684d690d18d06693e8f6f58ca69f
            return HttpApiSchema.NoContent.make()
          }),
 diff --git a/packages/server/src/handlers/shell.ts b/packages/server/src/handlers/shell.ts
-index 6b08faf80753abed6a2634aba0ec6ef14bd80096..8a1c8fc566b7d9d18ee7666d103c867410fb49bd 100644
+index 6b08faf..8a1c8fc 100644
 --- a/packages/server/src/handlers/shell.ts
 +++ b/packages/server/src/handlers/shell.ts
 @@ -21,8 +21,14 @@ export const ShellHandler = HttpApiBuilder.group(Api, "server.shell", (handlers)
@@ -607,7 +607,7 @@ index 6b08faf80753abed6a2634aba0ec6ef14bd80096..8a1c8fc566b7d9d18ee7666d103c8674
        )
 diff --git a/packages/server/test/shell-provenance.test.ts b/packages/server/test/shell-provenance.test.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..2f742d73f36fc18bcc432e89766f70d2b43a6e59
+index 0000000..2f742d7
 --- /dev/null
 +++ b/packages/server/test/shell-provenance.test.ts
 @@ -0,0 +1,34 @@
@@ -646,7 +646,7 @@ index 0000000000000000000000000000000000000000..2f742d73f36fc18bcc432e89766f70d2
 +  }).pipe(Effect.scoped),
 +)
 diff --git a/packages/tui/src/app.tsx b/packages/tui/src/app.tsx
-index 88939ebc852824e6ef2371c719a528ab75092a7c..e1630cb929dbae958a51fdba373651746870d2d7 100644
+index 88939eb..988aa4a 100644
 --- a/packages/tui/src/app.tsx
 +++ b/packages/tui/src/app.tsx
 @@ -2,6 +2,7 @@ import { existsSync } from "fs"
@@ -665,11 +665,12 @@ index 88939ebc852824e6ef2371c719a528ab75092a7c..e1630cb929dbae958a51fdba37365174
    useTuiTerminalEnvironment,
    type TuiApp,
  } from "./context/runtime"
-@@ -71,11 +73,16 @@ import { DialogHighlights } from "./component/dialog-highlights"
+@@ -71,11 +73,17 @@ import { DialogHighlights } from "./component/dialog-highlights"
  import { claim } from "./util/highlights"
  import { DialogThemeList } from "./component/dialog-theme-list"
  import { DialogHelp } from "./ui/dialog-help"
 +import { DialogPrompt } from "./ui/dialog-prompt"
++import { DialogFolderBrowser } from "./component/dialog-folder-browser"
  import { DialogAgent } from "./component/dialog-agent"
  import { DialogSessionList } from "./component/dialog-session-list"
  import { DialogOpen, DialogOpenKey, moveOpenSession } from "./component/dialog-open"
@@ -683,7 +684,7 @@ index 88939ebc852824e6ef2371c719a528ab75092a7c..e1630cb929dbae958a51fdba37365174
  import { createPaneResize } from "./ui/pane-resize"
  import { PaneResizeHandle } from "./ui/pane-resize-handle"
  import { clickedLink } from "./ui/link"
-@@ -95,13 +102,19 @@ import { Config, ConfigProvider, useConfig } from "./config"
+@@ -95,13 +103,19 @@ import { Config, ConfigProvider, useConfig } from "./config"
  import { newSessionLocation } from "./config/new-session-location"
  import { UpdateNotificationProvider, useUpdateNotification, type UpdateSource } from "./context/update-notification"
  import { PluginProvider, usePlugin, type PackageSource } from "./plugin/context"
@@ -704,16 +705,17 @@ index 88939ebc852824e6ef2371c719a528ab75092a7c..e1630cb929dbae958a51fdba37365174
  import { cliErrorMessage, errorFormat } from "./util/error"
  import { AttentionProvider } from "./context/attention"
  import { StorageProvider, useStorage } from "./context/storage"
-@@ -121,6 +134,8 @@ const sessionTabBindingCommands = [
+@@ -121,6 +135,9 @@ const sessionTabBindingCommands = [
    "session.tab.previous_unread",
    "session.tab.close",
    "session.tab.reopen",
 +  "session.tab.sidebar",
 +  "session.plan.graph",
++  "session.tab.directory.browse",
    "session.tab.select.1",
    "session.tab.select.2",
    "session.tab.select.3",
-@@ -252,6 +267,8 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
+@@ -252,6 +269,8 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
        const renderer = yield* Effect.gen(function* () {
          if (handoff) {
            handoff.renderer.useMouse = options.useMouse
@@ -722,7 +724,7 @@ index 88939ebc852824e6ef2371c719a528ab75092a7c..e1630cb929dbae958a51fdba37365174
            return yield* Effect.acquireRelease(Effect.succeed(handoff.renderer), (renderer) =>
              Effect.sync(() => destroyRenderer(renderer)),
            )
-@@ -260,13 +277,24 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
+@@ -260,13 +279,24 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
            const { Drive } = yield* Effect.promise(() => import("@opencode/simulation/frontend"))
            return yield* Drive.create(options, input.app.version)
          }
@@ -749,7 +751,7 @@ index 88939ebc852824e6ef2371c719a528ab75092a7c..e1630cb929dbae958a51fdba37365174
        })
        renderer.setMaxListeners(15)
        const clipboard = yield* Effect.acquireRelease(
-@@ -279,10 +307,11 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
+@@ -279,10 +309,11 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
        const finalizers = new Set<() => Promise<void>>()
        yield* Effect.addFinalizer(() =>
          Effect.promise(async () => {
@@ -765,7 +767,7 @@ index 88939ebc852824e6ef2371c719a528ab75092a7c..e1630cb929dbae958a51fdba37365174
          }),
        )
        const shutdown = yield* Latch.make()
-@@ -380,8 +409,9 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
+@@ -380,8 +411,9 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                                <PermissionProvider>
                                                  <DataProvider directory={directory}>
                                                    <LocationProvider>
@@ -777,7 +779,7 @@ index 88939ebc852824e6ef2371c719a528ab75092a7c..e1630cb929dbae958a51fdba37365174
                                                          <ThemeProvider
                                                            mode={mode}
                                                            source={createThemeSource(global.config)}
-@@ -399,12 +429,14 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
+@@ -399,12 +431,14 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                                                              updater={input.updater}
                                                                            >
                                                                              <PanelProvider>
@@ -798,7 +800,7 @@ index 88939ebc852824e6ef2371c719a528ab75092a7c..e1630cb929dbae958a51fdba37365174
                                                                              </PanelProvider>
                                                                            </UpdateNotificationProvider>
                                                                          </AttentionProvider>
-@@ -416,8 +448,9 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
+@@ -416,8 +450,9 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                                              </PromptStashProvider>
                                                            </LocalProvider>
                                                          </ThemeProvider>
@@ -810,7 +812,7 @@ index 88939ebc852824e6ef2371c719a528ab75092a7c..e1630cb929dbae958a51fdba37365174
                                                    </LocationProvider>
                                                  </DataProvider>
                                                </PermissionProvider>
-@@ -468,6 +501,7 @@ function App() {
+@@ -468,6 +503,7 @@ function App() {
    const local = useLocal()
    const sessionTabs = useSessionTabs()
    const panels = usePanel()
@@ -818,7 +820,7 @@ index 88939ebc852824e6ef2371c719a528ab75092a7c..e1630cb929dbae958a51fdba37365174
    const keymap = Keymap.use()
    const event = useEvent()
    const client = useClient()
-@@ -509,7 +543,7 @@ function App() {
+@@ -509,7 +545,7 @@ function App() {
    const tabsResize = createPaneResize({
      value: () => layout.verticalTabsWidth ?? SESSION_SIDEBAR_WIDTH,
      defaultValue: () => SESSION_SIDEBAR_WIDTH,
@@ -827,7 +829,7 @@ index 88939ebc852824e6ef2371c719a528ab75092a7c..e1630cb929dbae958a51fdba37365174
      fromMouse: (event) => event.x + 1,
      contains: (event, width) => event.x >= width - 1 && event.x <= width,
      onCommit: (width) => {
-@@ -579,16 +613,37 @@ function App() {
+@@ -579,16 +615,37 @@ function App() {
    const pasteSummaryEnabled = () => config.data.prompt?.paste !== "full"
    const tabsVertical = () =>
      config.data.tabs.layout === "vertical" && sessionTabsFitVertically(dimensions().width, tabsResize.size())
@@ -867,7 +869,7 @@ index 88939ebc852824e6ef2371c719a528ab75092a7c..e1630cb929dbae958a51fdba37365174
    createEffect(() => {
      const current = panels.current()
      if (!current || (route.data.type === "session" && route.data.sessionID === current.sessionID)) return
-@@ -607,23 +662,23 @@ function App() {
+@@ -607,23 +664,23 @@ function App() {
      if (!terminalTitleEnabled()) return
  
      if (route.data.type === "home") {
@@ -895,7 +897,7 @@ index 88939ebc852824e6ef2371c719a528ab75092a7c..e1630cb929dbae958a51fdba37365174
      }
    })
  
-@@ -692,6 +747,9 @@ function App() {
+@@ -692,6 +749,9 @@ function App() {
  
    // Opens the release highlights once after an update, but only into an idle home screen during startup.
    const storage = useStorage()
@@ -905,7 +907,7 @@ index 88939ebc852824e6ef2371c719a528ab75092a7c..e1630cb929dbae958a51fdba37365174
    const paths = useTuiPaths()
    let highlighted = false
    createEffect(() => {
-@@ -767,7 +825,6 @@ function App() {
+@@ -767,7 +827,6 @@ function App() {
          name: "session.clear",
          title: "Clear session",
          category: "Session",
@@ -913,7 +915,7 @@ index 88939ebc852824e6ef2371c719a528ab75092a7c..e1630cb929dbae958a51fdba37365174
          run: () => {
            const model = local.model.current()
            const agent = local.agent.current()
-@@ -857,6 +914,60 @@ function App() {
+@@ -857,6 +916,80 @@ function App() {
          enabled: sessionTabs.enabled,
          run: () => sessionTabs.reopen(),
        },
@@ -953,6 +955,26 @@ index 88939ebc852824e6ef2371c719a528ab75092a7c..e1630cb929dbae958a51fdba37365174
 +          )),
 +      },
 +      {
++        name: "session.tab.directory.browse",
++        title: "Browse folders",
++        category: "Session",
++        slash: { name: "browse" },
++        enabled: sessionTabs.enabled,
++        run: () =>
++          dialog.replace(
++            () => (
++              <DialogFolderBrowser
++                file={client.api.file}
++                anchor={location.current?.directory ?? data.location.default().directory}
++                home={paths.home}
++                onConfirm={(directory) => sessionTabs.newInDirectory?.(directory)}
++              />
++            ),
++            undefined,
++            { size: "large" },
++          ),
++      },
++      {
 +        name: "session.tab.folder.new",
 +        title: "New tab folder",
 +        category: "Session",
@@ -974,7 +996,7 @@ index 88939ebc852824e6ef2371c719a528ab75092a7c..e1630cb929dbae958a51fdba37365174
        ...Array.from({ length: 10 }, (_, i) => ({
          name: `session.tab.select.${i + 1}`,
          title: `Switch to tab ${i + 1}`,
-@@ -1046,7 +1157,7 @@ function App() {
+@@ -1046,7 +1179,7 @@ function App() {
                  const restart = client.restart
                  if (!restart) return
                  dialog.clear()
@@ -983,7 +1005,7 @@ index 88939ebc852824e6ef2371c719a528ab75092a7c..e1630cb929dbae958a51fdba37365174
                  // restart resolves once the replacement service is healthy; the
                  // event stream reattaches through the reconnect loop.
                  await restart()
-@@ -1063,7 +1174,7 @@ function App() {
+@@ -1063,7 +1196,7 @@ function App() {
          slash: { name: "reload" },
          run: async () => {
            dialog.clear()
@@ -992,7 +1014,7 @@ index 88939ebc852824e6ef2371c719a528ab75092a7c..e1630cb929dbae958a51fdba37365174
            await client.api.location
              .reload()
              .then(() => {
-@@ -1272,7 +1383,7 @@ function App() {
+@@ -1272,7 +1405,7 @@ function App() {
  
    Keymap.createLayer(() => ({
      mode: "global",
@@ -1001,7 +1023,7 @@ index 88939ebc852824e6ef2371c719a528ab75092a7c..e1630cb929dbae958a51fdba37365174
      bindings: sessionTabBindingCommands,
    }))
  
-@@ -1387,13 +1498,22 @@ function App() {
+@@ -1387,13 +1520,22 @@ function App() {
          onMouseDragEnd={tabsResize.onMouseDragEnd}
          onMouseUp={tabsResize.onMouseUp}
        >
@@ -1027,7 +1049,7 @@ index 88939ebc852824e6ef2371c719a528ab75092a7c..e1630cb929dbae958a51fdba37365174
                  <SessionTabs />
                </Show>
                <Switch>
-@@ -1405,7 +1525,7 @@ function App() {
+@@ -1405,7 +1547,7 @@ function App() {
                      {(sessionID) => (
                        <SessionFrame
                          sessionID={sessionID}
@@ -1036,7 +1058,7 @@ index 88939ebc852824e6ef2371c719a528ab75092a7c..e1630cb929dbae958a51fdba37365174
                        />
                      )}
                    </Show>
-@@ -1421,9 +1541,10 @@ function App() {
+@@ -1421,9 +1563,10 @@ function App() {
              </box>
              <Slot path="app" />
            </Show>
@@ -1050,7 +1072,7 @@ index 88939ebc852824e6ef2371c719a528ab75092a7c..e1630cb929dbae958a51fdba37365174
        </box>
        <Show when={devtools() && !(route.data.type === "plugin" && route.data.id === "opencode.stats")}>
 diff --git a/packages/tui/src/attention.ts b/packages/tui/src/attention.ts
-index 544668de64669ef725fa0862b122e6916a6c8a68..fa0289680d0b57d9b31b3cdafec767d42f9b5315 100644
+index 544668d..fa02896 100644
 --- a/packages/tui/src/attention.ts
 +++ b/packages/tui/src/attention.ts
 @@ -32,7 +32,7 @@ type AttentionHost = Attention & {
@@ -1063,7 +1085,7 @@ index 544668de64669ef725fa0862b122e6916a6c8a68..fa0289680d0b57d9b31b3cdafec767d4
  const MESSAGE_LIMIT = 240
  const BUILTIN_SOUNDS: Record<AttentionSoundName, string> = {
 diff --git a/packages/tui/src/component/command-palette.tsx b/packages/tui/src/component/command-palette.tsx
-index 4f46db3253589b4cc05bc32cb1c12087f2663cab..51390b70b51378d4de227a285870d909c4faf2b7 100644
+index 4f46db3..51390b7 100644
 --- a/packages/tui/src/component/command-palette.tsx
 +++ b/packages/tui/src/component/command-palette.tsx
 @@ -3,6 +3,7 @@ import { DialogSelect, type DialogSelectRef } from "../ui/dialog-select"
@@ -1093,7 +1115,7 @@ index 4f46db3253589b4cc05bc32cb1c12087f2663cab..51390b70b51378d4de227a285870d909
      onSelect: (dialog: DialogContext) => {
        dialog.replace(() => <DialogConfig current={settingID(setting)} />)
 diff --git a/packages/tui/src/component/devtools-bar.tsx b/packages/tui/src/component/devtools-bar.tsx
-index 10af2019d600530eb9275a05216fe658e255c066..259b561364c8b9fd5c71afe9d647991ed9ff6817 100644
+index 10af201..259b561 100644
 --- a/packages/tui/src/component/devtools-bar.tsx
 +++ b/packages/tui/src/component/devtools-bar.tsx
 @@ -17,6 +17,7 @@ import { useDialog } from "../ui/dialog"
@@ -1145,7 +1167,7 @@ index 10af2019d600530eb9275a05216fe658e255c066..259b561364c8b9fd5c71afe9d647991e
  
  export function brailleGraph(values: readonly number[], width = graphWidth) {
 diff --git a/packages/tui/src/component/dialog-config.tsx b/packages/tui/src/component/dialog-config.tsx
-index f2e3f28b837d0af38f5ada1dc7b4fe3856462bcd..2e0d04234e730cb10c5a468647d456ea364391db 100644
+index f2e3f28..2e0d042 100644
 --- a/packages/tui/src/component/dialog-config.tsx
 +++ b/packages/tui/src/component/dialog-config.tsx
 @@ -2,6 +2,7 @@ import { createMemo, createSignal } from "solid-js"
@@ -1166,7 +1188,7 @@ index f2e3f28b837d0af38f5ada1dc7b4fe3856462bcd..2e0d04234e730cb10c5a468647d456ea
          {
            bind: "left",
 diff --git a/packages/tui/src/component/dialog-debug.tsx b/packages/tui/src/component/dialog-debug.tsx
-index 546f47c56c64eef5d5f2954d36dfb7ce4231e43d..1c1d4b81ab37461dc56bbb8c32571a0af928fadb 100644
+index 546f47c..1c1d4b8 100644
 --- a/packages/tui/src/component/dialog-debug.tsx
 +++ b/packages/tui/src/component/dialog-debug.tsx
 @@ -9,6 +9,7 @@ import { useToast } from "../ui/toast"
@@ -1187,7 +1209,7 @@ index 546f47c56c64eef5d5f2954d36dfb7ce4231e43d..1c1d4b81ab37461dc56bbb8c32571a0a
      color: copied() ? theme.text.feedback.success.base : undefined,
      onTrigger: copy,
 diff --git a/packages/tui/src/component/dialog-error-details.tsx b/packages/tui/src/component/dialog-error-details.tsx
-index fe8f122903e22b2b1cc20c07cdcf52fef044c783..ff8d521c992dbc219dc1ecf6f120e42936179c50 100644
+index fe8f122..ff8d521 100644
 --- a/packages/tui/src/component/dialog-error-details.tsx
 +++ b/packages/tui/src/component/dialog-error-details.tsx
 @@ -11,6 +11,7 @@ import { useTheme } from "../context/theme"
@@ -1219,7 +1241,7 @@ index fe8f122903e22b2b1cc20c07cdcf52fef044c783..ff8d521c992dbc219dc1ecf6f120e429
        <scrollbox
          ref={(element: ScrollBoxRenderable) => (scroll = element)}
 diff --git a/packages/tui/src/component/dialog-experiments.tsx b/packages/tui/src/component/dialog-experiments.tsx
-index a8830000f88043ddaaafb100cf080932536cebcc..db00317858710f7e8ae08225b858e1d825591c43 100644
+index a883000..db00317 100644
 --- a/packages/tui/src/component/dialog-experiments.tsx
 +++ b/packages/tui/src/component/dialog-experiments.tsx
 @@ -3,6 +3,7 @@ import { useConfig, useNewDesigns } from "../config"
@@ -1243,8 +1265,269 @@ index a8830000f88043ddaaafb100cf080932536cebcc..db00317858710f7e8ae08225b858e1d8
        bindings={
          experiments.length > 0
            ? [
+diff --git a/packages/tui/src/component/dialog-folder-browser.tsx b/packages/tui/src/component/dialog-folder-browser.tsx
+new file mode 100644
+index 0000000..1cc9aa2
+--- /dev/null
++++ b/packages/tui/src/component/dialog-folder-browser.tsx
+@@ -0,0 +1,255 @@
++import { InputRenderable, ScrollBoxRenderable, TextAttributes } from "@opentui/core"
++import { useTerminalDimensions } from "@opentui/solid"
++import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js"
++import type { OpenCodeClient } from "@opencode/client"
++import { useConfig } from "../config"
++import { createFolderBrowser } from "../context/folder-browser"
++import { Keymap } from "../context/keymap"
++import { useTheme } from "../context/theme"
++import { DialogHeader, DialogLayout, useDialog } from "../ui/dialog"
++import { chromeEllipsis, chromeGlyph, chromeLabel } from "../ui/glyphs"
++import { Locale } from "../util/locale"
++
++export function DialogFolderBrowser(props: {
++  file: Pick<OpenCodeClient["file"], "list">
++  /** Location the file-list API is anchored to; listed entries resolve against the returned location. */
++  anchor: string
++  home: string
++  start?: string
++  title?: string
++  onConfirm: (directory: string) => void
++}) {
++  const dialog = useDialog()
++  const dimensions = useTerminalDimensions()
++  const theme = useTheme().surface("dialog")
++  const config = useConfig().data
++  const browser = createFolderBrowser({
++    file: props.file,
++    location: () => ({ directory: props.anchor }),
++    home: props.home,
++  })
++  const [field, setField] = createSignal<"filter" | "path">("filter")
++  const [confirming, setConfirming] = createSignal(false)
++  let filterInput: InputRenderable | undefined
++  let pathInput: InputRenderable | undefined
++  let scroll: ScrollBoxRenderable | undefined
++  let closed = false
++  onCleanup(() => {
++    closed = true
++    browser.cancel()
++  })
++
++  const listHeight = () => Math.max(2, Math.min(12, dimensions().height - 14))
++  const width = () => Math.max(20, Math.min(dimensions().width - 2, 88) - 8)
++
++  const focusField = (next: "filter" | "path") => {
++    setField(next)
++    const target = next === "filter" ? filterInput : pathInput
++    if (target && !target.isDestroyed) target.focus()
++  }
++
++  async function confirm() {
++    if (confirming() || !browser.state.directory || browser.state.pending) return
++    const directory = browser.state.directory
++    setConfirming(true)
++    // Revalidate so a folder removed after it was listed cannot be accepted.
++    const valid = await browser.refresh()
++    setConfirming(false)
++    if (!valid || closed || browser.state.directory !== directory) return
++    dialog.clear()
++    props.onConfirm(directory)
++  }
++
++  const submit = () => {
++    if (field() === "path") return void browser.submit()
++    void browser.enter()
++  }
++
++  Keymap.createLayer(() => ({
++    mode: "modal",
++    // Browser navigation must win over the managed input layer and background session-tab bindings.
++    priority: 1,
++    commands: [
++      { bind: "return", title: "Open folder", group: "Folder browser", run: submit },
++      { bind: "up", title: "Previous folder", group: "Folder browser", run: () => browser.move(-1) },
++      { bind: "down", title: "Next folder", group: "Folder browser", run: () => browser.move(1) },
++      {
++        bind: "tab,shift+tab",
++        title: "Switch path and filter",
++        group: "Folder browser",
++        run: () => focusField(field() === "filter" ? "path" : "filter"),
++      },
++      { bind: "alt+left", title: "Back", group: "Folder browser", run: () => void browser.back() },
++      { bind: "alt+right", title: "Forward", group: "Folder browser", run: () => void browser.forward() },
++      { bind: "alt+up", title: "Parent folder", group: "Folder browser", run: () => void browser.up() },
++      { bind: "alt+h", title: "Home folder", group: "Folder browser", run: () => void browser.home() },
++      { bind: "ctrl+s", title: "Select this folder", group: "Folder browser", run: () => void confirm() },
++    ],
++  }))
++
++  createEffect(() => {
++    const value = browser.state.input
++    if (pathInput && !pathInput.isDestroyed && pathInput.value !== value) pathInput.value = value
++  })
++  createEffect(() => {
++    const value = browser.state.filter
++    if (filterInput && !filterInput.isDestroyed && filterInput.value !== value) filterInput.value = value
++  })
++  createEffect(() => {
++    const index = browser.state.selected
++    if (!scroll || scroll.isDestroyed) return
++    const target = scroll.getChildren()[index]
++    if (!target) return
++    const y = target.y - scroll.y
++    if (y >= scroll.height) scroll.scrollBy(y - scroll.height + 1)
++    if (y < 0) scroll.scrollBy(y)
++  })
++
++  onMount(() => {
++    dialog.setSize("large")
++    dialog.setCentered(true)
++    void browser.open(props.start ?? props.anchor)
++    setTimeout(() => {
++      if (closed) return
++      focusField("filter")
++    }, 1)
++  })
++
++  const status = () => {
++    if (confirming()) return { text: chromeLabel("Checking folder…"), error: false }
++    if (browser.state.pending)
++      return {
++        text: `${chromeLabel("Loading")} ${Locale.truncateLeft(browser.state.pending, width() - 10)}`,
++        error: false,
++      }
++    if (browser.state.error) return { text: browser.state.error.message, error: true }
++    if (!browser.state.directory) return { text: "No folder open", error: false }
++    if (browser.state.entries.length === 0)
++      return { text: "No subfolders here; ctrl+s selects this folder", error: false }
++    if (browser.visible().length === 0) return { text: `No folders match "${browser.state.filter}"`, error: false }
++    const count = browser.visible().length
++    return { text: `${count} folder${count === 1 ? "" : "s"}`, error: false }
++  }
++
++  const button = (label: string, enabled: () => boolean, run: () => void) => (
++    <text
++      flexShrink={0}
++      fg={enabled() ? theme.text.action.secondary.base : theme.text.action.primary.disabled}
++      selectable={false}
++      wrapMode="none"
++      onMouseUp={(event) => {
++        event.stopPropagation()
++        if (enabled()) run()
++      }}
++    >
++      {label}
++    </text>
++  )
++
++  const inputRow = (label: string, name: "filter" | "path") => (
++    <box flexDirection="row" height={1} gap={1}>
++      <text flexShrink={0} width={6} fg={field() === name ? theme.text.base : theme.text.muted} wrapMode="none">
++        {label}
++      </text>
++      <input
++        flexGrow={1}
++        placeholder={name === "path" ? "/path, ~/folder, or relative path" : "Filter this folder"}
++        placeholderColor={theme.text.muted}
++        textColor={theme.text.formfield.base}
++        focusedTextColor={theme.text.formfield.focused}
++        focusedBackgroundColor={theme.background.formfield.focused}
++        cursorColor={theme.text.formfield.focused}
++        cursorStyle={config.cursor}
++        onInput={(value) => (name === "path" ? browser.setInput(value) : browser.setFilter(value))}
++        onMouseDown={() => setField(name)}
++        ref={(element: InputRenderable) => {
++          if (name === "path") pathInput = element
++          else filterInput = element
++        }}
++      />
++    </box>
++  )
++
++  return (
++    <DialogLayout
++      header={<DialogHeader title={props.title ?? "Browse folders"} />}
++      footer={{
++        actions: {
++          secondary: [
++            { title: "open", key: "enter", onTrigger: submit },
++            { title: "path/filter", key: "tab", onTrigger: () => focusField(field() === "filter" ? "path" : "filter") },
++          ],
++          primary: [
++            {
++              title: "select folder",
++              key: "ctrl+s",
++              disabled: !browser.state.directory || !!browser.state.pending || confirming(),
++              onTrigger: () => void confirm(),
++            },
++          ],
++        },
++      }}
++    >
++      <box flexDirection="column">
++        <box flexDirection="row" height={1} gap={2}>
++          {button(`${chromeGlyph("←")} Back`, browser.canBack, () => void browser.back())}
++          {button(`${chromeGlyph("→")} Forward`, browser.canForward, () => void browser.forward())}
++          {button(`${chromeGlyph("↑")} Up`, browser.canUp, () => void browser.up())}
++          {button(
++            "~ Home",
++            () => true,
++            () => void browser.home(),
++          )}
++          <box flexGrow={1} />
++          <text flexShrink={1} fg={theme.text.muted} wrapMode="none" overflow="hidden">
++            {`alt+${chromeGlyph("←")}${chromeGlyph("→")}${chromeGlyph("↑")} alt+h`}
++          </text>
++        </box>
++        <text fg={theme.text.muted} wrapMode="none" overflow="hidden">
++          {"In     " +
++            (browser.state.directory
++              ? Locale.truncateLeft(browser.state.directory, width() - 7, chromeEllipsis())
++              : chromeGlyph("—"))}
++        </text>
++        {inputRow("Path", "path")}
++        {inputRow("Filter", "filter")}
++        <text fg={status().error ? theme.text.feedback.error.base : theme.text.muted} wrapMode="word">
++          {status().text}
++        </text>
++        <scrollbox
++          height={listHeight()}
++          ref={(element: ScrollBoxRenderable) => (scroll = element)}
++          scrollbarOptions={{ visible: false }}
++        >
++          <For each={browser.visible()}>
++            {(entry, index) => {
++              const active = () => index() === browser.state.selected
++              return (
++                <box
++                  height={1}
++                  flexDirection="row"
++                  paddingLeft={1}
++                  backgroundColor={active() ? theme.background.action.primary.focused : undefined}
++                  onMouseUp={(event) => {
++                    event.stopPropagation()
++                    if (active()) return void browser.enter()
++                    browser.select(index())
++                  }}
++                >
++                  <text
++                    fg={active() ? theme.text.action.primary.focused : theme.text.base}
++                    attributes={active() ? TextAttributes.BOLD : undefined}
++                    wrapMode="none"
++                    selectable={false}
++                  >
++                    {Locale.truncate(entry.name + "/", width() - 2, chromeEllipsis())}
++                  </text>
++                </box>
++              )
++            }}
++          </For>
++        </scrollbox>
++      </box>
++    </DialogLayout>
++  )
++}
 diff --git a/packages/tui/src/component/dialog-highlights.tsx b/packages/tui/src/component/dialog-highlights.tsx
-index d11506eae7ababa0b7b7f8cbda571cc330296252..b04827d3b4ed44733931c2ea3d1ae1ef8f1dbd3e 100644
+index d11506e..b04827d 100644
 --- a/packages/tui/src/component/dialog-highlights.tsx
 +++ b/packages/tui/src/component/dialog-highlights.tsx
 @@ -6,6 +6,7 @@ import { Keymap } from "../context/keymap"
@@ -1265,7 +1548,7 @@ index d11506eae7ababa0b7b7f8cbda571cc330296252..b04827d3b4ed44733931c2ea3d1ae1ef
              paddingLeft={3}
              paddingRight={3}
 diff --git a/packages/tui/src/component/dialog-image-preview.tsx b/packages/tui/src/component/dialog-image-preview.tsx
-index f2bdd1d9e1b642dcd8707d585735f45fa6996a76..ae7811480ed9c02dbc9de58c1b38bc536d36ad23 100644
+index f2bdd1d..ae78114 100644
 --- a/packages/tui/src/component/dialog-image-preview.tsx
 +++ b/packages/tui/src/component/dialog-image-preview.tsx
 @@ -2,6 +2,7 @@ import { useTerminalDimensions } from "@opentui/solid"
@@ -1304,7 +1587,7 @@ index f2bdd1d9e1b642dcd8707d585735f45fa6996a76..ae7811480ed9c02dbc9de58c1b38bc53
          </box>
        }
 diff --git a/packages/tui/src/component/dialog-integration.tsx b/packages/tui/src/component/dialog-integration.tsx
-index 183e8df3af9f5449fd4e7dfc66f157071df31fb4..b346ae61839431fa60dc3e82dcf62aeb28778ac9 100644
+index 183e8df..b346ae6 100644
 --- a/packages/tui/src/component/dialog-integration.tsx
 +++ b/packages/tui/src/component/dialog-integration.tsx
 @@ -33,6 +33,7 @@ import {
@@ -1404,7 +1687,7 @@ index 183e8df3af9f5449fd4e7dfc66f157071df31fb4..b346ae61839431fa60dc3e82dcf62aeb
        )
        void openUrl(field.url).then(
 diff --git a/packages/tui/src/component/dialog-mcp.tsx b/packages/tui/src/component/dialog-mcp.tsx
-index 68e3778b42ffebbdf0138a05016a58c06cb20dda..aa0582b778e0fb93ad32bcaad13f3357302ed73c 100644
+index 68e3778..aa0582b 100644
 --- a/packages/tui/src/component/dialog-mcp.tsx
 +++ b/packages/tui/src/component/dialog-mcp.tsx
 @@ -5,6 +5,7 @@ import { pipe, sortBy } from "remeda"
@@ -1440,7 +1723,7 @@ index 68e3778b42ffebbdf0138a05016a58c06cb20dda..aa0582b778e0fb93ad32bcaad13f3357
  
  export function DialogMcp(props: { initialServer?: string; details?: boolean } = {}) {
 diff --git a/packages/tui/src/component/dialog-open.tsx b/packages/tui/src/component/dialog-open.tsx
-index f6d6412c1883ad5a7e61c6904fb17e653c0ea86c..ddab0c6ff55cb6dd1d68cd3015aaea9d0ce8d3ee 100644
+index f6d6412..ddab0c6 100644
 --- a/packages/tui/src/component/dialog-open.tsx
 +++ b/packages/tui/src/component/dialog-open.tsx
 @@ -23,6 +23,7 @@ import { withTimestampedFallback } from "@opencode/util/session-title-fallback"
@@ -1551,7 +1834,7 @@ index f6d6412c1883ad5a7e61c6904fb17e653c0ea86c..ddab0c6ff55cb6dd1d68cd3015aaea9d
            onConfirm={(value) => {
              const id = projectID()!
 diff --git a/packages/tui/src/component/dialog-pair.tsx b/packages/tui/src/component/dialog-pair.tsx
-index 0bc0ce44b49ee4e332cbdf001ae8b02764c93973..5e9d875450ea17d1636083216bb94950f22d36f8 100644
+index 0bc0ce4..5e9d875 100644
 --- a/packages/tui/src/component/dialog-pair.tsx
 +++ b/packages/tui/src/component/dialog-pair.tsx
 @@ -7,6 +7,7 @@ import { useTheme } from "../context/theme"
@@ -1572,7 +1855,7 @@ index 0bc0ce44b49ee4e332cbdf001ae8b02764c93973..5e9d875450ea17d1636083216bb94950
                when={dimensions().height >= 36}
                fallback={
 diff --git a/packages/tui/src/component/dialog-session-list.tsx b/packages/tui/src/component/dialog-session-list.tsx
-index d5fb5ac4f9b0cb717f649d4d43ed121f3aff66f6..bad4f76ef76c13b3d22a9acad6cfcad0bbf6c9e1 100644
+index d5fb5ac..bad4f76 100644
 --- a/packages/tui/src/component/dialog-session-list.tsx
 +++ b/packages/tui/src/component/dialog-session-list.tsx
 @@ -23,6 +23,7 @@ import { useConfig, useNewDesigns } from "../config"
@@ -1648,7 +1931,7 @@ index d5fb5ac4f9b0cb717f649d4d43ed121f3aff66f6..bad4f76ef76c13b3d22a9acad6cfcad0
    const prefix = first.slice(0, -1)
    if (first.endsWith("1") && last === `${prefix}9`) return `${prefix}1-9`
 diff --git a/packages/tui/src/component/dialog-shell-output.tsx b/packages/tui/src/component/dialog-shell-output.tsx
-index 42f0c98d1b0cd7e0f8244f71da4db6748e1621d3..4ba60790d24040227d4bcdc32e611330db8bb842 100644
+index 42f0c98..4ba6079 100644
 --- a/packages/tui/src/component/dialog-shell-output.tsx
 +++ b/packages/tui/src/component/dialog-shell-output.tsx
 @@ -7,9 +7,14 @@ import { useClient } from "../context/client"
@@ -1712,7 +1995,7 @@ index 42f0c98d1b0cd7e0f8244f71da4db6748e1621d3..4ba60790d24040227d4bcdc32e611330
            </text>
          </scrollbox>
 diff --git a/packages/tui/src/component/dialog-skill.tsx b/packages/tui/src/component/dialog-skill.tsx
-index 5e45e628b1d72178fd6574922d0ef4016bb2b8f3..6d3d8ebb6cb6c0461f9789ae712b2dbdf0fa2435 100644
+index 5e45e62..6d3d8eb 100644
 --- a/packages/tui/src/component/dialog-skill.tsx
 +++ b/packages/tui/src/component/dialog-skill.tsx
 @@ -6,6 +6,7 @@ import { useTheme } from "../context/theme"
@@ -1733,7 +2016,7 @@ index 5e45e628b1d72178fd6574922d0ef4016bb2b8f3..6d3d8ebb6cb6c0461f9789ae712b2dbd
            </Match>
          </Switch>
 diff --git a/packages/tui/src/component/dialog-stash.tsx b/packages/tui/src/component/dialog-stash.tsx
-index 4113c7fd969f4d79709b049cada13a3faf7b8832..f80c7e9f35da2f2bb82083f0da4ada1ca965be19 100644
+index 4113c7f..f80c7e9 100644
 --- a/packages/tui/src/component/dialog-stash.tsx
 +++ b/packages/tui/src/component/dialog-stash.tsx
 @@ -5,6 +5,7 @@ import { Locale } from "../util/locale"
@@ -1754,7 +2037,7 @@ index 4113c7fd969f4d79709b049cada13a3faf7b8832..f80c7e9f35da2f2bb82083f0da4ada1c
  
  export function DialogStash(props: { onSelect: (entry: StashEntry) => void }) {
 diff --git a/packages/tui/src/component/dialog-status.tsx b/packages/tui/src/component/dialog-status.tsx
-index f94f906cdf9d187234c24f575450d8ad13e3a559..2495eaf55ba47680be16e64a4110a99c0d11e116 100644
+index f94f906..2495eaf 100644
 --- a/packages/tui/src/component/dialog-status.tsx
 +++ b/packages/tui/src/component/dialog-status.tsx
 @@ -2,6 +2,7 @@ import { useTheme } from "../context/theme"
@@ -1775,7 +2058,7 @@ index f94f906cdf9d187234c24f575450d8ad13e3a559..2495eaf55ba47680be16e64a4110a99c
                  <text fg={theme.text.base} wrapMode="word">
                    <b>{item.name}</b>{" "}
 diff --git a/packages/tui/src/component/dialog-update.tsx b/packages/tui/src/component/dialog-update.tsx
-index 9dcf07b21402bea0548420e0b53cd84f08f90cc3..54469a0b69bdb306414819c50b65b52d4356b08d 100644
+index 9dcf07b..54469a0 100644
 --- a/packages/tui/src/component/dialog-update.tsx
 +++ b/packages/tui/src/component/dialog-update.tsx
 @@ -6,6 +6,7 @@ import type { UpdateState } from "../context/update-notification"
@@ -1805,7 +2088,7 @@ index 9dcf07b21402bea0548420e0b53cd84f08f90cc3..54469a0b69bdb306414819c50b65b52d
              </Match>
              <Match when={current.type === "installed"}>
 diff --git a/packages/tui/src/component/dialog-workspaces.tsx b/packages/tui/src/component/dialog-workspaces.tsx
-index 70aaa8ff4bf2da36c787e59235af509391030dbe..4f3a04971459af5e93b10268573629a5a0ebf165 100644
+index 70aaa8f..4f3a049 100644
 --- a/packages/tui/src/component/dialog-workspaces.tsx
 +++ b/packages/tui/src/component/dialog-workspaces.tsx
 @@ -15,6 +15,7 @@ import { errorMessage } from "../util/error"
@@ -1835,7 +2118,7 @@ index 70aaa8ff4bf2da36c787e59235af509391030dbe..4f3a04971459af5e93b10268573629a5
            ) : (
              <box paddingLeft={DIALOG_LIST_INSET} paddingRight={DIALOG_LIST_INSET}>
 diff --git a/packages/tui/src/component/error-component.tsx b/packages/tui/src/component/error-component.tsx
-index 48ad4b107d755a296266c89ceb7479b6bd771b18..b4e46b9d8ebc3396009e9093be88f71a6c4967bc 100644
+index 48ad4b1..b4e46b9 100644
 --- a/packages/tui/src/component/error-component.tsx
 +++ b/packages/tui/src/component/error-component.tsx
 @@ -6,6 +6,7 @@ import { useClipboard } from "../context/clipboard"
@@ -1895,7 +2178,7 @@ index 48ad4b107d755a296266c89ceb7479b6bd771b18..b4e46b9d8ebc3396009e9093be88f71a
    const setBody = (body: string) => url.searchParams.set("description", head + "```\n" + body + "\n```")
  
 diff --git a/packages/tui/src/component/logo.tsx b/packages/tui/src/component/logo.tsx
-index 2c3abc3cb0e8081ad654802d18e4eb93a08362a8..e9e4e3bf9567d423d68239c5157bda858ae530b4 100644
+index 2c3abc3..e9e4e3b 100644
 --- a/packages/tui/src/component/logo.tsx
 +++ b/packages/tui/src/component/logo.tsx
 @@ -4,10 +4,18 @@ import { useTerminalDimensions } from "@opentui/solid"
@@ -1949,7 +2232,7 @@ index 2c3abc3cb0e8081ad654802d18e4eb93a08362a8..e9e4e3bf9567d423d68239c5157bda85
          </For>
 diff --git a/packages/tui/src/component/navigation-rail.tsx b/packages/tui/src/component/navigation-rail.tsx
 new file mode 100644
-index 0000000000000000000000000000000000000000..2f108a3ebfd82bf233a00fe2870b8c80179c70b1
+index 0000000..2f108a3
 --- /dev/null
 +++ b/packages/tui/src/component/navigation-rail.tsx
 @@ -0,0 +1,92 @@
@@ -2046,7 +2329,7 @@ index 0000000000000000000000000000000000000000..2f108a3ebfd82bf233a00fe2870b8c80
 +  )
 +}
 diff --git a/packages/tui/src/component/prompt/autocomplete.tsx b/packages/tui/src/component/prompt/autocomplete.tsx
-index c669491c096edd5435ea8c976f1300282f35f334..df8dadef7f73559b0495c2d0a7ddfc792e358138 100644
+index c669491..df8dade 100644
 --- a/packages/tui/src/component/prompt/autocomplete.tsx
 +++ b/packages/tui/src/component/prompt/autocomplete.tsx
 @@ -14,6 +14,7 @@ import { useConfig } from "../../config"
@@ -2138,7 +2421,7 @@ index c669491c096edd5435ea8c976f1300282f35f334..df8dadef7f73559b0495c2d0a7ddfc79
                  </text>
                  <Show when={!confirmingAction() && option().description}>
 diff --git a/packages/tui/src/component/prompt/index.tsx b/packages/tui/src/component/prompt/index.tsx
-index a9f699c08ad2c2d50da1ae8b8a47c1997dc512b8..84c4c23be542c7e22ce7e21cc64c5bda6f718da6 100644
+index a9f699c..84c4c23 100644
 --- a/packages/tui/src/component/prompt/index.tsx
 +++ b/packages/tui/src/component/prompt/index.tsx
 @@ -9,11 +9,12 @@ import {
@@ -2296,7 +2579,7 @@ index a9f699c08ad2c2d50da1ae8b8a47c1997dc512b8..84c4c23be542c7e22ce7e21cc64c5bda
                          </Show>
                        </box>
 diff --git a/packages/tui/src/component/prompt/metadata.tsx b/packages/tui/src/component/prompt/metadata.tsx
-index 60c47397dcc7856912e2ed5cd4bdeb0a6a31692c..b4a03110d53561f34562e82401d59da6df602536 100644
+index 60c4739..b4a0311 100644
 --- a/packages/tui/src/component/prompt/metadata.tsx
 +++ b/packages/tui/src/component/prompt/metadata.tsx
 @@ -1,7 +1,8 @@
@@ -2459,7 +2742,7 @@ index 60c47397dcc7856912e2ed5cd4bdeb0a6a31692c..b4a03110d53561f34562e82401d59da6
    ].join(" ")
  }
 diff --git a/packages/tui/src/component/reconnecting.tsx b/packages/tui/src/component/reconnecting.tsx
-index 773eadaaeb1b5e1d0889ba032ae7e4edb4ea76ee..f612976132bba1d17585a6cbadd5c7c01e637757 100644
+index 773eada..f612976 100644
 --- a/packages/tui/src/component/reconnecting.tsx
 +++ b/packages/tui/src/component/reconnecting.tsx
 @@ -1,6 +1,7 @@
@@ -2483,7 +2766,7 @@ index 773eadaaeb1b5e1d0889ba032ae7e4edb4ea76ee..f612976132bba1d17585a6cbadd5c7c0
              ? "Your session will resume automatically."
 diff --git a/packages/tui/src/component/seascape.tsx b/packages/tui/src/component/seascape.tsx
 new file mode 100644
-index 0000000000000000000000000000000000000000..56aa62be37fd84f8ce0c13517ca7f1386ec3a591
+index 0000000..56aa62b
 --- /dev/null
 +++ b/packages/tui/src/component/seascape.tsx
 @@ -0,0 +1,293 @@
@@ -2781,10 +3064,12 @@ index 0000000000000000000000000000000000000000..56aa62be37fd84f8ce0c13517ca7f138
 +  return value - Math.floor(value)
 +}
 diff --git a/packages/tui/src/component/session-tabs-rail.tsx b/packages/tui/src/component/session-tabs-rail.tsx
-index 8ecaa95787e844368671800ac787ed9bd2f53852..65c0626d6a035797712d2a7bc26bb0db920634af 100644
+index 8ecaa95..ee91966 100644
 --- a/packages/tui/src/component/session-tabs-rail.tsx
 +++ b/packages/tui/src/component/session-tabs-rail.tsx
-@@ -2,6 +2,7 @@ import { createMemo, createSignal } from "solid-js"
+@@ -1,7 +1,8 @@
+-import { createMemo, createSignal } from "solid-js"
++import { createMemo, createSignal, Show } from "solid-js"
  import type { RGBA } from "@opentui/core"
  import { Keymap } from "../context/keymap"
  import { useTheme } from "../context/theme"
@@ -2792,25 +3077,92 @@ index 8ecaa95787e844368671800ac787ed9bd2f53852..65c0626d6a035797712d2a7bc26bb0db
  import { tint } from "../theme/color"
  import type { SessionTabsController } from "./session-tabs"
  
-@@ -48,7 +49,7 @@ export function SessionTabsRailControls(props: {
+@@ -12,29 +13,25 @@ export function SessionTabsRailControls(props: {
+ }) {
+   const theme = useTheme()
+   const keymap = Keymap.use()
+-  const [hovered, setHovered] = createSignal(false)
++  const [hovered, setHovered] = createSignal<"search" | "browse">()
+   const hoverColor = createMemo(() =>
+     tint(theme.background.raised.base, theme.background.raised.high, theme.background.raised.high.a),
+   )
+-  let pressed = false
+   const search = () => (props.tabs.search ? props.tabs.search() : keymap.dispatch("session.list"))
+-  return (
+-    <box height={1} position="relative" flexShrink={0} backgroundColor={theme.background.raised.base}>
+-      <SessionTabHalfRow
+-        top={-1}
+-        edge="top"
+-        width={props.width}
+-        color={hovered() ? hoverColor() : theme.background.raised.base}
+-        background={theme.background.raised.base}
+-      />
++  const browse = () => (props.tabs.browse ? props.tabs.browse() : keymap.dispatch("session.tab.directory.browse"))
++  const canBrowse = () => props.tabs.browse !== undefined || props.tabs.newInDirectory !== undefined
++  const last = () => (canBrowse() ? "browse" : "search")
++  const button = (name: "search" | "browse", glyph: string, run: () => void) => {
++    let pressed = false
++    return (
+       <box
+         height={1}
+         position="relative"
+         flexDirection="row"
+         justifyContent="center"
+-        backgroundColor={hovered() ? theme.background.raised.high : undefined}
+-        onMouseOver={() => setHovered(true)}
+-        onMouseOut={() => setHovered(false)}
++        backgroundColor={hovered() === name ? theme.background.raised.high : undefined}
++        onMouseOver={() => setHovered(name)}
++        onMouseOut={() => setHovered(undefined)}
+         onMouseDown={(event) => {
+           pressed = event.button === 0
+           event.stopPropagation()
+@@ -43,26 +40,39 @@ export function SessionTabsRailControls(props: {
+           event.stopPropagation()
+           if (event.button !== 0 || !pressed) return
+           pressed = false
+-          search()
++          run()
+         }}
          onMouseDragEnd={() => (pressed = false)}
        >
          <text width={1} height={1} fg={theme.text.action.secondary.base} selectable={false} wrapMode="none">
 -          ⌕
-+          {chromeGlyph("⌕")}
++          {chromeGlyph(glyph)}
          </text>
        </box>
++    )
++  }
++  return (
++    <box height={canBrowse() ? 2 : 1} position="relative" flexShrink={0} backgroundColor={theme.background.raised.base}>
++      <SessionTabHalfRow
++        top={-1}
++        edge="top"
++        width={props.width}
++        color={hovered() === "search" ? hoverColor() : theme.background.raised.base}
++        background={theme.background.raised.base}
++      />
++      {button("search", "⌕", search)}
++      <Show when={canBrowse()}>{button("browse", "▤", browse)}</Show>
        <text
-@@ -62,7 +63,7 @@ export function SessionTabsRailControls(props: {
-         bg={hovered() && props.belowHighlighted ? hoverColor() : theme.background.raised.base}
+         position="absolute"
+-        top={1}
++        top={canBrowse() ? 2 : 1}
+         left={0}
+         width={props.width}
+         height={1}
+         zIndex={2}
+         fg={hoverColor()}
+-        bg={hovered() && props.belowHighlighted ? hoverColor() : theme.background.raised.base}
++        bg={hovered() === last() && props.belowHighlighted ? hoverColor() : theme.background.raised.base}
          selectable={false}
        >
 -        {(hovered() ? "▀" : props.belowHighlighted ? "▄" : " ").repeat(props.width)}
-+        {(asciiGlyphs() ? "-" : hovered() ? "▀" : props.belowHighlighted ? "▄" : " ").repeat(props.width)}
++        {(asciiGlyphs() ? "-" : hovered() === last() ? "▀" : props.belowHighlighted ? "▄" : " ").repeat(props.width)}
        </text>
      </box>
    )
-@@ -88,7 +89,7 @@ export function SessionTabHalfRow(props: {
+@@ -88,7 +98,7 @@ export function SessionTabHalfRow(props: {
        selectable={false}
        wrapMode="none"
      >
@@ -2820,7 +3172,7 @@ index 8ecaa95787e844368671800ac787ed9bd2f53852..65c0626d6a035797712d2a7bc26bb0db
    )
  }
 diff --git a/packages/tui/src/component/session-tabs.tsx b/packages/tui/src/component/session-tabs.tsx
-index fdd23a43cbd4c3e318f211b7a8dc4fe2ab816fc1..076a123b1eeb555de1b7e797344eddbebc3b1a92 100644
+index fdd23a4..efd04e1 100644
 --- a/packages/tui/src/component/session-tabs.tsx
 +++ b/packages/tui/src/component/session-tabs.tsx
 @@ -20,6 +20,7 @@ import {
@@ -2893,9 +3245,11 @@ index fdd23a43cbd4c3e318f211b7a8dc4fe2ab816fc1..076a123b1eeb555de1b7e797344eddbe
  }
  
  type ContextController = ReturnType<typeof useSessionTabs>
-@@ -119,6 +136,17 @@ export type SessionTabsController = Pick<ContextController, "tabs" | "current" |
+@@ -118,7 +135,19 @@ export type SessionTabsController = Pick<ContextController, "tabs" | "current" |
+   detail?: (sessionID: string) => string | undefined
    rename?: (sessionID: string) => void
    search?: () => void
++  browse?: () => void
    status(sessionID: string): SessionTabsStatus
 +  folders?: ContextController["folders"]
 +  folderFor?: ContextController["folderFor"]
@@ -2911,7 +3265,7 @@ index fdd23a43cbd4c3e318f211b7a8dc4fe2ab816fc1..076a123b1eeb555de1b7e797344eddbe
  }
  const NEW_SESSION_TAB: SessionTab = { sessionID: "new", title: NEW_SESSION_TAB_TITLE }
  const glowTextColor = (base: RGBA, glow: RGBA, index: number, width: number, level = 1) =>
-@@ -170,14 +198,16 @@ function TabIndicator(props: {
+@@ -170,14 +199,16 @@ function TabIndicator(props: {
      const flash = Math.max(0, 1 - Math.abs(opacity - 0.8) / 0.2)
      return tint(props.backgroundColor, tint(unreadColor(), props.flashColor, flash * 0.3), Math.min(1, opacity / 0.8))
    }
@@ -2930,7 +3284,7 @@ index fdd23a43cbd4c3e318f211b7a8dc4fe2ab816fc1..076a123b1eeb555de1b7e797344eddbe
      return props.idleLabel ?? ""
    }
    return (
-@@ -382,10 +412,94 @@ function TabContextMenu(props: { state: TabContextMenuState; tabs: SessionTabsCo
+@@ -382,10 +413,94 @@ function TabContextMenu(props: { state: TabContextMenuState; tabs: SessionTabsCo
      mode: "menu",
      commands: [{ bind: "escape,ctrl+c", title: "Close tab menu", group: "Tabs", run: props.onClose }],
    }))
@@ -3025,7 +3379,7 @@ index fdd23a43cbd4c3e318f211b7a8dc4fe2ab816fc1..076a123b1eeb555de1b7e797344eddbe
      return [
        ...(sessionID && props.tabs.add ? [{ title: NEW_SESSION_TAB_TITLE, run: () => props.tabs.add?.() }] : []),
        ...(sessionID
-@@ -395,6 +509,7 @@ function TabContextMenu(props: { state: TabContextMenuState; tabs: SessionTabsCo
+@@ -395,6 +510,7 @@ function TabContextMenu(props: { state: TabContextMenuState; tabs: SessionTabsCo
                run: () =>
                  props.tabs.rename ? props.tabs.rename(sessionID) : DialogSessionRename.show(dialog, sessionID, title),
              },
@@ -3033,7 +3387,7 @@ index fdd23a43cbd4c3e318f211b7a8dc4fe2ab816fc1..076a123b1eeb555de1b7e797344eddbe
              {
                title: "Copy session ID",
                run: () =>
-@@ -405,7 +520,11 @@ function TabContextMenu(props: { state: TabContextMenuState; tabs: SessionTabsCo
+@@ -405,7 +521,11 @@ function TabContextMenu(props: { state: TabContextMenuState; tabs: SessionTabsCo
              },
              { title: "Close", run: () => props.tabs.close(sessionID) },
            ]
@@ -3046,13 +3400,15 @@ index fdd23a43cbd4c3e318f211b7a8dc4fe2ab816fc1..076a123b1eeb555de1b7e797344eddbe
        ...(!sessionID && props.tabs.reopen
          ? [
              { title: "Recently closed tabs" },
-@@ -570,6 +689,64 @@ function VerticalSessionTabs(props: {
+@@ -570,6 +690,69 @@ function VerticalSessionTabs(props: {
    const separatorUpperPulseColor = createMemo(() => tint(background(), theme.text.base, 0.04))
    const separatorLowerPulseColor = createMemo(() => tint(background(), theme.text.base, 0.05))
    const [addHovered, setAddHovered] = createSignal(false)
 +  const dialog = useDialog()
 +  const keymap = Keymap.use()
 +  const runSearch = () => (tabs.search ? tabs.search() : keymap.dispatch("session.list"))
++  const runBrowse = () => (tabs.browse ? tabs.browse() : keymap.dispatch("session.tab.directory.browse"))
++  const canBrowse = () => tabs.browse !== undefined || tabs.newInDirectory !== undefined
 +  const promptNewFolder = () =>
 +    dialog.replace(() => (
 +      <DialogPrompt
@@ -3094,6 +3450,9 @@ index fdd23a43cbd4c3e318f211b7a8dc4fe2ab816fc1..076a123b1eeb555de1b7e797344eddbe
 +      </text>
 +      <box flexGrow={1} />
 +      {renderHeaderButton(chromeGlyph("⌕"), runSearch)}
++      <Show when={canBrowse()}>
++        {renderHeaderButton(width() >= 36 ? `${chromeGlyph("▤")} Browse` : chromeGlyph("▤"), runBrowse)}
++      </Show>
 +      <Show when={tabs.createFolder}>{renderHeaderButton("+ Folder", promptNewFolder)}</Show>
 +      <Show when={tabs.add}>{renderHeaderButton("+ New", () => tabs.add?.())}</Show>
 +    </box>
@@ -3111,7 +3470,7 @@ index fdd23a43cbd4c3e318f211b7a8dc4fe2ab816fc1..076a123b1eeb555de1b7e797344eddbe
    const marquee = createTabMarquee(animations)
    const hovered = marquee.hovered
    createEffect(() => {
-@@ -604,6 +781,75 @@ function VerticalSessionTabs(props: {
+@@ -604,6 +787,75 @@ function VerticalSessionTabs(props: {
      return moveSessionTab(tabs.tabs(), pending.sessionID, pending.index)
    })
    const items = ordered
@@ -3187,7 +3546,7 @@ index fdd23a43cbd4c3e318f211b7a8dc4fe2ab816fc1..076a123b1eeb555de1b7e797344eddbe
    const highlightColor = createMemo(() =>
      tint(background(), actionHovered(), actionHovered().a),
    )
-@@ -689,10 +935,13 @@ function VerticalSessionTabs(props: {
+@@ -689,10 +941,13 @@ function VerticalSessionTabs(props: {
      const source = dragging()
      if (!source) return
      didDrag = true
@@ -3203,7 +3562,7 @@ index fdd23a43cbd4c3e318f211b7a8dc4fe2ab816fc1..076a123b1eeb555de1b7e797344eddbe
          Math.floor(
            (event.y - (scroll?.viewport.screenY ?? rail.screenY + 1) - (compact() ? 1 : 0) + (scroll?.scrollTop ?? 0)) /
              stride(),
-@@ -703,6 +952,407 @@ function VerticalSessionTabs(props: {
+@@ -703,6 +958,407 @@ function VerticalSessionTabs(props: {
      if (target !== sourceIndex && preview()?.index !== target) setPreview({ sessionID: source, index: target })
    }
  
@@ -3611,7 +3970,7 @@ index fdd23a43cbd4c3e318f211b7a8dc4fe2ab816fc1..076a123b1eeb555de1b7e797344eddbe
    return (
      <box
        ref={(element) => (rail = element)}
-@@ -714,6 +1364,13 @@ function VerticalSessionTabs(props: {
+@@ -714,6 +1370,13 @@ function VerticalSessionTabs(props: {
        paddingTop={1}
        backgroundColor={background()}
        onMouseOut={marquee.leaveHovered}
@@ -3625,7 +3984,7 @@ index fdd23a43cbd4c3e318f211b7a8dc4fe2ab816fc1..076a123b1eeb555de1b7e797344eddbe
        onMouseUp={(event) => {
          if (event.button === RIGHT_MOUSE_BUTTON) return
          release()
-@@ -727,6 +1384,7 @@ function VerticalSessionTabs(props: {
+@@ -727,6 +1390,7 @@ function VerticalSessionTabs(props: {
        <Show when={compact()}>
          <SessionTabsRailControls width={width()} tabs={tabs} belowHighlighted={belowHighlighted()} />
        </Show>
@@ -3633,7 +3992,7 @@ index fdd23a43cbd4c3e318f211b7a8dc4fe2ab816fc1..076a123b1eeb555de1b7e797344eddbe
        <scrollbox
          ref={(element) => {
            scroll = element
-@@ -739,408 +1397,21 @@ function VerticalSessionTabs(props: {
+@@ -739,408 +1403,21 @@ function VerticalSessionTabs(props: {
          scrollbarOptions={{ visible: false }}
        >
          <box flexShrink={0} flexDirection="column" gap={1} paddingY={compact() ? 1 : 0}>
@@ -4055,7 +4414,7 @@ index fdd23a43cbd4c3e318f211b7a8dc4fe2ab816fc1..076a123b1eeb555de1b7e797344eddbe
            {/* One slot with two states: a muted affordance that promotes in place into the
                active new-session tab, instead of spawning a separate pseudo tab above itself. */}
            <Show when={tabs.add || newTab()}>
-@@ -1230,13 +1501,14 @@ function VerticalSessionTabs(props: {
+@@ -1230,13 +1507,14 @@ function VerticalSessionTabs(props: {
                      tabs.close()
                    }}
                  >
@@ -4071,7 +4430,7 @@ index fdd23a43cbd4c3e318f211b7a8dc4fe2ab816fc1..076a123b1eeb555de1b7e797344eddbe
        <Show when={compact() && !dragging() && !contextMenu() && hovered()}>
          {(sessionID) => (
            <box
-@@ -1262,6 +1534,7 @@ function VerticalSessionTabs(props: {
+@@ -1262,6 +1540,7 @@ function VerticalSessionTabs(props: {
                      items().find((tab) => tab.sessionID === sessionID())?.title ??
                      "Untitled session",
                    tooltipWidth() - 2,
@@ -4079,7 +4438,7 @@ index fdd23a43cbd4c3e318f211b7a8dc4fe2ab816fc1..076a123b1eeb555de1b7e797344eddbe
                  )}
                </text>
                <text fg={theme.text.muted} wrapMode="none" selectable={false}>
-@@ -1556,7 +1829,7 @@ function HorizontalSessionTabs(props: {
+@@ -1556,7 +1835,7 @@ function HorizontalSessionTabs(props: {
      >
        <Show when={layout().before > 0}>
          <text width={sessionTabOverflowWidth(layout().before)} fg={theme.text.muted} selectable={false}>
@@ -4088,7 +4447,7 @@ index fdd23a43cbd4c3e318f211b7a8dc4fe2ab816fc1..076a123b1eeb555de1b7e797344eddbe
          </text>
        </Show>
        <For each={layout().tabs}>
-@@ -1753,7 +2026,7 @@ function HorizontalSessionTabs(props: {
+@@ -1753,7 +2032,7 @@ function HorizontalSessionTabs(props: {
                      tabs.close(tab === NEW_SESSION_TAB ? undefined : tab.sessionID)
                    }}
                  >
@@ -4097,7 +4456,7 @@ index fdd23a43cbd4c3e318f211b7a8dc4fe2ab816fc1..076a123b1eeb555de1b7e797344eddbe
                  </text>
                </box>
              </box>
-@@ -1762,7 +2035,7 @@ function HorizontalSessionTabs(props: {
+@@ -1762,7 +2041,7 @@ function HorizontalSessionTabs(props: {
        </For>
        <Show when={layout().after > 0}>
          <text width={sessionTabOverflowWidth(layout().after)} fg={theme.text.muted} selectable={false}>
@@ -4107,7 +4466,7 @@ index fdd23a43cbd4c3e318f211b7a8dc4fe2ab816fc1..076a123b1eeb555de1b7e797344eddbe
        </Show>
        <Show when={showPlus()}>
 diff --git a/packages/tui/src/component/spinner-frames.ts b/packages/tui/src/component/spinner-frames.ts
-index dca99b642a727b9846b0bb7b2b995cd2c7636683..3869068d90958c89ea97f8e3e4caccb6cf490db9 100644
+index dca99b6..3869068 100644
 --- a/packages/tui/src/component/spinner-frames.ts
 +++ b/packages/tui/src/component/spinner-frames.ts
 @@ -1 +1,7 @@
@@ -4120,7 +4479,7 @@ index dca99b642a727b9846b0bb7b2b995cd2c7636683..3869068d90958c89ea97f8e3e4caccb6
 +}
 +export const SPINNER_FRAMES = spinnerFrames()
 diff --git a/packages/tui/src/component/spinner.tsx b/packages/tui/src/component/spinner.tsx
-index 3207dcb6e4f4588297c24f88329e339d45df9b98..08a92ee9cfb22e8c94e61d36cedbc1a394b9c283 100644
+index 3207dcb..08a92ee 100644
 --- a/packages/tui/src/component/spinner.tsx
 +++ b/packages/tui/src/component/spinner.tsx
 @@ -6,6 +6,7 @@ import type { RGBA } from "@opentui/core"
@@ -4141,7 +4500,7 @@ index 3207dcb6e4f4588297c24f88329e339d45df9b98..08a92ee9cfb22e8c94e61d36cedbc1a3
        <Show
          when={props.shimmer}
 diff --git a/packages/tui/src/component/startup-loading.tsx b/packages/tui/src/component/startup-loading.tsx
-index 3df79782c63433021722986242d05dddd138a508..c1e437df95e8439f5fa82071e17cf8072a7d6157 100644
+index 3df7978..c1e437d 100644
 --- a/packages/tui/src/component/startup-loading.tsx
 +++ b/packages/tui/src/component/startup-loading.tsx
 @@ -1,11 +1,14 @@
@@ -4161,7 +4520,7 @@ index 3df79782c63433021722986242d05dddd138a508..c1e437df95e8439f5fa82071e17cf807
    let hold: NodeJS.Timeout | undefined
    let stamp = 0
 diff --git a/packages/tui/src/component/tab-pulse.tsx b/packages/tui/src/component/tab-pulse.tsx
-index a6072fe109bde1a8eaf72b34c32208ce26806a9d..59e891b8682c0d2d3f9b580c5b09d19e5c274be7 100644
+index a6072fe..59e891b 100644
 --- a/packages/tui/src/component/tab-pulse.tsx
 +++ b/packages/tui/src/component/tab-pulse.tsx
 @@ -1,5 +1,6 @@
@@ -4182,7 +4541,7 @@ index a6072fe109bde1a8eaf72b34c32208ce26806a9d..59e891b8682c0d2d3f9b580c5b09d19e
        )
 diff --git a/packages/tui/src/component/transcript-scrollbox.tsx b/packages/tui/src/component/transcript-scrollbox.tsx
 new file mode 100644
-index 0000000000000000000000000000000000000000..f35aef14161d66d4ef21638b0b70b64fcc36b0e9
+index 0000000..f35aef1
 --- /dev/null
 +++ b/packages/tui/src/component/transcript-scrollbox.tsx
 @@ -0,0 +1,25 @@
@@ -4212,7 +4571,7 @@ index 0000000000000000000000000000000000000000..f35aef14161d66d4ef21638b0b70b64f
 +
 +extend({ transcript_scrollbox: TranscriptScrollBoxRenderable })
 diff --git a/packages/tui/src/config/index.tsx b/packages/tui/src/config/index.tsx
-index 953d5977d00fac1c4a147528bb3e593162a44389..f053c3840cf6a5f3aad646e2e77d8a7285f6bb6c 100644
+index 953d597..f053c38 100644
 --- a/packages/tui/src/config/index.tsx
 +++ b/packages/tui/src/config/index.tsx
 @@ -331,8 +331,8 @@ export function resolve(
@@ -4227,10 +4586,10 @@ index 953d5977d00fac1c4a147528bb3e593162a44389..f053c3840cf6a5f3aad646e2e77d8a72
      },
    }
 diff --git a/packages/tui/src/config/keybind.ts b/packages/tui/src/config/keybind.ts
-index ef1cba9cc80309108d24d438c5ece066cbfaa542..4b9f1abc7b129c918a8a09debc3bd576cc403ea7 100644
+index ef1cba9..2bd3f1a 100644
 --- a/packages/tui/src/config/keybind.ts
 +++ b/packages/tui/src/config/keybind.ts
-@@ -118,6 +118,13 @@ export const Definitions = {
+@@ -118,6 +118,14 @@ export const Definitions = {
    "session.tab.previous_unread": keybind("alt+shift+up", "Switch to previous unread session tab"),
    "session.tab.close": keybind("<leader>w", "Close current session tab"),
    "session.tab.reopen": keybind("ctrl+shift+t", "Reopen last closed session tab"),
@@ -4240,16 +4599,17 @@ index ef1cba9cc80309108d24d438c5ece066cbfaa542..4b9f1abc7b129c918a8a09debc3bd576
 +  "navigation.focus": keybind("none", "Focus navigation pane"),
 +  "session.plan.graph": keybind("<leader>p", "Toggle plan graph"),
 +  "session.tab.directory.open": keybind("none", "Open directory in session sidebar"),
++  "session.tab.directory.browse": keybind("none", "Browse folders for the session sidebar"),
 +  "session.tab.folder.new": keybind("none", "New session tab folder"),
    "session.timeline": keybind("<leader>g", "Show session timeline"),
    "session.fork": keybind("none", "Fork session from message"),
    "session.rename": keybind("ctrl+r", "Rename session"),
 diff --git a/packages/tui/src/context/folder-browser.ts b/packages/tui/src/context/folder-browser.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..815b97baffce398a1b85e4747dbfcb2f1c563c0d
+index 0000000..192e50a
 --- /dev/null
 +++ b/packages/tui/src/context/folder-browser.ts
-@@ -0,0 +1,140 @@
+@@ -0,0 +1,144 @@
 +import { ClientError, isFileNotFoundError, type OpenCodeClient } from "@opencode/client"
 +import path from "path"
 +import { createStore } from "solid-js/store"
@@ -4383,15 +4743,19 @@ index 0000000000000000000000000000000000000000..815b97baffce398a1b85e4747dbfcb2f
 +  if (isFileNotFoundError(error))
 +    return { path: target, kind: "not-found", message: `Folder not found or not a directory: ${target}` }
 +  if (error instanceof ClientError && error.reason === "UnexpectedStatus")
-+    return { path: target, kind: "unavailable", message: `Cannot open ${target} (${error.message})` }
++    return {
++      path: target,
++      kind: "unavailable",
++      message: `Cannot open folder ${target}: it may be unreadable (${error.message}). Edit the path or go Back.`,
++    }
 +  return {
 +    path: target,
 +    kind: "failed",
-+    message: `Cannot open ${target}: ${error instanceof Error ? error.message : String(error)}`,
++    message: `Cannot open folder ${target}: ${error instanceof Error ? error.message : String(error)}. Retry, edit the path, or go Back.`,
 +  }
 +}
 diff --git a/packages/tui/src/context/keymap.tsx b/packages/tui/src/context/keymap.tsx
-index 521b3aeac86f97675ff7076c34a6ea278293db32..6d6ae30290ce6a6511b60dc3cb23523fbcdedf0e 100644
+index 521b3ae..6d6ae30 100644
 --- a/packages/tui/src/context/keymap.tsx
 +++ b/packages/tui/src/context/keymap.tsx
 @@ -25,6 +25,7 @@ import {
@@ -4418,7 +4782,7 @@ index 521b3aeac86f97675ff7076c34a6ea278293db32..6d6ae30290ce6a6511b60dc3cb23523f
        pagedown: "pgdn",
        delete: "del",
 diff --git a/packages/tui/src/context/local.tsx b/packages/tui/src/context/local.tsx
-index d3304eb3390b3e50a039cfe4994c50ff324b068b..ac93d3f20d645f7830dd32ffabfd082cca34844c 100644
+index d3304eb..ac93d3f 100644
 --- a/packages/tui/src/context/local.tsx
 +++ b/packages/tui/src/context/local.tsx
 @@ -27,6 +27,8 @@ import { usePermission } from "./permission"
@@ -4461,7 +4825,7 @@ index d3304eb3390b3e50a039cfe4994c50ff324b068b..ac93d3f20d645f7830dd32ffabfd082c
          },
 diff --git a/packages/tui/src/context/navigation.tsx b/packages/tui/src/context/navigation.tsx
 new file mode 100644
-index 0000000000000000000000000000000000000000..3e531af14cdfa97429b26f305d75b725f670c4dc
+index 0000000..3e531af
 --- /dev/null
 +++ b/packages/tui/src/context/navigation.tsx
 @@ -0,0 +1,174 @@
@@ -4640,7 +5004,7 @@ index 0000000000000000000000000000000000000000..3e531af14cdfa97429b26f305d75b725
 +  return parent.getChildren().some((child) => child === target || contains(child, target))
 +}
 diff --git a/packages/tui/src/context/session-tabs-model.ts b/packages/tui/src/context/session-tabs-model.ts
-index 856f9961e7fa8d7b880035f01c3c32a48551fffd..0e2f737d2d31ed23b9b750d600b4d18962cdee77 100644
+index 856f996..0e2f737 100644
 --- a/packages/tui/src/context/session-tabs-model.ts
 +++ b/packages/tui/src/context/session-tabs-model.ts
 @@ -1,6 +1,32 @@
@@ -4704,7 +5068,7 @@ index 856f9961e7fa8d7b880035f01c3c32a48551fffd..0e2f737d2d31ed23b9b750d600b4d189
  
  export type SessionTabHistory = {
 diff --git a/packages/tui/src/context/session-tabs.tsx b/packages/tui/src/context/session-tabs.tsx
-index 87f1069eddb5fdd5099a3f02046e3a8d74c4bef5..6c4e54f4af1865d46a7719242923b43d462c0b3c 100644
+index 87f1069..6c4e54f 100644
 --- a/packages/tui/src/context/session-tabs.tsx
 +++ b/packages/tui/src/context/session-tabs.tsx
 @@ -14,6 +14,8 @@ import { useStorage } from "./storage"
@@ -4883,7 +5247,7 @@ index 87f1069eddb5fdd5099a3f02046e3a8d74c4bef5..6c4e54f4af1865d46a7719242923b43d
          return expandedGroups[sessionID]?.[groupID]
        },
 diff --git a/packages/tui/src/context/theme.tsx b/packages/tui/src/context/theme.tsx
-index ed568e695c977ae1b0b6960121c5db0230bb40fa..0d45a741e3d6d9473603048127438cda0dbd39a8 100644
+index ed568e6..0d45a74 100644
 --- a/packages/tui/src/context/theme.tsx
 +++ b/packages/tui/src/context/theme.tsx
 @@ -94,6 +94,7 @@ type Themes = {
@@ -4933,7 +5297,7 @@ index ed568e695c977ae1b0b6960121c5db0230bb40fa..0d45a741e3d6d9473603048127438cda
        lock: () => pin(mode()),
        unlock: free,
 diff --git a/packages/tui/src/feature-plugins/home/footer.tsx b/packages/tui/src/feature-plugins/home/footer.tsx
-index d31888c2770f27bc7143edc258f6446407f8278e..eb939a1b51ff0fb5d7d69923b13de0fe04eba971 100644
+index d31888c..eb939a1 100644
 --- a/packages/tui/src/feature-plugins/home/footer.tsx
 +++ b/packages/tui/src/feature-plugins/home/footer.tsx
 @@ -1,6 +1,7 @@
@@ -4972,7 +5336,7 @@ index d31888c2770f27bc7143edc258f6446407f8278e..eb939a1b51ff0fb5d7d69923b13de0fe
          </text>
          <Show when={visibility().pluginCommand}>
 diff --git a/packages/tui/src/feature-plugins/prompt/btw.tsx b/packages/tui/src/feature-plugins/prompt/btw.tsx
-index 6aca5607022df6b4a68acdda644928e70698e41d..1cc488b4eacaef463d422230f4e6469c63005fa2 100644
+index 6aca560..1cc488b 100644
 --- a/packages/tui/src/feature-plugins/prompt/btw.tsx
 +++ b/packages/tui/src/feature-plugins/prompt/btw.tsx
 @@ -3,6 +3,7 @@ import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core"
@@ -5005,7 +5369,7 @@ index 6aca5607022df6b4a68acdda644928e70698e41d..1cc488b4eacaef463d422230f4e6469c
            }}
          />
 diff --git a/packages/tui/src/feature-plugins/prompt/footer.tsx b/packages/tui/src/feature-plugins/prompt/footer.tsx
-index f8fafdce21e086f156ead73edf1b3b88a1683b3f..b2bca2b046c74c8a7818a3b975679cb224856afc 100644
+index f8fafdc..b2bca2b 100644
 --- a/packages/tui/src/feature-plugins/prompt/footer.tsx
 +++ b/packages/tui/src/feature-plugins/prompt/footer.tsx
 @@ -5,6 +5,7 @@ import { useTerminalDimensions } from "@opentui/solid"
@@ -5057,7 +5421,7 @@ index f8fafdce21e086f156ead73edf1b3b88a1683b3f..b2bca2b046c74c8a7818a3b975679cb2
    }
    if (usage && stringWidth(usage) <= available) return { usage: true, shortcuts: false }
 diff --git a/packages/tui/src/feature-plugins/sidebar/footer.tsx b/packages/tui/src/feature-plugins/sidebar/footer.tsx
-index b875d5ffe803c6b8eefa50460c55ce5c762d4629..75609b21f7c57e53851ee95a10b42592a7103635 100644
+index b875d5f..75609b2 100644
 --- a/packages/tui/src/feature-plugins/sidebar/footer.tsx
 +++ b/packages/tui/src/feature-plugins/sidebar/footer.tsx
 @@ -5,6 +5,7 @@ import { FilePath } from "../../ui/file-path"
@@ -5087,7 +5451,7 @@ index b875d5ffe803c6b8eefa50460c55ce5c762d4629..75609b21f7c57e53851ee95a10b42592
            </box>
            <text fg={props.context.theme.text.muted}>OpenCode includes free models so you can start immediately.</text>
 diff --git a/packages/tui/src/feature-plugins/sidebar/mcp.tsx b/packages/tui/src/feature-plugins/sidebar/mcp.tsx
-index 6018ff0ccb4334db84a00ef6c35c37c4dbfbb393..f192f9ebe118e05ecdc02879f2b3e93c1dcf54f6 100644
+index 6018ff0..f192f9e 100644
 --- a/packages/tui/src/feature-plugins/sidebar/mcp.tsx
 +++ b/packages/tui/src/feature-plugins/sidebar/mcp.tsx
 @@ -1,6 +1,7 @@
@@ -5117,7 +5481,7 @@ index 6018ff0ccb4334db84a00ef6c35c37c4dbfbb393..f192f9ebe118e05ecdc02879f2b3e93c
                  <text fg={theme.text.base} wrapMode="none" truncate flexGrow={1} flexShrink={1} minWidth={0}>
                    <b>{item.name}</b>
 diff --git a/packages/tui/src/feature-plugins/system/diff-viewer-file-tree.tsx b/packages/tui/src/feature-plugins/system/diff-viewer-file-tree.tsx
-index 4a2c4dc06bc5be04057a97d152c2f07e2834f38c..7d0a7d4df510cf5001f4dca6b6a03e2f11241251 100644
+index 4a2c4dc..7d0a7d4 100644
 --- a/packages/tui/src/feature-plugins/system/diff-viewer-file-tree.tsx
 +++ b/packages/tui/src/feature-plugins/system/diff-viewer-file-tree.tsx
 @@ -3,6 +3,7 @@ import { MouseButton, TextAttributes, type MouseEvent, type ScrollBoxRenderable
@@ -5182,7 +5546,7 @@ index 4a2c4dc06bc5be04057a97d152c2f07e2834f38c..7d0a7d4df510cf5001f4dca6b6a03e2f
 +  return `${chromeEllipsis()}/${kept.join("/")}`
  }
 diff --git a/packages/tui/src/feature-plugins/system/diff-viewer-image.tsx b/packages/tui/src/feature-plugins/system/diff-viewer-image.tsx
-index cb7f0801790b0c5c3bd6ac4900bddaa84056df03..7dc0b46ff826b7c522c01c6e90e04eb52f50ce80 100644
+index cb7f080..7dc0b46 100644
 --- a/packages/tui/src/feature-plugins/system/diff-viewer-image.tsx
 +++ b/packages/tui/src/feature-plugins/system/diff-viewer-image.tsx
 @@ -5,6 +5,7 @@ import { createResource, createSignal, Match, onCleanup, Show, Switch } from "so
@@ -5203,7 +5567,7 @@ index cb7f0801790b0c5c3bd6ac4900bddaa84056df03..7dc0b46ff826b7c522c01c6e90e04eb5
            <Match when={!image.error && image()} keyed>
              {(bytes) => {
 diff --git a/packages/tui/src/feature-plugins/system/diff-viewer.tsx b/packages/tui/src/feature-plugins/system/diff-viewer.tsx
-index 0e333fffcca30f73aeb2781cf7102236d93125c5..18fa75543bff1ceca79b639eb49849b1cf2eadda 100644
+index 0e333ff..18fa755 100644
 --- a/packages/tui/src/feature-plugins/system/diff-viewer.tsx
 +++ b/packages/tui/src/feature-plugins/system/diff-viewer.tsx
 @@ -20,6 +20,7 @@ import { DiffViewerImage, isDiffImageFile } from "./diff-viewer-image"
@@ -5317,7 +5681,7 @@ index 0e333fffcca30f73aeb2781cf7102236d93125c5..18fa75543bff1ceca79b639eb49849b1
    )
    return (
 diff --git a/packages/tui/src/feature-plugins/system/stats.tsx b/packages/tui/src/feature-plugins/system/stats.tsx
-index 950d322422dc6bc14ee66ef8b6483f2d0c57319b..ec6fb8625c6b8db28e3ae00dd7c72224f107688d 100644
+index 950d322..ec6fb86 100644
 --- a/packages/tui/src/feature-plugins/system/stats.tsx
 +++ b/packages/tui/src/feature-plugins/system/stats.tsx
 @@ -6,6 +6,7 @@ import { useTerminalDimensions } from "@opentui/solid"
@@ -5338,7 +5702,7 @@ index 950d322422dc6bc14ee66ef8b6483f2d0c57319b..ec6fb8625c6b8db28e3ae00dd7c72224
            </Show>
          </Show>
 diff --git a/packages/tui/src/feature-plugins/system/storybook/footer.tsx b/packages/tui/src/feature-plugins/system/storybook/footer.tsx
-index 8b1fe2a51959f523f35cae10d223bfb55245934f..bead551cb82db977f41271877c51835bb0d524ea 100644
+index 8b1fe2a..bead551 100644
 --- a/packages/tui/src/feature-plugins/system/storybook/footer.tsx
 +++ b/packages/tui/src/feature-plugins/system/storybook/footer.tsx
 @@ -1,5 +1,6 @@
@@ -5367,7 +5731,7 @@ index 8b1fe2a51959f523f35cae10d223bfb55245934f..bead551cb82db977f41271877c51835b
              </span>
            </text>
 diff --git a/packages/tui/src/feature-plugins/system/storybook/index.tsx b/packages/tui/src/feature-plugins/system/storybook/index.tsx
-index f69e3da68b8b14905443d7e77539d7db013e5599..aab75d8fc8242619d758ee95393af04e0aefdf0d 100644
+index f69e3da..aab75d8 100644
 --- a/packages/tui/src/feature-plugins/system/storybook/index.tsx
 +++ b/packages/tui/src/feature-plugins/system/storybook/index.tsx
 @@ -8,6 +8,7 @@ import { sessionLocationMissingStory } from "./session-location-missing"
@@ -5397,7 +5761,7 @@ index f69e3da68b8b14905443d7e77539d7db013e5599..aab75d8fc8242619d758ee95393af04e
            { shortcut: "esc", label: "home" },
          ]}
 diff --git a/packages/tui/src/feature-plugins/system/storybook/merman-layouts.tsx b/packages/tui/src/feature-plugins/system/storybook/merman-layouts.tsx
-index 19c6ed906b936220047063ff1598b8d9e8d04717..d7348f8e3b10f387480eb10283fe71bec8b65765 100644
+index 19c6ed9..d7348f8 100644
 --- a/packages/tui/src/feature-plugins/system/storybook/merman-layouts.tsx
 +++ b/packages/tui/src/feature-plugins/system/storybook/merman-layouts.tsx
 @@ -5,6 +5,7 @@ import { useTheme, useThemes } from "../../../context/theme"
@@ -5418,7 +5782,7 @@ index 19c6ed906b936220047063ff1598b8d9e8d04717..d7348f8e3b10f387480eb10283fe71be
            { shortcut: "esc", label: "back" },
          ]}
 diff --git a/packages/tui/src/feature-plugins/system/storybook/session-location-missing.tsx b/packages/tui/src/feature-plugins/system/storybook/session-location-missing.tsx
-index c62d07b95414c2d9cb0b2ecf60e20c939081cf12..fd17fd9a0e5e8c280c441d79f27fe2cd7d9b7e81 100644
+index c62d07b..fd17fd9 100644
 --- a/packages/tui/src/feature-plugins/system/storybook/session-location-missing.tsx
 +++ b/packages/tui/src/feature-plugins/system/storybook/session-location-missing.tsx
 @@ -6,6 +6,7 @@ import { DialogWorkspaces } from "../../../component/dialog-workspaces"
@@ -5445,7 +5809,7 @@ index c62d07b95414c2d9cb0b2ecf60e20c939081cf12..fd17fd9a0e5e8c280c441d79f27fe2cd
          <box flexGrow={1} />
          <SessionLocationUnavailable directory={directory} onMove={open} />
 diff --git a/packages/tui/src/feature-plugins/system/storybook/session-tabs.tsx b/packages/tui/src/feature-plugins/system/storybook/session-tabs.tsx
-index 81a854320c883fdcdf2dcb46c0920cc63e4517bf..69321995d903d39133e782c042ad6b9354e6fe43 100644
+index 81a8543..6932199 100644
 --- a/packages/tui/src/feature-plugins/system/storybook/session-tabs.tsx
 +++ b/packages/tui/src/feature-plugins/system/storybook/session-tabs.tsx
 @@ -13,6 +13,7 @@ import {
@@ -5518,7 +5882,7 @@ index 81a854320c883fdcdf2dcb46c0920cc63e4517bf..69321995d903d39133e782c042ad6b93
            { shortcut: "drag edge", label: "resize / double-click reset" },
            { shortcut: "r", label: "reset idle" },
 diff --git a/packages/tui/src/logo.ts b/packages/tui/src/logo.ts
-index 8c570fb9341f05490fdadf422aafb437d471fb8f..11d79d39ba27b57a53564d4ab2d42642e897d5dd 100644
+index 8c570fb..11d79d3 100644
 --- a/packages/tui/src/logo.ts
 +++ b/packages/tui/src/logo.ts
 @@ -1,9 +1,15 @@
@@ -5542,7 +5906,7 @@ index 8c570fb9341f05490fdadf422aafb437d471fb8f..11d79d39ba27b57a53564d4ab2d42642
 +  " ▀▀▀ ▀  ▀ ▀  ▀   ▀   ▀  ▀ ▀  ▀  ▀▀▀ ▀▀▀▀ ▀   ▀   ▀  ",
 +]
 diff --git a/packages/tui/src/mini/runtime.lifecycle.ts b/packages/tui/src/mini/runtime.lifecycle.ts
-index 6a103bc8ddfacab50dfff935b15f3ae7678e6f09..db65694f645b309035d7893212b33ea2eadfac7e 100644
+index 6a103bc..db65694 100644
 --- a/packages/tui/src/mini/runtime.lifecycle.ts
 +++ b/packages/tui/src/mini/runtime.lifecycle.ts
 @@ -9,6 +9,7 @@
@@ -5565,7 +5929,7 @@ index 6a103bc8ddfacab50dfff935b15f3ae7678e6f09..db65694f645b309035d7893212b33ea2
    setTitle(input.sessionTitle)
    const theme = await resolveRunTheme(renderer, tuiConfig.theme, mono)
 diff --git a/packages/tui/src/plugin/api.tsx b/packages/tui/src/plugin/api.tsx
-index 35a4eac6e563e94a307f45d0fb91599cf2f0b1aa..720d27f003cf9efdcdc7667c2a03f43b5a40e001 100644
+index 35a4eac..720d27f 100644
 --- a/packages/tui/src/plugin/api.tsx
 +++ b/packages/tui/src/plugin/api.tsx
 @@ -30,11 +30,46 @@ import { useAttention } from "../context/attention"
@@ -5685,7 +6049,7 @@ index 35a4eac6e563e94a307f45d0fb91599cf2f0b1aa..720d27f003cf9efdcdc7667c2a03f43b
          path: (value) => abbreviateHome(value, host.paths.home),
        },
 diff --git a/packages/tui/src/plugin/context.tsx b/packages/tui/src/plugin/context.tsx
-index 31c4f4cea0b0873c3f34bc86b3cd104c2c47682d..a717ae674f54736a0c6986d11ee7bcd0a29aede3 100644
+index 31c4f4c..a717ae6 100644
 --- a/packages/tui/src/plugin/context.tsx
 +++ b/packages/tui/src/plugin/context.tsx
 @@ -62,6 +62,13 @@ type Value = {
@@ -5735,7 +6099,7 @@ index 31c4f4cea0b0873c3f34bc86b3cd104c2c47682d..a717ae674f54736a0c6986d11ee7bcd0
 +  throw new Error("PluginProvider is missing")
  }
 diff --git a/packages/tui/src/plugin/render.tsx b/packages/tui/src/plugin/render.tsx
-index 080114661fca61a81cf358bffc8b1fd2832258cb..d275552c3507817621066c2196c0eed3bc5b6872 100644
+index 0801146..d275552 100644
 --- a/packages/tui/src/plugin/render.tsx
 +++ b/packages/tui/src/plugin/render.tsx
 @@ -23,7 +23,7 @@ import { usePlugin } from "./context"
@@ -5748,7 +6112,7 @@ index 080114661fca61a81cf358bffc8b1fd2832258cb..d275552c3507817621066c2196c0eed3
    return (
      <ErrorBoundary
 diff --git a/packages/tui/src/plugin/runtime-plugin-support.bun.ts b/packages/tui/src/plugin/runtime-plugin-support.bun.ts
-index b1ebab022675b018033582f9549ae28d51d1ec73..a8114643be9f66c1eb74200322b14c7df3dadaf9 100644
+index b1ebab0..a811464 100644
 --- a/packages/tui/src/plugin/runtime-plugin-support.bun.ts
 +++ b/packages/tui/src/plugin/runtime-plugin-support.bun.ts
 @@ -1,8 +1,41 @@
@@ -5794,7 +6158,7 @@ index b1ebab022675b018033582f9549ae28d51d1ec73..a8114643be9f66c1eb74200322b14c7d
    additional: {
      "@opencode/plugin/tui": { Plugin, PluginContextProvider, usePlugin },
 diff --git a/packages/tui/src/routes/home.tsx b/packages/tui/src/routes/home.tsx
-index 71e7b64339c55b69a34421b7f49de07b1d9e68c8..32a9580a21fde6d4c7c6b726e26aa5db3962279a 100644
+index 71e7b64..32a9580 100644
 --- a/packages/tui/src/routes/home.tsx
 +++ b/packages/tui/src/routes/home.tsx
 @@ -1,6 +1,9 @@
@@ -5893,7 +6257,7 @@ index 71e7b64339c55b69a34421b7f49de07b1d9e68c8..32a9580a21fde6d4c7c6b726e26aa5db
        <box width="100%" flexShrink={0}>
          <Slot path="home.footer" />
 diff --git a/packages/tui/src/routes/session/activity-summary.ts b/packages/tui/src/routes/session/activity-summary.ts
-index 6578f50d632ae57f4c15069dac23131664d95691..a9676c9031424d80969ee45d0b5b09a812e487a1 100644
+index 6578f50..a9676c9 100644
 --- a/packages/tui/src/routes/session/activity-summary.ts
 +++ b/packages/tui/src/routes/session/activity-summary.ts
 @@ -9,6 +9,7 @@ import { visitEntries } from "./anchor-view"
@@ -5920,7 +6284,7 @@ index 6578f50d632ae57f4c15069dac23131664d95691..a9676c9031424d80969ee45d0b5b09a8
  
  /**
 diff --git a/packages/tui/src/routes/session/composer/index.tsx b/packages/tui/src/routes/session/composer/index.tsx
-index 2af8bfb521a6327967c1c57c1fdb13842518fa71..4427c90c996b0ce00b2120707c52202f71eb02db 100644
+index 2af8bfb..4427c90 100644
 --- a/packages/tui/src/routes/session/composer/index.tsx
 +++ b/packages/tui/src/routes/session/composer/index.tsx
 @@ -3,6 +3,7 @@ import { createStore } from "solid-js/store"
@@ -5941,7 +6305,7 @@ index 2af8bfb521a6327967c1c57c1fdb13842518fa71..4427c90c996b0ce00b2120707c52202f
                </Show>
              </box>
 diff --git a/packages/tui/src/routes/session/dialog-execute.tsx b/packages/tui/src/routes/session/dialog-execute.tsx
-index 86f9c8f1c52161f1135debb74cc2dc96e81c23e8..b8d17400714805aa8c9607a34fe6582e379242a5 100644
+index 86f9c8f..b8d1740 100644
 --- a/packages/tui/src/routes/session/dialog-execute.tsx
 +++ b/packages/tui/src/routes/session/dialog-execute.tsx
 @@ -17,6 +17,7 @@ import {
@@ -6006,7 +6370,7 @@ index 86f9c8f1c52161f1135debb74cc2dc96e81c23e8..b8d17400714805aa8c9607a34fe6582e
                  }
                >
 diff --git a/packages/tui/src/routes/session/dialog-fork.tsx b/packages/tui/src/routes/session/dialog-fork.tsx
-index 2ba1a27fe144989498a33a5f113d4a9e41c0f25f..df2666114f13caa68e5c34a9b3c891d94b277fb7 100644
+index 2ba1a27..df26661 100644
 --- a/packages/tui/src/routes/session/dialog-fork.tsx
 +++ b/packages/tui/src/routes/session/dialog-fork.tsx
 @@ -3,6 +3,7 @@ import { useData } from "../../context/data"
@@ -6027,7 +6391,7 @@ index 2ba1a27fe144989498a33a5f113d4a9e41c0f25f..df2666114f13caa68e5c34a9b3c891d9
        }
      >
 diff --git a/packages/tui/src/routes/session/form.tsx b/packages/tui/src/routes/session/form.tsx
-index cba007198f026230d5c2051379fa7a9056c6aa52..220b491c7eb10a6407f127f6b9afae4e14a01716 100644
+index cba0071..220b491 100644
 --- a/packages/tui/src/routes/session/form.tsx
 +++ b/packages/tui/src/routes/session/form.tsx
 @@ -15,6 +15,7 @@ import type { FormAnswer, FormField, FormValue } from "@opencode/client"
@@ -6123,7 +6487,7 @@ index cba007198f026230d5c2051379fa7a9056c6aa52..220b491c7eb10a6407f127f6b9afae4e
            </Show>
            <text
 diff --git a/packages/tui/src/routes/session/group-view.tsx b/packages/tui/src/routes/session/group-view.tsx
-index 2e09fc5e84974454fdc4b2106ab89f68c99f13da..bcf83e0c9cbd66ac9e51791c4e880ca6e2b0f791 100644
+index 2e09fc5..bcf83e0 100644
 --- a/packages/tui/src/routes/session/group-view.tsx
 +++ b/packages/tui/src/routes/session/group-view.tsx
 @@ -5,6 +5,7 @@ import type { SessionMessageAssistantTool, SessionMessageInfo } from "@opencode/
@@ -6184,7 +6548,7 @@ index 2e09fc5e84974454fdc4b2106ab89f68c99f13da..bcf83e0c9cbd66ac9e51791c4e880ca6
    return (
      <Show when={!props.pendingOutside}>
 diff --git a/packages/tui/src/routes/session/index.tsx b/packages/tui/src/routes/session/index.tsx
-index 0b8228ef8714b05a4e675b6f9e58a116fb9367ba..0f9feb11930e75940685c2dfa4c296144d795935 100644
+index 0b8228e..0f9feb1 100644
 --- a/packages/tui/src/routes/session/index.tsx
 +++ b/packages/tui/src/routes/session/index.tsx
 @@ -19,6 +19,7 @@ import { useRoute, useRouteData } from "../../context/route"
@@ -6690,7 +7054,7 @@ index 0b8228ef8714b05a4e675b6f9e58a116fb9367ba..0f9feb11930e75940685c2dfa4c29614
      </InlineTool>
    )
 diff --git a/packages/tui/src/routes/session/location-missing.tsx b/packages/tui/src/routes/session/location-missing.tsx
-index d42aada29fac26b1dec5372f03941be08aed14d5..15f1d0ec37179a74e1c8d35c1930cc8a97a4d6d5 100644
+index d42aada..15f1d0e 100644
 --- a/packages/tui/src/routes/session/location-missing.tsx
 +++ b/packages/tui/src/routes/session/location-missing.tsx
 @@ -10,6 +10,7 @@ import { useToast } from "../../ui/toast"
@@ -6711,7 +7075,7 @@ index d42aada29fac26b1dec5372f03941be08aed14d5..15f1d0ec37179a74e1c8d35c1930cc8a
    return (
      <SessionQuestion
 diff --git a/packages/tui/src/routes/session/message-parts.tsx b/packages/tui/src/routes/session/message-parts.tsx
-index f63ba65250e854f423e0b624e1f3629c750d4a6b..a4b361664eab3078b055f5669bf2a6baf19f5ec2 100644
+index f63ba65..a4b3616 100644
 --- a/packages/tui/src/routes/session/message-parts.tsx
 +++ b/packages/tui/src/routes/session/message-parts.tsx
 @@ -11,6 +11,7 @@ import { createSyntaxStyleMemo, useTheme, useThemes } from "../../context/theme"
@@ -6741,7 +7105,7 @@ index f63ba65250e854f423e0b624e1f3629c750d4a6b..a4b361664eab3078b055f5669bf2a6ba
                <Show
                  when={props.status}
 diff --git a/packages/tui/src/routes/session/permission.tsx b/packages/tui/src/routes/session/permission.tsx
-index 07338aba69d81e27d5213e61131f7d2db0e2ff0a..812d3e97e6fa3085113e9af310b03fd2b5d64161 100644
+index 07338ab..812d3e9 100644
 --- a/packages/tui/src/routes/session/permission.tsx
 +++ b/packages/tui/src/routes/session/permission.tsx
 @@ -5,6 +5,7 @@ import type { TextareaRenderable } from "@opentui/core"
@@ -6790,7 +7154,7 @@ index 07338aba69d81e27d5213e61131f7d2db0e2ff0a..812d3e97e6fa3085113e9af310b03fd2
            <text fg={theme.text.base}>
 diff --git a/packages/tui/src/routes/session/plan-items.ts b/packages/tui/src/routes/session/plan-items.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..8567baf8960ecb9b2a70f70cc3121d894a95110d
+index 0000000..8567baf
 --- /dev/null
 +++ b/packages/tui/src/routes/session/plan-items.ts
 @@ -0,0 +1,33 @@
@@ -6829,7 +7193,7 @@ index 0000000000000000000000000000000000000000..8567baf8960ecb9b2a70f70cc3121d89
 +}
 diff --git a/packages/tui/src/routes/session/plan-view.tsx b/packages/tui/src/routes/session/plan-view.tsx
 new file mode 100644
-index 0000000000000000000000000000000000000000..4f552077af07b2f51b48567605714ffe9fe9203a
+index 0000000..4f55207
 --- /dev/null
 +++ b/packages/tui/src/routes/session/plan-view.tsx
 @@ -0,0 +1,85 @@
@@ -6919,7 +7283,7 @@ index 0000000000000000000000000000000000000000..4f552077af07b2f51b48567605714ffe
 +  )
 +}
 diff --git a/packages/tui/src/routes/session/rows.ts b/packages/tui/src/routes/session/rows.ts
-index 52e45c94a30887c4710682ca34cae102abfeb818..f35003486c62fc68d51965b658c4d45ba3cc724f 100644
+index 52e45c9..f350034 100644
 --- a/packages/tui/src/routes/session/rows.ts
 +++ b/packages/tui/src/routes/session/rows.ts
 @@ -44,7 +44,11 @@ export async function completeGroupBoundary(input: {
@@ -6956,7 +7320,7 @@ index 52e45c94a30887c4710682ca34cae102abfeb818..f35003486c62fc68d51965b658c4d45b
      on(
 diff --git a/packages/tui/src/theme/assets/v2/carthagent.json b/packages/tui/src/theme/assets/v2/carthagent.json
 new file mode 100644
-index 0000000000000000000000000000000000000000..faa4cb047f0919fa1c145ac3e399e2a1d741d967
+index 0000000..faa4cb0
 --- /dev/null
 +++ b/packages/tui/src/theme/assets/v2/carthagent.json
 @@ -0,0 +1,397 @@
@@ -7359,7 +7723,7 @@ index 0000000000000000000000000000000000000000..faa4cb047f0919fa1c145ac3e399e2a1
 +}
 \ No newline at end of file
 diff --git a/packages/tui/src/theme/index.ts b/packages/tui/src/theme/index.ts
-index bda19d690b8a4f5e073c1274009b1195699d6028..944a9e05f58fc4ffa53d6fd664db0b0509c32e18 100644
+index bda19d6..944a9e0 100644
 --- a/packages/tui/src/theme/index.ts
 +++ b/packages/tui/src/theme/index.ts
 @@ -3,6 +3,7 @@ import { resolveThemeColors } from "./resolve"
@@ -7379,7 +7743,7 @@ index bda19d690b8a4f5e073c1274009b1195699d6028..944a9e05f58fc4ffa53d6fd664db0b05
    }
    return {
 diff --git a/packages/tui/src/ui/border.ts b/packages/tui/src/ui/border.ts
-index 333071020c4b3ce74aad47ec9ba758a566761565..d03cce890838bae1df70d0b9bdab06bbf8131e46 100644
+index 3330710..d03cce8 100644
 --- a/packages/tui/src/ui/border.ts
 +++ b/packages/tui/src/ui/border.ts
 @@ -1,3 +1,5 @@
@@ -7401,7 +7765,7 @@ index 333071020c4b3ce74aad47ec9ba758a566761565..d03cce890838bae1df70d0b9bdab06bb
    },
  }
 diff --git a/packages/tui/src/ui/dialog-export-options.tsx b/packages/tui/src/ui/dialog-export-options.tsx
-index 2a38f6292279460734430cd74894b8ed53056422..a60018289a09ce7c68f1e782a44cb408b35101f1 100644
+index 2a38f62..a600182 100644
 --- a/packages/tui/src/ui/dialog-export-options.tsx
 +++ b/packages/tui/src/ui/dialog-export-options.tsx
 @@ -1,6 +1,7 @@
@@ -7422,7 +7786,7 @@ index 2a38f6292279460734430cd74894b8ed53056422..a60018289a09ce7c68f1e782a44cb408
                  </box>
                )}
 diff --git a/packages/tui/src/ui/dialog-export-result.tsx b/packages/tui/src/ui/dialog-export-result.tsx
-index 6304fbdb307b218f13945547a81ff9faed281975..4751cc8d57c60f60729cba79acc21851852948a1 100644
+index 6304fbd..4751cc8 100644
 --- a/packages/tui/src/ui/dialog-export-result.tsx
 +++ b/packages/tui/src/ui/dialog-export-result.tsx
 @@ -3,6 +3,7 @@ import { useNewDesigns } from "../config"
@@ -7443,7 +7807,7 @@ index 6304fbdb307b218f13945547a81ff9faed281975..4751cc8d57c60f60729cba79acc21851
            ],
          },
 diff --git a/packages/tui/src/ui/dialog-prompt.tsx b/packages/tui/src/ui/dialog-prompt.tsx
-index b85074c491e86c1e34b646db5b09697df43b9950..00badea28607a4cc3471c906d6588f7d13cd8e20 100644
+index b85074c..00badea 100644
 --- a/packages/tui/src/ui/dialog-prompt.tsx
 +++ b/packages/tui/src/ui/dialog-prompt.tsx
 @@ -6,6 +6,7 @@ import { Show, createEffect, createSignal, onMount, type JSX } from "solid-js"
@@ -7473,7 +7837,7 @@ index b85074c491e86c1e34b646db5b09697df43b9950..00badea28607a4cc3471c906d6588f7d
        </box>
      </DialogLayout>
 diff --git a/packages/tui/src/ui/dialog-select.tsx b/packages/tui/src/ui/dialog-select.tsx
-index f86d8b507f79920ac75de168f1cd1b1076a70380..f014e88097b3ab3575303c8247b27a250c6051a7 100644
+index f86d8b5..f014e88 100644
 --- a/packages/tui/src/ui/dialog-select.tsx
 +++ b/packages/tui/src/ui/dialog-select.tsx
 @@ -22,6 +22,7 @@ import { Locale } from "../util/locale"
@@ -7565,7 +7929,7 @@ index f86d8b507f79920ac75de168f1cd1b1076a70380..f014e88097b3ab3575303c8247b27a25
          </box>
        )}
 diff --git a/packages/tui/src/ui/file-path.tsx b/packages/tui/src/ui/file-path.tsx
-index 09b38066707cdfcf1aa3e8dd55cee47236b5888c..5fc5dd57257c9fc88855b1760761308404f51eff 100644
+index 09b3806..5fc5dd5 100644
 --- a/packages/tui/src/ui/file-path.tsx
 +++ b/packages/tui/src/ui/file-path.tsx
 @@ -1,6 +1,7 @@
@@ -7625,10 +7989,10 @@ index 09b38066707cdfcf1aa3e8dd55cee47236b5888c..5fc5dd57257c9fc88855b17607613084
  function takeStart(value: string, maxWidth: number) {
 diff --git a/packages/tui/src/ui/glyphs.ts b/packages/tui/src/ui/glyphs.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..1d73f1203ee21fd0d7500560f909aea76a61d2fc
+index 0000000..cbed5bc
 --- /dev/null
 +++ b/packages/tui/src/ui/glyphs.ts
-@@ -0,0 +1,195 @@
+@@ -0,0 +1,196 @@
 +/** Host chrome glyphs. This deliberately does not transform arbitrary text. */
 +export type GlyphMode = "auto" | "unicode" | "ascii"
 +
@@ -7660,6 +8024,7 @@ index 0000000000000000000000000000000000000000..1d73f1203ee21fd0d7500560f909aea7
 +    "●": "*",
 +    "▪": "*",
 +    "■": "#",
++    "▤": "#",
 +    "◐": "*",
 +    "□": "o",
 +    "◉": "o",
@@ -7825,7 +8190,7 @@ index 0000000000000000000000000000000000000000..1d73f1203ee21fd0d7500560f909aea7
 +  compact: ["    ", " CTG", " CTG", " CTG"],
 +} as const
 diff --git a/packages/tui/src/ui/layout.ts b/packages/tui/src/ui/layout.ts
-index 803ae76897150db832710e367217be943df373ce..c56c39e4cdb61fe615f15993bed52e62b5dd0ba9 100644
+index 803ae76..c56c39e 100644
 --- a/packages/tui/src/ui/layout.ts
 +++ b/packages/tui/src/ui/layout.ts
 @@ -1,4 +1,4 @@
@@ -7849,7 +8214,7 @@ index 803ae76897150db832710e367217be943df373ce..c56c39e4cdb61fe615f15993bed52e62
    return Math.max(
      SESSION_TABS_COMPACT_WIDTH,
 diff --git a/packages/tui/src/ui/spinner.ts b/packages/tui/src/ui/spinner.ts
-index c185ea7b833f2087b4c925aa40feb0b72239a19e..83aa3e97230f3522832f2125bb43c292ae8d4951 100644
+index c185ea7..83aa3e9 100644
 --- a/packages/tui/src/ui/spinner.ts
 +++ b/packages/tui/src/ui/spinner.ts
 @@ -1,5 +1,6 @@
@@ -7881,7 +8246,7 @@ index c185ea7b833f2087b4c925aa40feb0b72239a19e..83aa3e97230f3522832f2125bb43c292
    })
  
 diff --git a/packages/tui/src/ui/toast.tsx b/packages/tui/src/ui/toast.tsx
-index 8f44284c2fae13fb1a897d4950416fa3b918c578..b6da5b2f676f2e0502044e69f365c4e557c73f3c 100644
+index 8f44284..b6da5b2 100644
 --- a/packages/tui/src/ui/toast.tsx
 +++ b/packages/tui/src/ui/toast.tsx
 @@ -1,6 +1,7 @@
@@ -7902,7 +8267,7 @@ index 8f44284c2fae13fb1a897d4950416fa3b918c578..b6da5b2f676f2e0502044e69f365c4e5
    )
  
 diff --git a/packages/tui/src/util/collapse-tool-output.ts b/packages/tui/src/util/collapse-tool-output.ts
-index dbdf6e5a1908cae9afe2ceb0c51f5a57f82dcfd3..f8c07cacf0ff15e1f42ca8612f425b929ccf286b 100644
+index dbdf6e5..f8c07ca 100644
 --- a/packages/tui/src/util/collapse-tool-output.ts
 +++ b/packages/tui/src/util/collapse-tool-output.ts
 @@ -1,3 +1,4 @@
@@ -7937,7 +8302,7 @@ index dbdf6e5a1908cae9afe2ceb0c51f5a57f82dcfd3..f8c07cacf0ff15e1f42ca8612f425b92
  
  function collapseTail(output: string, maxLines: number, maxChars: number) {
 diff --git a/packages/tui/src/util/error.ts b/packages/tui/src/util/error.ts
-index 33dff7be582228dc7b6b3c634c3bd387f035881f..96cd6c31ca3a82a7d53a3b147f102e04974999c6 100644
+index 33dff7b..96cd6c3 100644
 --- a/packages/tui/src/util/error.ts
 +++ b/packages/tui/src/util/error.ts
 @@ -1,4 +1,5 @@
@@ -7956,7 +8321,7 @@ index 33dff7be582228dc7b6b3c634c3bd387f035881f..96cd6c31ca3a82a7d53a3b147f102e04
    }
  
 diff --git a/packages/tui/src/util/locale.ts b/packages/tui/src/util/locale.ts
-index ac3371eb07959e77e44ab1a7eb3776e8a199642b..4ed4225fbf0147ab9be2eaf0699ccd513b26974d 100644
+index ac3371e..4ed4225 100644
 --- a/packages/tui/src/util/locale.ts
 +++ b/packages/tui/src/util/locale.ts
 @@ -1,4 +1,5 @@
@@ -8020,7 +8385,7 @@ index ac3371eb07959e77e44ab1a7eb3776e8a199642b..4ed4225fbf0147ab9be2eaf0699ccd51
    const keepEnd = Math.floor((maxLength - ellipsis.length) / 2)
  
 diff --git a/packages/tui/src/util/marquee.ts b/packages/tui/src/util/marquee.ts
-index 8b9428ed4bde4d3da0a00c9daff970564846a4bc..4c1d5a11ee0838ffcfaa47cb025b1ec3a0818328 100644
+index 8b9428e..4c1d5a1 100644
 --- a/packages/tui/src/util/marquee.ts
 +++ b/packages/tui/src/util/marquee.ts
 @@ -1,7 +1,10 @@
@@ -8054,7 +8419,7 @@ index 8b9428ed4bde4d3da0a00c9daff970564846a4bc..4c1d5a11ee0838ffcfaa47cb025b1ec3
    const cursor = offset % marqueeCycleWidth(value)
    const parts = [...loop, ...loop]
 diff --git a/packages/tui/src/util/permission.ts b/packages/tui/src/util/permission.ts
-index 09d607ff373ea1075a024b2a14a3aaf522713840..f9bc32c7b380a4bb1e86abfe102c32ba7a7eeeed 100644
+index 09d607f..f9bc32c 100644
 --- a/packages/tui/src/util/permission.ts
 +++ b/packages/tui/src/util/permission.ts
 @@ -1,5 +1,6 @@
@@ -8145,7 +8510,7 @@ index 09d607ff373ea1075a024b2a14a3aaf522713840..f9bc32c7b380a4bb1e86abfe102c32ba
      lines: [`Tool: ${source.action}`],
    }
 diff --git a/packages/tui/src/util/renderer.ts b/packages/tui/src/util/renderer.ts
-index a0c16faa7bf557bd4691a526a3d36d37d97ba5df..92df561cfc168aa0907b4311d4bcdf6ef4312073 100644
+index a0c16fa..92df561 100644
 --- a/packages/tui/src/util/renderer.ts
 +++ b/packages/tui/src/util/renderer.ts
 @@ -1,7 +1,36 @@
@@ -8190,7 +8555,7 @@ index a0c16faa7bf557bd4691a526a3d36d37d97ba5df..92df561cfc168aa0907b4311d4bcdf6e
 +  restoreUnacquiredTerminalTitle(write)
  }
 diff --git a/packages/tui/src/util/session.ts b/packages/tui/src/util/session.ts
-index c7213e2205edc6d3bf1e068998527722b83fb75a..95f4dd09b2c3cb0e571d3e8ea6b4d673b0ae652a 100644
+index c7213e2..95f4dd0 100644
 --- a/packages/tui/src/util/session.ts
 +++ b/packages/tui/src/util/session.ts
 @@ -1,6 +1,7 @@
@@ -8218,7 +8583,7 @@ index c7213e2205edc6d3bf1e068998527722b83fb75a..95f4dd09b2c3cb0e571d3e8ea6b4d673
      })
    }
 diff --git a/packages/tui/test/app-lifecycle.test.tsx b/packages/tui/test/app-lifecycle.test.tsx
-index 2e9833eb6ed089c73358e90724b0cea24ca6d46d..9400878a2ebc561a7922748a5ab710966550de42 100644
+index 2e9833e..9400878 100644
 --- a/packages/tui/test/app-lifecycle.test.tsx
 +++ b/packages/tui/test/app-lifecycle.test.tsx
 @@ -38,7 +38,7 @@ test.each([100, 44])("Ctrl-O is immediate, dismissible, and prunes cached deleti
@@ -8334,7 +8699,7 @@ index 2e9833eb6ed089c73358e90724b0cea24ca6d46d..9400878a2ebc561a7922748a5ab71096
      locationCatalog.resolve()
      catalog.resolve()
 diff --git a/packages/tui/test/clear-session.test.tsx b/packages/tui/test/clear-session.test.tsx
-index b53525df46f035d74985d4994dbc26d9507d05b0..5fd351ae4c4899409dd86ab634858fffd330d2ea 100644
+index b53525d..5fd351a 100644
 --- a/packages/tui/test/clear-session.test.tsx
 +++ b/packages/tui/test/clear-session.test.tsx
 @@ -2,6 +2,8 @@ import { expect, test } from "bun:test"
@@ -8460,7 +8825,7 @@ index b53525df46f035d74985d4994dbc26d9507d05b0..5fd351ae4c4899409dd86ab634858fff
  test("/new keeps the active session tab", async () => {
    await using state = await tmpdir()
 diff --git a/packages/tui/test/cli/tui/dialog-select.test.tsx b/packages/tui/test/cli/tui/dialog-select.test.tsx
-index cd97565f0aa792aa07b37bf30a1a65149de596b8..58873e88e9e616cf161f3481bf087f5feb8d60d9 100644
+index cd97565..58873e8 100644
 --- a/packages/tui/test/cli/tui/dialog-select.test.tsx
 +++ b/packages/tui/test/cli/tui/dialog-select.test.tsx
 @@ -305,6 +305,39 @@ test("renders the complete truncated footer within the option row", async () =>
@@ -8505,7 +8870,7 @@ index cd97565f0aa792aa07b37bf30a1a65149de596b8..58873e88e9e616cf161f3481bf087f5f
    const app = await renderSelect(
 diff --git a/packages/tui/test/component/plan-view.test.tsx b/packages/tui/test/component/plan-view.test.tsx
 new file mode 100644
-index 0000000000000000000000000000000000000000..c2cf606b6ff85b47527d6054447b8c649e9f1cd3
+index 0000000..c2cf606
 --- /dev/null
 +++ b/packages/tui/test/component/plan-view.test.tsx
 @@ -0,0 +1,94 @@
@@ -8605,7 +8970,7 @@ index 0000000000000000000000000000000000000000..c2cf606b6ff85b47527d6054447b8c64
 +})
 diff --git a/packages/tui/test/component/seascape-render.test.tsx b/packages/tui/test/component/seascape-render.test.tsx
 new file mode 100644
-index 0000000000000000000000000000000000000000..22ab711afba6212d88d2e8a1e519afbfc5fbc69e
+index 0000000..22ab711
 --- /dev/null
 +++ b/packages/tui/test/component/seascape-render.test.tsx
 @@ -0,0 +1,35 @@
@@ -8646,7 +9011,7 @@ index 0000000000000000000000000000000000000000..22ab711afba6212d88d2e8a1e519afbf
 +})
 diff --git a/packages/tui/test/component/seascape.test.ts b/packages/tui/test/component/seascape.test.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..cb464a621e5faba408712766c1fa162a1ec98123
+index 0000000..cb464a6
 --- /dev/null
 +++ b/packages/tui/test/component/seascape.test.ts
 @@ -0,0 +1,19 @@
@@ -8670,7 +9035,7 @@ index 0000000000000000000000000000000000000000..cb464a621e5faba408712766c1fa162a
 +  expect(seascapeTime(3000, false)).toBe(1000)
 +})
 diff --git a/packages/tui/test/component/session-tabs-rail.test.tsx b/packages/tui/test/component/session-tabs-rail.test.tsx
-index 769070428a792f39f2de5c271f19033c70921e90..6f105915aada9a54fd9619ecd2bdd8146f5e4b10 100644
+index 7690704..6f10591 100644
 --- a/packages/tui/test/component/session-tabs-rail.test.tsx
 +++ b/packages/tui/test/component/session-tabs-rail.test.tsx
 @@ -10,6 +10,8 @@ import { Keymap } from "../../src/context/keymap"
@@ -8788,7 +9153,7 @@ index 769070428a792f39f2de5c271f19033c70921e90..6f105915aada9a54fd9619ecd2bdd814
 +})
 diff --git a/packages/tui/test/component/transcript-scrollbox.test.ts b/packages/tui/test/component/transcript-scrollbox.test.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..b707b01663a85037beae4c33bd048ad03ba9b22e
+index 0000000..b707b01
 --- /dev/null
 +++ b/packages/tui/test/component/transcript-scrollbox.test.ts
 @@ -0,0 +1,63 @@
@@ -8856,7 +9221,7 @@ index 0000000000000000000000000000000000000000..b707b01663a85037beae4c33bd048ad0
 +  expect(app.scroll.scrollTop).toBeLessThan(before)
 +})
 diff --git a/packages/tui/test/context/session-tabs-model.test.ts b/packages/tui/test/context/session-tabs-model.test.ts
-index a744c2966e5333e3089d2393e5adf28fb9f713b8..dbae37c5308059d37ea63e24ff618c775486c254 100644
+index a744c29..dbae37c 100644
 --- a/packages/tui/test/context/session-tabs-model.test.ts
 +++ b/packages/tui/test/context/session-tabs-model.test.ts
 @@ -12,6 +12,8 @@ import {
@@ -8892,7 +9257,7 @@ index a744c2966e5333e3089d2393e5adf28fb9f713b8..dbae37c5308059d37ea63e24ff618c77
    test("labels tabs by ordinal", () => {
      expect(Array.from({ length: 12 }, (_, index) => sessionTabNumberLabel(index))).toEqual([
 diff --git a/packages/tui/test/fixture/app.ts b/packages/tui/test/fixture/app.ts
-index 9be3ac94e35be246de4817c8175c03d54fbbaf5a..f30280e2e7933d0d2c4c428e4ac1468a4e11f8fb 100644
+index 9be3ac9..f30280e 100644
 --- a/packages/tui/test/fixture/app.ts
 +++ b/packages/tui/test/fixture/app.ts
 @@ -32,6 +32,7 @@ export async function createAppFixture(
@@ -8922,7 +9287,7 @@ index 9be3ac94e35be246de4817c8175c03d54fbbaf5a..f30280e2e7933d0d2c4c428e4ac1468a
      async [Symbol.asyncDispose]() {
 diff --git a/packages/tui/test/fixture/plugin/navigation/tui.tsx b/packages/tui/test/fixture/plugin/navigation/tui.tsx
 new file mode 100644
-index 0000000000000000000000000000000000000000..de206f8efb32ed70da9d429a9dbfff8d66c216af
+index 0000000..de206f8
 --- /dev/null
 +++ b/packages/tui/test/fixture/plugin/navigation/tui.tsx
 @@ -0,0 +1,51 @@
@@ -8978,7 +9343,7 @@ index 0000000000000000000000000000000000000000..de206f8efb32ed70da9d429a9dbfff8d
 +  </box>
 +}
 diff --git a/packages/tui/test/fixture/tui-client.ts b/packages/tui/test/fixture/tui-client.ts
-index 9accc15e643ed5e7255ade760f42817cb13f3301..b9729bfc0f6d1e2267997a170b400db4123b5789 100644
+index 9accc15..b9729bf 100644
 --- a/packages/tui/test/fixture/tui-client.ts
 +++ b/packages/tui/test/fixture/tui-client.ts
 @@ -94,7 +94,13 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof
@@ -8998,7 +9363,7 @@ index 9accc15e643ed5e7255ade760f42817cb13f3301..b9729bfc0f6d1e2267997a170b400db4
      if (url.pathname === "/api/plugin")
 diff --git a/packages/tui/test/glyphs.test.ts b/packages/tui/test/glyphs.test.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..af838e8effc5ad19f4b6c2e04762365a7444196b
+index 0000000..af838e8
 --- /dev/null
 +++ b/packages/tui/test/glyphs.test.ts
 @@ -0,0 +1,244 @@
@@ -9248,7 +9613,7 @@ index 0000000000000000000000000000000000000000..af838e8effc5ad19f4b6c2e04762365a
 +})
 diff --git a/packages/tui/test/navigation-rail.test.tsx b/packages/tui/test/navigation-rail.test.tsx
 new file mode 100644
-index 0000000000000000000000000000000000000000..8003e423f64dc7afa9e5c48bc0e0e43f1558c9d1
+index 0000000..8003e42
 --- /dev/null
 +++ b/packages/tui/test/navigation-rail.test.tsx
 @@ -0,0 +1,342 @@
@@ -9595,7 +9960,7 @@ index 0000000000000000000000000000000000000000..8003e423f64dc7afa9e5c48bc0e0e43f
 +}
 +function descendants(node: Renderable): Renderable[] { return node.getChildren().flatMap((child) => [child, ...descendants(child)]) }
 diff --git a/packages/tui/test/plugin-keymap.test.tsx b/packages/tui/test/plugin-keymap.test.tsx
-index 0790e9a689d478ef4a60d4bef0da9a7c0242b99c..fa236930c683a0b4f260830eb8b33fdc212f5aca 100644
+index 0790e9a..fa23693 100644
 --- a/packages/tui/test/plugin-keymap.test.tsx
 +++ b/packages/tui/test/plugin-keymap.test.tsx
 @@ -59,6 +59,39 @@ test("setup layers before and after await reach keyboard, palette, and slash acr
@@ -9696,7 +10061,7 @@ index 0790e9a689d478ef4a60d4bef0da9a7c0242b99c..fa236930c683a0b4f260830eb8b33fdc
 +  await setup.mockInput.typeText(query)
  }
 diff --git a/packages/tui/test/plugin-source.test.ts b/packages/tui/test/plugin-source.test.ts
-index 2f4d396a6155750228ca92fa3ee07ddce562f3f8..a7eb1a3a47561dbfba2e67d794adedf9a71f6122 100644
+index 2f4d396..a7eb1a3 100644
 --- a/packages/tui/test/plugin-source.test.ts
 +++ b/packages/tui/test/plugin-source.test.ts
 @@ -7,7 +7,8 @@ import { Host } from "@opencode/plugin/host"
@@ -9779,7 +10144,7 @@ index 2f4d396a6155750228ca92fa3ee07ddce562f3f8..a7eb1a3a47561dbfba2e67d794adedf9
      await Bun.sleep(10)
 diff --git a/packages/tui/test/plugin-theme-provider.test.tsx b/packages/tui/test/plugin-theme-provider.test.tsx
 new file mode 100644
-index 0000000000000000000000000000000000000000..ff8cbeabb00abf008453a9c31a8eec04ef08a2c5
+index 0000000..ff8cbea
 --- /dev/null
 +++ b/packages/tui/test/plugin-theme-provider.test.tsx
 @@ -0,0 +1,104 @@
@@ -9889,7 +10254,7 @@ index 0000000000000000000000000000000000000000..ff8cbeabb00abf008453a9c31a8eec04
 +})
 diff --git a/packages/tui/test/plugin-theme.test.tsx b/packages/tui/test/plugin-theme.test.tsx
 new file mode 100644
-index 0000000000000000000000000000000000000000..9a46b4d5b1d7c471fed41a8884554d6237288420
+index 0000000..9a46b4d
 --- /dev/null
 +++ b/packages/tui/test/plugin-theme.test.tsx
 @@ -0,0 +1,54 @@
@@ -9948,7 +10313,7 @@ index 0000000000000000000000000000000000000000..9a46b4d5b1d7c471fed41a8884554d62
 +  expect(harness.theme.current()).toEqual({ name: "opencode", mode: "light" })
 +})
 diff --git a/packages/tui/test/session-panel.test.tsx b/packages/tui/test/session-panel.test.tsx
-index 635651f77b209eb2989fa2d381310ee2527a3f58..66333629d9bdaa4da04ecd6edffc1478b445ef48 100644
+index 635651f..6633362 100644
 --- a/packages/tui/test/session-panel.test.tsx
 +++ b/packages/tui/test/session-panel.test.tsx
 @@ -312,7 +312,7 @@ test("split eligibility uses the columns remaining beside vertical session tabs"
@@ -9969,9 +10334,340 @@ index 635651f77b209eb2989fa2d381310ee2527a3f58..66333629d9bdaa4da04ecd6edffc1478
      maxPasses: 120,
    })
    await setup.waitFor(() => setup.renderer.currentFocusedEditor instanceof TextareaRenderable)
+diff --git a/packages/tui/test/sidebar/browse-entry.test.tsx b/packages/tui/test/sidebar/browse-entry.test.tsx
+new file mode 100644
+index 0000000..9e19e44
+--- /dev/null
++++ b/packages/tui/test/sidebar/browse-entry.test.tsx
+@@ -0,0 +1,91 @@
++/** @jsxImportSource @opentui/solid */
++import { testRender } from "@opentui/solid"
++import { expect, test } from "bun:test"
++import { createSignal } from "solid-js"
++import { ConfigProvider } from "../../src/config"
++import { TuiKeybind } from "../../src/config/keybind"
++import { EMPTY_SESSION_TAB_STATUS, SessionTabs, type SessionTabsController } from "../../src/component/session-tabs"
++import type { SessionTab } from "../../src/context/session-tabs-model"
++import { Keymap } from "../../src/context/keymap"
++import { ThemeProvider } from "../../src/context/theme"
++import { SESSION_TABS_COMPACT_WIDTH } from "../../src/ui/layout"
++import { DialogProvider } from "../../src/ui/dialog"
++import { ToastProvider } from "../../src/ui/toast"
++import { emptyThemeSource } from "../fixture/fixture"
++import { TestTuiContexts } from "../fixture/tui-environment"
++import { createTuiResolvedConfig } from "../fixture/tui-runtime"
++
++async function mount(width: number) {
++  const [browses, setBrowses] = createSignal(0)
++  const [selected, setSelected] = createSignal("only")
++  const [items] = createSignal<SessionTab[]>([{ sessionID: "only", title: "Existing session" }])
++  const controller = {
++    tabs: items,
++    current: selected,
++    add() {},
++    search() {},
++    browse: () => setBrowses((value) => value + 1),
++    select: setSelected,
++    close() {},
++    move() {},
++    status: () => EMPTY_SESSION_TAB_STATUS,
++  } satisfies SessionTabsController
++  const app = await testRender(
++    () => (
++      <TestTuiContexts>
++        <ConfigProvider config={createTuiResolvedConfig({ tabs: { indicators: "status" } })}>
++          <Keymap.Provider>
++            <ThemeProvider mode="dark" source={emptyThemeSource}>
++              <ToastProvider>
++                <DialogProvider>
++                  <box width="100%" height="100%" flexDirection="row">
++                    <SessionTabs controller={controller} orientation="vertical" animations={false} width={width} />
++                    <text>transcript</text>
++                  </box>
++                </DialogProvider>
++              </ToastProvider>
++            </ThemeProvider>
++          </Keymap.Provider>
++        </ConfigProvider>
++      </TestTuiContexts>
++    ),
++    { width: 100, height: 24 },
++  )
++  app.renderer.start()
++  return { app, browses, selected }
++}
++
++test("wide rail header exposes Browse and leaves sessions untouched", async () => {
++  const ui = await mount(40)
++  try {
++    await ui.app.waitForFrame((frame) => frame.includes("Browse"))
++    const rows = ui.app.captureCharFrame().split("\n")
++    const row = rows.findIndex((line) => line.includes("Sessions"))
++    expect(rows[row].slice(0, 40)).toContain("Browse")
++    await ui.app.mockMouse.click(rows[row].indexOf("Browse") + 1, row)
++    expect(ui.browses()).toBe(1)
++    expect(ui.selected()).toBe("only")
++  } finally {
++    ui.app.renderer.destroy()
++  }
++})
++
++test("compact rail exposes a Browse control below search", async () => {
++  const ui = await mount(SESSION_TABS_COMPACT_WIDTH)
++  try {
++    await ui.app.waitForFrame((frame) => frame.split("\n")[2]?.slice(0, 5).trim() === "▤")
++    expect(ui.app.captureCharFrame().split("\n")[1].slice(0, 5).trim()).toBe("⌕")
++    await ui.app.mockMouse.click(2, 2)
++    expect(ui.browses()).toBe(1)
++    expect(ui.selected()).toBe("only")
++  } finally {
++    ui.app.renderer.destroy()
++  }
++})
++
++test("browse command has a configurable keybind definition", () => {
++  expect(TuiKeybind.Definitions["session.tab.directory.browse"].default).toBe("none")
++  expect(TuiKeybind.parse({ "session.tab.directory.browse": "ctrl+alt+o" })["session.tab.directory.browse"]).toBe(
++    "ctrl+alt+o",
++  )
++})
+diff --git a/packages/tui/test/sidebar/dialog-folder-browser.test.tsx b/packages/tui/test/sidebar/dialog-folder-browser.test.tsx
+new file mode 100644
+index 0000000..9c990eb
+--- /dev/null
++++ b/packages/tui/test/sidebar/dialog-folder-browser.test.tsx
+@@ -0,0 +1,228 @@
++/** @jsxImportSource @opentui/solid */
++import { InputRenderable } from "@opentui/core"
++import { testRender } from "@opentui/solid"
++import { expect, test } from "bun:test"
++import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises"
++import path from "node:path"
++import { onMount } from "solid-js"
++import { ConfigProvider } from "../../src/config"
++import { DialogFolderBrowser } from "../../src/component/dialog-folder-browser"
++import { Keymap } from "../../src/context/keymap"
++import { ThemeProvider } from "../../src/context/theme"
++import { DialogProvider, useDialog } from "../../src/ui/dialog"
++import { ToastProvider } from "../../src/ui/toast"
++import { emptyThemeSource, tmpdir } from "../fixture/fixture"
++import { TestTuiContexts } from "../fixture/tui-environment"
++import { createTuiResolvedConfig } from "../fixture/tui-runtime"
++
++type File = Parameters<typeof DialogFolderBrowser>[0]["file"]
++
++// One-level listing of the real filesystem, returned relative to the anchor like the server's file.list.
++function diskFile(calls: string[]) {
++  return {
++    list: async (input) => {
++      const anchor = String(input?.location?.directory)
++      const target = path.resolve(anchor, String(input?.path ?? "."))
++      calls.push(target)
++      const info = await stat(target).catch(() => undefined)
++      if (!info?.isDirectory())
++        throw Object.assign(new Error(`Directory not found: ${target}`), { _tag: "FileNotFoundError" })
++      const entries = await readdir(target, { withFileTypes: true })
++      return {
++        location: { directory: anchor, project: { id: "proj_test", directory: anchor, canonical: anchor } },
++        data: entries
++          .map((entry) => ({
++            path: path.relative(anchor, path.join(target, entry.name)) + (entry.isDirectory() ? "/" : ""),
++            type: entry.isDirectory() ? ("directory" as const) : ("file" as const),
++          }))
++          .sort((a, b) => (a.type === b.type ? a.path.localeCompare(b.path) : a.type === "directory" ? -1 : 1)),
++      }
++    },
++  } as File
++}
++
++async function wait(fn: () => boolean, label: string, timeout = 3000) {
++  const start = Date.now()
++  while (!fn()) {
++    if (Date.now() - start > timeout) throw new Error(`timed out waiting for ${label}`)
++    await Bun.sleep(10)
++  }
++}
++
++async function mount(input: { root: string; anchor: string; start?: string; width?: number; height?: number }) {
++  const calls: string[] = []
++  const confirmed: string[] = []
++  const caller = { input: undefined as InputRenderable | undefined, open: () => {} }
++  function Caller() {
++    const dialog = useDialog()
++    caller.open = () =>
++      dialog.replace(() => (
++        <DialogFolderBrowser
++          file={diskFile(calls)}
++          anchor={input.anchor}
++          home={input.root}
++          start={input.start}
++          onConfirm={(directory) => confirmed.push(directory)}
++        />
++      ))
++    onMount(() => setTimeout(() => caller.input?.focus(), 1))
++    return <input value="draft text" ref={(element: InputRenderable) => (caller.input = element)} />
++  }
++  const app = await testRender(
++    () => (
++      <TestTuiContexts paths={{ home: input.root, state: path.join(input.root, ".state") }}>
++        <ConfigProvider config={createTuiResolvedConfig({})}>
++          <Keymap.Provider>
++            <ThemeProvider mode="dark" source={emptyThemeSource}>
++              <ToastProvider>
++                <DialogProvider>
++                  <Caller />
++                </DialogProvider>
++              </ToastProvider>
++            </ThemeProvider>
++          </Keymap.Provider>
++        </ConfigProvider>
++      </TestTuiContexts>
++    ),
++    { width: input.width ?? 120, height: input.height ?? 36, kittyKeyboard: true },
++  )
++  app.renderer.start()
++  await wait(() => app.renderer.currentFocusedRenderable === caller.input, "caller focus")
++  caller.open()
++  const frame = () => app.captureCharFrame()
++  const focusedPlaceholder = () => {
++    const focused = app.renderer.currentFocusedRenderable
++    return focused instanceof InputRenderable && focused !== caller.input ? focused.placeholder : undefined
++  }
++  return { app, calls, confirmed, caller, frame, focusedPlaceholder }
++}
++
++async function tree(root: string) {
++  const work = path.join(root, "work")
++  await mkdir(path.join(work, "alpha", "inner"), { recursive: true })
++  await mkdir(path.join(work, "beta"), { recursive: true })
++  await mkdir(path.join(root, "sibling plain"), { recursive: true })
++  await mkdir(path.join(root, "café ünï"), { recursive: true })
++  await writeFile(path.join(work, "notes.md"), "x")
++  return work
++}
++
++test("keyboard browses child, parent, history, filter and direct paths, then confirms", async () => {
++  await using tmp = await tmpdir()
++  const work = await tree(tmp.path)
++  const ui = await mount({ root: tmp.path, anchor: work })
++  try {
++    await wait(() => ui.frame().includes("alpha/") && ui.frame().includes("beta/"), "initial listing")
++    expect(ui.frame()).not.toContain("notes.md")
++    await wait(() => ui.focusedPlaceholder() === "Filter this folder", "filter focus")
++
++    await ui.app.mockInput.typeText("bet")
++    await wait(() => !ui.frame().includes("alpha/") && ui.frame().includes("beta/"), "filtered listing")
++    expect(ui.caller.input?.value).toBe("draft text")
++    const requests = ui.calls.length
++    ui.app.mockInput.pressKey("u", { ctrl: true })
++    await wait(() => ui.frame().includes("alpha/"), "cleared filter")
++    expect(ui.calls.length).toBe(requests)
++
++    ui.app.mockInput.pressEnter()
++    await wait(() => ui.frame().includes("inner/"), "entered alpha")
++    expect(ui.frame()).toContain("work/alpha")
++
++    ui.app.mockInput.pressArrow("up", { meta: true })
++    await wait(() => ui.frame().includes("beta/"), "parent")
++    ui.app.mockInput.pressArrow("up", { meta: true })
++    await wait(() => ui.frame().includes("sibling plain/") && ui.frame().includes("café ünï/"), "outside launch cwd")
++
++    ui.app.mockInput.pressArrow("left", { meta: true })
++    await wait(() => ui.frame().includes("beta/"), "back to work")
++    ui.app.mockInput.pressArrow("left", { meta: true })
++    await wait(() => ui.frame().includes("inner/"), "back to alpha")
++    ui.app.mockInput.pressArrow("right", { meta: true })
++    await wait(() => ui.frame().includes("beta/"), "forward to work")
++
++    ui.app.mockInput.pressTab()
++    await wait(() => ui.focusedPlaceholder()?.startsWith("/path") === true, "path focus")
++    ui.app.mockInput.pressKey("u", { ctrl: true })
++    await ui.app.mockInput.typeText("~/café ünï")
++    ui.app.mockInput.pressEnter()
++    await wait(() => ui.frame().includes("No subfolders here"), "unicode empty folder")
++    expect(ui.frame()).toContain("café ünï")
++    expect(ui.caller.input?.value).toBe("draft text")
++
++    ui.app.mockInput.pressKey("s", { ctrl: true })
++    await wait(() => ui.confirmed.length === 1, "confirmation")
++    expect(ui.confirmed).toEqual([path.join(tmp.path, "café ünï")])
++    await wait(() => ui.app.renderer.currentFocusedRenderable === ui.caller.input, "caller focus restored")
++    await wait(() => !ui.frame().includes("Browse folders"), "browser closed")
++  } finally {
++    ui.app.renderer.destroy()
++  }
++})
++
++test("mouse uses navigation controls, opens entries and selects the folder", async () => {
++  await using tmp = await tmpdir()
++  const work = await tree(tmp.path)
++  const ui = await mount({ root: tmp.path, anchor: work, width: 90, height: 28 })
++  const at = (label: string) => {
++    const rows = ui.frame().split("\n")
++    const row = rows.findIndex((line) => line.includes(label))
++    return { x: rows[row].indexOf(label) + 1, y: row }
++  }
++  try {
++    await wait(() => ui.frame().includes("beta/"), "listing")
++    let point = at("Up")
++    await ui.app.mockMouse.click(point.x, point.y)
++    await wait(() => ui.frame().includes("sibling plain/"), "parent via mouse")
++
++    point = at("Back")
++    await ui.app.mockMouse.click(point.x, point.y)
++    await wait(() => ui.frame().includes("beta/"), "back via mouse")
++
++    point = at("beta/")
++    await ui.app.mockMouse.click(point.x, point.y)
++    ui.app.renderer.clearSelection()
++    await ui.app.mockMouse.click(point.x + 2, point.y)
++    await wait(() => ui.frame().includes("No subfolders here"), "opened beta via mouse")
++
++    point = at("select folder")
++    await ui.app.mockMouse.click(point.x, point.y)
++    await wait(() => ui.confirmed.length === 1, "mouse confirmation")
++    expect(ui.confirmed).toEqual([path.join(work, "beta")])
++    await wait(() => ui.app.renderer.currentFocusedRenderable === ui.caller.input, "caller focus restored")
++  } finally {
++    ui.app.renderer.destroy()
++  }
++})
++
++test("invalid, file and removed targets keep the last valid folder and cancel commits nothing", async () => {
++  await using tmp = await tmpdir()
++  const work = await tree(tmp.path)
++  const ui = await mount({ root: tmp.path, anchor: work, width: 80, height: 20 })
++  try {
++    await wait(() => ui.frame().includes("beta/"), "listing")
++    await wait(() => ui.focusedPlaceholder() === "Filter this folder", "filter focus")
++    ui.app.mockInput.pressTab()
++    await wait(() => ui.focusedPlaceholder()?.startsWith("/path") === true, "path focus")
++    ui.app.mockInput.pressKey("u", { ctrl: true })
++    await ui.app.mockInput.typeText(path.join(work, "notes.md"))
++    ui.app.mockInput.pressEnter()
++    await wait(() => ui.frame().includes("not a directory"), "file error")
++    expect(ui.frame()).toContain("beta/")
++
++    ui.app.mockInput.pressKey("u", { ctrl: true })
++    await ui.app.mockInput.typeText("beta")
++    ui.app.mockInput.pressEnter()
++    await wait(() => ui.frame().includes("No subfolders here"), "beta")
++    await rm(path.join(work, "beta"), { recursive: true })
++    ui.app.mockInput.pressKey("s", { ctrl: true })
++    await wait(() => ui.frame().includes("not found"), "removed folder error")
++    expect(ui.confirmed).toEqual([])
++
++    ui.app.mockInput.pressEscape()
++    await wait(() => ui.app.renderer.currentFocusedRenderable === ui.caller.input, "caller focus restored")
++    expect(ui.confirmed).toEqual([])
++    expect(ui.caller.input?.value).toBe("draft text")
++  } finally {
++    ui.app.renderer.destroy()
++  }
++})
 diff --git a/packages/tui/test/sidebar/folder-browser.test.ts b/packages/tui/test/sidebar/folder-browser.test.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..758f412cf119b43081eb76bde7c730b106ce0c8c
+index 0000000..758f412
 --- /dev/null
 +++ b/packages/tui/test/sidebar/folder-browser.test.ts
 @@ -0,0 +1,347 @@
@@ -10323,7 +11019,7 @@ index 0000000000000000000000000000000000000000..758f412cf119b43081eb76bde7c730b1
 +  })
 +})
 diff --git a/packages/tui/test/ui/layout.test.ts b/packages/tui/test/ui/layout.test.ts
-index 96c7831485b5aa8cd5c5a759c22c903ceea0a696..f9a91f1ee4b60044b7f0c4f5cb52758a32f8d995 100644
+index 96c7831..f9a91f1 100644
 --- a/packages/tui/test/ui/layout.test.ts
 +++ b/packages/tui/test/ui/layout.test.ts
 @@ -8,9 +8,9 @@ import {
@@ -10340,7 +11036,7 @@ index 96c7831485b5aa8cd5c5a759c22c903ceea0a696..f9a91f1ee4b60044b7f0c4f5cb52758a
  
  test("vertical tabs account for a resized width", () => {
 diff --git a/packages/tui/test/util/renderer.test.ts b/packages/tui/test/util/renderer.test.ts
-index a5c4e7b54eb8a344a8d209d1a1323b38ebac1c56..6c015fdf43baeb2c2ff9624ed91fc7968a9e06b3 100644
+index a5c4e7b..6c015fd 100644
 --- a/packages/tui/test/util/renderer.test.ts
 +++ b/packages/tui/test/util/renderer.test.ts
 @@ -1,30 +1,63 @@
