@@ -28,9 +28,9 @@ each runtime manifest is bound to its exact package version.
 | Input | Exact value |
 | --- | --- |
 | Package | `1.1.0-preview.12` |
-| Prebuild source | `PREBUILD_SOURCE` |
-| Prebuild workflow run | [PREBUILD_RUN](https://github.com/B-icy/Carthagent/actions/runs/PREBUILD_RUN) |
-| Full manifest SHA-256 | `MANIFEST_SHA` |
+| Prebuild source | `5c2c8730e140435a5a4f003ff30089efec006453` |
+| Prebuild workflow run | [41156564357](https://github.com/B-icy/Carthagent/actions/runs/41156564357) |
+| Full manifest SHA-256 | `b29fb261d88d052593421a42d4100d515b6b48454ca687ebdeceef9b32743742` |
 | Upstream revision | `843a6c514e606b436a7fe713422ace0a93ad3d61` |
 | CTG patch (combined-v4) SHA-256 | `1f2309bb3a31dfb8e8a0827a6a1144a1f76a005abff58f6f48857639ec02478a` |
 | Lock SHA-256 | `9d78379cd264584a495440a217b9d2ecab524c9a56f7f8b4b5bed3926daa330d` |
