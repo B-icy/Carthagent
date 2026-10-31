@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,8 +11,17 @@ const launcher = join(root, 'script/ctg/source-preview.sh');
 const plugin = join(root, 'plugins/carthagent');
 
 function fixture(t, { bunVersion = '1.4.2' } = {}) {
-  const base = mkdtempSync(join(tmpdir(), 'ctg preview '));
-  t.after(() => rmSync(base, { recursive: true, force: true }));
+  // Reach the fixture through a symlinked parent, like macOS /var -> /private/var, so explicit
+  // alias spellings and physical cwd resolution stay distinguishable on every POSIX host.
+  const physicalParent = mkdtempSync(join(tmpdir(), 'ctg preview physical '));
+  const aliasParent = mkdtempSync(join(tmpdir(), 'ctg preview alias '));
+  t.after(() => {
+    rmSync(aliasParent, { recursive: true, force: true });
+    rmSync(physicalParent, { recursive: true, force: true });
+  });
+  symlinkSync(physicalParent, join(aliasParent, 'var'));
+  const base = join(aliasParent, 'var');
+  assert.notEqual(realpathSync(base), base, 'fixture base must be reached through an alias');
   const source = join(base, 'native source');
   mkdirSync(join(source, 'packages/cli/src'), { recursive: true });
   mkdirSync(join(source, 'node_modules'));
@@ -58,21 +67,25 @@ posixTest('launches source CLI from packages/cli with explicit space-containing 
   const f = fixture(t);
   const result = run(f, [...required(f), '--workspace', f.workspace]);
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(result.recorded.cwd, join(f.source, 'packages/cli'));
+  // process.cwd() always reports the physical directory, even when entered through an alias.
+  assert.equal(result.recorded.cwd, join(realpathSync(f.source), 'packages/cli'));
   assert.deepEqual(result.recorded.args, ['--no-env-file', 'run', 'src/index.ts', '--standalone', f.workspace]);
+  assert.equal(result.recorded.env.HOME, join(f.profile, 'home'));
 });
 
 posixTest('defaults the workspace to the caller directory and resolves relative paths against it', t => {
   const f = fixture(t);
+  // The spawned caller has no inherited PWD, so its shell resolves the default and relative paths from the physical cwd.
   let result = run(f, required(f), { cwd: f.workspace });
   assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(result.recorded.args.slice(-2), ['--standalone', f.workspace]);
+  assert.deepEqual(result.recorded.args.slice(-2), ['--standalone', realpathSync(f.workspace)]);
   rmSync(f.record);
+  const callerBase = realpathSync(f.base);
   result = run(f, ['--source', 'native source', '--profile', 'private profile', '--bun', 'tool dir/bun', '--workspace', 'empty workspace'], { cwd: f.base });
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(result.recorded.cwd, join(f.source, 'packages/cli'));
-  assert.deepEqual(result.recorded.args.slice(-2), ['--standalone', f.workspace]);
-  assert.equal(result.recorded.env.HOME, join(f.profile, 'home'));
+  assert.equal(result.recorded.cwd, join(callerBase, 'native source/packages/cli'));
+  assert.deepEqual(result.recorded.args.slice(-2), ['--standalone', join(callerBase, 'empty workspace')]);
+  assert.equal(result.recorded.env.HOME, join(callerBase, 'private profile/home'));
 });
 
 posixTest('passes only the isolated allowlist and never inherits credentials', t => {
@@ -131,7 +144,7 @@ exec /bin/chmod "$mode" "$@"
   assert.equal(result.status, 0, result.stderr);
   const profile = join(f.base, '-dash profile');
   assert.equal(statSync(profile).mode & 0o777, 0o700);
-  assert.equal(result.recorded.env.HOME, join(profile, 'home'));
+  assert.equal(result.recorded.env.HOME, join(realpathSync(f.base), '-dash profile/home'));
   assert.ok(existsSync(join(profile, 'config/opencode/opencode.json')));
 });
 
