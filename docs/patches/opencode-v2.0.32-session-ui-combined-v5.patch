@@ -1851,10 +1851,10 @@ index 344d9fc..89cbcd2 100644
    )
 diff --git a/packages/tui/src/component/dialog-new-session.tsx b/packages/tui/src/component/dialog-new-session.tsx
 new file mode 100644
-index 0000000..86a0a49
+index 0000000..0be8b6b
 --- /dev/null
 +++ b/packages/tui/src/component/dialog-new-session.tsx
-@@ -0,0 +1,216 @@
+@@ -0,0 +1,236 @@
 +import { TextAttributes } from "@opentui/core"
 +import { createMemo, createSignal, Match, onCleanup, onMount, Switch } from "solid-js"
 +import type { OpenCodeClient } from "@opencode/client"
@@ -1890,9 +1890,6 @@ index 0000000..86a0a49
 +  const data = useData()
 +  const local = useLocal()
 +  const theme = useTheme().surface("dialog")
-+  const dimensions = useTerminalDimensions()
-+  // Large dialogs are at most 88 cells wide; subtract the side insets and the label column.
-+  const fieldWidth = () => Math.max(10, Math.min(dimensions().width - 2, 88) - 14)
 +  const [view, setView] = createSignal<"setup" | "folder" | "model">("setup")
 +  const [directory, setDirectory] = createSignal(props.directory)
 +  const [model, setModel] = createSignal<ModelPreferenceModel | undefined>(local.model.current())
@@ -1906,14 +1903,18 @@ index 0000000..86a0a49
 +    controller?.abort()
 +  })
 +
-+  async function validate(target: string) {
++  /** `listed` skips the folder check when the caller has just verified the folder exists. */
++  async function validate(target: string, listed = false) {
 +    controller?.abort()
 +    const attempt = ++generation
 +    const signal = (controller = new AbortController()).signal
 +    setCheck({ directory: target })
 +    const ref = { directory: target }
-+    const error = await props.file
-+      .list({ location: { directory: props.anchor ?? target }, path: target }, { signal })
++    const error = await (
++      listed
++        ? Promise.resolve()
++        : props.file.list({ location: { directory: props.anchor ?? target }, path: target }, { signal })
++    )
 +      .then(async () => {
 +        if (attempt !== generation) return
 +        await data.location.model.sync(ref)
@@ -1987,7 +1988,7 @@ index 0000000..86a0a49
 +            setView("setup")
 +            if (value === directory()) return
 +            setDirectory(value)
-+            void validate(value)
++            void validate(value, true)
 +          }}
 +          onCancel={() => setView("setup")}
 +        />
@@ -2004,40 +2005,59 @@ index 0000000..86a0a49
 +        />
 +      </Match>
 +      <Match when={view() === "setup"}>
-+        <DialogLayout
-+          header={<DialogHeader title="New session" />}
-+          footer={{
-+            actions: {
-+              secondary: [
-+                { title: "folder", key: "f", onTrigger: () => setView("folder") },
-+                { title: "model", key: "m", onTrigger: () => setView("model") },
-+              ],
-+              primary: [{ title: "start", key: "enter", disabled: !!blocked(), onTrigger: start }],
-+            },
-+          }}
-+        >
-+          <box flexDirection="column" gap={0}>
-+            <box flexDirection="row" height={1}>
-+              {label("Folder")}
-+              <text fg={theme.text.base} wrapMode="none" overflow="hidden">
-+                {Locale.truncateLeft(directory(), fieldWidth(), chromeEllipsis())}
-+              </text>
-+            </box>
-+            <box flexDirection="row" height={1}>
-+              {label("Model")}
-+              <text fg={theme.text.base} wrapMode="none" overflow="hidden">
-+                {Locale.truncate(modelLabel(), fieldWidth(), chromeEllipsis())}
-+              </text>
-+            </box>
-+            <box height={1} />
-+            <text fg={blocked() ? theme.text.feedback.warning.base : theme.text.muted} wrapMode="word">
-+              {blocked() ?? "Ready. The session is created when you send the first message."}
-+            </text>
-+          </box>
-+        </DialogLayout>
++        <Setup />
 +      </Match>
 +    </Switch>
 +  )
++
++  // A component of its own so its resize subscription ends while a nested folder/model view is shown.
++  function Setup() {
++    const dimensions = useTerminalDimensions()
++    // Large dialogs are at most 88 cells wide; subtract the side insets and the label column.
++    const fieldWidth = () => Math.max(10, Math.min(dimensions().width - 2, 88) - 14)
++    return (
++      <DialogLayout
++        header={<DialogHeader title="New session" />}
++        footer={{
++          actions: {
++            secondary: [
++              { title: "folder", key: "f", onTrigger: () => setView("folder") },
++              { title: "model", key: "m", onTrigger: () => setView("model") },
++            ],
++            primary: [{ title: "start", key: "enter", disabled: !!blocked(), onTrigger: start }],
++          },
++        }}
++      >
++        <box flexDirection="column" gap={0}>
++          <box flexDirection="row" height={1}>
++            {label("Folder")}
++            <text fg={theme.text.base} wrapMode="none" overflow="hidden">
++              {Locale.truncateLeft(directory(), fieldWidth(), chromeEllipsis())}
++            </text>
++          </box>
++          <box flexDirection="row" height={1}>
++            {label("Model")}
++            <text fg={theme.text.base} wrapMode="none" overflow="hidden">
++              {Locale.truncate(modelLabel(), fieldWidth(), chromeEllipsis())}
++            </text>
++          </box>
++          <box height={1} />
++          <text
++            fg={
++              check().error
++                ? theme.text.feedback.error.base
++                : blocked() && check().ready
++                  ? theme.text.feedback.warning.base
++                  : theme.text.muted
++            }
++            wrapMode="word"
++          >
++            {blocked() ?? "Ready. The session is created when you send the first message."}
++          </text>
++        </box>
++      </DialogLayout>
++    )
++  }
 +
 +  function modelLabel() {
 +    const value = model()
@@ -3414,12 +3434,12 @@ index 0000000..56aa62b
 +}
 diff --git a/packages/tui/src/component/session-tabs-folder.tsx b/packages/tui/src/component/session-tabs-folder.tsx
 new file mode 100644
-index 0000000..77358bd
+index 0000000..cd65c2e
 --- /dev/null
 +++ b/packages/tui/src/component/session-tabs-folder.tsx
-@@ -0,0 +1,165 @@
+@@ -0,0 +1,162 @@
 +import { TextAttributes, type MouseEvent } from "@opentui/core"
-+import { useTerminalDimensions } from "@opentui/solid"
++import { useRenderer } from "@opentui/solid"
 +import { createSignal, Show } from "solid-js"
 +import path from "path"
 +import { useTheme } from "../context/theme"
@@ -3445,7 +3465,8 @@ index 0000000..77358bd
 +}) {
 +  const theme = useTheme()
 +  const paths = useTuiPaths()
-+  const dimensions = useTerminalDimensions()
++  // The overlay is transient, so reading the current width when it renders avoids a permanent resize listener.
++  const renderer = useRenderer()
 +  const [pathHovered, setPathHovered] = createSignal(false)
 +  // Click pins the full path for terminals or users without hover.
 +  const [pathPinned, setPathPinned] = createSignal(false)
@@ -3495,11 +3516,7 @@ index 0000000..77358bd
 +          </Show>
 +          <Show when={props.add}>
 +            {(add) => (
-+              <FolderCardButton
-+                label={full() ? "+ New session" : "+ New"}
-+                run={add()}
-+                onRightClick={props.onMenu}
-+              />
++              <FolderCardButton label={full() ? "+ New session" : "+ New"} run={add()} onRightClick={props.onMenu} />
 +            )}
 +          </Show>
 +        </box>
@@ -3523,7 +3540,7 @@ index 0000000..77358bd
 +            left={0}
 +            zIndex={2000}
 +            height={1}
-+            width={Math.max(1, Math.min(dimensions().width, stringWidth(directory()) + 2))}
++            width={Math.max(1, Math.min(renderer.width, stringWidth(directory()) + 2))}
 +            paddingLeft={1}
 +            backgroundColor={theme.background.raised.high}
 +          >
@@ -5270,10 +5287,10 @@ index ef1cba9..db495c9 100644
    "session.rename": keybind("ctrl+r", "Rename session"),
 diff --git a/packages/tui/src/context/folder-browser.ts b/packages/tui/src/context/folder-browser.ts
 new file mode 100644
-index 0000000..c60b599
+index 0000000..b311f82
 --- /dev/null
 +++ b/packages/tui/src/context/folder-browser.ts
-@@ -0,0 +1,156 @@
+@@ -0,0 +1,180 @@
 +import { ClientError, isFileNotFoundError, type OpenCodeClient } from "@opencode/client"
 +import path from "path"
 +import { createStore } from "solid-js/store"
@@ -5308,6 +5325,9 @@ index 0000000..c60b599
 +    generation: 0,
 +    controller: undefined as AbortController | undefined,
 +    failed: undefined as { target: string; history: History; index: number } | undefined,
++    inflight: undefined as { target: string; history: History; result: Promise<boolean> } | undefined,
++    // Fields the user edited while the current load was pending; the settled listing must not overwrite them.
++    edited: { input: false, filter: false },
 +  }
 +
 +  const visible = () => {
@@ -5317,8 +5337,18 @@ index 0000000..c60b599
 +  }
 +
 +  // `index` is the history position a traversal lands on; it is captured up front so a retry repeats the same move.
-+  async function load(target: string, history: History, index = nextIndex(history)) {
++  function load(target: string, history: History, index = nextIndex(history)) {
++    const inflight = request.inflight
++    if (inflight && state.pending === target && inflight.target === target && inflight.history === history)
++      return inflight.result
++    const result = list(target, history, index)
++    request.inflight = { target, history, result }
++    return result
++  }
++
++  async function list(target: string, history: History, index: number) {
 +    request.controller?.abort()
++    request.edited = { input: false, filter: false }
 +    const generation = ++request.generation
 +    const controller = new AbortController()
 +    request.controller = controller
@@ -5330,6 +5360,7 @@ index 0000000..c60b599
 +    // A newer load or cancel owns state; aborted and late results must not overwrite it.
 +    if (generation !== request.generation) return false
 +    request.controller = undefined
++    request.inflight = undefined
 +    if ("error" in result) {
 +      request.failed = { target, history, index }
 +      setState({ pending: undefined, error: describeError(target, result.error) })
@@ -5347,8 +5378,8 @@ index 0000000..c60b599
 +      entries,
 +      history: branch ? [...state.history.slice(0, state.index + 1), target] : state.history,
 +      index: branch ? state.index + 1 : index,
-+      input: target,
-+      filter: "",
++      input: request.edited.input ? state.input : target,
++      filter: request.edited.filter ? state.filter : "",
 +      selected: 0,
 +      pending: undefined,
 +      error: undefined,
@@ -5395,11 +5426,20 @@ index 0000000..c60b599
 +        ? load(state.history[state.index + 1], "forward")
 +        : Promise.resolve(false),
 +    enter: () => {
-+      const entry = visible()[state.selected]
++      // While a load is pending the visible entries belong to the folder being left, so opening one would be stale.
++      const entry = state.pending ? undefined : visible()[state.selected]
 +      return entry ? load(entry.absolute, "push") : Promise.resolve(false)
 +    },
-+    setInput: (value: string) => setState("input", value),
-+    setFilter: (value: string) => setState({ filter: value, selected: 0 }),
++    setInput: (value: string) => {
++      if (value === state.input) return
++      request.edited.input = true
++      setState("input", value)
++    },
++    setFilter: (value: string) => {
++      if (value === state.filter) return
++      request.edited.filter = true
++      setState({ filter: value, selected: 0 })
++    },
 +    select: (index: number) => setState("selected", Math.max(0, Math.min(index, visible().length - 1))),
 +    move: (delta: number) => {
 +      const count = visible().length
@@ -5409,6 +5449,7 @@ index 0000000..c60b599
 +    cancel: () => {
 +      request.controller?.abort()
 +      request.controller = undefined
++      request.inflight = undefined
 +      request.generation++
 +      setState("pending", undefined)
 +    },
@@ -11112,10 +11153,10 @@ index 0000000..fc5c02b
 +})
 diff --git a/packages/tui/test/sidebar/dialog-folder-browser.test.tsx b/packages/tui/test/sidebar/dialog-folder-browser.test.tsx
 new file mode 100644
-index 0000000..9c990eb
+index 0000000..14fd75c
 --- /dev/null
 +++ b/packages/tui/test/sidebar/dialog-folder-browser.test.tsx
-@@ -0,0 +1,228 @@
+@@ -0,0 +1,268 @@
 +/** @jsxImportSource @opentui/solid */
 +import { InputRenderable } from "@opentui/core"
 +import { testRender } from "@opentui/solid"
@@ -11344,12 +11385,52 @@ index 0000000..9c990eb
 +    ui.app.renderer.destroy()
 +  }
 +})
++
++test("a sizable listing scrolls with selection, filters from the top and shows the start after navigation", async () => {
++  await using tmp = await tmpdir()
++  const big = path.join(tmp.path, "big")
++  await Promise.all(
++    Array.from({ length: 500 }, (_, index) =>
++      mkdir(path.join(big, `dir-${String(index).padStart(3, "0")}`), { recursive: true }),
++    ),
++  )
++  await mkdir(path.join(big, "dir-060", "inside"))
++  const ui = await mount({ root: tmp.path, anchor: big })
++  const rows = () =>
++    ui
++      .frame()
++      .split("\n")
++      .map((line) => line.trim())
++      .filter((line) => /^dir-\d{3}\/|^inside\//.test(line))
++  try {
++    await wait(() => ui.frame().includes("500 folders"), "large listing")
++    await wait(() => ui.focusedPlaceholder() === "Filter this folder", "filter focus")
++    expect(rows()[0]).toBe("dir-000/")
++
++    for (let step = 0; step < 60; step++) ui.app.mockInput.pressArrow("down")
++    await wait(() => rows().includes("dir-060/"), "selection scrolled into view")
++    expect(rows()).not.toContain("dir-000/")
++
++    await ui.app.mockInput.typeText("dir-06")
++    await wait(() => ui.frame().includes("10 folders"), "filtered listing")
++    await wait(() => rows()[0] === "dir-060/", "filter starts at the top")
++    ui.app.mockInput.pressEnter()
++    await wait(() => rows().join() === "inside/", "opened filtered selection")
++
++    ui.app.mockInput.pressArrow("left", { meta: true })
++    await wait(() => ui.frame().includes("500 folders"), "back to large listing")
++    await wait(() => rows()[0] === "dir-000/", "back listing starts at the top")
++    expect(ui.calls).toEqual([big, path.join(big, "dir-060"), big])
++  } finally {
++    ui.app.renderer.destroy()
++  }
++})
 diff --git a/packages/tui/test/sidebar/folder-browser.test.ts b/packages/tui/test/sidebar/folder-browser.test.ts
 new file mode 100644
-index 0000000..9dad9a8
+index 0000000..2524dff
 --- /dev/null
 +++ b/packages/tui/test/sidebar/folder-browser.test.ts
-@@ -0,0 +1,549 @@
+@@ -0,0 +1,629 @@
 +import { describe, expect, test } from "bun:test"
 +import path from "path"
 +import { createRoot } from "solid-js"
@@ -11885,6 +11966,86 @@ index 0000000..9dad9a8
 +    ctx.dispose()
 +  })
 +
++  test("filter and path typed while a folder loads survive the new listing", async () => {
++    const fixture = deferred()
++    const ctx = setup(fixture.file)
++    const browser = ctx.browser
++    const first = browser.open("/a")
++    fixture.pending[0].resolve(listing("/a", [dir("b/")]))
++    await first
++    browser.setFilter("old")
++
++    const next = browser.open("/a/b")
++    browser.setFilter("be")
++    browser.setInput("/typed/while/loading")
++    fixture.pending[1].resolve(listing("/a/b", [dir("alpha/"), dir("beta/")]))
++    expect(await next).toBe(true)
++    expect(browser.state.directory).toBe("/a/b")
++    expect(browser.state.filter).toBe("be")
++    expect(browser.visible().map((entry) => entry.name)).toEqual(["beta"])
++    expect(browser.state.input).toBe("/typed/while/loading")
++    expect(fixture.pending).toHaveLength(2)
++    ctx.dispose()
++  })
++
++  test("a listing that settles without new typing clears the old filter and shows its path", async () => {
++    const fixture = tree({ "/a": [dir("alpha")], "/a/alpha": [dir("x")] })
++    const ctx = setup(fixture.file)
++    const browser = ctx.browser
++    await browser.open("/a")
++    browser.setFilter("al")
++    expect(await browser.enter()).toBe(true)
++    expect(browser.state.filter).toBe("")
++    expect(browser.state.input).toBe("/a/alpha")
++    expect(browser.visible().map((entry) => entry.name)).toEqual(["x"])
++    ctx.dispose()
++  })
++
++  test("a failed load keeps the current filter", async () => {
++    const fixture = tree({ "/a": [dir("alpha"), dir("beta")] })
++    const ctx = setup(fixture.file)
++    const browser = ctx.browser
++    await browser.open("/a")
++    browser.setFilter("al")
++    expect(await browser.open("/missing")).toBe(false)
++    expect(browser.state.filter).toBe("al")
++    expect(browser.visible().map((entry) => entry.name)).toEqual(["alpha"])
++    ctx.dispose()
++  })
++
++  test("repeating the pending navigation reuses the in-flight request", async () => {
++    const fixture = deferred()
++    const ctx = setup(fixture.file)
++    const browser = ctx.browser
++    const first = browser.open("/a")
++    const again = browser.open("/a")
++    expect(fixture.pending).toHaveLength(1)
++    expect(fixture.pending[0].signal?.aborted).toBe(false)
++    fixture.pending[0].resolve(listing("/a", []))
++    expect(await first).toBe(true)
++    expect(await again).toBe(true)
++    expect(browser.state.history).toEqual(["/a"])
++    ctx.dispose()
++  })
++
++  test("entries from the listing being replaced cannot be opened while a load is pending", async () => {
++    const fixture = deferred()
++    const ctx = setup(fixture.file)
++    const browser = ctx.browser
++    const first = browser.open("/a")
++    fixture.pending[0].resolve(listing("/a", [dir("b/"), dir("c/")]))
++    await first
++    const next = browser.enter()
++    browser.move(1)
++    expect(await browser.enter()).toBe(false)
++    expect(fixture.pending.map((item) => item.path)).toEqual(["/a", "/a/b"])
++    expect(fixture.pending[1].signal?.aborted).toBe(false)
++    fixture.pending[1].resolve(listing("/a/b", []))
++    expect(await next).toBe(true)
++    expect(browser.state.history).toEqual(["/a", "/a/b"])
++    ctx.dispose()
++  })
++
 +  test("a transport failure that is not a cancellation is reported", async () => {
 +    const api = createApi(
 +      createFetch((url) => {
@@ -12149,10 +12310,10 @@ index 0000000..7a5506a
 +})
 diff --git a/packages/tui/test/sidebar/new-session-preflight.test.tsx b/packages/tui/test/sidebar/new-session-preflight.test.tsx
 new file mode 100644
-index 0000000..56bafac
+index 0000000..ed845aa
 --- /dev/null
 +++ b/packages/tui/test/sidebar/new-session-preflight.test.tsx
-@@ -0,0 +1,172 @@
+@@ -0,0 +1,196 @@
 +/** @jsxImportSource @opentui/solid */
 +import { InputRenderable } from "@opentui/core"
 +import { expect, test } from "bun:test"
@@ -12265,10 +12426,7 @@ index 0000000..56bafac
 +  expect(ui.started).toEqual([])
 +
 +  ui.setup.mockInput.pressKey("m")
-+  await wait(
-+    () => ui.setup.renderer.currentFocusedRenderable instanceof InputRenderable,
-+    "model picker focus",
-+  )
++  await wait(() => ui.setup.renderer.currentFocusedRenderable instanceof InputRenderable, "model picker focus")
 +  await ui.setup.mockInput.typeText("second")
 +  await rendered(ui, "second")
 +  ui.setup.mockInput.pressEnter()
@@ -12318,12 +12476,39 @@ index 0000000..56bafac
 +  await rendered(ui, `${directory}/child`)
 +  await rendered(ui, "Ready")
 +  expect(ui.frame()).toContain("first")
++  // The browser revalidates the folder on confirm; setup reuses that check instead of listing it again.
++  expect(ui.calls.filter((call) => call === `${directory}/child`)).toHaveLength(2)
 +
 +  ui.setup.mockInput.pressEscape()
 +  await wait(() => ui.setup.dialog.stack.length === 0, "closed")
 +  expect(ui.started).toEqual([])
 +  expect(ui.creates).toEqual([])
 +  expect(ui.setup.route.data).toEqual({ type: "home" })
++})
++
++test("nested folder and model views do not keep the setup view's resize listener", async () => {
++  const ui = await mount()
++  await using _ = ui.setup
++  await rendered(ui, "Ready")
++  const setupListeners = ui.setup.renderer.listenerCount("resize")
++
++  for (let round = 0; round < 3; round++) {
++    ui.setup.mockInput.pressKey("f")
++    await rendered(ui, "child/")
++    expect(ui.setup.renderer.listenerCount("resize")).toBeLessThanOrEqual(setupListeners)
++    ui.setup.mockInput.pressEscape()
++    await rendered(ui, "Ready")
++  }
++
++  // The model picker's list keeps one subscription of its own; nothing outlives it.
++  for (let round = 0; round < 3; round++) {
++    ui.setup.mockInput.pressKey("m")
++    await wait(() => ui.setup.renderer.currentFocusedRenderable instanceof InputRenderable, "model focus")
++    expect(ui.setup.renderer.listenerCount("resize")).toBeLessThanOrEqual(setupListeners + 1)
++    ui.setup.mockInput.pressEscape()
++    await rendered(ui, "Ready")
++  }
++  expect(ui.setup.renderer.listenerCount("resize")).toBe(setupListeners)
 +})
 diff --git a/packages/tui/test/sidebar/sidebar-hierarchy.test.tsx b/packages/tui/test/sidebar/sidebar-hierarchy.test.tsx
 new file mode 100644
