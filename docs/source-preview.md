@@ -66,10 +66,14 @@ script/ctg/source-preview.sh --source DIR --profile DIR --bun PATH [--workspace 
 - **Browse** (`/browse`, palette “Browse folders”): Filter and Path inputs
   (Tab switches), Up/Down select, Enter opens, Alt+Left/Right/Up for
   Back/Forward/Up, Alt+H for Home, Ctrl+S confirms, Escape cancels.
-- **New session** (folder card, compact `+`, folder right-click menu, palette
-  “New session in folder…”): choose the folder, then the model. Nothing is
-  created until the first message is sent; cancelling leaves existing sessions,
-  drafts and models unchanged. `/model` also works before a session exists.
+- **New session** (`Ctrl+X N`, `/new`, palette “New session” or “New session
+  in folder…”, folder card, compact `+`, folder right-click menu): choose the
+  folder, then the model. Global entries start at the folder a plain new
+  session would use; project entries start at that project's folder. Nothing
+  is created until the first message is sent; cancelling leaves the current
+  session, draft and model unchanged. `/model` also works before a session
+  exists. The model step inside setup has no integration shortcut; connect
+  integrations from the standalone model picker (`Ctrl+X M`).
 - **Exit**: `/exit` or palette “Exit the app”. The private server exits with
   the TUI.
 - **Resume**: relaunch with the same `--profile` and select the session in

@@ -646,7 +646,7 @@ index 0000000..2f742d7
 +  }).pipe(Effect.scoped),
 +)
 diff --git a/packages/tui/src/app.tsx b/packages/tui/src/app.tsx
-index 88939eb..5599a4f 100644
+index 88939eb..b1ccab5 100644
 --- a/packages/tui/src/app.tsx
 +++ b/packages/tui/src/app.tsx
 @@ -2,6 +2,7 @@ import { existsSync } from "fs"
@@ -917,15 +917,70 @@ index 88939eb..5599a4f 100644
    const paths = useTuiPaths()
    let highlighted = false
    createEffect(() => {
-@@ -714,6 +775,7 @@ function App() {
+@@ -714,6 +775,36 @@ function App() {
        .catch(toast.error)
    })
  
 +  const startNewSession = useNewSessionStart()
++  // Every New session entry shares this setup; a project entry passes its folder, the global ones start where a
++  // plain new session would. Opening or cancelling it leaves the route, draft and model untouched.
++  const openNewSessionSetup = (directory?: string) => {
++    const initial =
++      directory ??
++      (route.data.type === "home"
++        ? (location.ref ?? data.location.default()).directory
++        : newSessionLocation(
++            config.data.session.new_location,
++            data.location.default().directory,
++            route.data.type === "session"
++              ? (data.session.get(route.data.sessionID)?.location ?? location.ref)
++              : undefined,
++            location.error?.location,
++          ).directory)
++    dialog.replace(
++      () => (
++        <DialogNewSession
++          file={client.api.file}
++          anchor={data.location.default().directory}
++          home={paths.home}
++          directory={initial}
++          onStart={(choice) => void startNewSession(choice)}
++        />
++      ),
++      undefined,
++      { size: "large" },
++    )
++  }
    const connected = useConnected()
    const appCommands = createMemo(() =>
      [
-@@ -767,7 +829,6 @@ function App() {
+@@ -742,32 +833,12 @@ function App() {
+         suggested: route.data.type === "session",
+         category: "Session",
+         slash: { name: "new" },
+-        run: () => {
+-          const model = local.model.current()
+-          const agent = local.agent.current()
+-          const current =
+-            route.data.type === "session"
+-              ? (data.session.get(route.data.sessionID)?.location ?? location.ref)
+-              : undefined
+-          route.navigate({
+-            type: "home",
+-            location: newSessionLocation(
+-              config.data.session.new_location,
+-              data.location.default().directory,
+-              current,
+-              location.error?.location,
+-            ),
+-          })
+-          if (agent) local.agent.set(agent.id)
+-          if (model) local.model.set(model)
+-          dialog.clear()
+-        },
++        run: () => openNewSessionSetup(),
+       },
+       {
          name: "session.clear",
          title: "Clear session",
          category: "Session",
@@ -933,7 +988,7 @@ index 88939eb..5599a4f 100644
          run: () => {
            const model = local.model.current()
            const agent = local.agent.current()
-@@ -857,6 +918,111 @@ function App() {
+@@ -857,6 +928,86 @@ function App() {
          enabled: sessionTabs.enabled,
          run: () => sessionTabs.reopen(),
        },
@@ -976,32 +1031,7 @@ index 88939eb..5599a4f 100644
 +        name: "session.new.setup",
 +        title: "New session in folder…",
 +        category: "Session",
-+        run: (input?: string) => {
-+          // Project entries pass their folder; the global entry uses the folder a plain new session would use.
-+          const directory =
-+            input ||
-+            (route.data.type === "home"
-+              ? (location.ref ?? data.location.default()).directory
-+              : newSessionLocation(
-+                  config.data.session.new_location,
-+                  data.location.default().directory,
-+                  route.data.type === "session" ? data.session.get(route.data.sessionID)?.location : undefined,
-+                  location.error?.location,
-+                ).directory)
-+          dialog.replace(
-+            () => (
-+              <DialogNewSession
-+                file={client.api.file}
-+                anchor={data.location.default().directory}
-+                home={paths.home}
-+                directory={directory}
-+                onStart={(choice) => void startNewSession(choice)}
-+              />
-+            ),
-+            undefined,
-+            { size: "large" },
-+          )
-+        },
++        run: (input?: string) => openNewSessionSetup(input || undefined),
 +      },
 +      {
 +        name: "session.tab.directory.browse",
@@ -1045,7 +1075,7 @@ index 88939eb..5599a4f 100644
        ...Array.from({ length: 10 }, (_, i) => ({
          name: `session.tab.select.${i + 1}`,
          title: `Switch to tab ${i + 1}`,
-@@ -871,8 +1037,8 @@ function App() {
+@@ -871,8 +1022,8 @@ function App() {
          suggested: true,
          category: "Agent",
          slash: { name: "models" },
@@ -1056,7 +1086,7 @@ index 88939eb..5599a4f 100644
          },
        },
        {
-@@ -1046,7 +1212,7 @@ function App() {
+@@ -1046,7 +1197,7 @@ function App() {
                  const restart = client.restart
                  if (!restart) return
                  dialog.clear()
@@ -1065,7 +1095,7 @@ index 88939eb..5599a4f 100644
                  // restart resolves once the replacement service is healthy; the
                  // event stream reattaches through the reconnect loop.
                  await restart()
-@@ -1063,7 +1229,7 @@ function App() {
+@@ -1063,7 +1214,7 @@ function App() {
          slash: { name: "reload" },
          run: async () => {
            dialog.clear()
@@ -1074,7 +1104,7 @@ index 88939eb..5599a4f 100644
            await client.api.location
              .reload()
              .then(() => {
-@@ -1272,7 +1438,7 @@ function App() {
+@@ -1272,7 +1423,7 @@ function App() {
  
    Keymap.createLayer(() => ({
      mode: "global",
@@ -1083,7 +1113,7 @@ index 88939eb..5599a4f 100644
      bindings: sessionTabBindingCommands,
    }))
  
-@@ -1387,13 +1553,22 @@ function App() {
+@@ -1387,13 +1538,22 @@ function App() {
          onMouseDragEnd={tabsResize.onMouseDragEnd}
          onMouseUp={tabsResize.onMouseUp}
        >
@@ -1109,7 +1139,7 @@ index 88939eb..5599a4f 100644
                  <SessionTabs />
                </Show>
                <Switch>
-@@ -1405,7 +1580,7 @@ function App() {
+@@ -1405,7 +1565,7 @@ function App() {
                      {(sessionID) => (
                        <SessionFrame
                          sessionID={sessionID}
@@ -1118,7 +1148,7 @@ index 88939eb..5599a4f 100644
                        />
                      )}
                    </Show>
-@@ -1421,9 +1596,10 @@ function App() {
+@@ -1421,9 +1581,10 @@ function App() {
              </box>
              <Slot path="app" />
            </Show>
@@ -1786,7 +1816,7 @@ index 68e3778..aa0582b 100644
  
  export function DialogMcp(props: { initialServer?: string; details?: boolean } = {}) {
 diff --git a/packages/tui/src/component/dialog-model.tsx b/packages/tui/src/component/dialog-model.tsx
-index 344d9fc..89cbcd2 100644
+index 344d9fc..d9c95db 100644
 --- a/packages/tui/src/component/dialog-model.tsx
 +++ b/packages/tui/src/component/dialog-model.tsx
 @@ -10,8 +10,20 @@ import { useData } from "../context/data"
@@ -1836,7 +1866,56 @@ index 344d9fc..89cbcd2 100644
      local.model.set({ providerID, modelID }, { recent: true })
      const list = local.model.variant.list()
      const cur = local.model.variant.current()
-@@ -177,7 +189,11 @@ export function DialogModel(props: { providerID?: string }) {
+@@ -146,24 +158,30 @@ export function DialogModel(props: { providerID?: string }) {
+       titlePlaceholder="Search models"
+       options={options()}
+       actions={[
+-        {
+-          command: "model.dialog.provider",
+-          title: newDesigns()
+-            ? connected()
+-              ? "connect integration"
+-              : "view all integrations"
+-            : connected()
+-              ? "Connect an integration"
+-              : "View all integrations",
+-          selection: "none",
+-          onTrigger() {
+-            dialog.replace(() => (
+-              <DialogIntegration
+-                onConnected={(providerID) => dialog.replace(() => <DialogModel providerID={providerID} />)}
+-              />
+-            ))
+-          },
+-        },
++        // An embedded picker belongs to a caller dialog; opening integrations would replace that dialog and
++        // reopen a standalone picker that applies the pick to the active session instead of the caller.
++        ...(props.onSelect
++          ? []
++          : [
++              {
++                command: "model.dialog.provider",
++                title: newDesigns()
++                  ? connected()
++                    ? "connect integration"
++                    : "view all integrations"
++                  : connected()
++                    ? "Connect an integration"
++                    : "View all integrations",
++                selection: "none" as const,
++                onTrigger() {
++                  dialog.replace(() => (
++                    <DialogIntegration
++                      onConnected={(providerID) => dialog.replace(() => <DialogModel providerID={providerID} />)}
++                    />
++                  ))
++                },
++              },
++            ]),
+         {
+           command: "model.dialog.favorite",
+           title: newDesigns() ? "favorite" : "Favorite",
+@@ -177,7 +195,11 @@ export function DialogModel(props: { providerID?: string }) {
        flat={true}
        skipFilter={true}
        title={title()}
@@ -9301,7 +9380,7 @@ index c7213e2..95f4dd0 100644
      })
    }
 diff --git a/packages/tui/test/app-lifecycle.test.tsx b/packages/tui/test/app-lifecycle.test.tsx
-index 2e9833e..9400878 100644
+index 2e9833e..cd2d2a5 100644
 --- a/packages/tui/test/app-lifecycle.test.tsx
 +++ b/packages/tui/test/app-lifecycle.test.tsx
 @@ -38,7 +38,7 @@ test.each([100, 44])("Ctrl-O is immediate, dismissible, and prunes cached deleti
@@ -9379,16 +9458,21 @@ index 2e9833e..9400878 100644
      await setup.mockInput.typeText("/rename")
      setup.mockInput.pressEscape()
      setup.mockInput.pressEnter()
-@@ -990,7 +990,7 @@ test.each([false, true])("uses the resolved launch directory for new prompts (fa
+@@ -990,9 +990,11 @@ test.each([false, true])("uses the resolved launch directory for new prompts (fa
    })
  
    await setup.ready
 -  await setup.waitForFrame((frame) => frame.includes("Build · Remote Model Provider"))
 +  await setup.waitForFrame((frame) => frame.replace(/\s+/g, " ").includes("Build · Remote Model Provider"))
    setup.mockInput.pressKey("F6")
-   await setup.renderOnce()
+-  await setup.renderOnce()
++  await setup.waitForFrame((frame) => frame.includes("Ready."))
++  setup.mockInput.pressEnter()
++  await setup.waitForFrame((frame) => !frame.includes("Ready."))
    await setup.mockInput.typeText("REMOTE_READY")
-@@ -1275,7 +1275,7 @@ test("keeps the prompt display stable while a new location catalog loads", async
+   await setup.waitForFrame((frame) => frame.includes("REMOTE_READY"))
+   setup.mockInput.pressEnter()
+@@ -1275,7 +1277,7 @@ test("keeps the prompt display stable while a new location catalog loads", async
  
    try {
      await setup.ready
@@ -9397,7 +9481,7 @@ index 2e9833e..9400878 100644
      const agentSpan = () =>
        setup
          .captureSpans()
-@@ -1306,15 +1306,15 @@ test("keeps the prompt display stable while a new location catalog loads", async
+@@ -1306,15 +1308,15 @@ test("keeps the prompt display stable while a new location catalog loads", async
      ])
      await setup.renderOnce()
  
@@ -10678,6 +10762,21 @@ index 0000000..8003e42
 +  return item
 +}
 +function descendants(node: Renderable): Renderable[] { return node.getChildren().flatMap((child) => [child, ...descendants(child)]) }
+diff --git a/packages/tui/test/new-session-id.test.tsx b/packages/tui/test/new-session-id.test.tsx
+index e0d8d5f..2d60564 100644
+--- a/packages/tui/test/new-session-id.test.tsx
++++ b/packages/tui/test/new-session-id.test.tsx
+@@ -75,7 +75,9 @@ test("the first new session uses the launch session ID and later ones mint their
+   expect(run.created.map((item) => item.id)).toEqual(["ses_chosen"])
+ 
+   setup.mockInput.pressKey("F6")
+-  await setup.renderOnce()
++  await setup.waitForFrame((frame) => frame.includes("Ready."))
++  setup.mockInput.pressEnter()
++  await setup.waitForFrame((frame) => !frame.includes("Ready."))
+   await setup.mockInput.typeText("again")
+   setup.mockInput.pressEnter()
+   await setup.waitForFrame(() => run.created.length === 2)
 diff --git a/packages/tui/test/plugin-keymap.test.tsx b/packages/tui/test/plugin-keymap.test.tsx
 index 0790e9a..fa23693 100644
 --- a/packages/tui/test/plugin-keymap.test.tsx
@@ -12062,10 +12161,10 @@ index 0000000..2524dff
 +})
 diff --git a/packages/tui/test/sidebar/new-session-flow.test.tsx b/packages/tui/test/sidebar/new-session-flow.test.tsx
 new file mode 100644
-index 0000000..7a5506a
+index 0000000..3132f15
 --- /dev/null
 +++ b/packages/tui/test/sidebar/new-session-flow.test.tsx
-@@ -0,0 +1,242 @@
+@@ -0,0 +1,339 @@
 +import { InputRenderable } from "@opentui/core"
 +import { expect, test } from "bun:test"
 +import { mkdir } from "node:fs/promises"
@@ -12097,22 +12196,29 @@ index 0000000..7a5506a
 +  model: { providerID: "demo", id: "alpha" },
 +}
 +
-+async function start(options: { existing?: boolean } = {}) {
++async function start(options: { existing?: boolean; elsewhere?: boolean; newLocation?: "launch" | "inherit" } = {}) {
 +  const scratch = await tmpdir()
 +  const chosen = path.join(scratch.path, "empty project")
 +  await mkdir(chosen)
++  const elsewhere = path.join(scratch.path, "session folder")
++  await mkdir(elsewhere)
++  const original = options.elsewhere ? { ...existing, location: { directory: elsewhere } } : existing
 +  const created: Created[] = []
 +  const prompts: { sessionID: string; body: unknown }[] = []
 +  const mutations: string[] = []
 +  const release = Promise.withResolvers<void>()
 +  const setup = await createAppFixture({
-+    config: { animations: false, keybinds: { "session.new.setup": "f6" } },
++    config: {
++      animations: false,
++      keybinds: { "session.new.setup": "f6", "session.new": "f7" },
++      ...(options.newLocation ? { session: { new_location: options.newLocation } } : {}),
++    },
 +    args: options.existing ? { sessionID: "ses_existing" } : {},
 +    fetch: async (url, request) => {
 +      if (request.method !== "GET" && url.pathname.includes("ses_existing")) mutations.push(url.pathname)
 +      if (options.existing && url.pathname === "/api/session" && request.method === "GET")
-+        return json({ data: [info(existing)], cursor: {} })
-+      if (url.pathname === "/api/session/ses_existing") return json({ data: info(existing) })
++        return json({ data: [info(original)], cursor: {} })
++      if (url.pathname === "/api/session/ses_existing") return json({ data: info(original) })
 +      if (url.pathname === "/api/session/ses_existing/message")
 +        return json({
 +          data: [{ id: "msg_original", type: "user", text: "Original transcript line", time: { created: 1 } }],
@@ -12155,7 +12261,19 @@ index 0000000..7a5506a
 +      return undefined
 +    },
 +  })
-+  return { setup, scratch, chosen, created, prompts, mutations, release }
++  return { setup, scratch, chosen, elsewhere, created, prompts, mutations, release }
++}
++
++/** The app launches in the test process cwd; the setup shows it, left-truncated, rather than the session's folder. */
++function expectLaunchFolder(frame: string) {
++  const row = setupFolder(frame)
++  expect(row).toContain(path.basename(process.cwd()))
++  expect(row).not.toContain("session folder")
++}
++
++/** The folder shown on the setup's Folder row, so the rail's own folder card cannot satisfy the check. */
++function setupFolder(frame: string) {
++  return frame.split("\n").find((line) => /^\W*Folder\s/.test(line.trimStart())) ?? ""
 +}
 +
 +async function chooseFolder(run: Awaited<ReturnType<typeof start>>, frame: () => string) {
@@ -12243,6 +12361,84 @@ index 0000000..7a5506a
 +  expect(JSON.stringify(run.prompts[0]?.body)).toContain("draft marker")
 +})
 +
++test("the New session shortcut, /new and the palette open the shared setup at the launch folder without leaving the session", async () => {
++  const run = await start({ existing: true, elsewhere: true })
++  await using scratch = run.scratch
++  await using setup = run.setup
++  const frame = () => setup.captureCharFrame()
++  await setup.ready
++  await until(() => frame().includes("Original transcript line") && frame().includes("Alpha Model"), "existing", 8000, frame)
++  await setup.mockInput.typeText("kept draft")
++  await until(() => frame().includes("kept draft"), "draft")
++
++  setup.mockInput.pressKey("F7")
++  await until(() => frame().includes("Ready."), "setup from shortcut", 5000, frame)
++  expectLaunchFolder(frame())
++  setup.mockInput.pressEscape()
++  await until(() => !frame().includes("Ready."), "closed", 5000, frame)
++  await until(() => frame().includes("Original transcript line") && frame().includes("kept draft"), "kept", 5000, frame)
++  expect(frame()).toContain("Alpha Model")
++  expect(run.created).toEqual([])
++
++  setup.mockInput.pressKey("F7")
++  await until(() => frame().includes("Ready."), "setup again", 5000, frame)
++  setup.mockInput.pressEscape()
++  await until(() => !frame().includes("Ready.") && frame().includes("kept draft"), "kept again", 5000, frame)
++  // Cancelling returns keys to the composer rather than leaving focus inside the closed dialog.
++  await setup.mockInput.typeText("!")
++  await until(() => frame().includes("kept draft!"), "composer focus", 5000, frame)
++
++  setup.mockInput.pressKey("p", { ctrl: true })
++  await until(() => setup.renderer.currentFocusedRenderable instanceof InputRenderable, "palette focus")
++  await setup.mockInput.typeText("New session")
++  await until(() => frame().includes("Create a new session") || frame().includes("New session"), "palette entry")
++  setup.mockInput.pressEnter()
++  await until(() => frame().includes("Ready."), "setup from palette", 5000, frame)
++  expectLaunchFolder(frame())
++  setup.mockInput.pressEscape()
++  await until(() => !frame().includes("Ready.") && frame().includes("Original transcript line"), "palette cancel", 5000, frame)
++
++  // The slash command consumes the composer text that invoked it, as every slash command does.
++  for (let index = 0; index < "kept draft!".length; index++) setup.mockInput.pressBackspace()
++  await setup.mockInput.typeText("/new")
++  await until(() => frame().includes("/new"), "slash typed")
++  setup.mockInput.pressEnter()
++  await until(() => frame().includes("Ready."), "setup from slash", 5000, frame)
++  expectLaunchFolder(frame())
++  setup.mockInput.pressEscape()
++  await until(() => !frame().includes("Ready.") && frame().includes("Original transcript line"), "slash cancel", 5000, frame)
++  expect(frame()).toContain("Alpha Model")
++  expect(run.created).toEqual([])
++  expect(run.prompts).toEqual([])
++  expect(run.mutations).toEqual([])
++})
++
++test("with inherited new-session folders the shortcut starts setup at the active session's folder", async () => {
++  const run = await start({ existing: true, elsewhere: true, newLocation: "inherit" })
++  await using scratch = run.scratch
++  await using setup = run.setup
++  const frame = () => setup.captureCharFrame()
++  await setup.ready
++  await until(() => frame().includes("Original transcript line") && frame().includes("Alpha Model"), "existing", 8000, frame)
++
++  setup.mockInput.pressKey("F7")
++  await until(() => frame().includes("Ready."), "setup", 5000, frame)
++  expect(setupFolder(frame())).toContain("session folder")
++
++  setup.mockInput.pressEnter()
++  await until(() => !frame().includes("Ready.") && !frame().includes("Original transcript line"), "home", 5000, frame)
++  // Confirming setup only prepares Home; the session is created by the first send.
++  await Bun.sleep(100)
++  expect(run.created).toEqual([])
++  await setup.mockInput.typeText("inherited first prompt")
++  setup.mockInput.pressEnter()
++  run.release.resolve()
++  await until(() => run.prompts.length === 1, "prompt", 5000, frame)
++  expect(run.created).toHaveLength(1)
++  expect(run.created[0]).toMatchObject({ location: { directory: run.elsewhere } })
++  expect(run.mutations).toEqual([])
++})
++
 +test("preparing a new session from an existing one leaves its model, transcript and draft untouched", async () => {
 +  const run = await start({ existing: true })
 +  await using scratch = run.scratch
@@ -12310,14 +12506,15 @@ index 0000000..7a5506a
 +})
 diff --git a/packages/tui/test/sidebar/new-session-preflight.test.tsx b/packages/tui/test/sidebar/new-session-preflight.test.tsx
 new file mode 100644
-index 0000000..ed845aa
+index 0000000..9167b3f
 --- /dev/null
 +++ b/packages/tui/test/sidebar/new-session-preflight.test.tsx
-@@ -0,0 +1,196 @@
+@@ -0,0 +1,242 @@
 +/** @jsxImportSource @opentui/solid */
 +import { InputRenderable } from "@opentui/core"
 +import { expect, test } from "bun:test"
 +import type { ModelInfo } from "@opencode/client"
++import { DialogModel } from "../../src/component/dialog-model"
 +import { DialogNewSession, type NewSessionChoice } from "../../src/component/dialog-new-session"
 +import { model, renderLocal } from "../fixture/local"
 +import { directory, json } from "../fixture/tui-client"
@@ -12484,6 +12681,51 @@ index 0000000..ed845aa
 +  expect(ui.started).toEqual([])
 +  expect(ui.creates).toEqual([])
 +  expect(ui.setup.route.data).toEqual({ type: "home" })
++})
++
++test("the integration shortcut inside the embedded model picker cannot replace setup or change the caller's model", async () => {
++  const ui = await mount()
++  await using _ = ui.setup
++  await rendered(ui, "Ready")
++  ui.setup.mockInput.pressKey("m")
++  await wait(() => ui.setup.renderer.currentFocusedRenderable instanceof InputRenderable, "model focus")
++  await rendered(ui, "second")
++
++  ui.setup.mockInput.pressKey("a", { ctrl: true })
++  await Bun.sleep(50)
++  await ui.setup.renderOnce()
++  expect(ui.frame()).not.toContain("Connect an integration")
++  expect(ui.setup.dialog.stack.length).toBe(1)
++
++  ui.setup.mockInput.pressEscape()
++  await rendered(ui, "Ready")
++  ui.setup.mockInput.pressKey("m")
++  await wait(() => ui.setup.renderer.currentFocusedRenderable instanceof InputRenderable, "model focus again")
++  await ui.setup.mockInput.typeText("second")
++  await rendered(ui, "second")
++  ui.setup.mockInput.pressKey("a", { ctrl: true })
++  ui.setup.mockInput.pressEnter()
++  await rendered(ui, "Ready")
++  expect(ui.frame()).toContain("provider/second")
++  expect(ui.setup.local.model.current()?.modelID).toBe("first")
++
++  ui.setup.mockInput.pressEnter()
++  await wait(() => ui.started.length === 1, "start")
++  expect(ui.started[0]).toEqual({ directory, model: { providerID: "provider", modelID: "second" } })
++  expect(ui.creates).toEqual([])
++})
++
++test("the standalone model picker keeps its integration shortcut", async () => {
++  const ui = await mount()
++  await using _ = ui.setup
++  await rendered(ui, "Ready")
++  ui.setup.dialog.replace(() => <DialogModel />)
++  await wait(() => ui.setup.renderer.currentFocusedRenderable instanceof InputRenderable, "model focus")
++  await rendered(ui, "second")
++  ui.setup.mockInput.pressKey("a", { ctrl: true })
++  await rendered(ui, "Connect an integration")
++  expect(ui.started).toEqual([])
++  expect(ui.creates).toEqual([])
 +})
 +
 +test("nested folder and model views do not keep the setup view's resize listener", async () => {
