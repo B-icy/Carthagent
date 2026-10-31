@@ -1,6 +1,6 @@
 {
   "name": "carthagent",
-  "version": "1.1.0-preview.11",
+  "version": "1.1.0-preview.12",
   "workspaces": [
     "plugins/carthagent"
   ],
@@ -16,11 +16,11 @@
     "evidence-driven-delivery"
   ],
   "bin": {
-    "ctg": "./bin/ctg.mjs"
+    "ctg": "bin/ctg.mjs"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/B-icy/Carthagent"
+    "url": "git+https://github.com/B-icy/Carthagent.git"
   },
   "homepage": "https://github.com/B-icy/Carthagent#readme",
   "bugs": "https://github.com/B-icy/Carthagent/issues",
