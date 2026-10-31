@@ -82,10 +82,10 @@ async function fixture(t, patchSha256 = developmentPatch) {
     writeManifest, writeSums, calls, spawns, spawnVersion, spawnImpl, publicOptions };
 }
 
-test('published preview.11 release trust stays valid independently of the development patch pin', async t => {
+test('published preview.12 release trust stays valid independently of the development patch pin', async t => {
   assert.equal(CTG_RUNTIME_PATCH_SHA256, '1f2309bb3a31dfb8e8a0827a6a1144a1f76a005abff58f6f48857639ec02478a');
   const published = await readRuntimeReleaseManifest();
-  assert.equal(published.releaseVersion, '1.1.0-preview.11');
+  assert.equal(published.releaseVersion, '1.1.0-preview.12');
   const f = await fixture(t, CTG_RUNTIME_PATCH_SHA256);
   assert.deepEqual(await f.runtime.readRuntimeReleaseManifest(f.releasePath), f.release);
   assert.equal(await f.runtime.resolveOpenCode(f.publicOptions), f.binary);
@@ -98,7 +98,7 @@ test('published preview.11 release trust stays valid independently of the develo
   assert.equal(acquisition.expectedCompatibilityVersion, f.runtime.OPENCODE_VERSION);
   assert.equal(acquisition.expectedRuntimeVersion, f.runtime.CTG_RUNTIME_VERSION);
   assert.equal(acquisition.expectedChannel, f.manifest.channel);
-  assert.match(acquisition.baseUrl, /\/v1\.1\.0-preview\.11$/);
+  assert.match(acquisition.baseUrl, /\/v1\.1\.0-preview\.12$/);
   const identity = await f.runtime.runtimeIdentity(f.binary, f.publicOptions);
   assert.equal(identity.kind, 'ctg-owned');
   assert.equal(identity.patchSha256, CTG_RUNTIME_PATCH_SHA256);
@@ -117,7 +117,7 @@ test('public release manifest cannot promote the development pin or unpinned pro
   for (const changes of [
     { patchSha256: developmentPatch }, { sourceRevision: 'e'.repeat(40) },
     { lockSha256: 'e'.repeat(64) }, { runtimeVersion: '0.0.0-ctg.2.0.33' },
-    { compatibilityVersion: '2.0.33' }, { releaseVersion: '1.1.0-preview.12' },
+    { compatibilityVersion: '2.0.33' }, { releaseVersion: '1.1.0-preview.13' },
   ]) {
     await writeFile(f.releasePath, JSON.stringify({ ...f.release, ...changes }));
     await assert.rejects(f.runtime.resolveOpenCode(f.publicOptions), /Invalid or incompatible.*release manifest/);

@@ -106,7 +106,9 @@ Experimental software may still contain bugs; read its release notes first.
 
 ## Release status
 
-1.1.0-preview.11 is the current experimental release. It adds a Projects /
+1.1.0-preview.12 is the current experimental release. It republishes
+preview.11 with an npm package that keeps the `ctg` command, plus a release
+check that blocks manifests npm would rewrite. Preview.11 added a Projects /
 Voyages mode switch to the native left rail, with read-only Voyages profile and
 daily assignment summaries, on top of preview.10's native daily coding quests
 (selected evidence, exact-payload preview, fresh per-submission consent, and
@@ -117,8 +119,8 @@ Experimental installation is explicit and selects published releases only;
 stable 1.0.7 retains the legacy console.
 
 Each experimental release must pass its exact installed-package gate before
-publication. See the [preview.11 release notes](docs/release-notes-preview.11.md)
-and [preview.10 notes](docs/release-notes-preview.10.md); earlier migration findings and remaining platform caveats
+publication. See the [preview.12 release notes](docs/release-notes-preview.12.md),
+[preview.11 notes](docs/release-notes-preview.11.md), and [preview.10 notes](docs/release-notes-preview.10.md); earlier migration findings and remaining platform caveats
 are in the [Native migration ledger](docs/opencode-migration.md#delivery-ledger),
 [native compatibility matrix](docs/native-compatibility.md), and [terminal
 evidence status](docs/native-terminal-semantics.md#evidence-status-pr-162).
