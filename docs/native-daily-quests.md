@@ -1,6 +1,21 @@
 # Native daily coding quests
 
-Open `/voyages`, then **Daily coding quests**. Use the native Carthagent Ship
+Open `/quests`, or `/voyages`, then **Daily coding quests**. On a development
+runtime with navigation support, the left rail also has **Projects / Voyages**
+modes. Switching modes does not leave the main page or create, interrupt, or
+close a coding session. The Voyages navigator shows read-only profile and daily
+assignment summaries. Select an entry explicitly to open its detail page;
+opening a quest does not compose evidence or grant consent. **Return to coding**
+opens the selected session, or Home when no session is selected.
+
+The rail keeps each mode's selection and scroll position. Its compact layout
+uses `Q` (quests), `P` (profile), `E` (equipment), `R` (refresh), `S` (sign in),
+and `B` (return to coding); numbered rows are actual assignments. At widths
+that cannot fit the rail, use the command palette, `/voyages`, or `/quests`.
+Badges and friends have no native views yet. The navigator does not invent
+links or data for them. Older released runtimes keep slash-command navigation.
+
+Use the native Carthagent Ship
 device sign-in. The client uses the existing configured Carthagent API and scoped
 bearer connection. Signing in, running Ship, or finishing a local delivery does
 not consent to grading and never automatically uploads evidence.
@@ -103,6 +118,12 @@ acceptance. Live acceptance requires a dedicated owned QA account, normal
 device sign-in and a separately authorized bounded provider-attempt allowance.
 Do not silently spend that allowance or substitute a mock result for
 production proof.
+
+The navigator's real-component renderer tests run with Bun 1.4.2 through
+`npm run test:native-navigation`. They use isolated, synthetic account summaries
+and do not contact a provider. They cover focus ownership, modal guards,
+compact mode, preserved selection/scroll, and read-only route selection. They
+are not live authentication, grading, or full rebuilt-runtime acceptance.
 
 Run the new boundary on the real pinned native host without external grading:
 `node tools/test-native-daily-quests.mjs`. This checks registration, all six

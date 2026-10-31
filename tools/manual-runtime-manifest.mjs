@@ -32,6 +32,8 @@ export async function readManualRuntimeManifest({ runtimeManifest, manifestSha25
     }
   }
   if (!manifest) throw Error('Runtime release manifest is missing');
-  await validateRuntimeBuildInputs(manifest, root);
+  // Published kits keep their immutable release trust root when development
+  // advances the recipe. Explicit candidates must still match that recipe.
+  if (runtimeManifest) await validateRuntimeBuildInputs(manifest, root);
   return { manifest, manifestPath, manifestSha256 };
 }

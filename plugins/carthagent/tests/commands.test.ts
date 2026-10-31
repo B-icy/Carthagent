@@ -20,11 +20,13 @@ test("Carthagent command manifest resolves visible CTG commands", () => {
   for (const name of ["model", "compact", "autocompact", "abort", "clear"]) assert.equal(resolveCommand(name)?.id, name);
   assert.deepEqual(matchCommand("/arch").map((item) => item.name), ["architecture", "archive"]);
   assert.deepEqual(matchCommand("/rev status"), []);
-  for (const name of ["login", "account", "usage", "billing", "logout-cloud", "archive", "demo", "voyages"]) {
+  for (const name of ["login", "account", "usage", "billing", "logout-cloud", "archive", "demo", "voyages", "quests"]) {
     assert.ok(resolveCommand(`/${name}`), `/${name} must resolve to a registered handler`);
   }
   assert.equal(resolveCommand("/cloud")?.id, "account");
   assert.equal(resolveCommand("/auth")?.id, "login");
+  assert.match(resolveCommand("/voyages")!.description, /daily quests/);
+  assert.match(resolveCommand("/quests")!.description, /separate explicit consent/);
 });
 
 test("manifest prevents collisions with native OpenCode slash commands", () => {

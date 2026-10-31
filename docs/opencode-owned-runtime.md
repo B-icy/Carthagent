@@ -40,8 +40,9 @@ preview.8 or preview.9 acceptance gates have passed.
 
 - Upstream: `https://github.com/anomalyco/opencode`
 - Tag/revision: `v2.0.32` / `843a6c514e606b436a7fe713422ace0a93ad3d61`
-- CTG patch candidate: `docs/patches/opencode-v2.0.32-session-ui-combined-v3.patch` (approved session/runtime + `/help` + live-theme + glyph-v4, spinner test-isolation fix, real-provider theme integration proof, runtime-resolved glyph separators)
-- Candidate patch SHA-256: `b4238d77827d7ccf8f87fb0326551eaa62268d9387cd89e29bd0cf12bd6dafaa`
+- CTG patch: `docs/patches/opencode-v2.0.32-session-ui-combined-v4.patch` (combined-v3 plus the Projects / Voyages navigation rail, shared dialog resize subscription, and hardened rail/watcher timing tests; published in preview.11)
+- Patch SHA-256: `1f2309bb3a31dfb8e8a0827a6a1144a1f76a005abff58f6f48857639ec02478a`
+- Previous combined-v3 patch SHA-256 (preview.10): `b4238d77827d7ccf8f87fb0326551eaa62268d9387cd89e29bd0cf12bd6dafaa`
 - Lock SHA-256: `9d78379cd264584a495440a217b9d2ecab524c9a56f7f8b4b5bed3926daa330d`
 - Historical combined preview.8 source verification: 136 retained TUI rendering/loader/theme/selection
   regressions, 24 core recovery/shell regressions, and core/server/plugin/client/tui

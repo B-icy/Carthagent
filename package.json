@@ -1,6 +1,6 @@
 {
   "name": "carthagent",
-  "version": "1.1.0-preview.10",
+  "version": "1.1.0-preview.11",
   "workspaces": [
     "plugins/carthagent"
   ],
@@ -69,6 +69,7 @@
     "test:native-review": "node tools/test-native-review.mjs",
     "test:native-report": "node tools/test-native-report.mjs",
     "test:native-runtime": "node tools/test-native-runtime.mjs",
+    "test:native-navigation": "cd plugins/carthagent && bun test --preload @opentui/solid/preload --timeout 30000 tests/voyages-navigation.test.tsx",
     "test:native-performance": "node tools/test-native-performance.mjs",
     "test:native-terminal-performance": "python3 tools/test-native-terminal-performance.py",
     "test:native-package": "node tools/test-native-package.mjs",

@@ -76,7 +76,7 @@ changes from current main.
 
 The installer selects an exact published release and acquires its pinned native runtime; it never falls back to an unrelated system binary. See the [native upgrade guide](docs/native-upgrade.md) for source-checkout and profile-preservation instructions, or [legacy CLI instructions](docs/legacy-cli.md) for stable 1.0.7.
 
-`ctg update --check` checks for a published release without installing. Select `--channel experimental` to include published previews; drafts are never installed. The legacy stable updater can update a clean source clone. The native updater differs: it refuses to check out a release into any active source clone, including a clean one; it installs package releases only from an npm installation. Preserve local changes and use the manual exact-tag checkout procedure in the [native upgrade guide](docs/native-upgrade.md) when updating a development checkout. Preview.9 is published and immutable; preview.10 is a candidate, not an installable published release. Its tag, draft/assets, exact-tag installed default-resolver acceptance, public release, and anonymous public default-resolver acceptance remain pending. See the [preview.10 candidate notes](docs/release-notes-preview.10.md); the older [native migration draft](docs/release-notes-native-draft.md) is historical, not current installation guidance.
+`ctg update --check` checks for a published release without installing. Select `--channel experimental` to include published previews; drafts are never installed. The legacy stable updater can update a clean source clone. The native updater differs: it refuses to check out a release into any active source clone, including a clean one; it installs package releases only from an npm installation. Preserve local changes and use the manual exact-tag checkout procedure in the [native upgrade guide](docs/native-upgrade.md) when updating a development checkout. Published previews are immutable. See the [preview.11 release notes](docs/release-notes-preview.11.md); the older [native migration draft](docs/release-notes-native-draft.md) is historical, not current installation guidance.
 
 ## Update channels
 
@@ -106,20 +106,19 @@ Experimental software may still contain bugs; read its release notes first.
 
 ## Release status
 
-The 1.1.0-preview.10 release candidate is not yet published. It adds native daily
-coding quests with selected evidence, exact-payload preview, fresh per-submission
-consent, and durable recovery; assessments do not award rewards. Native remains
-the default `ctg` interface inherited from preview.8. Ship retains approval,
-checks, review, repair, recovery, and resume; Lite remains direct execution.
-Published preview.9 is immutable and does not gain candidate changes. Experimental
-installation is explicit and selects published releases only; stable 1.0.7
-retains the legacy console.
+1.1.0-preview.11 is the current experimental release. It adds a Projects /
+Voyages mode switch to the native left rail, with read-only Voyages profile and
+daily assignment summaries, on top of preview.10's native daily coding quests
+(selected evidence, exact-payload preview, fresh per-submission consent, and
+durable recovery; assessments do not award rewards). Native remains the default
+`ctg` interface. Ship retains approval, checks, review, repair, recovery, and
+resume; Lite remains direct execution. Published previews are immutable.
+Experimental installation is explicit and selects published releases only;
+stable 1.0.7 retains the legacy console.
 
-Preview.10's tag, draft/assets, exact-tag installed default-resolver acceptance,
-public release, and anonymous public default-resolver acceptance remain pending.
 Each experimental release must pass its exact installed-package gate before
-publication. See the [preview.10 candidate notes](docs/release-notes-preview.10.md)
-for evidence and gates; earlier migration findings and remaining platform caveats
+publication. See the [preview.11 release notes](docs/release-notes-preview.11.md)
+and [preview.10 notes](docs/release-notes-preview.10.md); earlier migration findings and remaining platform caveats
 are in the [Native migration ledger](docs/opencode-migration.md#delivery-ledger),
 [native compatibility matrix](docs/native-compatibility.md), and [terminal
 evidence status](docs/native-terminal-semantics.md#evidence-status-pr-162).
