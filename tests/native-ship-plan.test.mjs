@@ -5,12 +5,12 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
 import { createHash } from 'node:crypto';
-import { CTG_DEVELOPMENT_RUNTIME_PATCH_SHA256 } from '../lib/opencode/runtime.mjs';
+import { CTG_DEVELOPMENT_RUNTIME_PATCH_SHA256, CTG_RUNTIME_PATCH_SHA256 } from '../lib/opencode/runtime.mjs';
 import ts from 'typescript';
 import { parseOpenCodeArgs } from '../lib/opencode/cli.mjs';
 import { normalizeSessionOptions } from '../lib/opencode/session-options.mjs';
 
-const patch = readFileSync(new URL('../docs/patches/opencode-v2.0.32-session-ui-combined-v4.patch', import.meta.url), 'utf8');
+const patch = readFileSync(new URL('../docs/patches/opencode-v2.0.32-session-ui-combined-v5.patch', import.meta.url), 'utf8');
 const path = 'packages/tui/src/routes/session/plan-items.ts';
 const section = patch.split(`diff --git a/${path} b/${path}\n`)[1]?.split('\ndiff --git ')[0];
 assert.ok(section, 'the plan graph parser is part of the reproducible runtime patch');
@@ -67,9 +67,19 @@ test('native CLI preserves bounded-run and advisor controls in session options',
 });
 
 
-test('development runtime source and build recipe pin the actual Ship graph patch bytes', () => {
+test('development runtime source and preparation recipe pin the actual Ship graph patch bytes', () => {
   const digest = createHash('sha256').update(patch).digest('hex');
   assert.equal(CTG_DEVELOPMENT_RUNTIME_PATCH_SHA256, digest);
+  const prepare = readFileSync(new URL('../script/ctg/prepare-development-runtime.sh', import.meta.url), 'utf8');
+  assert.ok(prepare.includes(`EXPECTED_PATCH="${digest}"`));
+  assert.ok(prepare.includes('docs/patches/opencode-v2.0.32-session-ui-combined-v5.patch'));
+  assert.doesNotMatch(prepare, /bun (install|run|build)|gh release|npm publish/);
+});
+
+test('the shared release build recipe stays on the published patch', () => {
+  const published = readFileSync(new URL('../docs/patches/opencode-v2.0.32-session-ui-combined-v4.patch', import.meta.url));
+  const digest = createHash('sha256').update(published).digest('hex');
+  assert.equal(CTG_RUNTIME_PATCH_SHA256, digest);
   const build = readFileSync(new URL('../script/ctg/build-owned-runtime.sh', import.meta.url), 'utf8');
   assert.ok(build.includes(`EXPECTED_PATCH="${digest}"`));
 });

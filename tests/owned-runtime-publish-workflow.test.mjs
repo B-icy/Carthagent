@@ -250,7 +250,7 @@ const patch=await readFile(path.join(repo,${JSON.stringify(combinedPatchPath)}))
 const expected=recipe.match(/^EXPECTED_PATCH="([^"]+)"$/m)?.[1];
 if(!expected || sha(patch)!==expected) throw new Error('recipe patch digest mismatch: expected='+expected+' actual='+sha(patch)+' path='+${JSON.stringify(combinedPatchPath)});
 const runtimeSource=await readFile(path.join(repo,'lib/opencode/runtime.mjs'),'utf8');
-const runtimePatch=runtimeSource.match(/CTG_DEVELOPMENT_RUNTIME_PATCH_SHA256 = '([a-f0-9]{64})'/)?.[1];
+const runtimePatch=runtimeSource.match(/CTG_RUNTIME_PATCH_SHA256 = '([a-f0-9]{64})'/)?.[1];
 if(runtimePatch!==expected) throw new Error('fixture packaged runtime trust root patch digest mismatch');
 const manifest={version:1,releaseVersion:version,compatibilityVersion:'2.0.32',runtimeVersion:'0.0.0-ctg.2.0.32',sourceRevision:'${sourceCommit}',patchSha256:expected,lockSha256:'${lockSha256}',assets:Object.fromEntries(keys.map((key,i)=>[key,{name:names[i],archiveSha256:'0'.repeat(64),executableSha256:'0'.repeat(64)}]))};
 for(let i=0;i<names.length;i++) {

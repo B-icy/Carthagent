@@ -275,11 +275,33 @@ The explicit root is a development selector: its local checksum detects byte
 changes but does not independently establish a published binary's provenance.
 
 The update point for a reviewed local patch is
-`CTG_DEVELOPMENT_RUNTIME_PATCH_SHA256` in `lib/opencode/runtime.mjs`. Initially
-it equals the published patch digest; after generating and reviewing new patch
-bytes, update **only this development constant** and the build recipe's
-`EXPECTED_PATCH` to their actual SHA-256. The regression test in
-`tests/native-ship-plan.test.mjs` requires both to match the checked-in patch.
+`CTG_DEVELOPMENT_RUNTIME_PATCH_SHA256` in `lib/opencode/runtime.mjs`. It pins
+the development patch `docs/patches/opencode-v2.0.32-session-ui-combined-v5.patch`
+(SHA-256 `8716b5f686fa733245f63e8036cc503bc628e16b79cd508b13925da4020738c6`),
+a replacement patch containing the published combined-v4 changes plus the
+folder-browser controller, the Browse folders dialog with its sidebar, compact
+rail and command-palette entry points, the directory-first Projects rail (current
+folder card with Browse, New session and model controls, distinct folder and
+group headings, and an active-session marker), the folder and model setup for
+new sessions (global and folder "New session here" entries; the session is
+created only on the first send, with the chosen folder, agent, model and
+variant), and their tests. It applies directly to a clean
+checkout of upstream `843a6c514e606b436a7fe713422ace0a93ad3d61`; do not apply
+it on top of v4:
+
+```sh
+git clone https://github.com/anomalyco/opencode.git opencode-dev
+git -C opencode-dev checkout 843a6c514e606b436a7fe713422ace0a93ad3d61
+script/ctg/prepare-development-runtime.sh opencode-dev
+```
+
+The preparation recipe checks the source revision, a clean checkout, and the
+patch hash, then applies the patch. It does not install, compile, or publish.
+After generating and reviewing new patch bytes, update **only this development
+constant** and the preparation recipe's `EXPECTED_PATCH`. The regression test
+in `tests/native-ship-plan.test.mjs` requires both to match the checked-in
+development patch, and that the shared release recipe
+`script/ctg/build-owned-runtime.sh` still pins the published v4 patch.
 Do not change `CTG_RUNTIME_PATCH_SHA256`, the published
 `lib/opencode/runtime-release.json`, its archive/executable pins, or historical
 release documentation to make a development build pass. Promotion to a public
