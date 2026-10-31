@@ -123,7 +123,8 @@ native compilation is needed.
 In the TUI, the folder card at the top of Projects shows the current folder and
 model. Use **Browse** (or `/browse`) to pick a folder and **Ctrl+S** to confirm.
 **New session** (also Ctrl+X N or `/new`) opens folder and model setup; the session is created only when
-you send the first message. Leave with `/exit` (or Ctrl+P, “Exit the app”); relaunch with
+you send the first message, with your current agent and the chosen model. If that agent or model is
+unavailable when you send, the send is blocked and your text is kept until you choose another. Leave with `/exit` (or Ctrl+P, “Exit the app”); relaunch with
 the same `--profile` and choose the session in Projects to continue it.
 
 See [source preview](docs/source-preview.md) for testing, patch verification and

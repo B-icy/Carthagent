@@ -1930,12 +1930,12 @@ index 344d9fc..d9c95db 100644
    )
 diff --git a/packages/tui/src/component/dialog-new-session.tsx b/packages/tui/src/component/dialog-new-session.tsx
 new file mode 100644
-index 0000000..0be8b6b
+index 0000000..8e7b672
 --- /dev/null
 +++ b/packages/tui/src/component/dialog-new-session.tsx
-@@ -0,0 +1,236 @@
+@@ -0,0 +1,258 @@
 +import { TextAttributes } from "@opentui/core"
-+import { createMemo, createSignal, Match, onCleanup, onMount, Switch } from "solid-js"
++import { batch, createMemo, createSignal, Match, onCleanup, onMount, Switch } from "solid-js"
 +import type { OpenCodeClient } from "@opencode/client"
 +import { useData } from "../context/data"
 +import { useLocal } from "../context/local"
@@ -1951,7 +1951,11 @@ index 0000000..0be8b6b
 +import { DialogFolderBrowser } from "./dialog-folder-browser"
 +import { DialogModel } from "./dialog-model"
 +
-+export type NewSessionChoice = { directory: string; model: ModelPreferenceModel }
++/**
++ * `agent` and `variant` are the caller's effective choices captured when setup opened; `variant` is undefined for
++ * the model's default and is only carried when the chosen model is the caller's own.
++ */
++export type NewSessionChoice = { directory: string; agent?: string; model: ModelPreferenceModel; variant?: string }
 +
 +/**
 + * Folder/model setup shown before a new session's first prompt. It only collects choices: the session
@@ -1971,7 +1975,11 @@ index 0000000..0be8b6b
 +  const theme = useTheme().surface("dialog")
 +  const [view, setView] = createSignal<"setup" | "folder" | "model">("setup")
 +  const [directory, setDirectory] = createSignal(props.directory)
-+  const [model, setModel] = createSignal<ModelPreferenceModel | undefined>(local.model.current())
++  // Snapshot the caller before anything changes route or location; nested views only edit pending choices.
++  const caller = { agent: local.agent.missing() ?? local.agent.current()?.id, selection: local.model.selection() }
++  const [model, setModel] = createSignal<ModelPreferenceModel | undefined>(
++    caller.selection && { providerID: caller.selection.providerID, modelID: caller.selection.modelID },
++  )
 +  const [check, setCheck] = createSignal<{ directory: string; error?: string; ready?: boolean }>({
 +    directory: props.directory,
 +  })
@@ -2030,7 +2038,16 @@ index 0000000..0be8b6b
 +    const value = model()
 +    if (view() !== "setup" || blocked() || !value) return
 +    dialog.clear()
-+    props.onStart({ directory: directory(), model: { providerID: value.providerID, modelID: value.modelID } })
++    const own =
++      caller.selection?.providerID === value.providerID && caller.selection.modelID === value.modelID
++        ? { variant: caller.selection.variant }
++        : {}
++    props.onStart({
++      directory: directory(),
++      agent: caller.agent,
++      model: { providerID: value.providerID, modelID: value.modelID },
++      ...own,
++    })
 +  }
 +
 +  Keymap.createLayer(() => ({
@@ -2148,26 +2165,31 @@ index 0000000..0be8b6b
 +}
 +
 +/**
-+ * Applies a confirmed setup to Home: the chosen folder becomes the draft location and the chosen model
-+ * becomes that location's new-session model. Existing sessions are left untouched.
++ * Applies a confirmed setup to Home: the chosen folder becomes the draft location and the captured agent, model and
++ * variant become Home's pending new-session choice before Home can send. Existing sessions are left untouched; the
++ * first send creates the session, blocking rather than substituting if the choice is unavailable by then.
 + */
 +export function useNewSessionStart() {
 +  const route = useRoute()
 +  const location = useLocation()
 +  const data = useData()
 +  const local = useLocal()
-+  const atHome = (directory: string) => route.data.type === "home" && route.data.location?.directory === directory
 +  return async (choice: NewSessionChoice) => {
 +    const ref = { directory: choice.directory }
 +    // Home stays mounted across a Home-to-Home navigation, so its unsent text survives; a session's draft is
 +    // stashed under that session by its own prompt.
-+    route.navigate({ type: "home", location: ref })
-+    location.set(ref)
++    batch(() => {
++      route.navigate({ type: "home", location: ref })
++      location.set(ref)
++      local.newSession.prepare({
++        directory: choice.directory,
++        agent: choice.agent,
++        model: choice.model,
++        variant: choice.variant,
++        retainVariant: "variant" in choice,
++      })
++    })
 +    await Promise.all([data.location.agent.sync(ref), data.location.model.sync(ref)])
-+    // The user may have moved on while the catalog loaded; never apply the choice elsewhere.
-+    if (!atHome(choice.directory) || location.ref?.directory !== choice.directory) return false
-+    local.model.set(choice.model, { recent: true })
-+    return true
 +  }
 +}
 diff --git a/packages/tui/src/component/dialog-open.tsx b/packages/tui/src/component/dialog-open.tsx
@@ -2869,7 +2891,7 @@ index c669491..df8dade 100644
                  </text>
                  <Show when={!confirmingAction() && option().description}>
 diff --git a/packages/tui/src/component/prompt/index.tsx b/packages/tui/src/component/prompt/index.tsx
-index a9f699c..84c4c23 100644
+index a9f699c..f90df8c 100644
 --- a/packages/tui/src/component/prompt/index.tsx
 +++ b/packages/tui/src/component/prompt/index.tsx
 @@ -9,11 +9,12 @@ import {
@@ -2928,7 +2950,25 @@ index a9f699c..84c4c23 100644
    })
    const editorContextLabelState = createMemo(() => editor.labelState())
    const [auto, setAuto] = createSignal<AutocompleteRef>()
-@@ -1306,7 +1313,10 @@ export function Prompt(props: PromptProps) {
+@@ -1157,7 +1164,16 @@ export function Prompt(props: PromptProps) {
+       return false
+     }
+     const agent = local.agent.current()
+-    if (!agent) return false
++    if (!agent) {
++      const missing = local.agent.missing()
++      if (missing)
++        toast.show({
++          title: "Agent unavailable",
++          message: `${missing} is not available in this location; choose another agent`,
++          variant: "warning",
++        })
++      return false
++    }
+     const selection = local.model.selection()
+     if (!selection) {
+       void promptModelWarning()
+@@ -1306,7 +1322,10 @@ export function Prompt(props: PromptProps) {
      history.append(entry)
      if (currentMode === "shell") {
        move.startSubmit()
@@ -2940,7 +2980,7 @@ index a9f699c..84c4c23 100644
        void (newSession ? newSession.gate.then(send).catch(newSession.recover) : send())
        setStore("mode", "normal")
      } else if (slashHead && isCommand) {
-@@ -1532,6 +1542,7 @@ export function Prompt(props: PromptProps) {
+@@ -1532,6 +1551,7 @@ export function Prompt(props: PromptProps) {
    const promptDisplay = createMemo<{
      agentLabel: string | undefined
      agentColor: RGBA | undefined
@@ -2948,7 +2988,7 @@ index a9f699c..84c4c23 100644
      modelLabel: string
      providerLabel: string
      variant: string | undefined
-@@ -1551,6 +1562,7 @@ export function Prompt(props: PromptProps) {
+@@ -1551,6 +1571,7 @@ export function Prompt(props: PromptProps) {
        return {
          agentLabel: agent ? Locale.titlecase(agent.id) : undefined,
          agentColor: agent ? local.agent.color(agent.id) : undefined,
@@ -2956,7 +2996,7 @@ index a9f699c..84c4c23 100644
          modelLabel: model.model,
          providerLabel: model.provider,
          variant: local.model.variant.current(),
-@@ -1559,6 +1571,7 @@ export function Prompt(props: PromptProps) {
+@@ -1559,6 +1580,7 @@ export function Prompt(props: PromptProps) {
      {
        agentLabel: undefined,
        agentColor: undefined,
@@ -2964,7 +3004,7 @@ index a9f699c..84c4c23 100644
        modelLabel: local.model.parsed().model,
        providerLabel: local.model.parsed().provider,
        variant: undefined,
-@@ -1595,10 +1608,11 @@ export function Prompt(props: PromptProps) {
+@@ -1595,10 +1617,11 @@ export function Prompt(props: PromptProps) {
      const value = (() => {
        if (store.mode === "shell") {
          if (!shell().length) return undefined
@@ -2978,7 +3018,7 @@ index a9f699c..84c4c23 100644
      })()
      if (!value) return undefined
      const width = dimensions().width < 44 ? dimensions().width - 5 : Math.min(75, dimensions().width - 4) - 5
-@@ -1663,7 +1677,7 @@ export function Prompt(props: PromptProps) {
+@@ -1663,7 +1686,7 @@ export function Prompt(props: PromptProps) {
            borderColor={borderHighlight()}
            customBorderChars={{
              ...SplitBorder.customBorderChars,
@@ -2987,7 +3027,7 @@ index a9f699c..84c4c23 100644
            }}
          >
            <box
-@@ -1831,8 +1845,10 @@ export function Prompt(props: PromptProps) {
+@@ -1831,8 +1854,10 @@ export function Prompt(props: PromptProps) {
                cursorColor={disabled() ? theme.background.raised.base : theme.text.base}
                syntaxStyle={syntax()}
              />
@@ -2999,7 +3039,7 @@ index a9f699c..84c4c23 100644
                  mode={store.mode}
                  agent={agentLabel()}
                  auto={local.permission.mode === "autoaccept"}
-@@ -1854,7 +1870,7 @@ export function Prompt(props: PromptProps) {
+@@ -1854,7 +1879,7 @@ export function Prompt(props: PromptProps) {
            borderColor={borderHighlight()}
            customBorderChars={{
              ...EmptyBorder,
@@ -3008,7 +3048,7 @@ index a9f699c..84c4c23 100644
            }}
          >
            <box
-@@ -1865,7 +1881,7 @@ export function Prompt(props: PromptProps) {
+@@ -1865,7 +1890,7 @@ export function Prompt(props: PromptProps) {
                promptBg().a !== 0
                  ? {
                      ...EmptyBorder,
@@ -3017,7 +3057,7 @@ index a9f699c..84c4c23 100644
                    }
                  : {
                      ...EmptyBorder,
-@@ -1890,7 +1906,7 @@ export function Prompt(props: PromptProps) {
+@@ -1890,7 +1915,7 @@ export function Prompt(props: PromptProps) {
                    <Match when={status() === "running"}>
                      <box flexDirection="row" gap={1} flexGrow={1} justifyContent="flex-start">
                        <box marginLeft={1}>
@@ -5578,19 +5618,53 @@ index 521b3ae..6d6ae30 100644
        pagedown: "pgdn",
        delete: "del",
 diff --git a/packages/tui/src/context/local.tsx b/packages/tui/src/context/local.tsx
-index d3304eb..ac93d3f 100644
+index d3304eb..642c779 100644
 --- a/packages/tui/src/context/local.tsx
 +++ b/packages/tui/src/context/local.tsx
-@@ -27,6 +27,8 @@ import { usePermission } from "./permission"
+@@ -1,7 +1,7 @@
+ import { createStore } from "solid-js/store"
+ import { dedupeWith } from "effect/Array"
+ import { createSimpleContext } from "./helper"
+-import { batch, createMemo, onCleanup } from "solid-js"
++import { batch, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
+ import { useEvent } from "./event"
+ import path from "path"
+ import { useTuiPaths } from "./runtime"
+@@ -27,6 +27,17 @@ import { usePermission } from "./permission"
  import { useLocation } from "./location"
  import { parse } from "../util/model"
  
 +export const AGENT_ORDER: readonly string[] = ["ship", "lite", "plan", "build"]
 +
++/** A confirmed new-session setup: `retainVariant` keeps `variant` (undefined meaning the model's default) exactly. */
++export type NewSessionDraft = {
++  directory: string
++  agent?: string
++  model: ModelPreferenceModel
++  variant?: string
++  retainVariant: boolean
++}
++
  export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
    name: "Local",
    init: () => {
-@@ -59,6 +61,13 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
+@@ -55,10 +66,29 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
+       }
+     }
+ 
++    // A confirmed new-session setup owns Home's agent and model until its first send leaves Home. Availability is
++    // checked at send time; catalog changes never substitute another agent or model for this explicit intent.
++    const [newSessionDraft, setNewSessionDraft] = createSignal<NewSessionDraft>()
++    const pendingDraft = () => {
++      const draft = newSessionDraft()
++      if (!draft || route.data.type !== "home" || location.ref?.directory !== draft.directory) return
++      return draft
++    }
++    createEffect(() => {
++      if (route.data.type !== "home") setNewSessionDraft(undefined)
++    })
++
+     function createAgent() {
        const agents = createMemo(() =>
          (data.location.agent.list(location.ref) ?? []).filter((agent) => agent.mode !== "subagent" && !agent.hidden),
        )
@@ -5604,14 +5678,50 @@ index d3304eb..ac93d3f 100644
        const visibleAgents = createMemo(() =>
          (data.location.agent.list(location.ref) ?? []).filter((agent) => !agent.hidden),
        )
-@@ -118,10 +127,10 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
+@@ -87,6 +117,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
+           return agents()
+         },
+         current() {
++          const pending = pendingDraft()?.agent
++          if (pending) return agents().find((agent) => agent.id === pending)
+           const draft = route.data.type === "session" ? agentStore.draftBySession[route.data.sessionID] : undefined
+           const selected =
+             route.data.type === "session"
+@@ -97,6 +129,11 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
+               : agentStore.current
+           return agents().find((agent) => agent.id === selected) ?? agents().at(0)
+         },
++        /** The pending new session's agent when this location does not offer it. */
++        missing() {
++          const pending = pendingDraft()?.agent
++          if (pending && !agents().some((agent) => agent.id === pending)) return pending
++        },
+         set(id: string) {
+           if (!agents().some((agent) => agent.id === id))
+             return toast.show({
+@@ -108,6 +145,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
+             const changed = this.current()?.id !== id
+             if (changed) model.remember()
+             setAgentStore("current", id)
++            const pending = pendingDraft()
++            if (pending) setNewSessionDraft({ ...pending, agent: id })
+             if (route.data.type === "session") setAgentStore("draftBySession", route.data.sessionID, { agent: id })
+             // Retain both selections while agent and model commits arrive separately.
+             const selected = changed && route.data.type === "session" ? model.current() : undefined
+@@ -117,11 +156,15 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
+         move(direction: 1 | -1) {
            batch(() => {
              const current = this.current()
-             if (!current) return
+-            if (!current) return
 -            let next = agents().findIndex((agent) => agent.id === current.id) + direction
 -            if (next < 0) next = agents().length - 1
 -            if (next >= agents().length) next = 0
 -            const value = agents()[next]
++            if (!current) {
++              const first = cycleOrder().at(direction === 1 ? 0 : -1)
++              if (first) this.set(first.id)
++              return
++            }
 +            let next = cycleOrder().findIndex((agent) => agent.id === current.id) + direction
 +            if (next < 0) next = cycleOrder().length - 1
 +            if (next >= cycleOrder().length) next = 0
@@ -5619,6 +5729,69 @@ index d3304eb..ac93d3f 100644
              this.set(value.id)
            })
          },
+@@ -220,6 +263,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
+ 
+       const currentSelection = createMemo<ModelSelection | undefined>(() => {
+         if (route.data.type === "session") return sessionSelection(route.data.sessionID)
++        const pending = pendingDraft()
++        if (pending) return draftSelection(pending)
+         const model = newSessionModel()
+         if (!model) return
+         return preferredSelection(model)
+@@ -253,6 +298,17 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
+         return { ...model, variant: info?.variants.some((item) => item.id === variant) ? variant : undefined }
+       }
+ 
++      // A retained variant (including an explicit default) survives as long as the model supports it; a model chosen
++      // afterwards follows the usual preference and configuration rules.
++      function draftSelection(draft: NewSessionDraft): ModelSelection {
++        if (!draft.retainVariant) return preferredSelection(draft.model)
++        const info = models()?.find((item) => item.providerID === draft.model.providerID && item.id === draft.model.modelID)
++        return {
++          ...draft.model,
++          variant: info?.variants.some((item) => item.id === draft.variant) ? draft.variant : undefined,
++        }
++      }
++
+       function durableSelection(sessionID: string): ModelSelection | undefined {
+         const model = data.session.get(sessionID)?.model
+         if (!model) return
+@@ -317,6 +373,12 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
+           )
+           return true
+         }
++        const pending = pendingDraft()
++        if (pending) {
++          if (modelPreferenceKey(pending.model) !== modelPreferenceKey(model))
++            setNewSessionDraft({ ...pending, model, variant: undefined, retainVariant: false })
++          return true
++        }
+         const current = agent.current()
+         if (!current) return false
+         setSelectionState("newSessionModelByLocationAgent", locationAgentKey(current.id), model)
+@@ -491,6 +553,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
+             if (route.data.type === "session") {
+               setSessionDraft(route.data.sessionID, { ...m, variant: normalizeModelVariant(value) })
+             }
++            const pending = pendingDraft()
++            if (pending) setNewSessionDraft({ ...pending, variant: normalizeModelVariant(value), retainVariant: true })
+             setPreferences("variant", modelPreferenceKey(m), value ?? "default")
+             void repository.saveVariant(m, value).catch(() => undefined)
+           },
+@@ -609,6 +673,13 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
+       agent,
+       session,
+       permission,
++      newSession: {
++        /** Installs a confirmed setup as Home's pending agent/model; call after Home shows its location. */
++        prepare(draft: NewSessionDraft) {
++          setNewSessionDraft({ ...draft })
++        },
++        pending: pendingDraft,
++      },
+     }
+     return result
+   },
 diff --git a/packages/tui/src/context/navigation.tsx b/packages/tui/src/context/navigation.tsx
 new file mode 100644
 index 0000000..3e531af
@@ -9380,7 +9553,7 @@ index c7213e2..95f4dd0 100644
      })
    }
 diff --git a/packages/tui/test/app-lifecycle.test.tsx b/packages/tui/test/app-lifecycle.test.tsx
-index 2e9833e..cd2d2a5 100644
+index 2e9833e..353d03e 100644
 --- a/packages/tui/test/app-lifecycle.test.tsx
 +++ b/packages/tui/test/app-lifecycle.test.tsx
 @@ -38,7 +38,7 @@ test.each([100, 44])("Ctrl-O is immediate, dismissible, and prunes cached deleti
@@ -9433,23 +9606,31 @@ index 2e9833e..cd2d2a5 100644
      setup.renderer.destroy()
      await task
    } finally {
-@@ -462,13 +462,13 @@ test("vertical session tabs switch to horizontal below readable content width",
+@@ -461,14 +461,21 @@ test("vertical session tabs switch to horizontal below readable content width",
+       return undefined
      },
    })
++  // The vertical rail lists the session in its left column below the top row, wherever its header ends.
++  const vertical = (frame: string) =>
++    frame
++      .split("\n")
++      .slice(1)
++      .some((line) => line.slice(0, 42).includes(session.title))
    await setup.ready
 -  await setup.waitForFrame((frame) => frame.split("\n")[1].slice(0, 42).includes(session.title))
-+  await setup.waitForFrame((frame) => frame.split("\n").slice(1, 4).some((line) => line.slice(0, 42).includes(session.title)))
++  await setup.waitForFrame(vertical)
  
    setup.resize(100, 30)
    await setup.waitForFrame((frame) => frame.split("\n")[0].includes(session.title))
    expect(setup.captureCharFrame()).not.toContain("⌕")
++  expect(vertical(setup.captureCharFrame())).toBe(false)
    setup.resize(120, 30)
 -  await setup.waitForFrame((frame) => frame.split("\n")[1].slice(0, 42).includes(session.title))
-+  await setup.waitForFrame((frame) => frame.split("\n").slice(1, 4).some((line) => line.slice(0, 42).includes(session.title)))
++  await setup.waitForFrame(vertical)
  })
  
  test("narrow vertical session tabs collapse to a compact rail with the terminal", async () => {
-@@ -551,7 +551,7 @@ test("automatic rename refreshes the displayed title before settling, even witho
+@@ -551,7 +558,7 @@ test("automatic rename refreshes the displayed title before settling, even witho
    })
  
    try {
@@ -9458,7 +9639,7 @@ index 2e9833e..cd2d2a5 100644
      await setup.mockInput.typeText("/rename")
      setup.mockInput.pressEscape()
      setup.mockInput.pressEnter()
-@@ -990,9 +990,11 @@ test.each([false, true])("uses the resolved launch directory for new prompts (fa
+@@ -990,9 +997,11 @@ test.each([false, true])("uses the resolved launch directory for new prompts (fa
    })
  
    await setup.ready
@@ -9472,7 +9653,7 @@ index 2e9833e..cd2d2a5 100644
    await setup.mockInput.typeText("REMOTE_READY")
    await setup.waitForFrame((frame) => frame.includes("REMOTE_READY"))
    setup.mockInput.pressEnter()
-@@ -1275,7 +1277,7 @@ test("keeps the prompt display stable while a new location catalog loads", async
+@@ -1275,7 +1284,7 @@ test("keeps the prompt display stable while a new location catalog loads", async
  
    try {
      await setup.ready
@@ -9481,7 +9662,7 @@ index 2e9833e..cd2d2a5 100644
      const agentSpan = () =>
        setup
          .captureSpans()
-@@ -1306,15 +1308,15 @@ test("keeps the prompt display stable while a new location catalog loads", async
+@@ -1306,15 +1315,15 @@ test("keeps the prompt display stable while a new location catalog loads", async
      ])
      await setup.renderOnce()
  
@@ -12504,12 +12685,494 @@ index 0000000..3132f15
 +  expect(run.created).toHaveLength(1)
 +  expect(run.prompts).toHaveLength(1)
 +})
+diff --git a/packages/tui/test/sidebar/new-session-ownership.test.tsx b/packages/tui/test/sidebar/new-session-ownership.test.tsx
+new file mode 100644
+index 0000000..c4f4d3b
+--- /dev/null
++++ b/packages/tui/test/sidebar/new-session-ownership.test.tsx
+@@ -0,0 +1,476 @@
++import { InputRenderable } from "@opentui/core"
++import { expect, test } from "bun:test"
++import { mkdir } from "node:fs/promises"
++import path from "node:path"
++import { createAppFixture } from "../fixture/app"
++import { tmpdir } from "../fixture/fixture"
++import { json } from "../fixture/tui-client"
++
++type Selection = { providerID: string; id: string; variant?: string }
++type Created = { id?: string; location?: { directory: string }; agent?: string; model?: Selection }
++type Entry = { id: string; name: string; variants: string[] }
++
++const launch = "/tmp/opencode/packages/tui"
++const alpha: Entry = { id: "alpha", name: "Alpha Model", variants: ["low", "high"] }
++const beta: Entry = { id: "beta", name: "Beta Model", variants: ["high"] }
++const gamma: Entry = { id: "gamma", name: "Gamma Model", variants: [] }
++
++function info(record: Created) {
++  return {
++    ...record,
++    location: record.location ?? { directory: launch },
++    projectID: "project",
++    cost: 0,
++    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
++    time: { created: 0, updated: 0 },
++  }
++}
++
++/**
++ * Real app with two primary agents (Ship listed first), a durable Lite session and a global variant preference that
++ * differs from the session's, so a lost agent or variant shows up as Ship or the preferred variant.
++ */
++async function start(options: {
++  session?: Selection
++  catalog?: (directory: string) => Entry[]
++  agents?: (directory: string) => string[]
++} = {}) {
++  const scratch = await tmpdir()
++  const chosen = path.join(scratch.path, "empty project")
++  await mkdir(chosen)
++  const state = path.join(scratch.path, "state")
++  await mkdir(state)
++  const preferences = JSON.stringify({ recent: [], favorite: [], variant: { "demo/alpha": "high" } })
++  await Bun.write(path.join(state, "model.json"), preferences)
++  const original: Created & { title: string } = {
++    id: "ses_existing",
++    title: "Original session",
++    location: { directory: launch },
++    agent: "lite",
++    model: options.session ?? { providerID: "demo", id: "alpha", variant: "low" },
++  }
++  const created: Created[] = []
++  const prompts: { sessionID: string; body: unknown }[] = []
++  const mutations: string[] = []
++  const modelRequests: string[] = []
++  const removed = new Set<string>()
++  let modelGate: Promise<void> | undefined
++  const setup = await createAppFixture({
++    state,
++    config: {
++      animations: false,
++      keybinds: { "session.new": "f7", "model.list": "f8" },
++    },
++    args: { sessionID: "ses_existing" },
++    fetch: async (url, request) => {
++      if (request.method !== "GET" && url.pathname.includes("ses_existing")) mutations.push(url.pathname)
++      if (url.pathname === "/api/session" && request.method === "GET")
++        return json({ data: [info(original)], cursor: {} })
++      if (url.pathname === "/api/session/ses_existing") return json({ data: info(original) })
++      if (url.pathname === "/api/session/ses_existing/message")
++        return json({
++          data: [{ id: "msg_original", type: "user", text: "Original transcript line", time: { created: 1 } }],
++          cursor: {},
++        })
++      const location = { directory: url.searchParams.get("location[directory]") ?? launch }
++      if (url.pathname === "/api/agent")
++        return json({
++          location,
++          data: (options.agents?.(location.directory) ?? ["ship", "lite"]).map((id) => ({
++            id,
++            mode: "primary",
++            hidden: false,
++            permissions: [],
++          })),
++        })
++      if (url.pathname === "/api/provider") return json({ location, data: [{ id: "demo", name: "Demo" }] })
++      if (url.pathname === "/api/model") {
++        modelRequests.push(location.directory)
++        await modelGate
++        const entries = (options.catalog ?? (() => [alpha, beta, gamma]))(location.directory).filter(
++          (entry) => !removed.has(entry.id),
++        )
++        return json({
++          location,
++          data: entries.map((entry, index) => ({
++            id: entry.id,
++            providerID: "demo",
++            name: entry.name,
++            variants: entry.variants.map((id) => ({ id })),
++            time: { released: 10 - index },
++            cost: [],
++          })),
++        })
++      }
++      if (url.pathname === "/api/fs/list") {
++        const target = url.searchParams.get("path") ?? location.directory
++        return json({ location: { directory: target }, data: [] })
++      }
++      if (url.pathname === "/api/session" && request.method === "POST") {
++        const record: Created = await request.json()
++        created.push(record)
++        return json({ data: info(record) })
++      }
++      if (/^\/api\/session\/[^/]+\/prompt$/.test(url.pathname)) {
++        prompts.push({ sessionID: url.pathname.split("/")[3] ?? "", body: await request.json() })
++        return json({ data: {} })
++      }
++      if (/^\/api\/session\/[^/]+\/(message|inbox|permission)$/.test(url.pathname))
++        return json({ data: [], cursor: {} })
++      if (/^\/api\/session\/[^/]+\/(agent|model)$/.test(url.pathname)) return new Response(null, { status: 204 })
++      if (/^\/api\/session\/[^/]+$/.test(url.pathname)) {
++        const record = created.find((item) => item.id === url.pathname.split("/")[3])
++        if (!record) return json({ message: "not found" }, { status: 404 })
++        return json({ data: info(record) })
++      }
++      return undefined
++    },
++  })
++  const frame = () => setup.captureCharFrame()
++  return {
++    setup,
++    scratch,
++    chosen,
++    state,
++    preferences,
++    created,
++    prompts,
++    mutations,
++    modelRequests,
++    removed,
++    frame,
++    /** Holds every later catalog response until the returned release is called. */
++    holdCatalog() {
++      const held = Promise.withResolvers<void>()
++      modelGate = held.promise
++      return () => {
++        modelGate = undefined
++        held.resolve()
++      }
++    },
++    /** Announces a catalog change at `directory`, as the server does when a provider's models change. */
++    catalogChanged(directory: string) {
++      setup.events.emit({
++        id: `evt_${crypto.randomUUID()}`,
++        created: 0,
++        type: "model.updated",
++        data: {},
++        location: { directory },
++      } as never)
++    },
++  }
++}
++
++type Run = Awaited<ReturnType<typeof start>>
++
++async function until(fn: () => boolean, label: string, frame?: () => string, timeout = 5000) {
++  const begin = Date.now()
++  while (!fn()) {
++    if (Date.now() - begin > timeout) throw new Error(`timed out waiting for ${label}\n${frame?.() ?? ""}`)
++    await Bun.sleep(10)
++  }
++}
++
++async function openExisting(run: Run) {
++  await run.setup.ready
++  await until(
++    () => run.frame().includes("Original transcript line") && run.frame().includes("Alpha Model"),
++    "existing session",
++    run.frame,
++    8000,
++  )
++}
++
++async function openSetup(run: Run) {
++  run.setup.mockInput.pressKey("F7")
++  await until(() => run.frame().includes("Ready."), "setup", run.frame)
++}
++
++async function chooseFolder(run: Run) {
++  const setup = run.setup
++  setup.mockInput.pressKey("f")
++  await until(() => run.frame().includes("Choose folder for new session"), "folder picker", run.frame)
++  await until(() => setup.renderer.currentFocusedRenderable instanceof InputRenderable, "filter focus")
++  setup.mockInput.pressTab()
++  const input = setup.renderer.currentFocusedRenderable as InputRenderable
++  input.value = run.chosen
++  setup.mockInput.pressEnter()
++  await until(
++    () =>
++      run
++        .frame()
++        .split("\n")
++        .some((line) => line.includes(" In ") && line.includes("empty project")),
++    "chosen listing",
++    run.frame,
++  )
++  setup.mockInput.pressKey("s", { ctrl: true })
++  await until(() => run.frame().includes("Ready.") && run.frame().includes("/empty project"), "chosen", run.frame)
++}
++
++async function chooseSetupModel(run: Run, name: string, id: string) {
++  run.setup.mockInput.pressKey("m")
++  await until(() => run.setup.renderer.currentFocusedRenderable instanceof InputRenderable, "model focus")
++  await run.setup.mockInput.typeText(name)
++  await until(() => run.frame().includes(`${name} Model`), `${name} option`, run.frame)
++  run.setup.mockInput.pressEnter()
++  await until(() => run.frame().includes("Ready.") && run.frame().includes(`demo/${id}`), `${name} chosen`, run.frame)
++}
++
++async function confirm(run: Run) {
++  run.setup.mockInput.pressEnter()
++  await until(
++    () => !run.frame().includes("Ready.") && !run.frame().includes("Original transcript line"),
++    "home",
++    run.frame,
++  )
++}
++
++async function send(run: Run, text: string) {
++  await run.setup.mockInput.typeText(text)
++  await until(() => run.frame().includes(text), "typed", run.frame)
++  run.setup.mockInput.pressEnter()
++}
++
++async function expectBlocked(run: Run, text: string) {
++  await Bun.sleep(200)
++  expect(run.created).toEqual([])
++  expect(run.prompts).toEqual([])
++  expect(run.frame()).toContain(text)
++}
++
++async function expectUntouched(run: Run) {
++  expect(run.mutations).toEqual([])
++  expect(await Bun.file(path.join(run.state, "model.json")).json()).toMatchObject({
++    variant: { "demo/alpha": "high" },
++  })
++}
++
++test("the caller's agent and session variant reach the first send instead of the first agent and global variant", async () => {
++  const run = await start()
++  await using scratch = run.scratch
++  await using setup = run.setup
++  await openExisting(run)
++  await openSetup(run)
++  await confirm(run)
++  await send(run, "keeps lite low")
++  await until(() => run.prompts.length === 1, "prompt", run.frame)
++  expect(run.created).toHaveLength(1)
++  expect(run.created[0]).toMatchObject({
++    agent: "lite",
++    model: { providerID: "demo", id: "alpha", variant: "low" },
++  })
++  expect(run.prompts[0]?.sessionID).toBe(run.created[0]?.id ?? "")
++  await expectUntouched(run)
++})
++
++test("a session's explicit default variant is not replaced by the global variant preference", async () => {
++  const run = await start({ session: { providerID: "demo", id: "alpha" } })
++  await using scratch = run.scratch
++  await using setup = run.setup
++  await openExisting(run)
++  await openSetup(run)
++  await confirm(run)
++  await send(run, "keeps default")
++  await until(() => run.prompts.length === 1, "prompt", run.frame)
++  expect(run.created[0]).toMatchObject({ agent: "lite", model: { providerID: "demo", id: "alpha" } })
++  expect(run.created[0]?.model?.variant).toBeUndefined()
++  await expectUntouched(run)
++})
++
++test("a retained variant the chosen folder's model does not support is never sent", async () => {
++  const run = await start({
++    catalog: (directory) => (directory.endsWith("empty project") ? [{ ...alpha, variants: ["high"] }, beta] : [alpha, beta]),
++  })
++  await using scratch = run.scratch
++  await using setup = run.setup
++  await openExisting(run)
++  await openSetup(run)
++  await chooseFolder(run)
++  await confirm(run)
++  await send(run, "no unsupported variant")
++  await until(() => run.prompts.length === 1, "prompt", run.frame)
++  expect(run.created[0]).toMatchObject({
++    location: { directory: run.chosen },
++    agent: "lite",
++    model: { providerID: "demo", id: "alpha" },
++  })
++  expect(run.created[0]?.model?.variant).toBeUndefined()
++  await expectUntouched(run)
++})
++
++test("a captured agent missing at the chosen folder blocks the first send instead of switching agents", async () => {
++  const run = await start({ agents: (directory) => (directory.endsWith("empty project") ? ["ship"] : ["ship", "lite"]) })
++  await using scratch = run.scratch
++  await using setup = run.setup
++  await openExisting(run)
++  await openSetup(run)
++  await chooseFolder(run)
++  await confirm(run)
++  await Bun.sleep(100)
++  await send(run, "needs lite")
++  await expectBlocked(run, "needs lite")
++  // An explicit agent choice replaces the missing one and the kept text then sends once.
++  run.setup.mockInput.pressTab({ shift: true })
++  await until(() => run.frame().includes("Ship"), "ship chosen", run.frame)
++  await Bun.sleep(50)
++  run.setup.mockInput.pressEnter()
++  run.setup.mockInput.pressEnter()
++  await until(() => run.prompts.length === 1, "prompt", run.frame)
++  await Bun.sleep(100)
++  expect(run.created).toHaveLength(1)
++  expect(run.created[0]).toMatchObject({ location: { directory: run.chosen }, agent: "ship" })
++  expect(JSON.stringify(run.prompts[0]?.body)).toContain("needs lite")
++  await expectUntouched(run)
++})
++
++test("a model removed while confirmation syncs stays visible and blocks until an explicit replacement", async () => {
++  const run = await start()
++  await using scratch = run.scratch
++  await using setup = run.setup
++  await openExisting(run)
++  await openSetup(run)
++  await chooseSetupModel(run, "Beta", "beta")
++  // A catalog refresh is in flight when setup is confirmed, and its answer no longer lists Beta.
++  const release = run.holdCatalog()
++  run.catalogChanged(launch)
++  run.catalogChanged(process.cwd())
++  await confirm(run)
++  run.removed.add("beta")
++  const before = run.modelRequests.length
++  release()
++  await until(() => run.modelRequests.length > before || !run.frame().includes("Beta Model"), "refresh", run.frame)
++  await Bun.sleep(200)
++  await send(run, "first prompt kept")
++  await expectBlocked(run, "first prompt kept")
++  expect(run.frame()).toContain("beta")
++  expect(run.frame()).not.toContain("Alpha Model")
++
++  await replaceWith(run, "Gamma")
++  run.setup.mockInput.pressEnter()
++  run.setup.mockInput.pressEnter()
++  await until(() => run.prompts.length === 1, "prompt", run.frame)
++  await Bun.sleep(100)
++  expect(run.created).toHaveLength(1)
++  expect(run.created[0]).toMatchObject({ agent: "lite", model: { providerID: "demo", id: "gamma" } })
++  expect(run.prompts).toHaveLength(1)
++  expect(JSON.stringify(run.prompts[0]?.body)).toContain("first prompt kept")
++  await expectUntouched(run)
++})
++
++test("a model removed after confirmation blocks the first send rather than falling back to another model", async () => {
++  const run = await start()
++  await using scratch = run.scratch
++  await using setup = run.setup
++  await openExisting(run)
++  await openSetup(run)
++  await chooseSetupModel(run, "Beta", "beta")
++  await confirm(run)
++  await until(() => run.frame().includes("Beta Model"), "beta on home", run.frame)
++  await removeBeta(run)
++  await send(run, "still mine")
++  await expectBlocked(run, "still mine")
++  expect(run.frame()).toContain("beta (unavailable)")
++
++  await replaceWith(run, "Alpha")
++  run.setup.mockInput.pressEnter()
++  await until(() => run.prompts.length === 1, "prompt", run.frame)
++  expect(run.created).toHaveLength(1)
++  // Choosing another model on Home follows the native variant rules for that model.
++  expect(run.created[0]).toMatchObject({ agent: "lite", model: { providerID: "demo", id: "alpha", variant: "high" } })
++  await expectUntouched(run)
++})
++
++test("sending while the confirmed folder's catalog is still refreshing never uses a default model", async () => {
++  const run = await start()
++  await using scratch = run.scratch
++  await using setup = run.setup
++  await openExisting(run)
++  await openSetup(run)
++  await chooseSetupModel(run, "Beta", "beta")
++  const release = run.holdCatalog()
++  run.catalogChanged(launch)
++  run.catalogChanged(process.cwd())
++  await confirm(run)
++  await send(run, "early send")
++  await Bun.sleep(200)
++  expect(run.created.every((item) => item.model?.id === "beta" && item.agent === "lite")).toBe(true)
++  release()
++  if (run.created.length === 0) {
++    await Bun.sleep(100)
++    run.setup.mockInput.pressEnter()
++  }
++  await until(() => run.prompts.length === 1, "prompt", run.frame)
++  expect(run.created).toHaveLength(1)
++  // Beta is not the caller's model, so it takes its own default rather than the caller's variant.
++  expect(run.created[0]).toMatchObject({ agent: "lite", model: { providerID: "demo", id: "beta" } })
++  expect(run.created[0]?.model?.variant).toBeUndefined()
++})
++
++test("a choice made after confirming wins over the confirmation's catalog refresh that finishes later", async () => {
++  const run = await start()
++  await using scratch = run.scratch
++  await using setup = run.setup
++  await openExisting(run)
++  await openSetup(run)
++  await chooseSetupModel(run, "Beta", "beta")
++  const release = run.holdCatalog()
++  run.catalogChanged(launch)
++  run.catalogChanged(process.cwd())
++  await confirm(run)
++  await replaceWith(run, "Gamma")
++  release()
++  await Bun.sleep(200)
++  expect(run.frame()).toContain("Gamma Model")
++  await send(run, "latest choice wins")
++  await until(() => run.prompts.length === 1, "prompt", run.frame)
++  expect(run.created).toHaveLength(1)
++  expect(run.created[0]).toMatchObject({ agent: "lite", model: { providerID: "demo", id: "gamma" } })
++  await expectUntouched(run)
++})
++
++test("a second setup for the same folder replaces the first, and leaving Home drops the pending choice", async () => {
++  const run = await start()
++  await using scratch = run.scratch
++  await using setup = run.setup
++  await openExisting(run)
++  await openSetup(run)
++  await chooseSetupModel(run, "Beta", "beta")
++  await confirm(run)
++  await until(() => run.frame().includes("Beta Model"), "beta on home", run.frame)
++  await openSetup(run)
++  await chooseSetupModel(run, "Gamma", "gamma")
++  await confirm(run)
++  await until(() => run.frame().includes("Gamma Model"), "gamma on home", run.frame)
++
++  // Returning to the original session shows its own agent/model, untouched by the pending setup.
++  const begin = Date.now()
++  while (!run.frame().includes("Original transcript line") && Date.now() - begin < 5000) {
++    const lines = run.frame().split("\n")
++    const row = lines.findIndex((line) => line.includes("Original session"))
++    if (row >= 0) await run.setup.mockMouse.click(lines[row]!.indexOf("Original session") + 2, row)
++    await Bun.sleep(200)
++  }
++  await until(() => run.frame().includes("Original transcript line") && run.frame().includes("Alpha Model"), "original", run.frame)
++  expect(run.created).toEqual([])
++  await expectUntouched(run)
++})
++
++/** Drops Beta from every catalog and waits until the refreshed list has been fetched. */
++async function removeBeta(run: Run) {
++  const before = run.modelRequests.length
++  run.removed.add("beta")
++  run.catalogChanged(launch)
++  run.catalogChanged(process.cwd())
++  await until(() => run.modelRequests.length > before, "catalog refresh", run.frame)
++  await Bun.sleep(150)
++}
++
++async function replaceWith(run: Run, name: string) {
++  run.setup.mockInput.pressKey("F8")
++  await until(() => run.setup.renderer.currentFocusedRenderable instanceof InputRenderable, "picker focus")
++  await run.setup.mockInput.typeText(name)
++  await until(() => run.frame().includes(`${name} Model`), `${name} option`, run.frame)
++  run.setup.mockInput.pressEnter()
++  await until(() => run.frame().includes(`${name} Model`) && !run.frame().includes("Select model"), "replaced", run.frame)
++}
 diff --git a/packages/tui/test/sidebar/new-session-preflight.test.tsx b/packages/tui/test/sidebar/new-session-preflight.test.tsx
 new file mode 100644
-index 0000000..9167b3f
+index 0000000..781d5c5
 --- /dev/null
 +++ b/packages/tui/test/sidebar/new-session-preflight.test.tsx
-@@ -0,0 +1,242 @@
+@@ -0,0 +1,253 @@
 +/** @jsxImportSource @opentui/solid */
 +import { InputRenderable } from "@opentui/core"
 +import { expect, test } from "bun:test"
@@ -12599,7 +13262,12 @@ index 0000000..9167b3f
 +  expect(ui.calls).toEqual([directory])
 +  ui.setup.mockInput.pressEnter()
 +  await wait(() => ui.started.length === 1, "start")
-+  expect(ui.started[0]).toEqual({ directory, model: { providerID: "provider", modelID: "first" } })
++  expect(ui.started[0]).toEqual({
++    directory,
++    agent: "build",
++    model: { providerID: "provider", modelID: "first" },
++    variant: undefined,
++  })
 +  expect(ui.setup.dialog.stack.length).toBe(0)
 +  expect(ui.creates).toEqual([])
 +})
@@ -12632,7 +13300,8 @@ index 0000000..9167b3f
 +  expect(ui.setup.local.model.current()?.modelID).toBe("first")
 +  ui.setup.mockInput.pressEnter()
 +  await wait(() => ui.started.length === 1, "start")
-+  expect(ui.started[0]).toEqual({ directory: other, model: { providerID: "provider", modelID: "second" } })
++  // A different model than the caller's carries no variant of its own.
++  expect(ui.started[0]).toEqual({ directory: other, agent: "build", model: { providerID: "provider", modelID: "second" } })
 +})
 +
 +test("cancelling nested model and folder pickers returns to setup with prior choices intact", async () => {
@@ -12657,7 +13326,12 @@ index 0000000..9167b3f
 +
 +  ui.setup.mockInput.pressEnter()
 +  await wait(() => ui.started.length === 1, "start")
-+  expect(ui.started[0]).toEqual({ directory, model: { providerID: "provider", modelID: "first" } })
++  expect(ui.started[0]).toEqual({
++    directory,
++    agent: "build",
++    model: { providerID: "provider", modelID: "first" },
++    variant: undefined,
++  })
 +})
 +
 +test("confirming a nested folder keeps the explicit model and whole-setup cancel commits nothing", async () => {
@@ -12711,7 +13385,7 @@ index 0000000..9167b3f
 +
 +  ui.setup.mockInput.pressEnter()
 +  await wait(() => ui.started.length === 1, "start")
-+  expect(ui.started[0]).toEqual({ directory, model: { providerID: "provider", modelID: "second" } })
++  expect(ui.started[0]).toEqual({ directory, agent: "build", model: { providerID: "provider", modelID: "second" } })
 +  expect(ui.creates).toEqual([])
 +})
 +

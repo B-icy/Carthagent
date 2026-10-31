@@ -277,7 +277,7 @@ changes but does not independently establish a published binary's provenance.
 The update point for a reviewed local patch is
 `CTG_DEVELOPMENT_RUNTIME_PATCH_SHA256` in `lib/opencode/runtime.mjs`. It pins
 the development patch `docs/patches/opencode-v2.0.32-session-ui-combined-v5.patch`
-(SHA-256 `59c57b375c6c9b0895c5f5727827f4e1fee1008ee4b625550bb1d458b8341905`),
+(SHA-256 `8716b5f686fa733245f63e8036cc503bc628e16b79cd508b13925da4020738c6`),
 a replacement patch containing the published combined-v4 changes plus the
 folder-browser controller, the Browse folders dialog with its sidebar, compact
 rail and command-palette entry points, the directory-first Projects rail (current

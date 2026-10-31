@@ -71,7 +71,12 @@ script/ctg/source-preview.sh --source DIR --profile DIR --bun PATH [--workspace 
   folder, then the model. Global entries start at the folder a plain new
   session would use; project entries start at that project's folder. Nothing
   is created until the first message is sent; cancelling leaves the current
-  session, draft and model unchanged. `/model` also works before a session
+  session, draft and model unchanged. The new session keeps the agent you were
+  using and, when you keep the same model, its variant (including the default).
+  If the chosen agent or model is not available at the folder when you send,
+  the send is blocked with your text kept and no session created; pick another
+  agent (`Shift+Tab`) or model (`/model`, `Ctrl+X M`) and send again. There is
+  no automatic fallback to another model. `/model` also works before a session
   exists. The model step inside setup has no integration shortcut; connect
   integrations from the standalone model picker (`Ctrl+X M`).
 - **Exit**: `/exit` or palette “Exit the app”. The private server exits with
