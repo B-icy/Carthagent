@@ -83,7 +83,8 @@ runtime. The published runtime stays pinned to
 
 Requirements: Git, a POSIX shell, `sha256sum` or `shasum`, Bun 1.4.2 (the
 OpenCode `packageManager` pin), and this checkout with `npm ci` already run. No
-native compilation is needed.
+native compilation is needed. The launcher is a POSIX `sh` script for Linux and
+macOS; native Windows is not supported.
 
 1. Prepare a clean OpenCode checkout at the pinned upstream and apply the
    development patch (v5 replaces v4 and applies directly to upstream):

@@ -86,11 +86,14 @@ product_root=$(absolute_dir "$script_dir/../..") || fail 'cannot locate the Cart
 plugin="$product_root/plugins/carthagent"
 [ -f "$plugin/package.json" ] || fail "Carthagent plugin not found at $plugin"
 
+new_profile=0
 if [ ! -d "$profile_arg" ]; then
   mkdir -p -- "$profile_arg"
-  chmod 700 -- "$profile_arg"
+  new_profile=1
 fi
 profile=$(absolute_dir "$profile_arg") || fail "profile $profile_arg is not a directory" 2
+# BSD chmod does not accept `--` after the mode; an absolute operand cannot be read as an option.
+[ "$new_profile" -eq 0 ] || chmod 700 "$profile"
 config="$profile/config/opencode"
 mkdir -p -- "$profile/home" "$profile/tmp" "$profile/data" "$profile/cache" "$profile/state" "$config/themes"
 

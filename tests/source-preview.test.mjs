@@ -36,19 +36,25 @@ exec "${process.execPath}" -e 'require("node:fs").writeFileSync(process.argv[1],
   return { base, source, bun, profile, workspace, outside, record };
 }
 
+// The launcher is a POSIX /bin/sh script; native Windows has no /bin/sh and is not a supported platform.
+const posixOnly = process.platform === 'win32' ? 'POSIX /bin/sh launcher is not supported on native Windows' : false;
+const posixTest = (name, fn) => test(name, { skip: posixOnly }, fn);
+
+function sh(script, args, options) {
+  const result = spawnSync('/bin/sh', [script, ...args], { encoding: 'utf8', ...options });
+  if (result.error) throw new Error(`could not run /bin/sh ${script}: ${result.error.message}`, { cause: result.error });
+  return result;
+}
+
 function run(f, args, { env = {}, cwd = f.outside } = {}) {
-  const result = spawnSync('/bin/sh', [launcher, ...args], {
-    cwd,
-    encoding: 'utf8',
-    env: { PATH: '/usr/bin:/bin', TERM: 'xterm-256color', ...env },
-  });
+  const result = sh(launcher, args, { cwd, env: { PATH: '/usr/bin:/bin', TERM: 'xterm-256color', ...env } });
   const recorded = existsSync(f.record) ? JSON.parse(readFileSync(f.record, 'utf8')) : undefined;
   return { ...result, recorded };
 }
 
 const required = f => ['--source', f.source, '--profile', f.profile, '--bun', f.bun];
 
-test('launches source CLI from packages/cli with explicit space-containing paths outside the repository', t => {
+posixTest('launches source CLI from packages/cli with explicit space-containing paths outside the repository', t => {
   const f = fixture(t);
   const result = run(f, [...required(f), '--workspace', f.workspace]);
   assert.equal(result.status, 0, result.stderr);
@@ -56,7 +62,7 @@ test('launches source CLI from packages/cli with explicit space-containing paths
   assert.deepEqual(result.recorded.args, ['--no-env-file', 'run', 'src/index.ts', '--standalone', f.workspace]);
 });
 
-test('defaults the workspace to the caller directory and resolves relative paths against it', t => {
+posixTest('defaults the workspace to the caller directory and resolves relative paths against it', t => {
   const f = fixture(t);
   let result = run(f, required(f), { cwd: f.workspace });
   assert.equal(result.status, 0, result.stderr);
@@ -69,7 +75,7 @@ test('defaults the workspace to the caller directory and resolves relative paths
   assert.equal(result.recorded.env.HOME, join(f.profile, 'home'));
 });
 
-test('passes only the isolated allowlist and never inherits credentials', t => {
+posixTest('passes only the isolated allowlist and never inherits credentials', t => {
   const f = fixture(t);
   const result = run(f, [...required(f), '--workspace', f.workspace], {
     env: { OPENAI_API_KEY: 'synthetic-not-a-secret', ANTHROPIC_API_KEY: 'synthetic', OPENCODE_CONFIG: '/elsewhere', HOME: '/home/ordinary', XDG_CONFIG_HOME: '/home/ordinary/.config', COLORTERM: 'truecolor' },
@@ -93,7 +99,7 @@ test('passes only the isolated allowlist and never inherits credentials', t => {
   assert.equal(env.PATH.split(':')[0], join(f.base, 'tool dir'));
 });
 
-test('creates a private profile with plugin, theme and CLI configuration on first launch', t => {
+posixTest('creates a private profile with plugin, theme and CLI configuration on first launch', t => {
   const f = fixture(t);
   const result = run(f, [...required(f), '--workspace', f.workspace]);
   assert.equal(result.status, 0, result.stderr);
@@ -106,7 +112,30 @@ test('creates a private profile with plugin, theme and CLI configuration on firs
   for (const dir of ['home', 'tmp', 'data', 'cache', 'state']) assert.ok(statSync(join(f.profile, dir)).isDirectory(), dir);
 });
 
-test('preserves existing profile configuration and authentication on repeat launches', t => {
+posixTest('creates the private profile with BSD chmod argument parsing and a dash-leading relative path', t => {
+  const f = fixture(t);
+  const shims = join(f.base, 'bsd shims');
+  mkdirSync(shims);
+  // BSD chmod stops option parsing at the mode, so a later `--` is a missing file operand.
+  writeFileSync(join(shims, 'chmod'), `#!/bin/sh
+mode=$1; shift
+for operand in "$@"; do
+  case "$operand" in --|-*) echo "chmod: $operand: No such file or directory" >&2; exit 1 ;; esac
+done
+exec /bin/chmod "$mode" "$@"
+`);
+  chmodSync(join(shims, 'chmod'), 0o755);
+  const result = run(f, ['--source', f.source, '--profile', '-dash profile', '--bun', f.bun, '--workspace', f.workspace], {
+    cwd: f.base, env: { PATH: `${shims}:/usr/bin:/bin` },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const profile = join(f.base, '-dash profile');
+  assert.equal(statSync(profile).mode & 0o777, 0o700);
+  assert.equal(result.recorded.env.HOME, join(profile, 'home'));
+  assert.ok(existsSync(join(profile, 'config/opencode/opencode.json')));
+});
+
+posixTest('preserves existing profile configuration and authentication on repeat launches', t => {
   const f = fixture(t);
   const config = join(f.profile, 'config/opencode');
   mkdirSync(join(config, 'themes'), { recursive: true });
@@ -125,7 +154,7 @@ test('preserves existing profile configuration and authentication on repeat laun
   }
 });
 
-test('warns without rewriting a supplied config that omits the Carthagent plugin', t => {
+posixTest('warns without rewriting a supplied config that omits the Carthagent plugin', t => {
   const f = fixture(t);
   const config = join(f.profile, 'config/opencode');
   mkdirSync(config, { recursive: true });
@@ -136,21 +165,21 @@ test('warns without rewriting a supplied config that omits the Carthagent plugin
   assert.equal(readFileSync(join(config, 'opencode.json'), 'utf8'), '{"plugins":[]}');
 });
 
-test('accepts a config that references the plugin through its physical path when launched via an alias', t => {
+posixTest('accepts a config that references the plugin through its physical path when launched via an alias', t => {
   const f = fixture(t);
   const alias = join(f.base, 'checkout alias');
   symlinkSync(root, alias);
   const config = join(f.profile, 'config/opencode');
   mkdirSync(config, { recursive: true });
   writeFileSync(join(config, 'opencode.json'), JSON.stringify({ plugins: [plugin] }));
-  const result = spawnSync('/bin/sh', [join(alias, 'script/ctg/source-preview.sh'), ...required(f), '--workspace', f.workspace], {
-    cwd: f.outside, encoding: 'utf8', env: { PATH: '/usr/bin:/bin' },
+  const result = sh(join(alias, 'script/ctg/source-preview.sh'), [...required(f), '--workspace', f.workspace], {
+    cwd: f.outside, env: { PATH: '/usr/bin:/bin' },
   });
   assert.equal(result.status, 0, result.stderr);
   assert.doesNotMatch(result.stderr, /warning/);
 });
 
-test('forwards explicit commands after -- and enforces a private standalone server', t => {
+posixTest('forwards explicit commands after -- and enforces a private standalone server', t => {
   const f = fixture(t);
   let result = run(f, [...required(f), '--', 'auth', 'login', 'my provider']);
   assert.equal(result.status, 0, result.stderr);
@@ -168,7 +197,7 @@ test('forwards explicit commands after -- and enforces a private standalone serv
   }
 });
 
-test('reports missing explicit inputs and prerequisites without launching', t => {
+posixTest('reports missing explicit inputs and prerequisites without launching', t => {
   const f = fixture(t);
   const cases = [
     [['--profile', f.profile, '--bun', f.bun], /--source is required/],
@@ -194,7 +223,7 @@ test('reports missing explicit inputs and prerequisites without launching', t =>
   assert.equal(existsSync(f.profile), false, 'failed prerequisite checks do not create a profile');
 });
 
-test('rejects a Bun version that differs from the source packageManager pin', t => {
+posixTest('rejects a Bun version that differs from the source packageManager pin', t => {
   const f = fixture(t, { bunVersion: '1.3.0' });
   const result = run(f, required(f));
   assert.equal(result.status, 1);
@@ -202,8 +231,8 @@ test('rejects a Bun version that differs from the source packageManager pin', t 
   assert.equal(result.recorded, undefined);
 });
 
-test('prints usage with --help', t => {
-  const result = spawnSync('/bin/sh', [launcher, '--help'], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' } });
+posixTest('prints usage with --help', t => {
+  const result = sh(launcher, ['--help'], { env: { PATH: '/usr/bin:/bin' } });
   assert.equal(result.status, 0);
   assert.match(result.stdout, /--source DIR/);
   assert.match(result.stdout, /--profile DIR/);

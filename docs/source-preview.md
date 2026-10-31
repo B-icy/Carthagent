@@ -101,13 +101,17 @@ bun --no-env-file test --timeout 30000 test/navigation-rail.test.tsx \
 
 `tests/source-preview.test.mjs` uses a Bun test double and synthetic profiles,
 so it proves argument handling, isolation and config preservation, not a real
-launch.
+launch. It runs the launcher with `/bin/sh` on Linux and macOS and is skipped
+on native Windows, where the POSIX launcher is not supported.
 
 ## Limits
 
 - Source preview only. No native binary, package or release includes these
   changes, and the published runtime remains v4.
-- Verified on Linux with Bun 1.4.2. No cross-platform launch matrix was run.
+- The launcher is a POSIX `sh` script for Linux and macOS (GNU and BSD
+  utilities). Native Windows is not supported.
+- Real launches were verified on Linux with Bun 1.4.2. No cross-platform
+  launch matrix was run.
 - The native type checker (`tsgo`) and native build are not part of this
   workflow; Bun tests compile the changed modules but are not a full static
   type check.
