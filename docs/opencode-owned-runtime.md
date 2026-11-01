@@ -41,7 +41,7 @@ preview.8 or preview.9 acceptance gates have passed.
 - Upstream: `https://github.com/anomalyco/opencode`
 - Tag/revision: `v2.0.32` / `843a6c514e606b436a7fe713422ace0a93ad3d61`
 - CTG patch: `docs/patches/opencode-v2.0.32-session-ui-combined-v5.patch` (combined-v4 plus the directory-first Projects rail, folder-browser dialog, shared folder/model session setup, and the isolated source-preview launcher)
-- Patch SHA-256: `789c45da98c54dce57d602f3c8ba65495fe439fa5277abe7a075614e3205a799`
+- Patch SHA-256: `d6b11779e010ed9899f069c68ac1cca48178f61d8229586141a88a1ead700c31`
 - Previous combined-v4 patch SHA-256 (preview.11 and preview.12): `1f2309bb3a31dfb8e8a0827a6a1144a1f76a005abff58f6f48857639ec02478a`
 - Lock SHA-256: `9d78379cd264584a495440a217b9d2ecab524c9a56f7f8b4b5bed3926daa330d`
 - Historical combined preview.8 source verification: 136 retained TUI rendering/loader/theme/selection

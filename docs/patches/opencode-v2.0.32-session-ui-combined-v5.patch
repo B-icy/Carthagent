@@ -5793,7 +5793,7 @@ index d3304eb..642c779 100644
    },
 diff --git a/packages/tui/src/context/navigation.tsx b/packages/tui/src/context/navigation.tsx
 new file mode 100644
-index 0000000..41a8f0a
+index 0000000..b9a95cb
 --- /dev/null
 +++ b/packages/tui/src/context/navigation.tsx
 @@ -0,0 +1,183 @@
@@ -5911,7 +5911,7 @@ index 0000000..41a8f0a
 +      if (disposed || revision !== focusRevision || engaged() || dialog.stack.length || keymap.mode.current() !== "base" || !remembered || remembered.isDestroyed) return
 +      // A route change detaches the old page; its new controls own focus.
 +      const current = renderer.currentFocusedRenderable
-+      if ((current && !current.isDestroyed && attached(current)) || !attached(remembered)) return
++      if ((current && !current.isDestroyed && attached(current, renderer.root)) || !attached(remembered, renderer.root)) return
 +      remembered.focus()
 +    }
 +    queueMicrotask(restore)
@@ -5975,10 +5975,10 @@ index 0000000..41a8f0a
 +  return parent.getChildren().some((child) => child === target || contains(child, target))
 +}
 +
-+function attached(node: Renderable) {
-+  let current: Renderable | null = node
++function attached(node: Renderable, root: Renderable) {
++  let current: Renderable = node
 +  while (current.parent) current = current.parent
-+  return current === node.ctx.root
++  return current === root
 +}
 diff --git a/packages/tui/src/context/session-tabs-model.ts b/packages/tui/src/context/session-tabs-model.ts
 index 856f996..0e2f737 100644
