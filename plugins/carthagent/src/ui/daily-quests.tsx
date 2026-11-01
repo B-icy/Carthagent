@@ -1,5 +1,5 @@
 /** @jsxImportSource @opentui/solid */
-import { For, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
+import { For, Show, createEffect, createSignal, on, onCleanup, onMount } from "solid-js";
 import { createHash, randomUUID } from "node:crypto";
 import type { ScrollBoxRenderable, SelectRenderable, TextareaRenderable } from "@opentui/core";
 import { usePlugin } from "@opencode/plugin/tui";
@@ -192,6 +192,8 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string })
     // A navigator link selects only an assignment in the authenticated slate.
     // It never composes evidence or opens a consent dialog.
     void controller.refresh().then(() => { if (props.questID) return controller.select(props.questID); });
+    // The router reuses this page when another rail quest is opened.
+    createEffect(on(() => props.questID, (questID) => { if (questID) void controller.select(questID); }, { defer: true }));
     onCleanup(() => { focus.dispose(); stop(); actions = undefined; controller.dispose(); closeOwnDialog(); });
   });
   return <box flexDirection="column" flexGrow={1} padding={1}>

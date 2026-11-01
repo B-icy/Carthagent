@@ -87,6 +87,29 @@ test('local source uses actual receipt identity, actual goal, no synthetic befor
   assert.equal((await f.read()).source.checks[2].after, 'passed');
 });
 
+test('explicit finish change summary, first-run failed baseline and long output tails are projected', async t => {
+  const f = fixture(t, [check('unit'), check('fresh')]);
+  f.state.evidence.unit = f.receipt('unit', { outputTail: `${'x'.repeat(900)}\nline two\n${'y'.repeat(300)}\nok 17 - final` });
+  f.state.evidence.fresh = f.receipt('fresh');
+  f.state.baselines = {
+    unit: { passed: false, code: 1, checkDigest: f.receipt('unit').checkDigest, fingerprint: '1'.repeat(64) },
+    fresh: { passed: false, code: 1, checkDigest: f.receipt('fresh').checkDigest, fingerprint: f.current },
+  };
+  f.state.handoff = { change: 'Implemented parseCsv as a state machine', review: 'r', fingerprint: f.current };
+  f.save();
+  const { source } = await f.read();
+  assert.equal(source.change, 'Implemented parseCsv as a state machine');
+  assert.equal(source.checks[0].before, 'failed');
+  // A failure recorded on the current source is not a before-change result.
+  assert.equal(source.checks[1].before, 'not_run');
+  assert.match(source.checks[0].result, /^…\n/);
+  assert.match(source.checks[0].result, /ok 17 - final$/);
+  assert.equal(source.truncated, true);
+  assert.ok(Buffer.byteLength(source.checks[0].result) <= 1024);
+  f.state.handoff.fingerprint = '2'.repeat(64); f.save();
+  assert.equal((await f.read()).source.change, '');
+});
+
 test('stale, mismatched or contradictory passing receipts never become current passing evidence', async t => {
   const f = fixture(t);
   const invalidations = [
@@ -179,7 +202,9 @@ test('selection is bounded, UTF-8 safe and explicitly reports omitted claims/ite
   assert.equal(source.truncated, true);
   assert.equal(source.goal, '');
   assert.equal(source.checks[0].result, '界'.repeat(341));
-  assert.equal(source.checks[1].result, '', 'omit entire claims rather than changing their meaning');
+  // Receipts store an output tail; an oversized tail keeps its end, never a partial start.
+  assert.equal(source.checks[1].result.startsWith('…\n'), true);
+  assert.ok(Buffer.byteLength(source.checks[1].result, 'utf8') <= 1024);
   assert.equal(source.findings[0].issue, '');
   assert.equal(source.findings[0].evidence, '');
   assert.equal(JSON.stringify(source).includes('\ufffd'), false);
@@ -419,7 +444,7 @@ test('pinned Effect RPC conversion accepts local source, null, input and safe ty
   for (const value of [await f.read(), { source: null }]) assert.deepEqual(decode(method.output, value), value);
   assert.deepEqual(decode(method.errors.dailySourceError, { code: 'not_owned' }), { code: 'not_owned' });
   assert.throws(() => decode(method.input, {}));
-  const forged = await f.read(); forged.source.checks[0].before = 'failed';
+  const forged = await f.read(); forged.source.checks[0].before = 'passed';
   assert.throws(() => decode(method.output, forged));
   const wrongRevision = await f.read(); wrongRevision.source.revision = 3;
   assert.throws(() => decode(method.output, wrongRevision));

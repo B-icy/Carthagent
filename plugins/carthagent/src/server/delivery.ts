@@ -277,6 +277,9 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
         }
         const passed = result.code === 0 && !result.timedOut && !result.cancelled && !result.outputLimit && before === after
         data.state.evidence[check.id] = { passed, ...identity, executedRevision: data.state.revision, fingerprint: after, code: result.code, timedOut: result.timedOut, cancelled: result.cancelled, logPath: result.logPath, durationMs: result.durationMs, changedDuringCheck: before !== after, outputTail: result.output.slice(-1200) }
+        // The first execution in a run is its baseline; later receipts replace evidence only.
+        const baselines = (data.state.baselines ??= {}) as Record<string, unknown>
+        if (!baselines[check.id]) baselines[check.id] = { passed, code: result.code, checkDigest: identity.checkDigest, fingerprint: after, at: new Date().toISOString() }
         results.push({ id: check.id, advisory: verification !== "required", ...data.state.evidence[check.id], outputTail: result.output })
         await persist(cwd, tool.sessionID, data)
       }
@@ -285,12 +288,12 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
       const hash = fingerprint(cwd, ["."]); const issues = completionIssues(data.state, cwd, hash)
       return text({ results, pendingChecks: pendingChecks(data.state, hash), completionIssues: issues, readyToFinish: Object.values(issues).every(items => !items.length), next: "Complete pending steps, review the evidence, then call delivery_finish." })
     }))
-    add(editor, "delivery_review", "Inspect final diff or record assertion coverage, boundary probes and findings. Required for structured plans; assertions are model-authored.", O({ action: { type: "string", enum: ["inspect", "record"] }, captureId: short, coverage: A({ type: "object", additionalProperties: true }, 64), resolutions: A({ type: "object", additionalProperties: true }, 40), outcomes: A({ type: "object", additionalProperties: true }, 32), probes: A(short, 40), findings: A(short, 40), limitations: A(short) }, ["action"]), async (input, tool) => operate(tool.sessionID, async ({ cwd, data }) => {
+    add(editor, "delivery_review", "Inspect final diff or record assertion coverage, boundary probes and findings. Required for structured plans; assertions are model-authored.", O({ action: { type: "string", enum: ["inspect", "record"] }, captureId: short, coverage: A({ type: "object", properties: { requirement: { type: "string", description: "Exact acceptance requirement text" }, assertions: { type: "string", description: "Concrete assertions the linked checks make" }, status: { type: "string", enum: ["demonstrated", "unverified"] } }, required: ["requirement", "assertions"], additionalProperties: true }, 64), resolutions: A({ type: "object", additionalProperties: true }, 40), outcomes: A({ type: "object", additionalProperties: true }, 32), probes: A(short, 40), findings: A(short, 40), limitations: A(short) }, ["action"]), async (input, tool) => operate(tool.sessionID, async ({ cwd, data }) => {
       if (!data.state) throw Error("Call delivery_plan first")
       const result = input.action === "inspect" ? await captureDeliveryReview(data.state, cwd, runDirectory(cwd, tool.sessionID, data.state.runId), tool.signal) : input.action === "record" ? recordDeliveryReview(data.state, cwd, input) : (() => { throw Error("Review action must be inspect or record") })()
       await persist(cwd, tool.sessionID, data); return text(result)
     }))
-    add(editor, "delivery_finish", "Finish delivery. Verified requires every required validator, fresh check, output, step, requirement and review gate; blocked requires specific limitations.", O({ status: { type: "string", enum: ["verified", "blocked"] }, review: short, launch: short, limitations: A(short) }), async (input, tool) => operate(tool.sessionID, async ({ cwd, data }) => {
+    add(editor, "delivery_finish", "Finish delivery. Verified requires every required validator, fresh check, output, step, requirement and review gate; blocked requires specific limitations.", O({ status: { type: "string", enum: ["verified", "blocked"] }, change: { ...short, description: "One-paragraph summary of what changed and why" }, review: short, launch: short, limitations: A(short) }), async (input, tool) => operate(tool.sessionID, async ({ cwd, data }) => {
       if (!data.state) throw Error("Call delivery_plan first")
       if (data.configError) throw Error(data.configError)
       const verification = verificationMode(data.state.plan); let hash: string | null = null

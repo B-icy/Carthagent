@@ -13,8 +13,8 @@ export function nativeReviewMode(session, config, explicitMode) {
 }
 
 /** Correlate host executions and admit one current-run kickoff per session. */
-/** @param {{ mode: (sessionID: string) => string, diff: (sessionID: string, signal?: AbortSignal) => Promise<unknown>, offer: (value: { sessionID: string; runKey: string; writes: number; start: () => Promise<boolean> }) => Promise<unknown>, kickoff: (sessionID: string, signal?: AbortSignal) => Promise<unknown>, isLoopActive?: (sessionID: string) => boolean, setLoopActive?: (sessionID: string, active: boolean) => void, signal?: AbortSignal }} options */
-export function createNativeReviewConsumer({ mode, diff, offer, kickoff, isLoopActive = () => false, setLoopActive = () => {}, signal }) {
+/** @param {{ mode: (sessionID: string) => string, diff: (sessionID: string, signal?: AbortSignal) => Promise<unknown>, offer: (value: { sessionID: string; runKey: string; writes: number; start: () => Promise<boolean> }) => Promise<unknown>, eligible?: (sessionID: string, signal?: AbortSignal) => Promise<boolean>, kickoff: (sessionID: string, signal?: AbortSignal) => Promise<unknown>, isLoopActive?: (sessionID: string) => boolean, setLoopActive?: (sessionID: string, active: boolean) => void, signal?: AbortSignal }} options */
+export function createNativeReviewConsumer({ mode, diff, offer, kickoff, eligible = async () => true, isLoopActive = () => false, setLoopActive = () => {}, signal }) {
   const runs = new Map();
   const admitted = new Set();
   const pending = new Set();
@@ -52,6 +52,11 @@ export function createNativeReviewConsumer({ mode, diff, offer, kickoff, isLoopA
     const runKey = `${sessionID}@${run.id}`;
     const currentMode = mode(sessionID);
     if (!(currentMode === "ask" || currentMode === "yes") || writes <= 0 || admitted.has(runKey) || (currentMode === "yes" && loopSessions.has(sessionID))) return;
+    // A formally blocked or unfinished delivery is not a reviewable run.
+    let reviewable;
+    try { reviewable = await eligible(sessionID, signal); }
+    catch { return; }
+    if (!reviewable || disposed || signal?.aborted || runs.get(sessionID) !== run || admitted.has(runKey)) return;
     admitted.add(runKey);
 
     const start = async () => {

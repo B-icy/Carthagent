@@ -1357,13 +1357,13 @@ index a883000..db00317 100644
            ? [
 diff --git a/packages/tui/src/component/dialog-folder-browser.tsx b/packages/tui/src/component/dialog-folder-browser.tsx
 new file mode 100644
-index 0000000..6d0675d
+index 0000000..3fe93b6
 --- /dev/null
 +++ b/packages/tui/src/component/dialog-folder-browser.tsx
 @@ -0,0 +1,258 @@
 +import { InputRenderable, ScrollBoxRenderable, TextAttributes } from "@opentui/core"
 +import { useTerminalDimensions } from "@opentui/solid"
-+import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js"
++import { createEffect, createSignal, For, onCleanup, onMount } from "solid-js"
 +import type { OpenCodeClient } from "@opencode/client"
 +import { useConfig } from "../config"
 +import { createFolderBrowser } from "../context/folder-browser"
@@ -1930,11 +1930,10 @@ index 344d9fc..d9c95db 100644
    )
 diff --git a/packages/tui/src/component/dialog-new-session.tsx b/packages/tui/src/component/dialog-new-session.tsx
 new file mode 100644
-index 0000000..8e7b672
+index 0000000..7ef14e4
 --- /dev/null
 +++ b/packages/tui/src/component/dialog-new-session.tsx
-@@ -0,0 +1,258 @@
-+import { TextAttributes } from "@opentui/core"
+@@ -0,0 +1,257 @@
 +import { batch, createMemo, createSignal, Match, onCleanup, onMount, Switch } from "solid-js"
 +import type { OpenCodeClient } from "@opencode/client"
 +import { useData } from "../context/data"
@@ -5794,10 +5793,10 @@ index d3304eb..642c779 100644
    },
 diff --git a/packages/tui/src/context/navigation.tsx b/packages/tui/src/context/navigation.tsx
 new file mode 100644
-index 0000000..3e531af
+index 0000000..b9a95cb
 --- /dev/null
 +++ b/packages/tui/src/context/navigation.tsx
-@@ -0,0 +1,174 @@
+@@ -0,0 +1,183 @@
 +import type { NavigationPane } from "@opencode/plugin/tui/context"
 +import type { BoxRenderable, Renderable } from "@opentui/core"
 +import { useRenderer } from "@opentui/solid"
@@ -5910,6 +5909,9 @@ index 0000000..3e531af
 +    current?.blur()
 +    const restore = () => {
 +      if (disposed || revision !== focusRevision || engaged() || dialog.stack.length || keymap.mode.current() !== "base" || !remembered || remembered.isDestroyed) return
++      // A route change detaches the old page; its new controls own focus.
++      const current = renderer.currentFocusedRenderable
++      if ((current && !current.isDestroyed && attached(current, renderer.root)) || !attached(remembered, renderer.root)) return
 +      remembered.focus()
 +    }
 +    queueMicrotask(restore)
@@ -5971,6 +5973,12 @@ index 0000000..3e531af
 +
 +function contains(parent: Renderable, target: Renderable): boolean {
 +  return parent.getChildren().some((child) => child === target || contains(child, target))
++}
++
++function attached(node: Renderable, root: Renderable) {
++  let current: Renderable = node
++  while (current.parent) current = current.parent
++  return current === root
 +}
 diff --git a/packages/tui/src/context/session-tabs-model.ts b/packages/tui/src/context/session-tabs-model.ts
 index 856f996..0e2f737 100644
@@ -10271,10 +10279,10 @@ index 9be3ac9..f30280e 100644
      async [Symbol.asyncDispose]() {
 diff --git a/packages/tui/test/fixture/plugin/navigation/tui.tsx b/packages/tui/test/fixture/plugin/navigation/tui.tsx
 new file mode 100644
-index 0000000..de206f8
+index 0000000..dacde3a
 --- /dev/null
 +++ b/packages/tui/test/fixture/plugin/navigation/tui.tsx
-@@ -0,0 +1,51 @@
+@@ -0,0 +1,67 @@
 +import { Plugin, usePlugin } from "@opencode/plugin/tui"
 +import type { NavigationInput } from "@opencode/plugin/tui/context"
 +import { createSignal } from "solid-js"
@@ -10286,6 +10294,7 @@ index 0000000..de206f8
 +    const render = (input: NavigationInput) => <Pane {...input} />
 +    let unregister = context.ui.navigation.register({ name: "voyages", title: "Voyages", render })
 +    context.ui.router.register({ name: "detail", render: () => <Detail /> })
++    context.ui.router.register({ name: "select-detail", render: () => <SelectDetail /> })
 +    context.keymap.layer(() => ({
 +      mode: "global",
 +      commands: [
@@ -10309,7 +10318,12 @@ index 0000000..de206f8
 +    <text id="fixture-voyage-selection" height={1} flexShrink={0}>Voyage selection {selected()}</text>
 +    <text id="fixture-voyage-scope" height={1} flexShrink={0} wrapMode="none">{`${input.width}:${input.compact}:${input.active}:${input.focused}:${input.sessionID ?? "home"}:${context.ui.navigation.current()}`}</text>
 +    <text id="fixture-voyage-focus" height={1} flexShrink={0} onMouseUp={input.focus}>Focus voyages</text>
-+    <select id="fixture-voyage-actions" height={2} flexShrink={0} options={options} selectedIndex={selected()} focused={input.active && input.focused} onChange={(index) => setSelected(index)} onSelect={() => { if (input.active && input.focused && context.keymap.mode.current() === "navigation") context.ui.router.navigate({ type: "plugin", name: "detail" }) }} />
++    <select id="fixture-voyage-actions" height={2} flexShrink={0} options={options} selectedIndex={selected()} focused={input.active && input.focused} onChange={(index) => setSelected(index)} onSelect={(index) => {
++      if (!input.active || !input.focused || context.keymap.mode.current() !== "navigation") return
++      if (index !== 7) return context.ui.router.navigate({ type: "plugin", name: "detail" })
++      input.blur()
++      context.ui.router.navigate({ type: "plugin", name: "select-detail", data: { sessionID: "ses_navigation_0" } })
++    }} />
 +    <scrollbox id="fixture-voyage-scroll" flexGrow={1} minHeight={0}>
 +      {Array.from({ length: 60 }, (_, index) => <text height={1} flexShrink={0}>Voyage row {index}</text>)}
 +    </scrollbox>
@@ -10324,6 +10338,16 @@ index 0000000..de206f8
 +  return <box>
 +    <text id="fixture-detail">Voyage detail page arrows {arrows()}</text>
 +    <input id="fixture-page-input" ref={(value) => { editor = value }} onMouseDown={() => editor.focus()} />
++  </box>
++}
++
++function SelectDetail() {
++  const context = usePlugin()
++  const [selected, setSelected] = createSignal(0)
++  const options = Array.from({ length: 4 }, (_, value) => ({ name: `Detail ${value}`, description: "", value }))
++  return <box>
++    <text id="fixture-select-detail">Select detail {selected()}</text>
++    <select id="fixture-select-detail-actions" height={4} options={options} focused={context.keymap.mode.current() === "base"} onChange={(index) => setSelected(index)} />
 +  </box>
 +}
 diff --git a/packages/tui/test/fixture/tui-client.ts b/packages/tui/test/fixture/tui-client.ts
@@ -10597,10 +10621,10 @@ index 0000000..af838e8
 +})
 diff --git a/packages/tui/test/navigation-rail.test.tsx b/packages/tui/test/navigation-rail.test.tsx
 new file mode 100644
-index 0000000..8003e42
+index 0000000..c9a6757
 --- /dev/null
 +++ b/packages/tui/test/navigation-rail.test.tsx
-@@ -0,0 +1,342 @@
+@@ -0,0 +1,363 @@
 +import { expect, test } from "bun:test"
 +import { InputRenderable, ScrollBoxRenderable, SelectRenderable, TextareaRenderable, TextRenderable, type Renderable } from "@opentui/core"
 +import type { SessionInfo } from "@opencode/client"
@@ -10865,6 +10889,27 @@ index 0000000..8003e42
 +  // Text renderables refresh plainText on the next render pass.
 +  await setup.waitFor(() => (node(setup, "fixture-voyage-scope") as TextRenderable).plainText.includes(":false:ses_navigation_0:"))
 +  expect(setup.renderer.currentFocusedRenderable).toBe(input)
++})
++
++test("a rail action that releases focus and opens a page leaves the page's control focused", async () => {
++  await using plugin = await copyPlugin()
++  await using setup = await fixture(plugin.directory, true)
++  await ready(setup)
++  const prompt = setup.renderer.currentFocusedEditor
++  setup.mockInput.pressKey("F6")
++  await setup.waitForFrame((frame) => frame.includes("Voyage selection 0"))
++  await setup.mockMouse.click(node(setup, "fixture-voyage-focus").x + 2, node(setup, "fixture-voyage-focus").y)
++  await setup.waitFor(() => setup.renderer.currentFocusedRenderable instanceof SelectRenderable)
++  for (let i = 0; i < 7; i++) setup.mockInput.pressArrow("down")
++  await setup.waitForFrame((frame) => frame.includes("Voyage selection 7"))
++  setup.mockInput.pressEnter()
++  await setup.waitForFrame((frame) => frame.includes("Select detail 0"))
++  await Bun.sleep(20)
++  await setup.flush()
++  expect(setup.renderer.currentFocusedRenderable).toBe(node(setup, "fixture-select-detail-actions"))
++  expect(setup.renderer.currentFocusedEditor).not.toBe(prompt)
++  setup.mockInput.pressArrow("down")
++  await setup.waitForFrame((frame) => frame.includes("Select detail 1"))
 +})
 +
 +test("normal shutdown preserves selected mode, and restart restores it without a detail route", async () => {
@@ -11707,7 +11752,7 @@ index 0000000..14fd75c
 +})
 diff --git a/packages/tui/test/sidebar/folder-browser.test.ts b/packages/tui/test/sidebar/folder-browser.test.ts
 new file mode 100644
-index 0000000..2524dff
+index 0000000..57dcd7b
 --- /dev/null
 +++ b/packages/tui/test/sidebar/folder-browser.test.ts
 @@ -0,0 +1,629 @@
@@ -11758,7 +11803,7 @@ index 0000000..2524dff
 +  const file = {
 +    list: (input, options) =>
 +      new Promise((resolve, reject) =>
-+        pending.push({ path: String(input?.path), signal: options?.signal, resolve, reject }),
++        pending.push({ path: String(input?.path), signal: options?.signal, resolve: resolve as (value: unknown) => void, reject }),
 +      ),
 +  } as File
 +  return { file, pending }
@@ -12342,7 +12387,7 @@ index 0000000..2524dff
 +})
 diff --git a/packages/tui/test/sidebar/new-session-flow.test.tsx b/packages/tui/test/sidebar/new-session-flow.test.tsx
 new file mode 100644
-index 0000000..3132f15
+index 0000000..2bf5c7a
 --- /dev/null
 +++ b/packages/tui/test/sidebar/new-session-flow.test.tsx
 @@ -0,0 +1,339 @@
@@ -12491,7 +12536,7 @@ index 0000000..3132f15
 +
 +test("setup opens and cancels without creating, then the first send creates one session with the chosen folder and model", async () => {
 +  const run = await start()
-+  await using scratch = run.scratch
++  await using _scratch = run.scratch
 +  await using setup = run.setup
 +  const frame = () => setup.captureCharFrame()
 +  await setup.ready
@@ -12544,7 +12589,7 @@ index 0000000..3132f15
 +
 +test("the New session shortcut, /new and the palette open the shared setup at the launch folder without leaving the session", async () => {
 +  const run = await start({ existing: true, elsewhere: true })
-+  await using scratch = run.scratch
++  await using _scratch = run.scratch
 +  await using setup = run.setup
 +  const frame = () => setup.captureCharFrame()
 +  await setup.ready
@@ -12596,7 +12641,7 @@ index 0000000..3132f15
 +
 +test("with inherited new-session folders the shortcut starts setup at the active session's folder", async () => {
 +  const run = await start({ existing: true, elsewhere: true, newLocation: "inherit" })
-+  await using scratch = run.scratch
++  await using _scratch = run.scratch
 +  await using setup = run.setup
 +  const frame = () => setup.captureCharFrame()
 +  await setup.ready
@@ -12622,7 +12667,7 @@ index 0000000..3132f15
 +
 +test("preparing a new session from an existing one leaves its model, transcript and draft untouched", async () => {
 +  const run = await start({ existing: true })
-+  await using scratch = run.scratch
++  await using _scratch = run.scratch
 +  await using setup = run.setup
 +  const frame = () => setup.captureCharFrame()
 +  await setup.ready
@@ -12687,7 +12732,7 @@ index 0000000..3132f15
 +})
 diff --git a/packages/tui/test/sidebar/new-session-ownership.test.tsx b/packages/tui/test/sidebar/new-session-ownership.test.tsx
 new file mode 100644
-index 0000000..c4f4d3b
+index 0000000..52f4bb2
 --- /dev/null
 +++ b/packages/tui/test/sidebar/new-session-ownership.test.tsx
 @@ -0,0 +1,476 @@
@@ -12941,8 +12986,8 @@ index 0000000..c4f4d3b
 +
 +test("the caller's agent and session variant reach the first send instead of the first agent and global variant", async () => {
 +  const run = await start()
-+  await using scratch = run.scratch
-+  await using setup = run.setup
++  await using _scratch = run.scratch
++  await using _setup = run.setup
 +  await openExisting(run)
 +  await openSetup(run)
 +  await confirm(run)
@@ -12959,8 +13004,8 @@ index 0000000..c4f4d3b
 +
 +test("a session's explicit default variant is not replaced by the global variant preference", async () => {
 +  const run = await start({ session: { providerID: "demo", id: "alpha" } })
-+  await using scratch = run.scratch
-+  await using setup = run.setup
++  await using _scratch = run.scratch
++  await using _setup = run.setup
 +  await openExisting(run)
 +  await openSetup(run)
 +  await confirm(run)
@@ -12975,8 +13020,8 @@ index 0000000..c4f4d3b
 +  const run = await start({
 +    catalog: (directory) => (directory.endsWith("empty project") ? [{ ...alpha, variants: ["high"] }, beta] : [alpha, beta]),
 +  })
-+  await using scratch = run.scratch
-+  await using setup = run.setup
++  await using _scratch = run.scratch
++  await using _setup = run.setup
 +  await openExisting(run)
 +  await openSetup(run)
 +  await chooseFolder(run)
@@ -12994,8 +13039,8 @@ index 0000000..c4f4d3b
 +
 +test("a captured agent missing at the chosen folder blocks the first send instead of switching agents", async () => {
 +  const run = await start({ agents: (directory) => (directory.endsWith("empty project") ? ["ship"] : ["ship", "lite"]) })
-+  await using scratch = run.scratch
-+  await using setup = run.setup
++  await using _scratch = run.scratch
++  await using _setup = run.setup
 +  await openExisting(run)
 +  await openSetup(run)
 +  await chooseFolder(run)
@@ -13019,8 +13064,8 @@ index 0000000..c4f4d3b
 +
 +test("a model removed while confirmation syncs stays visible and blocks until an explicit replacement", async () => {
 +  const run = await start()
-+  await using scratch = run.scratch
-+  await using setup = run.setup
++  await using _scratch = run.scratch
++  await using _setup = run.setup
 +  await openExisting(run)
 +  await openSetup(run)
 +  await chooseSetupModel(run, "Beta", "beta")
@@ -13053,8 +13098,8 @@ index 0000000..c4f4d3b
 +
 +test("a model removed after confirmation blocks the first send rather than falling back to another model", async () => {
 +  const run = await start()
-+  await using scratch = run.scratch
-+  await using setup = run.setup
++  await using _scratch = run.scratch
++  await using _setup = run.setup
 +  await openExisting(run)
 +  await openSetup(run)
 +  await chooseSetupModel(run, "Beta", "beta")
@@ -13076,8 +13121,8 @@ index 0000000..c4f4d3b
 +
 +test("sending while the confirmed folder's catalog is still refreshing never uses a default model", async () => {
 +  const run = await start()
-+  await using scratch = run.scratch
-+  await using setup = run.setup
++  await using _scratch = run.scratch
++  await using _setup = run.setup
 +  await openExisting(run)
 +  await openSetup(run)
 +  await chooseSetupModel(run, "Beta", "beta")
@@ -13102,8 +13147,8 @@ index 0000000..c4f4d3b
 +
 +test("a choice made after confirming wins over the confirmation's catalog refresh that finishes later", async () => {
 +  const run = await start()
-+  await using scratch = run.scratch
-+  await using setup = run.setup
++  await using _scratch = run.scratch
++  await using _setup = run.setup
 +  await openExisting(run)
 +  await openSetup(run)
 +  await chooseSetupModel(run, "Beta", "beta")
@@ -13124,8 +13169,8 @@ index 0000000..c4f4d3b
 +
 +test("a second setup for the same folder replaces the first, and leaving Home drops the pending choice", async () => {
 +  const run = await start()
-+  await using scratch = run.scratch
-+  await using setup = run.setup
++  await using _scratch = run.scratch
++  await using _setup = run.setup
 +  await openExisting(run)
 +  await openSetup(run)
 +  await chooseSetupModel(run, "Beta", "beta")
@@ -13428,7 +13473,7 @@ index 0000000..781d5c5
 +})
 diff --git a/packages/tui/test/sidebar/sidebar-hierarchy.test.tsx b/packages/tui/test/sidebar/sidebar-hierarchy.test.tsx
 new file mode 100644
-index 0000000..2ea08fd
+index 0000000..6144ce7
 --- /dev/null
 +++ b/packages/tui/test/sidebar/sidebar-hierarchy.test.tsx
 @@ -0,0 +1,232 @@
@@ -13485,7 +13530,7 @@ index 0000000..2ea08fd
 +      { id: "manual:ideas", kind: "manual", name: "Ideas" } as const,
 +    ],
 +    folderFor: (sessionID: string) => (sessionID === "gamma" ? "manual:ideas" : `dir:${HOME}/work/project`),
-+    createFolder: () => counts.group++,
++    createFolder: () => `manual:group-${++counts.group}`,
 +    setFolderCollapsed() {},
 +    status: (sessionID: string) =>
 +      sessionID === "beta" ? { ...EMPTY_SESSION_TAB_STATUS, busy: true } : EMPTY_SESSION_TAB_STATUS,

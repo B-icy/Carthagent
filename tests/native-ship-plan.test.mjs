@@ -77,7 +77,7 @@ test('development runtime source and preparation recipe pin the actual Ship grap
 });
 
 test('the shared release build recipe stays on the published patch', () => {
-  const published = readFileSync(new URL('../docs/patches/opencode-v2.0.32-session-ui-combined-v4.patch', import.meta.url));
+  const published = readFileSync(new URL('../docs/patches/opencode-v2.0.32-session-ui-combined-v5.patch', import.meta.url));
   const digest = createHash('sha256').update(published).digest('hex');
   assert.equal(CTG_RUNTIME_PATCH_SHA256, digest);
   const build = readFileSync(new URL('../script/ctg/build-owned-runtime.sh', import.meta.url), 'utf8');

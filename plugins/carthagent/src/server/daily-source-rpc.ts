@@ -57,6 +57,16 @@ function localJson(path: string, max = MAX_FILE): { value: unknown; raw: string 
   } catch (error) { if (missing(error)) return null; throw invalid(); }
 }
 
+/** Receipts already hold an output tail; keep its end within the byte budget. */
+function tail(value: unknown, limit: number, cut: () => void) {
+  if (typeof value !== 'string' || Buffer.byteLength(value, 'utf8') <= limit) return value;
+  cut();
+  const bytes = Buffer.from(value, 'utf8');
+  const kept = bytes.subarray(bytes.length - (limit - 4)).toString('utf8').replace(/^\uFFFD+/, '');
+  const line = kept.indexOf('\n');
+  return `…\n${line >= 0 && line < kept.length - 1 ? kept.slice(line + 1) : kept}`;
+}
+
 function validateState(value: unknown, directory: string, runId: string) {
   if (!record(value) || value.runId !== runId || !Number.isSafeInteger(value.revision) || (value.revision as number) < 1 || !record(value.plan) || !Array.isArray(value.plan.checks) || value.plan.checks.length > 20000) throw invalid();
   if (value.status !== undefined && !['implementing', 'verifying', 'verified', 'blocked'].includes(value.status as string)) throw invalid();
@@ -76,6 +86,7 @@ function validateState(value: unknown, directory: string, runId: string) {
   }
   if (value.reviewEvidence !== undefined && !record(value.reviewEvidence)) throw invalid();
   if (value.handoff !== undefined && !record(value.handoff)) throw invalid();
+  if (value.baselines !== undefined && !record(value.baselines)) throw invalid();
   if (value.reviewFindings !== undefined && (!Array.isArray(value.reviewFindings) || value.reviewFindings.length > 20000)) throw invalid();
   const findings = (value.reviewFindings ?? []) as RecordValue[];
   const findingIDs = new Set<string>();
@@ -129,9 +140,9 @@ function sourceFor(directory: string, sessionID: string): DailySourceReport | nu
   const result: DailySourceReport = {
     runId: parts[2], revision: current, planRevision: state.revision as number,
     freshness: stale ? 'stale' : 'current', goal: text((state.plan as RecordValue).goal, 1024),
-    // Native delivery_finish stores review/launch/limitations, not a change summary.
-    // Do not manufacture a change claim from those fields or from the goal.
-    change: '',
+    // Only delivery_finish's explicit change summary for this snapshot; never
+    // derived from review/launch/limitations or the goal.
+    change: record(state.handoff) && state.handoff.fingerprint === current ? text(state.handoff.change, 3072) : '',
     checks: checks.slice(0, 12).map(check => {
       const receipt = evidence[check.id];
       const fresh = Boolean(isFresh(check));
@@ -139,7 +150,10 @@ function sourceFor(directory: string, sessionID: string): DailySourceReport | nu
       // Omit unbound failure output rather than making old/scope-error text look
       // like an execution result for the current revision in the outbound DTO.
       const output = receipt?.passed === false && !failed ? undefined : receipt?.outputTail;
-      return { id: check.id, before: 'not_run', after: fresh ? 'passed' : failed ? 'failed' : 'not_run', revision: current, result: text(output, 1024) };
+      // A first-in-run execution that failed on different source is a recorded before-failure.
+      const baseline = record(state.baselines) && record(state.baselines[check.id]) ? state.baselines[check.id] as RecordValue : undefined;
+      const before = baseline?.passed === false && baseline.checkDigest === checkDigest(check) && hash(baseline.fingerprint) && baseline.fingerprint !== current ? 'failed' as const : 'not_run' as const;
+      return { id: check.id, before, after: fresh ? 'passed' : failed ? 'failed' : 'not_run', revision: current, result: text(tail(output, 1024, () => { truncated = true; }), 1024) };
     }),
     findings: findings.slice(0, 5).map(finding => {
       const resolution = record(finding.resolution) ? finding.resolution : {};

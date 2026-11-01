@@ -46,8 +46,13 @@ export default Plugin.define({
         else reviewLoops.delete(sessionID);
         void updateReviewLoopState((state) => { state.sessions = [...reviewLoops]; });
       },
+      // No formal delivery (unavailable) or a verified one; blocked/unfinished runs are not offered.
+      eligible: async (sessionID: string, signal?: AbortSignal) => {
+        const delivery = await workspaceClient(context, context.data.session.get(sessionID)?.location).delivery({ sessionID }, signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000));
+        return delivery.status === "unavailable" || delivery.status === "verified";
+      },
       offer: async ({ sessionID, writes, start }: { sessionID: string; writes: number; start: () => Promise<boolean> }) => {
-        const accepted = await context.ui.dialog.confirm({ title: `Review ${context.data.session.get(sessionID)?.title ?? sessionID}?`, message: `This successful run changed ${writes} file${writes === 1 ? "" : "s"}. Start the PR → fresh-context review → fixes workflow?`, label: { confirm: "Start review", cancel: "Not now" } });
+        const accepted = await context.ui.dialog.confirm({ title: `Review ${context.data.session.get(sessionID)?.title ?? sessionID}?`, message: `This run changed ${writes} file${writes === 1 ? "" : "s"}. Start the PR → fresh-context review → fixes workflow?`, label: { confirm: "Start review", cancel: "Not now" } });
         if (accepted) await start();
       },
       kickoff: async (reviewSessionID: string, signal?: AbortSignal) => sendNativeReviewKickoff({ client: context.client, sessionID: reviewSessionID, signal }),
