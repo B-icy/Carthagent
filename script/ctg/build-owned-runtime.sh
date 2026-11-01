@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 EXPECTED_SOURCE="843a6c514e606b436a7fe713422ace0a93ad3d61"
 EXPECTED_LOCK="9d78379cd264584a495440a217b9d2ecab524c9a56f7f8b4b5bed3926daa330d"
-EXPECTED_PATCH="1f2309bb3a31dfb8e8a0827a6a1144a1f76a005abff58f6f48857639ec02478a"
+EXPECTED_PATCH="8716b5f686fa733245f63e8036cc503bc628e16b79cd508b13925da4020738c6"
 TARGET="${1:-opencode-linux-x64}"
 HOST_PLATFORM="$(node -p 'process.platform')"
 HOST_ARCH="$(node -p 'process.arch')"
@@ -34,7 +34,7 @@ if ! git diff --cached --quiet HEAD --; then
   exit 1
 fi
 expected_inputs=(
-  "docs/patches/opencode-v2.0.32-session-ui-combined-v4.patch"
+  "docs/patches/opencode-v2.0.32-session-ui-combined-v5.patch"
   "script/ctg/build-owned-runtime.sh"
 )
 actual_status="$(git status --porcelain --untracked-files=all)"
@@ -86,7 +86,7 @@ if [[ "$(bun --version)" != "1.4.2" ]]; then
   exit 1
 fi
 
-patch_file="$ROOT/docs/patches/opencode-v2.0.32-session-ui-combined-v4.patch"
+patch_file="$ROOT/docs/patches/opencode-v2.0.32-session-ui-combined-v5.patch"
 actual_patch="$("${HASH_COMMAND[@]}" "$patch_file" | awk '{print $1}')"
 if [[ "$actual_patch" != "$EXPECTED_PATCH" ]]; then
   echo "Patch checksum mismatch: $actual_patch" >&2
@@ -115,6 +115,7 @@ bun test --cwd packages/tui --timeout 30000 test/component/seascape-render.test.
 bun test --cwd packages/tui --timeout 30000 test/app-lifecycle.test.tsx test/session-panel.test.tsx
 bun test --cwd packages/tui test/util/renderer.test.ts
 bun test --cwd packages/tui test/component/plan-view.test.tsx test/component/transcript-scrollbox.test.ts test/component/seascape.test.ts test/component/session-tabs-rail.test.tsx test/component/session-tabs-marquee.test.ts test/component/session-tabs-mouse.test.tsx test/context/session-tabs-model.test.ts test/ui/layout.test.ts
+bun test --cwd packages/tui --timeout 30000 test/sidebar
 bun test --cwd packages/tui --timeout 60000 test/glyphs.test.ts test/plugin-keymap.test.tsx test/plugin-theme.test.tsx test/plugin-theme-provider.test.tsx
 
 cd packages/cli

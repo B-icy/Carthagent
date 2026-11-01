@@ -106,7 +106,14 @@ function workflowJob(name) {
   return lines.slice(start, end).join('\n');
 }
 
-const combinedPatchPath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v4.patch';
+const combinedPatchPath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v5.patch';
+const candidatePatchSha256 = '8716b5f686fa733245f63e8036cc503bc628e16b79cd508b13925da4020738c6';
+const publishedPatchSha256 = '1f2309bb3a31dfb8e8a0827a6a1144a1f76a005abff58f6f48857639ec02478a';
+// The pinned generator e32bcf7d reads this historical path, never the recipe-selected one.
+const compatibilityPatchPath = 'docs/patches/opencode-v2.0.32-session-ui.patch';
+const assemblyBlock = extractRunBlock((_lines, line) => line.includes('name: Validate five native outputs and generate candidate manifest'));
+const buildBlock = extractRunBlock((_lines, line) => line.includes('name: Build pinned native runtime'));
+const publishedPinPattern = /CTG_RUNTIME_PATCH_SHA256 = '([a-f0-9]{64})'/;
 
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
@@ -158,7 +165,7 @@ function makeRuntimeArchive(key, platform, arch, executablePath, executableBytes
   ]));
 }
 
-async function fixture(t) {
+async function fixture(t, { publishedPin = 'candidate' } = {}) {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'ctg-owned-runtime-publish-test-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const candidate = path.join(directory, 'candidate');
@@ -181,7 +188,12 @@ async function fixture(t) {
   execFileSync('git', ['init', '-q'], { cwd: ctg });
   execFileSync('git', ['-c', 'user.name=Workflow Fixture', '-c', 'user.email=fixture@example.invalid', 'add', combinedPatchPath, 'script/ctg/build-owned-runtime.sh'], { cwd: ctg });
   execFileSync('git', ['-c', 'user.name=Workflow Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture candidate patch'], { cwd: ctg });
-  await copyFile(path.join(root, 'lib/opencode/runtime.mjs'), path.join(ctg, 'lib/opencode/runtime.mjs'));
+  // A prebuild checkout keeps the current published pin; a final tagged
+  // package has promoted that pin together with its manifest.
+  const runtimeSource = await readFile(path.join(root, 'lib/opencode/runtime.mjs'), 'utf8');
+  await writeFile(path.join(ctg, 'lib/opencode/runtime.mjs'), publishedPin === 'candidate'
+    ? runtimeSource.replace(publishedPinPattern, `CTG_RUNTIME_PATCH_SHA256 = '${patchSha256}'`)
+    : runtimeSource);
 
   const manifest = {
     version: 1,
@@ -230,9 +242,11 @@ async function fixture(t) {
   }));
 
   // The real workflow shell blocks are evaluated verbatim. This generator
-  // fixture models only the CLI contract: five archive/record pairs, the
-  // recipe-to-patch digest binding, and manifest hashes derived from candidate
-  // archive bytes. It has no network or external package dependencies.
+  // fixture models only the pinned generator's CLI contract: five
+  // archive/record pairs, the recipe digest bound to bytes staged at the
+  // historical compatibility path, and manifest hashes derived from candidate
+  // archive bytes. Like the real generator it ignores the packaged published
+  // pin. It has no network or external package dependencies.
   await writeFile(generator, `
 import { createHash } from 'node:crypto';
 import { readFile, readdir, writeFile } from 'node:fs/promises';
@@ -246,12 +260,9 @@ const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const entries = await readdir(directory);
 if(entries.length!==10 || names.some(n=>!entries.includes(n)||!entries.includes(n+'.build.json'))) throw new Error('expected exactly five runtime archive/build-record pairs');
 const recipe=await readFile(path.join(repo,'script/ctg/build-owned-runtime.sh'),'utf8');
-const patch=await readFile(path.join(repo,${JSON.stringify(combinedPatchPath)}));
+const patch=await readFile(path.join(repo,${JSON.stringify(compatibilityPatchPath)}));
 const expected=recipe.match(/^EXPECTED_PATCH="([^"]+)"$/m)?.[1];
-if(!expected || sha(patch)!==expected) throw new Error('recipe patch digest mismatch: expected='+expected+' actual='+sha(patch)+' path='+${JSON.stringify(combinedPatchPath)});
-const runtimeSource=await readFile(path.join(repo,'lib/opencode/runtime.mjs'),'utf8');
-const runtimePatch=runtimeSource.match(/CTG_RUNTIME_PATCH_SHA256 = '([a-f0-9]{64})'/)?.[1];
-if(runtimePatch!==expected) throw new Error('fixture packaged runtime trust root patch digest mismatch');
+if(!expected || sha(patch)!==expected) throw new Error('recipe patch digest mismatch: expected='+expected+' actual='+sha(patch)+' path='+${JSON.stringify(compatibilityPatchPath)});
 const manifest={version:1,releaseVersion:version,compatibilityVersion:'2.0.32',runtimeVersion:'0.0.0-ctg.2.0.32',sourceRevision:'${sourceCommit}',patchSha256:expected,lockSha256:'${lockSha256}',assets:Object.fromEntries(keys.map((key,i)=>[key,{name:names[i],archiveSha256:'0'.repeat(64),executableSha256:'0'.repeat(64)}]))};
 for(let i=0;i<names.length;i++) {
  const record=JSON.parse(await readFile(path.join(directory,names[i]+'.build.json'),'utf8'));
@@ -307,7 +318,7 @@ console.log(v);
   await writeFile(path.join(fakeBin, 'jq'), `#!/bin/sh\nexec "${process.execPath}" "${fakeJqPath}" "$@"\n`);
   await chmod(path.join(fakeBin, 'gh'), 0o755);
   await chmod(path.join(fakeBin, 'jq'), 0o755);
-  return { directory, candidate, ctg, fakeBin, capture, manifestBytes };
+  return { directory, candidate, ctg, fakeBin, capture, manifestBytes, patchSha256 };
 }
 
 function envFor(f, overrides = {}) {
@@ -403,9 +414,9 @@ test('draft metadata validation has scoped write capability; artifact mutation s
   assert.doesNotMatch(assembly, /contents: write/);
   assert.match(publish, /contents: write/);
   assert.match(uploadBlock, /gh release upload/);
-  assert.match(workflow, /git -C ctg show HEAD:docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v4\.patch > opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v4\.patch/);
-  assert.match(workflow, /patch_sha256="\$\(hash_file opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v4\.patch\)"/);
-  assert.equal((workflow.match(/git -C ctg show HEAD:docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v4\.patch > ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui\.patch/g) ?? []).length, 1,
+  assert.match(workflow, /git -C ctg show HEAD:docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v5\.patch > opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v5\.patch/);
+  assert.match(workflow, /patch_sha256="\$\(hash_file opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v5\.patch\)"/);
+  assert.equal((workflow.match(/git -C ctg show HEAD:docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v5\.patch > ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui\.patch/g) ?? []).length, 1,
     'candidate assembly must extract exact committed bytes at the pinned historical path');
   assert.match(verifyBlock, /git -C ctg show HEAD:script\/ctg\/build-owned-runtime\.sh/);
   assert.match(verifyBlock, /git -C ctg show "HEAD:\$patch_file" > ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui\.patch/);
@@ -413,7 +424,67 @@ test('draft metadata validation has scoped write capability; artifact mutation s
   assert.match(workflow, /chmod \+x opencode\/script\/ctg\/build-owned-runtime\.sh/);
   assert.match(workflow, /GIT_CONFIG_KEY_0:\s*core\.autocrlf[\s\S]*?GIT_CONFIG_VALUE_0:\s*'false'/);
   assert.match(workflow, /git -C opencode config --local core\.autocrlf false/);
-  assert.match(workflow, /patch_sha256="\$\(hash_file opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v4\.patch\)"/);
+  assert.match(workflow, /patch_sha256="\$\(hash_file opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v5\.patch\)"/);
+});
+
+test('every committed-blob prebuild and assembly reference selects the recipe patch', async () => {
+  const recipe = await readFile(path.join(root, 'script/ctg/build-owned-runtime.sh'), 'utf8');
+  const recipePatch = recipe.match(/^patch_file="\$ROOT\/(docs\/patches\/[^"]+)"$/m)?.[1];
+  assert.equal(recipePatch, combinedPatchPath);
+  assert.equal(recipe.match(/^EXPECTED_PATCH="([a-f0-9]{64})"$/m)?.[1], candidatePatchSha256);
+  assert.equal(sha256(await readFile(path.join(root, combinedPatchPath))), candidatePatchSha256);
+  const referenced = [...workflow.matchAll(/docs\/patches\/(opencode-[A-Za-z0-9._-]+\.patch)/g)].map((match) => match[1]);
+  assert.deepEqual([...new Set(referenced)].sort(), [path.basename(compatibilityPatchPath), path.basename(combinedPatchPath)].sort());
+  assert.doesNotMatch(workflow, /combined-v4/);
+  assert.equal(buildBlock.split('\n').filter((line) => line.includes(combinedPatchPath)).length, 1);
+  assert.match(archiveBlock, new RegExp(`hash_file opencode/${combinedPatchPath.replaceAll('.', '\\.')}`));
+  assert.equal(assemblyBlock.split('\n').filter((line) => line.includes(compatibilityPatchPath)).length, 1);
+  for (const pin of ['repository: anomalyco/opencode\n          ref: 843a6c514e606b436a7fe713422ace0a93ad3d61', 'bun-version: 1.4.2']) assert.ok(workflow.includes(pin), pin);
+  assert.equal((workflow.match(/ref: e32bcf7d00645222a34be002f9f7da6626d8db9c/g) ?? []).length, 3);
+  for (const [key, , , , ] of targets) assert.match(workflowJob('prebuild'), new RegExp(`key: ${key}\\n`));
+  assert.equal((workflowJob('prebuild').match(/^          - os: /gm) ?? []).length, 5);
+});
+
+test('candidate assembly stages exact v5 at the historical path while the checkout still publishes v4', { skip: requiresUbuntuWorkflowShell, timeout: 60000 }, async (t) => {
+  const f = await fixture(t, { publishedPin: 'current' });
+  const runtimeSource = await readFile(path.join(f.ctg, 'lib/opencode/runtime.mjs'), 'utf8');
+  assert.equal(runtimeSource.match(publishedPinPattern)?.[1], publishedPatchSha256);
+  assert.equal(f.patchSha256, candidatePatchSha256);
+  await mkdir(path.join(f.directory, 'native-build-records'));
+  for (const [, , , name] of targets) {
+    await copyFile(path.join(f.candidate, name), path.join(f.directory, 'native-build-records', name));
+    await copyFile(path.join(f.candidate, `${name}.build.json`), path.join(f.directory, 'native-build-records', `${name}.build.json`));
+  }
+  const summary = path.join(f.directory, 'step-summary');
+  const result = runBlock(assemblyBlock, f.directory, envFor(f, { SOURCE_COMMIT: runSha, RUN_ID: String(runId), GITHUB_STEP_SUMMARY: summary }));
+  assertSuccess(result, 'candidate assembly block');
+  assert.equal(sha256(await readFile(path.join(f.ctg, compatibilityPatchPath))), candidatePatchSha256);
+  const candidate = JSON.parse(await readFile(path.join(f.directory, 'candidate-bundle/runtime-release.json.candidate'), 'utf8'));
+  assert.equal(candidate.patchSha256, candidatePatchSha256);
+  assert.equal(candidate.releaseVersion, releaseVersion);
+  const provenance = JSON.parse(await readFile(path.join(f.directory, 'candidate-bundle/candidate-provenance.json'), 'utf8'));
+  assert.deepEqual(provenance, { version: 1, releaseVersion, sourceCommit: runSha, workflowPath: workflowPathName, runId });
+  // Staging is confined to the isolated checkout: the committed tree is untouched.
+  assert.equal(execFileSync('git', ['ls-files', compatibilityPatchPath], { cwd: f.ctg, encoding: 'utf8' }), '');
+  assert.equal((await readFile(path.join(f.ctg, 'lib/opencode/runtime.mjs'), 'utf8')).match(publishedPinPattern)?.[1], publishedPatchSha256);
+});
+
+test('final-tag publish rejects a packaged manifest that was not promoted with the candidate', { skip: requiresUbuntuWorkflowShell, timeout: 60000 }, async (t) => {
+  const f = await fixture(t);
+  const stale = JSON.parse(f.manifestBytes);
+  stale.patchSha256 = publishedPatchSha256;
+  await writeFile(path.join(f.ctg, 'lib/opencode/runtime-release.json'), `${JSON.stringify(stale, null, 2)}\n`);
+  const validateOutput = path.join(f.directory, 'validate-output');
+  const verifyOutput = path.join(f.directory, 'verify-output');
+  await writeFile(validateOutput, '');
+  await writeFile(verifyOutput, '');
+  const env = envFor(f, { FIXTURE_TAG_COMMIT: tagCommit });
+  assertSuccess(runBlock(validateBlock, f.directory, { ...env, MODE: 'publish', SOURCE_COMMIT: '', GITHUB_OUTPUT: validateOutput }), 'publish validate block');
+  const verify = runBlock(verifyBlock, f.directory, { ...env, GITHUB_OUTPUT: verifyOutput });
+  assertFailure(verify, 'unpromoted packaged manifest');
+  assert.match(verify.output, /differs from packaged runtime-release\.json/);
+  assert.equal(await readFile(verifyOutput, 'utf8'), '');
+  assert.deepEqual(await (await import('node:fs/promises')).readdir(f.capture), []);
 });
 
 test('review-branch prebuild source is exact dispatch SHA; publish validation is default-branch-only', { skip: requiresUbuntuWorkflowShell, timeout: 60000 }, async (t) => {

@@ -79,7 +79,9 @@ setup for new sessions) exists only as source. It is **not** in any published
 `ctg` release, and the steps below do not build or update the published native
 runtime. The published runtime stays pinned to
 `docs/patches/opencode-v2.0.32-session-ui-combined-v4.patch` and
-`lib/opencode/runtime-release.json`.
+`lib/opencode/runtime-release.json`. The release build recipe now targets the
+unpublished preview.13 candidate (combined-v5); installed packages keep trusting
+only the published v4 runtime until preview.13 is released.
 
 Requirements: Git, a POSIX shell, `sha256sum` or `shasum`, Bun 1.4.2 (the
 OpenCode `packageManager` pin), and this checkout with `npm ci` already run. No

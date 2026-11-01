@@ -5,11 +5,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { CTG_RUNTIME_SOURCE, CTG_RUNTIME_PATCH_SHA256, CTG_RUNTIME_LOCK_SHA256 } from '../lib/opencode/runtime.mjs';
+import { fileURLToPath } from 'node:url';
+import { CTG_RUNTIME_PATCH_SHA256 } from '../lib/opencode/runtime.mjs';
+import { readPinnedOwnedRuntimeInputs } from '../tools/pinned-owned-runtime-inputs.mjs';
 import { createManualProjects } from '../tools/native-manual-projects.mjs';
 import { readManualRuntimeManifest } from '../tools/manual-runtime-manifest.mjs';
 import { readRuntimeReleaseManifest } from '../lib/opencode/runtime.mjs';
 import { prepareManualKit } from '../tools/prepare-native-manual.mjs';
+
+// Explicit candidates are built from the recipe, which may advance before the
+// published trust root does; packaged fixtures keep the published pin.
+const candidateProvenance = () => readPinnedOwnedRuntimeInputs(fileURLToPath(new URL('..', import.meta.url)));
 
 test('manual fixtures have green baselines, red feature acceptance, clean git, and no dependencies', async (t) => {
   const temp = await mkdtemp(join(tmpdir(), 'ctg-manual-projects-'));
@@ -71,7 +77,7 @@ test('manual kit preparation refuses existing directories and removes only its o
   const runtimeManifest = join(temp, 'runtime-release.json');
   const manifest = JSON.parse(await readFile(new URL('../lib/opencode/runtime-release.json', import.meta.url), 'utf8'));
   manifest.releaseVersion = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
-  Object.assign(manifest, { sourceRevision: CTG_RUNTIME_SOURCE, patchSha256: CTG_RUNTIME_PATCH_SHA256, lockSha256: CTG_RUNTIME_LOCK_SHA256 });
+  Object.assign(manifest, await candidateProvenance());
   const target = `${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch}`;
   manifest.assets = { [target]: manifest.assets[target] };
   const bytes = JSON.stringify(manifest);
@@ -145,7 +151,7 @@ test('single-platform manual candidates bind current recipe bytes without weaken
   const runtimeManifest = join(temp, 'candidate.json');
   const manifest = JSON.parse(await readFile(new URL('../lib/opencode/runtime-release.json', import.meta.url), 'utf8'));
   manifest.releaseVersion = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
-  Object.assign(manifest, { sourceRevision: CTG_RUNTIME_SOURCE, patchSha256: CTG_RUNTIME_PATCH_SHA256, lockSha256: CTG_RUNTIME_LOCK_SHA256 });
+  Object.assign(manifest, await candidateProvenance());
   const asset = manifest.assets['linux-x64'];
   manifest.assets = { 'linux-x64': asset };
   const save = async () => {
@@ -167,4 +173,24 @@ test('single-platform manual candidates bind current recipe bytes without weaken
     manifest.assets = assets;
     await assert.rejects(readManualRuntimeManifest(await save()), /invalid|incompatible/i);
   }
+});
+
+test('explicit manual candidates follow the candidate recipe, not the published pin', async t => {
+  const temp = await mkdtemp(join(tmpdir(), 'ctg-manual-candidate-domain-'));
+  t.after(() => rm(temp, { recursive: true, force: true }));
+  const recipe = await candidateProvenance();
+  const runtimeManifest = join(temp, 'candidate.json');
+  const manifest = JSON.parse(await readFile(new URL('../lib/opencode/runtime-release.json', import.meta.url), 'utf8'));
+  manifest.releaseVersion = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
+  manifest.assets = { 'linux-x64': manifest.assets['linux-x64'] };
+  const save = async patchSha256 => {
+    const bytes = JSON.stringify({ ...manifest, ...recipe, patchSha256 });
+    await writeFile(runtimeManifest, bytes);
+    return { runtimeManifest, manifestSha256: createHash('sha256').update(bytes).digest('hex') };
+  };
+  assert.equal((await readManualRuntimeManifest(await save(recipe.patchSha256))).manifest.patchSha256, recipe.patchSha256);
+  if (recipe.patchSha256 !== CTG_RUNTIME_PATCH_SHA256)
+    await assert.rejects(readManualRuntimeManifest(await save(CTG_RUNTIME_PATCH_SHA256)), /patchSha256.*build recipe/i);
+  const packaged = await readManualRuntimeManifest();
+  assert.equal(packaged.manifest.patchSha256, CTG_RUNTIME_PATCH_SHA256);
 });

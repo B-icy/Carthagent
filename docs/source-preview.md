@@ -8,8 +8,14 @@ builds, publishes, installs, or changes the published `ctg` runtime.
 
 | Purpose | Patch | Recipe | Hash reference |
 | --- | --- | --- | --- |
-| Published runtime (preview.12) | `docs/patches/opencode-v2.0.32-session-ui-combined-v4.patch` | `script/ctg/build-owned-runtime.sh`, publish workflow | `CTG_RUNTIME_PATCH_SHA256`, `lib/opencode/runtime-release.json` |
+| Published runtime (preview.12) | `docs/patches/opencode-v2.0.32-session-ui-combined-v4.patch` | none (already built and published) | `CTG_RUNTIME_PATCH_SHA256`, `lib/opencode/runtime-release.json` |
+| Release candidate (preview.13, unpublished) | `docs/patches/opencode-v2.0.32-session-ui-combined-v5.patch` | `script/ctg/build-owned-runtime.sh`, publish workflow | Recipe `EXPECTED_PATCH` only |
 | Source preview (development) | `docs/patches/opencode-v2.0.32-session-ui-combined-v5.patch` | `script/ctg/prepare-development-runtime.sh` | `CTG_DEVELOPMENT_RUNTIME_PATCH_SHA256` |
+
+The release recipe builds the v5 candidate, but installed packages still trust
+only the published v4 runtime. The published pin, packaged manifest and package
+version move to v5 together, in one commit, only after a successful
+five-platform candidate build supplies real archive hashes.
 
 Both patches apply to clean upstream `https://github.com/anomalyco/opencode` at
 `843a6c514e606b436a7fe713422ace0a93ad3d61`. v5 is a replacement patch: it
