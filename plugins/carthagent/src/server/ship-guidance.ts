@@ -8,6 +8,8 @@ import { unframe } from "./framing.mjs"
 
 export const STANDARD_GUIDANCE = "Standard delivery: inspect relevant files (glob/read/code_nav); create delivery_plan with complete requirements, artifact roots, a few steps and real checks. A valid required plan enables implementation immediately: design components/scenario ceremony is optional. Revisions merge design/workflow fields, replace supplied arrays, preserve obligations and require fresh final evidence, not repeated approval. Mark implementation steps done independently of integrated check execution. Use delivery_check all, final delivery_review inspect/record, then delivery_finish with honest limitations. No fabricated evidence, scope reduction or unrequested dependency changes. Informational plans do not authorize implementation. For bounded environment versions use delivery_probe kind=node-version or npm-version; inspect other APIs through read."
 
+export const TOOL_SURFACE_GUIDANCE = "File edits and commands use the direct read/write/edit/bash tools. A code-mode search() catalog lists only namespaced tools.* helpers, so their absence there does not mean they are unavailable. If a tool is locked, its error names the required delivery step; take that step instead of searching for alternatives."
+
 const browserCheck = fileURLToPath(new URL("../../../../tools/browser-check.mjs", import.meta.url))
 const browserGuidance = existsSync(browserCheck)
   ? `For web/browser tasks, a self-contained browser check is available: ${JSON.stringify(browserCheck)}. Declare it as a runtime check, e.g. ["node",${JSON.stringify(browserCheck)},"--page","index.html","--assert","#app","--assert-count","#items:3","--click","#btn","--then-text","#out:done","--console-clean","--screenshot","artifacts/ui.png"]. It serves the workspace over HTTP, runs jsdom assertions with real inline-script execution (clicks, text, selectors, console-error detection), and captures a real screenshot with the bundled lightweight headless browser (auto-downloaded on first use).`
@@ -24,8 +26,8 @@ export function shipGuidance({ state, workflow, prompt = "", profiles = [], disc
   const task = originalTask(prompt)
   const mode = state && !["verified", "blocked"].includes(state.status) ? state.workflowMode : workflow
   const parts = mode === "standard"
-    ? ["Preserve every user requirement and promised output.", STANDARD_GUIDANCE]
-    : [DELIVERY_INVARIANTS, deliveryPhaseGuidance(state)]
+    ? ["Preserve every user requirement and promised output.", STANDARD_GUIDANCE, TOOL_SURFACE_GUIDANCE]
+    : [DELIVERY_INVARIANTS, deliveryPhaseGuidance(state), TOOL_SURFACE_GUIDANCE]
   if (/\b(test|typescript|route|backend|api)\b/i.test(task)) parts.push(TEST_INFRASTRUCTURE_GUIDANCE)
   if (profiles.some(profile => /web|browser/.test(profile.id)) || /\b(browser|web|frontend|screenshot)\b/i.test(task)) parts.push(browserGuidance)
   if (imageInput === false) parts.push("This session's model cannot process images: do not attempt to view, read, or reason over image files or screenshots — visual review is unavailable. Verify visual behavior through DOM structure, computed styles, and console evidence instead; screenshots remain useful as evidence artifacts for the user even though you cannot inspect them.")

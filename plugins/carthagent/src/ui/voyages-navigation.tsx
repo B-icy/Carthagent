@@ -27,6 +27,7 @@ export function VoyagesNavigation(props: NavigationInput) {
   let scrollTop = 0;
   let restoreTop: number | undefined;
   const [viewportHeight, setViewportHeight] = createSignal(3);
+  const [railWidth, setRailWidth] = createSignal(0);
   createEffect(() => {
     if (!props.active) { scrollTop = scroll?.scrollTop ?? scrollTop; return; }
     if (!view().busy) { restoreTop = scrollTop; renderer.requestRender(); }
@@ -46,6 +47,7 @@ export function VoyagesNavigation(props: NavigationInput) {
     const frame = () => {
       if (!scroll || scroll.isDestroyed || !props.active) return;
       setViewportHeight(Math.max(1, scroll.viewport.height));
+      if (actions && !actions.isDestroyed) setRailWidth(actions.width);
       if (restoreTop === undefined || view().busy) return;
       scroll.scrollTop = restoreTop;
       restoreTop = undefined;
@@ -69,7 +71,13 @@ export function VoyagesNavigation(props: NavigationInput) {
     if (nativeNavigation(context)?.current() !== "voyages") return;
     context.ui.router.navigate({ type: "plugin", name, data: { ...(props.sessionID ? { sessionID: props.sessionID } : {}), ...extra } });
   };
-  const options = () => [
+  // Select draws raw text; fit names and descriptions to the rail.
+  const fit = (text: string) => {
+    const room = railWidth() - 3;
+    return room > 0 && text.length > room ? `${text.slice(0, Math.max(0, room - 1))}…` : text;
+  };
+  const options = () => entries().map((item) => ({ ...item, name: fit(item.name), description: fit(item.description) }));
+  const entries = () => [
     { name: props.compact ? "Q" : "Daily coding quests", description: "Assignments & assessments", value: "daily" },
     ...(view().daily?.items.map((quest, index) => ({ name: props.compact ? String(index + 1) : quest.title, description: quest.status, value: `quest:${quest.id}` })) ?? []),
     { name: props.compact ? "P" : "Profile & wallet", description: "Authoritative profile", value: "profile" },

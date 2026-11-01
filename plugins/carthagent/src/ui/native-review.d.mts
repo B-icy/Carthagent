@@ -10,6 +10,8 @@ export interface NativeReviewConsumerOptions {
   diff: (sessionID: string, signal?: AbortSignal) => Promise<unknown>;
   offer: (value: NativeReviewOffer) => Promise<unknown>;
   kickoff: (sessionID: string, signal?: AbortSignal) => Promise<unknown>;
+  /** False or a rejection suppresses the offer (e.g. blocked formal delivery). */
+  eligible?: (sessionID: string, signal?: AbortSignal) => Promise<boolean>;
   isLoopActive?: (sessionID: string) => boolean;
   setLoopActive?: (sessionID: string, active: boolean) => void;
   signal?: AbortSignal;

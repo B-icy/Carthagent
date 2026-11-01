@@ -8,7 +8,7 @@ export interface DailySourceReport {
   freshness: 'current' | 'stale';
   goal: string;
   change: string;
-  checks: Array<{ id: string; before: 'not_run'; after: 'passed' | 'failed' | 'not_run'; revision: string; result: string }>;
+  checks: Array<{ id: string; before: 'not_run' | 'failed'; after: 'passed' | 'failed' | 'not_run'; revision: string; result: string }>;
   /** Model-authored review/resolution claims, not independent verification. */
   findings: Array<{ id: string; issue: string; evidence: string; resolution: string }>;
   /** At least one field or item was omitted; the UI must warn before selection. */
@@ -20,7 +20,7 @@ const fingerprint = { type: 'string', minLength: 64, maxLength: 64 } as const;
 const goal = { type: 'string', maxLength: 1024 } as const;
 const check = {
   type: 'object', properties: {
-    id, before: { type: 'string', enum: ['not_run'] },
+    id, before: { type: 'string', enum: ['not_run', 'failed'] },
     after: { type: 'string', enum: ['passed', 'failed', 'not_run'] },
     revision: fingerprint, result: goal,
   }, required: ['id', 'before', 'after', 'revision', 'result'], additionalProperties: false,

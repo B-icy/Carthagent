@@ -58,6 +58,25 @@ test('ask confirmation is current-run-bound and one-shot; a later run invalidate
   assert.deepEqual(kickoffs, ['session-a']);
 });
 
+test('a run whose formal delivery is not reviewable is never offered or kicked off', async () => {
+  for (const mode of ['ask', 'yes']) {
+    const offers = [], kickoffs = [], asked = [];
+    const consumer = createNativeReviewConsumer({
+      mode: () => mode, diff: makeDiff(), offer: async (offer) => offers.push(offer),
+      eligible: async (sessionID) => { asked.push(sessionID); return false; },
+      kickoff: async (sessionID) => kickoffs.push(sessionID),
+    });
+    consumer.onStarted(execution('run-1', 'session-a'));
+    await consumer.onSucceeded(execution('run-1', 'session-a'));
+    assert.deepEqual([offers.length, kickoffs.length, asked], [0, 0, ['session-a']], mode);
+  }
+  const offers = [];
+  const failing = createNativeReviewConsumer({ mode: () => 'ask', diff: makeDiff(), offer: async (offer) => offers.push(offer), eligible: async () => { throw new Error('rpc down'); }, kickoff: async () => {} });
+  failing.onStarted(execution('run-1', 'session-a'));
+  await failing.onSucceeded(execution('run-1', 'session-a'));
+  assert.equal(offers.length, 0, 'an unknown delivery state fails closed');
+});
+
 test('yes kicks off only successful new-change runs and suppresses only that session loop', async () => {
   const loops = new Set();
   const started = [];

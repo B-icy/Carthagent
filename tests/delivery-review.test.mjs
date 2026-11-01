@@ -137,3 +137,14 @@ test('large diffs retain full receipt instead of silently using output tail', as
   assert.ok(readFileSync(capture.path, 'utf8').length > 12000);
   assert.match(capture.diff, /diff --git/);
 });
+
+test('review accepts assertion aliases and names missing requirements', async t => {
+  const { cwd, state, params, dir } = fixture(t);
+  const capture = await captureDeliveryReview(state, cwd, dir);
+  assert.throws(() => recordDeliveryReview(state, cwd, { ...params(capture.id), coverage: [{ requirement: 'Other', assertions: 'x' }] }), /Missing: \["Correct amount"\]/);
+  recordDeliveryReview(state, cwd, { ...params(capture.id), coverage: [{ requirement: 'Correct amount', assertion: 'app amount equals 2' }] });
+  assert.equal(state.reviewEvidence.coverage[0].assertions, 'app amount equals 2');
+  const again = await captureDeliveryReview(state, cwd, dir);
+  recordDeliveryReview(state, cwd, { ...params(again.id), coverage: [{ requirement: 'Correct amount', assertions: ['amount is 2', 'new result is 2'] }] });
+  assert.equal(state.reviewEvidence.coverage[0].assertions, 'amount is 2; new result is 2');
+});
