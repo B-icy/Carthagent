@@ -8,7 +8,7 @@ builds, publishes, installs, or changes the published `ctg` runtime.
 
 | Purpose | Patch | Recipe | Hash reference |
 | --- | --- | --- | --- |
-| Published runtime (preview.12) | `docs/patches/opencode-v2.0.32-session-ui-combined-v4.patch` | `script/ctg/build-owned-runtime.sh`, publish workflow | `CTG_RUNTIME_PATCH_SHA256`, `lib/opencode/runtime-release.json` |
+| Published runtime (preview.13) | `docs/patches/opencode-v2.0.32-session-ui-combined-v5.patch` | `script/ctg/build-owned-runtime.sh`, publish workflow | `CTG_RUNTIME_PATCH_SHA256`, `lib/opencode/runtime-release.json` |
 | Source preview (development) | `docs/patches/opencode-v2.0.32-session-ui-combined-v5.patch` | `script/ctg/prepare-development-runtime.sh` | `CTG_DEVELOPMENT_RUNTIME_PATCH_SHA256` |
 
 Both patches apply to clean upstream `https://github.com/anomalyco/opencode` at
