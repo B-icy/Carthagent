@@ -5793,10 +5793,10 @@ index d3304eb..642c779 100644
    },
 diff --git a/packages/tui/src/context/navigation.tsx b/packages/tui/src/context/navigation.tsx
 new file mode 100644
-index 0000000..3e531af
+index 0000000..41a8f0a
 --- /dev/null
 +++ b/packages/tui/src/context/navigation.tsx
-@@ -0,0 +1,174 @@
+@@ -0,0 +1,183 @@
 +import type { NavigationPane } from "@opencode/plugin/tui/context"
 +import type { BoxRenderable, Renderable } from "@opentui/core"
 +import { useRenderer } from "@opentui/solid"
@@ -5909,6 +5909,9 @@ index 0000000..3e531af
 +    current?.blur()
 +    const restore = () => {
 +      if (disposed || revision !== focusRevision || engaged() || dialog.stack.length || keymap.mode.current() !== "base" || !remembered || remembered.isDestroyed) return
++      // A route change detaches the old page; its new controls own focus.
++      const current = renderer.currentFocusedRenderable
++      if ((current && !current.isDestroyed && attached(current)) || !attached(remembered)) return
 +      remembered.focus()
 +    }
 +    queueMicrotask(restore)
@@ -5970,6 +5973,12 @@ index 0000000..3e531af
 +
 +function contains(parent: Renderable, target: Renderable): boolean {
 +  return parent.getChildren().some((child) => child === target || contains(child, target))
++}
++
++function attached(node: Renderable) {
++  let current: Renderable | null = node
++  while (current.parent) current = current.parent
++  return current === node.ctx.root
 +}
 diff --git a/packages/tui/src/context/session-tabs-model.ts b/packages/tui/src/context/session-tabs-model.ts
 index 856f996..0e2f737 100644
@@ -10270,10 +10279,10 @@ index 9be3ac9..f30280e 100644
      async [Symbol.asyncDispose]() {
 diff --git a/packages/tui/test/fixture/plugin/navigation/tui.tsx b/packages/tui/test/fixture/plugin/navigation/tui.tsx
 new file mode 100644
-index 0000000..de206f8
+index 0000000..dacde3a
 --- /dev/null
 +++ b/packages/tui/test/fixture/plugin/navigation/tui.tsx
-@@ -0,0 +1,51 @@
+@@ -0,0 +1,67 @@
 +import { Plugin, usePlugin } from "@opencode/plugin/tui"
 +import type { NavigationInput } from "@opencode/plugin/tui/context"
 +import { createSignal } from "solid-js"
@@ -10285,6 +10294,7 @@ index 0000000..de206f8
 +    const render = (input: NavigationInput) => <Pane {...input} />
 +    let unregister = context.ui.navigation.register({ name: "voyages", title: "Voyages", render })
 +    context.ui.router.register({ name: "detail", render: () => <Detail /> })
++    context.ui.router.register({ name: "select-detail", render: () => <SelectDetail /> })
 +    context.keymap.layer(() => ({
 +      mode: "global",
 +      commands: [
@@ -10308,7 +10318,12 @@ index 0000000..de206f8
 +    <text id="fixture-voyage-selection" height={1} flexShrink={0}>Voyage selection {selected()}</text>
 +    <text id="fixture-voyage-scope" height={1} flexShrink={0} wrapMode="none">{`${input.width}:${input.compact}:${input.active}:${input.focused}:${input.sessionID ?? "home"}:${context.ui.navigation.current()}`}</text>
 +    <text id="fixture-voyage-focus" height={1} flexShrink={0} onMouseUp={input.focus}>Focus voyages</text>
-+    <select id="fixture-voyage-actions" height={2} flexShrink={0} options={options} selectedIndex={selected()} focused={input.active && input.focused} onChange={(index) => setSelected(index)} onSelect={() => { if (input.active && input.focused && context.keymap.mode.current() === "navigation") context.ui.router.navigate({ type: "plugin", name: "detail" }) }} />
++    <select id="fixture-voyage-actions" height={2} flexShrink={0} options={options} selectedIndex={selected()} focused={input.active && input.focused} onChange={(index) => setSelected(index)} onSelect={(index) => {
++      if (!input.active || !input.focused || context.keymap.mode.current() !== "navigation") return
++      if (index !== 7) return context.ui.router.navigate({ type: "plugin", name: "detail" })
++      input.blur()
++      context.ui.router.navigate({ type: "plugin", name: "select-detail", data: { sessionID: "ses_navigation_0" } })
++    }} />
 +    <scrollbox id="fixture-voyage-scroll" flexGrow={1} minHeight={0}>
 +      {Array.from({ length: 60 }, (_, index) => <text height={1} flexShrink={0}>Voyage row {index}</text>)}
 +    </scrollbox>
@@ -10323,6 +10338,16 @@ index 0000000..de206f8
 +  return <box>
 +    <text id="fixture-detail">Voyage detail page arrows {arrows()}</text>
 +    <input id="fixture-page-input" ref={(value) => { editor = value }} onMouseDown={() => editor.focus()} />
++  </box>
++}
++
++function SelectDetail() {
++  const context = usePlugin()
++  const [selected, setSelected] = createSignal(0)
++  const options = Array.from({ length: 4 }, (_, value) => ({ name: `Detail ${value}`, description: "", value }))
++  return <box>
++    <text id="fixture-select-detail">Select detail {selected()}</text>
++    <select id="fixture-select-detail-actions" height={4} options={options} focused={context.keymap.mode.current() === "base"} onChange={(index) => setSelected(index)} />
 +  </box>
 +}
 diff --git a/packages/tui/test/fixture/tui-client.ts b/packages/tui/test/fixture/tui-client.ts
@@ -10596,10 +10621,10 @@ index 0000000..af838e8
 +})
 diff --git a/packages/tui/test/navigation-rail.test.tsx b/packages/tui/test/navigation-rail.test.tsx
 new file mode 100644
-index 0000000..8003e42
+index 0000000..c9a6757
 --- /dev/null
 +++ b/packages/tui/test/navigation-rail.test.tsx
-@@ -0,0 +1,342 @@
+@@ -0,0 +1,363 @@
 +import { expect, test } from "bun:test"
 +import { InputRenderable, ScrollBoxRenderable, SelectRenderable, TextareaRenderable, TextRenderable, type Renderable } from "@opentui/core"
 +import type { SessionInfo } from "@opencode/client"
@@ -10864,6 +10889,27 @@ index 0000000..8003e42
 +  // Text renderables refresh plainText on the next render pass.
 +  await setup.waitFor(() => (node(setup, "fixture-voyage-scope") as TextRenderable).plainText.includes(":false:ses_navigation_0:"))
 +  expect(setup.renderer.currentFocusedRenderable).toBe(input)
++})
++
++test("a rail action that releases focus and opens a page leaves the page's control focused", async () => {
++  await using plugin = await copyPlugin()
++  await using setup = await fixture(plugin.directory, true)
++  await ready(setup)
++  const prompt = setup.renderer.currentFocusedEditor
++  setup.mockInput.pressKey("F6")
++  await setup.waitForFrame((frame) => frame.includes("Voyage selection 0"))
++  await setup.mockMouse.click(node(setup, "fixture-voyage-focus").x + 2, node(setup, "fixture-voyage-focus").y)
++  await setup.waitFor(() => setup.renderer.currentFocusedRenderable instanceof SelectRenderable)
++  for (let i = 0; i < 7; i++) setup.mockInput.pressArrow("down")
++  await setup.waitForFrame((frame) => frame.includes("Voyage selection 7"))
++  setup.mockInput.pressEnter()
++  await setup.waitForFrame((frame) => frame.includes("Select detail 0"))
++  await Bun.sleep(20)
++  await setup.flush()
++  expect(setup.renderer.currentFocusedRenderable).toBe(node(setup, "fixture-select-detail-actions"))
++  expect(setup.renderer.currentFocusedEditor).not.toBe(prompt)
++  setup.mockInput.pressArrow("down")
++  await setup.waitForFrame((frame) => frame.includes("Select detail 1"))
 +})
 +
 +test("normal shutdown preserves selected mode, and restart restores it without a detail route", async () => {
