@@ -36,7 +36,7 @@ bound to its exact package version.
 | Prebuild workflow run | [PREBUILD_RUN](https://github.com/B-icy/Carthagent/actions/runs/PREBUILD_RUN) |
 | Full manifest SHA-256 | `MANIFEST_SHA` |
 | Upstream revision | `843a6c514e606b436a7fe713422ace0a93ad3d61` |
-| CTG patch (combined-v5) SHA-256 | `8716b5f686fa733245f63e8036cc503bc628e16b79cd508b13925da4020738c6` |
+| CTG patch (combined-v5) SHA-256 | `68d1a85596ed55ee7db35ef371a6026e2b094493c076a7dd1219ef3ee218a464` |
 | Lock SHA-256 | `9d78379cd264584a495440a217b9d2ecab524c9a56f7f8b4b5bed3926daa330d` |
 | Runtime / compatibility | `0.0.0-ctg.2.0.32` / `2.0.32` |
 
