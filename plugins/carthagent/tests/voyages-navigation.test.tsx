@@ -201,28 +201,39 @@ test("short terminal keyboard navigation keeps the highlighted action on screen"
   } finally { f.app.renderer.destroy(); }
 });
 
-test("mouse focus enters navigation only from base mode and never acts through an open modal", async () => {
+test("mouse press focuses the rail and release opens the clicked row without acting through a modal", async () => {
   const f = await fixture();
   try {
     const row = f.app.captureCharFrame().split("\n").findIndex((line) => line.includes("Daily coding quests"));
     expect(row).toBeGreaterThanOrEqual(0);
-    f.setMode("modal");
-    await f.app.renderOnce();
-    await f.app.mockMouse.click(5, row);
-    await f.app.renderOnce();
-    expect(f.mode()).toBe("modal");
-    expect(f.routes).toHaveLength(0);
+    for (const mode of ["modal", "palette"]) {
+      f.setMode(mode);
+      await f.app.renderOnce();
+      await f.app.mockMouse.click(5, row);
+      await f.app.renderOnce();
+      expect(f.mode()).toBe(mode);
+      expect(f.routes).toHaveLength(0);
+    }
     f.setMode("base");
     f.app.renderer.clearSelection();
     await f.app.renderOnce();
-    await f.app.mockMouse.click(5, row);
+    await f.app.mockMouse.pressDown(5, row);
     await f.app.renderOnce();
     expect(f.mode()).toBe("navigation");
     expect(f.app.renderer.currentFocusedRenderable).toBeInstanceOf(SelectRenderable);
     expect(f.routes).toHaveLength(0);
-    f.app.mockInput.pressEnter();
+    await f.app.mockMouse.release(5, row);
     await f.app.renderOnce();
     expect(f.routes).toEqual([{ type: "plugin", name: "daily-quests", data: { sessionID: "coding-session" } }]);
+    expect(f.mode()).toBe("base");
+    const questRow = f.app.captureCharFrame().split("\n").findIndex((line) => line.includes("Review a change"));
+    expect(questRow).toBeGreaterThanOrEqual(0);
+    await f.app.mockMouse.click(5, questRow);
+    await f.app.renderOnce();
+    expect(f.routes).toEqual([
+      { type: "plugin", name: "daily-quests", data: { sessionID: "coding-session" } },
+      { type: "plugin", name: "daily-quests", data: { sessionID: "coding-session", questID: "quest-two" } },
+    ]);
   } finally { f.app.renderer.destroy(); }
 });
 
