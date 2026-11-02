@@ -55,8 +55,23 @@ Evidence: `/tmp/opencode/beta2-update-acceptance.json`.
 
 ## Remaining acceptance
 
-Stripe test-mode access and full paid-task continuation remain unavailable or
-incomplete. Screenshot approval is not claimed. Local terminal timing failures
+Stripe sandbox access subsequently became available. Real purchases, upgrades,
+SCA, renewal, failed renewal and cancellation were exercised separately against
+the isolated backend (see backend `docs/stripe-sandbox-acceptance.md`).
+
+An isolated published beta.2 login connected the authorized existing Cloud account.
+A real range-fix task passed four independent tests. Continuing that same session
+hit its persistent elapsed-time budget; beta.2 showed only an unexplained interrupt.
+The follow-up source fix adds actionable budget diagnostics and explicit
+`--reset-budget` support. With that source launcher and the same installed runtime,
+profile and session, continuation added an ascending-across-zero regression and
+passed all five independent tests. This launcher fix is not part of immutable beta.2.
+Execution budgets are not billing credit and never reset on payment or ordinary
+continuation. Evidence: `/tmp/opencode/stripe-acceptance/live-continuation-fixed.log`.
+
+Full task continuation across a genuine payment boundary remains incomplete:
+the real model task used existing Cloud credit and sandbox payments used a separate
+backend without a model upstream. Screenshot approval is not claimed. Local terminal timing failures
 were followed by passing full local, CI and draft acceptance; this does not prove
 that every terminal timing issue is resolved.
 

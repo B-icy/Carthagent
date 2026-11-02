@@ -42,6 +42,40 @@ test('native CLI selects headless execution and preserves output-mode options', 
   assert.equal(invocation.prompt, 'Do work');
 });
 
+test('headless continuation explains persistent budget exhaustion and resets only on explicit request', async t => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-budget-continuation-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const { io, output } = ioCapture();
+  const calls = [];
+  let stopped = 'elapsed-time';
+  const runtime = await createOpenCodeCliRuntime({ cwd, io, stdout: { write() {} }, native: {
+    runtime: {}, service: { ensureService: async () => ({}) }, rpcDefinitions: { Carthagent: {} },
+    clientFactory: async () => ({
+      rpc: () => ({ budgetStatus: async () => ({ stopped }) }),
+      session: {
+        list: async () => ({ data: [{ id: 'same-session', location: { directory: cwd } }] }),
+        get: async () => ({ id: 'same-session', location: { directory: cwd } }),
+        command: async input => { calls.push(input); stopped = null; },
+      },
+    }),
+    headless: { runHeadless: async (_service, _cwd, _prompt, options) => {
+      assert.equal(options.sessionID, 'same-session');
+      calls.push('prompt');
+      return { session: { id: 'same-session' }, outcome: stopped ? 'interrupted' : 'succeeded', terminal: true,
+        messages: stopped ? [] : [{ type: 'assistant', finish: 'stop', content: [{ type: 'text', text: 'continued' }] }] };
+    } },
+  } });
+  assert.equal(parseOpenCodeArgs(['--continue', '--reset-budget', 'Continue']).resetBudget, true);
+  assert.equal(await runtime.run({ mode: 'headless', options: { continue: true }, prompt: 'Continue' }), 1);
+  assert.match(output.stderr.at(-1), /budget exhausted: elapsed-time.*--reset-budget/);
+  assert.deepEqual(calls, ['prompt'], 'no implicit budget reset or prompt retry');
+  assert.equal(await runtime.run({ mode: 'headless', options: { continue: true, resetBudget: true }, prompt: 'Continue' }), 0);
+  assert.deepEqual(calls.slice(1), [{ sessionID: 'same-session', name: 'delivery-budget-reset', text: '' }, 'prompt']);
+  await assert.rejects(runtime.run({ mode: 'headless', options: { resetBudget: true }, prompt: 'New task' }), /requires --session/);
+});
+
 test('headless CLI validates prompts and maps cancellation to conventional exit code', async () => {
   const { io, output } = ioCapture();
   assert.equal(await runOpenCodeCli({ argv: [], stdoutIsTTY: false, io, runtime: {} }), 1);
@@ -77,10 +111,10 @@ test('model, auth, cloud and domain entrypoints dispatch to injected native capa
   ]);
 });
 
-test('help preserves command aliases, Ship operations and isolation semantics', async () => {
+test('help preserves command aliases, Cloud operations and isolation semantics', async () => {
   const { output, io } = ioCapture();
   assert.equal(await runOpenCodeCli({ argv: ['--help'], io, version: '1.0.3' }), 0);
-  assert.match(output.stdout[0], /account.*Ship credit/);
+  assert.match(output.stdout[0], /account.*Cloud credit/);
   assert.match(output.stdout[0], /billing.*checkout\|portal/);
   assert.match(output.stdout[0], /--isolate\s+Isolate extension\/skill discovery \(not a worktree\)/);
   assert.equal(cliHelp('x').includes('--engine-cli, --agent-cli'), true);
