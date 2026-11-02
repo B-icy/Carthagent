@@ -27,6 +27,13 @@ The upstream revision, lockfile and detached runtime identity are unchanged
 from preview.12; the runtime is rebuilt because each runtime manifest is
 bound to its exact package version.
 
+**Ship and Voyages follow-up fixes.** Beam replay requests include the required
+nonempty reasoning placeholder when earlier assistant messages have no recorded
+reasoning. The delivery plan entry point stays visible in the code-mode catalog,
+and final review accepts single-assertion aliases and assertion arrays. Voyages
+and quest lists activate on mouse release so newly opened dialogs remain open;
+rail clicks select the intended quest and respect modal focus.
+
 ## Provenance
 
 | Input | Exact value |
