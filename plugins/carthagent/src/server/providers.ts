@@ -98,7 +98,7 @@ function modelInfo(providerID: string, profile: CatalogModel, defaultBaseURL: st
 
 function mapCompatibility(compat: Record<string, unknown>): NonNullable<Model.Info['compatibility']> {
   const keys = [
-    'reasoningField', 'requireReasoning', 'maxTokensField', 'requireFinishReason',
+    'reasoningField', 'requireReasoning', 'reasoningPlaceholder', 'maxTokensField', 'requireFinishReason',
     'requireAssistantAfterTool', 'supportsPromptCacheKey', 'cacheFormat',
     'supportsThinkingBlockBinding', 'supportsEffortUpdates',
   ] as const;

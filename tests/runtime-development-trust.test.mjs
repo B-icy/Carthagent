@@ -83,7 +83,7 @@ async function fixture(t, patchSha256 = developmentPatch) {
 }
 
 test('published preview.13 release trust stays valid independently of the development patch pin', async t => {
-  assert.equal(CTG_RUNTIME_PATCH_SHA256, 'd6b11779e010ed9899f069c68ac1cca48178f61d8229586141a88a1ead700c31');
+  assert.equal(CTG_RUNTIME_PATCH_SHA256, 'ae3fb2d8f463e1d89b9533e4d19fd44bf363e1a3e6778019fe1f720d3f76f883');
   const published = await readRuntimeReleaseManifest();
   assert.equal(published.releaseVersion, '1.1.0-preview.13');
   const f = await fixture(t, CTG_RUNTIME_PATCH_SHA256);
