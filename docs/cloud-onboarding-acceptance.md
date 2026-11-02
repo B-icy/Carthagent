@@ -1,7 +1,10 @@
-# Cloud onboarding — unreleased implementation
+# Cloud onboarding — beta.2 implementation
 
-November 2, 2026. This branch is not published beta acceptance. npm `next` remains
-1.1.0-beta.1 and `latest` remains 1.0.7.
+November 2, 2026. Beta.2 is published on GitHub and npm `next`; `latest` remains
+1.0.7. See [published acceptance](beta2-published-acceptance.md) for final CI,
+draft/public runtime gates, signed npm provenance, Linux clean installation and
+isolated beta.1 → beta.2 update evidence. Historical preparation notes below do
+not supersede that release record.
 
 Native PR #238 merged at `a5ad2164d056fee7f7183579ce6cc97305bae53b` after CI
 41504674623 passed. First-task guidance is tracked in PR #239. Beta.2 runtime
