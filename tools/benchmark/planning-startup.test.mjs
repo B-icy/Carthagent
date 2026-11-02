@@ -21,7 +21,7 @@ test('installed engine traverses discovery guide and full delivery with offline 
    ()=>({name:'delivery_progress',args:{step:'build',status:'done'}}),
    ()=>({name:'delivery_review',args:{action:'inspect'}}),
     p=>{const reviewed=JSON.parse(p.messages.filter(message=>message.role==='tool').at(-1).content);return {name:'delivery_review',args:{action:'record',captureId:reviewed.id,coverage:[{requirement,assertions:'Declared Node strict-equality check verified exact output content'}],probes:['Declared output check completed successfully'],findings:[],limitations:['Offline scripted fixture; not model efficacy']}};},
-  ()=>({name:'delivery_finish',args:{status:'verified',review:'Reviewed fixture evidence',launch:'n/a',limitations:['Offline scripted provider']}}),
+   ()=>({name:'delivery_finish',args:{status:'verified',change:'Completed the scripted fixture task.',review:'Reviewed fixture evidence',launch:'n/a',limitations:['Offline scripted provider']}}),
  ];
   let i=0,sawCheckpoint=false,advertised=[],requestTrace=[];
   const r=await runCandidate('smoke','harness',{smoke:true,key:'dummy',root,campaignPath,promptOverride:'Implement a fixture output.txt containing exactly ok. Use the delivery contract and finish verified.',fetchImpl:async(_url,options)=>{

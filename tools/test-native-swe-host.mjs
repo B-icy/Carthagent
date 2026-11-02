@@ -56,7 +56,7 @@ const host = await nativeFixture({
       return;
     }
     if (JSON.stringify([...messages].reverse().find(message => message.role === 'user')).includes('STALE_FINISH_ATTEMPT')) {
-      return execution('const result = await tools.carthagent["delivery_finish"]({status:"verified",review:"independent receipt is stale after source mutation",launch:"not applicable",limitations:[]}); return result');
+      return execution('const result = await tools.carthagent["delivery_finish"]({status:"verified",change:"Mutated fixture source after independent review.",review:"independent receipt is stale after source mutation",launch:"not applicable",limitations:[]}); return result');
     }
     const shell = () => dispatch('shell', {
       command: 'node --test --test-reporter=tap src/value.test.mjs',
@@ -68,7 +68,7 @@ const host = await nativeFixture({
       return execution('const result = await search({ query: "delivery plan acceptance checks review design tools", namespace: "carthagent", limit: 20 }); return result');
     }
     if (!executeCalls.some(call => codeOf(call).includes('delivery_finish'))) {
-      return execution('const result = await tools.carthagent["delivery_finish"]({status:"verified",review:"premature no-plan attempt",launch:"not applicable",limitations:[]}); return result');
+      return execution('const result = await tools.carthagent["delivery_finish"]({status:"verified",change:"No implementation changes made.",review:"premature no-plan attempt",launch:"not applicable",limitations:[]}); return result');
     }
     if (!executed('delivery_finish')) throw Error('The no-plan verified finish call did not produce a tool response');
     if (!executed('delivery_plan')) {
@@ -93,7 +93,7 @@ const host = await nativeFixture({
       return execution('return await tools.carthagent["delivery_check"]({id:"all"})');
     }
     if (!executeCalls.some(call => codeOf(call).includes('delivery_finish') && /premature attempt before progress/.test(codeOf(call)))) {
-      return execution('const result = await tools.carthagent["delivery_finish"]({status:"verified",review:"premature attempt before progress",launch:"not applicable",limitations:[]}); return result');
+      return execution('const result = await tools.carthagent["delivery_finish"]({status:"verified",change:"Changed fixture value from 0 to 42.",review:"premature attempt before progress",launch:"not applicable",limitations:[]}); return result');
     }
     if (!executed('delivery_progress')) {
       return execution('const result = await tools.carthagent["delivery_progress"]({step:"repair-value",status:"done",note:"Native red/edit/green chronology completed."}); return {marker:"CTG_SWE_PROGRESS_DONE",result}');
@@ -110,7 +110,7 @@ const host = await nativeFixture({
       return execution(`const result = await tools.carthagent["delivery_review"]({action:"record",captureId:${JSON.stringify(captureId)},coverage:${JSON.stringify(coverage)},probes:${JSON.stringify(probes)},findings:[],limitations:["Offline host proof uses model-authored workflow review; no independent reviewer service is configured.","This fixture verifies native workflow integration, not delivery-policy enforcement."]}); return {marker:"CTG_SWE_REVIEW_RECORDED",result}`);
     }
     if (done('execute').filter(call => codeOf(call).includes('delivery_finish') && /Fresh declared test/.test(codeOf(call))).length < 1) {
-      return execution('const result = await tools.carthagent["delivery_finish"]({status:"verified",review:"Fresh declared test passed and model-authored coverage/probes were recorded; independent review was not configured.",launch:"Not applicable to this isolated module fixture.",limitations:["No independent reviewer service was configured; this is not independent review assurance.","This fixture acceptance does not claim delivery-policy enforcement."]}); return {marker:"CTG_SWE_FINISHED",result}');
+      return execution('const result = await tools.carthagent["delivery_finish"]({status:"verified",change:"Changed fixture value from 0 to 42 to satisfy the existing assertion.",review:"Fresh declared test passed and model-authored coverage/probes were recorded; independent review was not configured.",launch:"Not applicable to this isolated module fixture.",limitations:["No independent reviewer service was configured; this is not independent review assurance.","This fixture acceptance does not claim delivery-policy enforcement."]}); return {marker:"CTG_SWE_FINISHED",result}');
     }
     return respondText('The fixture fix passed the declared check and the composed delivery workflow accepted its honest, limited handoff.');
 
