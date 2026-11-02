@@ -3,6 +3,7 @@ import { For, Show, createEffect, createSignal, on, onCleanup, onMount } from "s
 import { createHash, randomUUID } from "node:crypto";
 import type { ScrollBoxRenderable, SelectRenderable, TextareaRenderable } from "@opentui/core";
 import { usePlugin } from "@opencode/plugin/tui";
+import { clickSelect } from "./select-mouse.js";
 import { dailyQuestsClient, dailySourceClient } from "./client.js";
 import type { DailyEvidence, DailyQuestDetail, DailySnapshot, DailySubmission, DailyRecord } from "../daily-quests-rpc.js";
 import type { DailySourceReport } from "../daily-source-rpc.js";
@@ -229,6 +230,6 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string })
       <textarea ref={editor} flexBasis={0} flexGrow={1} minHeight={2} initialValue={view().draft?.text ?? ""} focused={focus.editorEnabled()} onContentChange={() => syncDailyEditor(editor, controller)} keyBindings={[{ name: "p", ctrl: true, action: "submit" }]} onSubmit={preview} />
     </Show>
     <text flexShrink={0} fg={context.theme.text.faint}>↑/↓ Enter · PgUp/Dn · Ctrl+U/D details · Cancel: no send</text>
-    <select ref={(node) => { actions = node; focus.attachActions(node); }} flexBasis={0} flexGrow={1} flexShrink={0} minHeight={3} showScrollIndicator options={options()} focused={focus.actionsEnabled()} keyBindings={[{ name: "pageup", action: "move-up-fast" }, { name: "pagedown", action: "move-down-fast" }]} onSelect={(_index, option) => select(option?.value)} />
+    <select ref={(node) => { actions = node; focus.attachActions(node); }} onMouseDown={(event) => { if (focus.actionsEnabled()) clickSelect(actions, event); }} flexBasis={0} flexGrow={1} flexShrink={0} minHeight={3} showScrollIndicator options={options()} focused={focus.actionsEnabled()} keyBindings={[{ name: "pageup", action: "move-up-fast" }, { name: "pagedown", action: "move-down-fast" }]} onSelect={(_index, option) => select(option?.value)} />
   </box>;
 }
