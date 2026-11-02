@@ -149,6 +149,7 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
       } finally { release() }
     })
   }
+  // The code-mode catalog drops the longest signatures first; pin the plan entry point so it is always listed.
   const add = (editor: Parameters<Parameters<Context["tool"]["transform"]>[0]>[0], name: string, description: string, input: Schema, execute: (input: DeliveryInput, toolContext: RegisteredToolContext) => Promise<{ content: string }>) => editor.add({
     name, description, input: input as Tool.ValueSchema<DeliveryInput>, execute: async (rawValue, tool) => {
       const value = rawValue as DeliveryInput
@@ -161,7 +162,7 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
         return { ...result, metadata: { deliveryPlan: planSnapshot(data.state) } }
       }
       catch (error) { throw new NativeToolError({ message: error instanceof Error ? error.message : String(error) }) }
-    }, options: { namespace: "carthagent", codemode: true },
+    }, options: { namespace: "carthagent", codemode: true, ...(name === "delivery_plan" ? { pinned: true } : {}) },
   })
 
   registrations.push(await ctx.tool.transform(editor => {

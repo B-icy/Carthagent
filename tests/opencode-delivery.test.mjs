@@ -49,6 +49,13 @@ test('delivery_review coverage schema accepts assertion aliases models emit', as
   assert.equal(item.properties.assertion.type, 'string')
 })
 
+test('code-mode catalog always lists the delivery_plan entry point', async t => {
+  const h = host(t)
+  await registerDelivery(h.ctx, { workflow: 'standard' })
+  const pinned = [...h.tools.values()].filter(def => def.options?.pinned).map(def => def.name)
+  assert.deepEqual(pinned, ['delivery_plan'])
+})
+
 test('OpenCode V2 registration exposes domain tools and returns complete cleanup', async t => {
   const h = host(t)
   const cleanup = await registerDelivery(h.ctx, { workflow: 'standard' })
