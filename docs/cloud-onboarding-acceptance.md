@@ -5,7 +5,10 @@ November 2, 2026. This branch is not published beta acceptance. npm `next` remai
 
 Native PR #238 merged at `a5ad2164d056fee7f7183579ce6cc97305bae53b` after CI
 41504674623 passed. First-task guidance is tracked in PR #239. Beta.2 runtime
-prebuild 41505735348 is running; publication remains pending.
+prebuild 41505735348 succeeded. All five downloaded archives, executable digests
+and pinned provenance were independently verified by regenerating the candidate
+manifest locally. Package and lockfile target beta.2 and pin that exact manifest;
+publication remains pending.
 
 ## Changes
 
