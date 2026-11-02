@@ -111,7 +111,7 @@ export default { id: 'carthagent', async setup(context) {
     } else if (scenario === 'strict' && tools.includes('execute') && toolResults === 4) {
       toolCall(response, { name: 'execute', arguments: { code: 'await tools.carthagent["delivery_design"]({ action: "validate" }); const inspected = await tools.carthagent["delivery_design"]({ action: "inspect" }); const captureId = String(inspected).match(/"captureId"\\s*:\\s*"([^"]+)"/)?.[1]; if (!captureId) throw Error("inspect did not expose a capture ID"); await tools.carthagent["delivery_design"]({ action: "review", captureId, review: { captureId, challenges: ["Could a missing output be accepted?"], findings: [], walkthroughs: [{ scenario: "positive", trace: "fixture -> exists", assertion: "accessSync succeeds" }, { scenario: "negative", trace: "missing -> ENOENT", assertion: "accessSync throws ENOENT" }], limitations: ["Model-authored review is not independent proof."] } }); return await tools.carthagent["delivery_design"]({ action: "approve" })' } });
     } else if (scenario === 'strict' && tools.includes('execute') && toolResults === 5) {
-      toolCall(response, { name: 'execute', arguments: { code: 'return await tools.carthagent["delivery_finish"]({ status: "verified", review: "dishonest strict fixture attempt", launch: "not run", limitations: [] })' } });
+      toolCall(response, { name: 'execute', arguments: { code: 'return await tools.carthagent["delivery_finish"]({ status: "verified", change: "No verified implementation changes.", review: "dishonest strict fixture attempt", launch: "not run", limitations: [] })' } });
     } else if (tools.includes('shell') && toolResults === 2) {
       toolCall(response, { name: 'shell', arguments: { command: "printf 'fixture output\\n' > fixture.txt" } });
     } else if (tools.includes('execute') && toolResults === 3) {
@@ -120,7 +120,7 @@ export default { id: 'carthagent', async setup(context) {
       toolCall(response, { name: 'execute', arguments: { code: 'return await tools.carthagent["delivery_check"]({ id: "all" })' } });
     } else if (tools.includes('execute') && toolResults === 5) {
       if (scenario === 'budget') toolCall(response, { name: 'execute', arguments: { code: 'return await tools.carthagent["delivery_status"]({})' } });
-      else toolCall(response, { name: 'execute', arguments: { code: 'return await tools.carthagent["delivery_finish"]({ status: "verified", review: "dishonest fixture attempt", launch: "not run", limitations: [] })' } });
+      else toolCall(response, { name: 'execute', arguments: { code: 'return await tools.carthagent["delivery_finish"]({ status: "verified", change: "No verified implementation changes.", review: "dishonest fixture attempt", launch: "not run", limitations: [] })' } });
     } else {
       assistantText(response, 'Fixture completed its offline workflow; no verification claim is made.');
     }
