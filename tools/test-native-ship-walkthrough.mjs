@@ -27,7 +27,7 @@ const designReview = {
   findings: [], limitations: ['Model-authored fixture review, not independent assurance.'],
 };
 const call = (name, input) => `await tools.carthagent[${JSON.stringify(name)}](${JSON.stringify(input)})`;
-const finish = { status: 'verified', review: 'Exact content check and repaired failure inspected.', launch: 'Fixture check executed in this disposable workspace.', limitations: ['Fixture-only walkthrough; no production or visual assurance.'] };
+const finish = { status: 'verified', change: 'Created fixture.txt with the required exact UTF-8 content.', review: 'Exact content check and repaired failure inspected.', launch: 'Fixture check executed in this disposable workspace.', limitations: ['Fixture-only walkthrough; no production or visual assurance.'] };
 const actions = [
   { code: `return ${call('delivery_plan', plan)}` },
   { code: `return ${call('delivery_finish', finish)}` },

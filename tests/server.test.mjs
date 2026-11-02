@@ -79,7 +79,9 @@ test('dashboard status reports an available update from the release cache', asyn
   // Seed the throttled cache so the check resolves without touching the network.
   const cachePath = join(dir, 'update-check.json');
   writeFileSync(cachePath, JSON.stringify({ checkedAt: Date.now(), release: { version: '99.0.0', tag: 'v99.0.0' } }));
-  const server = await serverFixture(t, { CARTHAGENT_UPDATE_CHECK_FILE: cachePath });
+  const channelPath = join(dir, 'update-channel.json');
+  writeFileSync(channelPath, JSON.stringify({ version: 1, channel: 'stable' }));
+  const server = await serverFixture(t, { CARTHAGENT_UPDATE_CHECK_FILE: cachePath, CARTHAGENT_UPDATE_CHANNEL_FILE: channelPath });
   let body = {};
   for (let i = 0; i < 50 && !body.update; i++) {
     body = await (await fetch(`${server.url}/api/status`, { headers: { 'x-carthagent-token': server.token } })).json();

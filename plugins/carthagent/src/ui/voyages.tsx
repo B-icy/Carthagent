@@ -1,6 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { Show, createSignal, onCleanup, onMount } from "solid-js";
-import type { ScrollBoxRenderable } from "@opentui/core";
+import type { ScrollBoxRenderable, SelectRenderable } from "@opentui/core";
+import { clickSelect } from "./select-mouse.js";
 import { usePlugin } from "@opencode/plugin/tui";
 import { voyagesClient, type VoyagesSnapshot, type VoyagesProfile, type VoyagesItem, type VoyagesQuote } from "./client.js";
 import { canEquip, createVoyagesState, handleVoyagesEvent, voyagesCatalogLabel } from "./voyages-state.mjs";
@@ -9,6 +10,7 @@ type ViewState = { snapshot?: VoyagesSnapshot; busy: boolean; error: string; not
 
 /** All mutations go through the lifetime-guarded controller, including dialogs. */
 export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "equipment" }) {
+  let list: SelectRenderable | undefined;
   const context = usePlugin();
   const location = () => (props.sessionID ? context.data.session.get(props.sessionID)?.location : undefined) ?? context.location ?? context.data.location.default();
   const [view, setView] = createSignal<ViewState>({ busy: false, error: "", notice: "" });
@@ -122,6 +124,6 @@ export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "
       <text flexShrink={0} fg={context.theme.text.faint}>Choose Back to return. Cancel in dialogs never saves or purchases.</text>
     </scrollbox>
     <text flexShrink={0} fg={context.theme.text.faint}>↑/↓ Enter · PgUp/Dn choices · Ctrl+U/D profile</text>
-    <select flexBasis={0} flexGrow={1} flexShrink={0} minHeight={3} showScrollIndicator keyBindings={[{ name: "pageup", action: "move-up-fast" }, { name: "pagedown", action: "move-down-fast" }]} options={options()} focused={context.keymap.mode.current() === "base"} onSelect={(_index, option) => select(option?.value)} />
+    <select flexBasis={0} flexGrow={1} flexShrink={0} minHeight={3} ref={(node) => { list = node; }} onMouseUp={(event) => clickSelect(list, event)} showScrollIndicator keyBindings={[{ name: "pageup", action: "move-up-fast" }, { name: "pagedown", action: "move-down-fast" }]} options={options()} focused={context.keymap.mode.current() === "base"} onSelect={(_index, option) => select(option?.value)} />
   </box>;
 }

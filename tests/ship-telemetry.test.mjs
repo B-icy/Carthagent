@@ -234,7 +234,7 @@ test('update check sends the install headers to the control plane only', async t
   const agentDir = tmp(t);
   const seen = [];
   const { release, source } = await fetchLatestRelease({
-    cloudUrl: 'https://cloud.test', env: {}, agentDir,
+    cloudUrl: 'https://cloud.test', env: {}, agentDir, channel: 'stable',
     fetchImpl: async (url, options) => {
       seen.push({ url, headers: options.headers });
       if (url.includes('/v1/cli/releases/latest')) return { status: 503, json: async () => ({}) };

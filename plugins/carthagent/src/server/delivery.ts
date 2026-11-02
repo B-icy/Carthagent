@@ -43,7 +43,7 @@ const short = S()
 const steps = A({ anyOf: [short, O({ id: { type: "string", pattern: "^[a-z][a-z0-9_-]{0,39}$" }, title: short, kind: { type: "string", enum: ["work", "regression"] }, dependsOn: A(short, 40), checks: A(short, 24) }, ["id", "title"])] }, 40)
 const checks = A(O({ id: { type: "string", pattern: "^[a-z][a-z0-9_-]{0,39}$" }, kind: { type: "string", enum: ["test", "runtime", "static"] }, argv: A(short, 80), timeoutSeconds: { type: "integer", minimum: 1, maximum: 300 } }), 24)
 const acceptance = A(O({ requirement: short, checks: A(short, 24) }), 40)
-const planSchema = O({ goal: short, assumptions: A(short), artifacts: A(short, 40), outputs: A(short, 40), steps, verification: { type: "string", enum: ["required", "advisory", "none"] }, acceptance, checks, design: { type: "object", additionalProperties: true }, workflow: { type: "object", additionalProperties: true }, outcomes: A({ type: "object", additionalProperties: true }, 32) }, ["goal", "assumptions", "artifacts", "steps", "acceptance", "checks"])
+const planSchema = O({ goal: short, assumptions: A(short), artifacts: A(short, 40), outputs: A(S("Relative file path that must exist at completion, e.g. invoice.mjs. Not a prose deliverable or command result; put test commands in checks. Omit outputs when no files are promised."), 40), steps, verification: { type: "string", enum: ["required", "advisory", "none"] }, acceptance, checks, design: { type: "object", additionalProperties: true }, workflow: { type: "object", additionalProperties: true }, outcomes: A({ type: "object", additionalProperties: true }, 32) }, ["goal", "assumptions", "artifacts", "steps", "acceptance", "checks"])
 
 function sessionKey(sessionID: string) { return `session/${sessionID}` }
 
@@ -149,8 +149,9 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
       } finally { release() }
     })
   }
+  // The code-mode catalog drops the longest signatures first; pin the plan entry point so it is always listed.
   const add = (editor: Parameters<Parameters<Context["tool"]["transform"]>[0]>[0], name: string, description: string, input: Schema, execute: (input: DeliveryInput, toolContext: RegisteredToolContext) => Promise<{ content: string }>) => editor.add({
-    name, description, input: input as Tool.ValueSchema<DeliveryInput>, execute: async (rawValue, tool) => {
+    name, description: `${description} Returns text; in code mode use JSON.parse(result) for JSON responses before reading fields. Plain-text messages are not JSON.`, input: input as Tool.ValueSchema<DeliveryInput>, execute: async (rawValue, tool) => {
       const value = rawValue as DeliveryInput
       const { active } = await scope(tool.sessionID)
       if (!active || !isShipAgent(tool.agent)) throw Error("Carthagent delivery tools are disabled for this session; select Ship mode to use them.")
@@ -161,12 +162,12 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
         return { ...result, metadata: { deliveryPlan: planSnapshot(data.state) } }
       }
       catch (error) { throw new NativeToolError({ message: error instanceof Error ? error.message : String(error) }) }
-    }, options: { namespace: "carthagent", codemode: true },
+    }, options: { namespace: "carthagent", codemode: true, ...(name === "delivery_plan" ? { pinned: true } : {}) },
   })
 
   registrations.push(await ctx.tool.transform(editor => {
     editor.namespace?.({ name: "carthagent", description: "Evidence-driven CTG delivery workflow tools" })
-    add(editor, "delivery_plan", "Create the durable acceptance contract and plan.d2. Informational asks may use verification none/advisory; product changes require fresh checks.", planSchema, async (input, tool) => operate(tool.sessionID, async ({ cwd, data, options: opts }) => {
+    add(editor, "delivery_plan", "Create the durable acceptance contract and plan.d2. Outputs are relative file paths, not prose or test results. Informational asks may use verification none/advisory; product changes require fresh checks.", planSchema, async (input, tool) => operate(tool.sessionID, async ({ cwd, data, options: opts }) => {
       if (data.configError) throw Error(data.configError)
       const plan = validatePlan(bindRequiredChecks({ ...input, verification: input.verification ?? "required" }, data.required), cwd)
       validateRevision(data.state, plan)
@@ -288,7 +289,7 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
       const hash = fingerprint(cwd, ["."]); const issues = completionIssues(data.state, cwd, hash)
       return text({ results, pendingChecks: pendingChecks(data.state, hash), completionIssues: issues, readyToFinish: Object.values(issues).every(items => !items.length), next: "Complete pending steps, review the evidence, then call delivery_finish." })
     }))
-    add(editor, "delivery_review", "Inspect final diff or record assertion coverage, boundary probes and findings. Required for structured plans; assertions are model-authored.", O({ action: { type: "string", enum: ["inspect", "record"] }, captureId: short, coverage: A({ type: "object", properties: { requirement: { type: "string", description: "Exact acceptance requirement text" }, assertions: { type: "string", description: "Concrete assertions the linked checks make" }, status: { type: "string", enum: ["demonstrated", "unverified"] } }, required: ["requirement", "assertions"], additionalProperties: true }, 64), resolutions: A({ type: "object", additionalProperties: true }, 40), outcomes: A({ type: "object", additionalProperties: true }, 32), probes: A(short, 40), findings: A(short, 40), limitations: A(short) }, ["action"]), async (input, tool) => operate(tool.sessionID, async ({ cwd, data }) => {
+    add(editor, "delivery_review", "Inspect final diff or record assertion coverage, boundary probes and findings. Required for structured plans; assertions are model-authored.", O({ action: { type: "string", enum: ["inspect", "record"] }, captureId: short, coverage: A({ type: "object", properties: { requirement: { type: "string", description: "Exact acceptance requirement text" }, assertions: { anyOf: [{ type: "string" }, A({ type: "string" }, 32)], description: "Concrete assertions the linked checks make" }, assertion: { type: "string", description: "Alias for a single assertion" }, status: { type: "string", enum: ["demonstrated", "unverified"] } }, required: ["requirement"], additionalProperties: true }, 64), resolutions: A({ type: "object", additionalProperties: true }, 40), outcomes: A({ type: "object", additionalProperties: true }, 32), probes: A(short, 40), findings: A(short, 40), limitations: A(short) }, ["action"]), async (input, tool) => operate(tool.sessionID, async ({ cwd, data }) => {
       if (!data.state) throw Error("Call delivery_plan first")
       const result = input.action === "inspect" ? await captureDeliveryReview(data.state, cwd, runDirectory(cwd, tool.sessionID, data.state.runId), tool.signal) : input.action === "record" ? recordDeliveryReview(data.state, cwd, input) : (() => { throw Error("Review action must be inspect or record") })()
       await persist(cwd, tool.sessionID, data); return text(result)

@@ -1,3 +1,101 @@
+diff --git a/packages/ai/src/protocols/openai-chat.ts b/packages/ai/src/protocols/openai-chat.ts
+index 27e9843..b4f972c 100644
+--- a/packages/ai/src/protocols/openai-chat.ts
++++ b/packages/ai/src/protocols/openai-chat.ts
+@@ -352,7 +352,7 @@ const lowerToolChoice = (toolChoice: NonNullable<LLMRequest["toolChoice"]>) =>
+ 
+ const lowerToolCall = (
+   part: ToolCallPart,
+-  options: LoweringOptions & { readonly providerMetadataKey: string },
++  options: LoweringOptions & { readonly providerMetadataKey: string; readonly reasoningPlaceholder?: string },
+ ): OpenAIChatAssistantToolCall => ({
+   id: options.toolCallID?.(part.id) ?? part.id,
+   type: "function",
+@@ -437,7 +437,7 @@ const lowerAssistantMessage = Effect.fnUntraced(function* (
+   message: OpenAIChatRequestMessage,
+   configuredField: string | undefined,
+   requireReasoning: boolean,
+-  options: LoweringOptions & { readonly providerMetadataKey: string },
++  options: LoweringOptions & { readonly providerMetadataKey: string; readonly reasoningPlaceholder?: string },
+ ) {
+   const content: OpenAIChatTextContent[] = []
+   const reasoning: ReasoningPart[] = []
+@@ -478,10 +478,11 @@ const lowerAssistantMessage = Effect.fnUntraced(function* (
+     // even when thinking arrived only through structured details.
+     if (details?.some(isKimiDetail)) return "reasoning_content"
+   })()
++  const placeholder = options.reasoningPlaceholder ?? ""
+   const reasoningText = (() => {
+     if (configuredField !== undefined)
+-      return reasoning.length === 0 ? (nativeReasoning ?? (requireReasoning ? "" : undefined)) : text
+-    if (reasoning.length === 0) return nativeReasoning ?? (requireReasoning ? "" : undefined)
++      return reasoning.length === 0 ? (nativeReasoning ?? (requireReasoning ? placeholder : undefined)) : text
++    if (reasoning.length === 0) return nativeReasoning ?? (requireReasoning ? placeholder : undefined)
+     return text
+   })()
+   const result = {
+@@ -539,7 +540,7 @@ const lowerMessage = Effect.fnUntraced(function* (
+   message: OpenAIChatRequestMessage,
+   reasoningField: string | undefined,
+   requireReasoning: boolean,
+-  options: LoweringOptions & { readonly providerMetadataKey: string },
++  options: LoweringOptions & { readonly providerMetadataKey: string; readonly reasoningPlaceholder?: string },
+ ) {
+   if (message.role === "user") return [yield* lowerUserMessage(message, options)]
+   if (message.role === "assistant") {
+@@ -578,6 +579,7 @@ const lowerMessages = Effect.fnUntraced(function* (request: LLMRequest, options:
+   const lowering = {
+     ...options,
+     providerMetadataKey: request.model.route.providerMetadataKey ?? String(request.model.provider),
++    reasoningPlaceholder: request.model.compatibility?.reasoningPlaceholder,
+     toolCallID: (id: string) => {
+       if (mistral)
+         return id
+diff --git a/packages/ai/src/schema/options.ts b/packages/ai/src/schema/options.ts
+index 9d8be62..32ce5e1 100644
+--- a/packages/ai/src/schema/options.ts
++++ b/packages/ai/src/schema/options.ts
+@@ -217,6 +217,8 @@ export class LanguageModelCompatibility extends Schema.Class<LanguageModelCompat
+   reasoningField: Schema.optional(Schema.String),
+   /** Require every assistant message to include its reasoning field, even when empty. */
+   requireReasoning: Schema.optional(Schema.Boolean),
++  /** Text sent for a required reasoning field when no reasoning was recorded; for endpoints that reject an empty value. */
++  reasoningPlaceholder: Schema.optional(Schema.String),
+   maxTokensField: Schema.optional(LanguageModelMaxTokensFieldCompatibility),
+   requireFinishReason: Schema.optional(Schema.Boolean),
+   requireAssistantAfterTool: Schema.optional(Schema.Boolean),
+diff --git a/packages/ai/test/provider/openai-chat.test.ts b/packages/ai/test/provider/openai-chat.test.ts
+index 46576a7..6128c10 100644
+--- a/packages/ai/test/provider/openai-chat.test.ts
++++ b/packages/ai/test/provider/openai-chat.test.ts
+@@ -197,6 +197,27 @@ describe("OpenAI Chat route", () => {
+     }),
+   )
+ 
++  it.effect("sends the configured placeholder when required reasoning was not recorded", () =>
++    Effect.gen(function* () {
++      const prepared = yield* compileRequest(
++        LLM.request({
++          model: LanguageModel.update(model, {
++            compatibility: { reasoningField: "reasoning_content", requireReasoning: true, reasoningPlaceholder: " " },
++          }),
++          messages: [
++            Message.assistant([{ type: "reasoning", text: "thinking" }, { type: "text", text: "Hello" }]),
++            Message.assistant("Done"),
++          ],
++        }),
++      )
++
++      expect(prepared.body.messages).toEqual([
++        { role: "assistant", content: "Hello", reasoning_content: "thinking" },
++        { role: "assistant", content: "Done", reasoning_content: " " },
++      ])
++    }),
++  )
++
+   it.effect("omits empty configured reasoning fields when reasoning is explicitly optional", () =>
+     Effect.gen(function* () {
+       const prepared = yield* compileRequest(
 diff --git a/packages/cli/package.json b/packages/cli/package.json
 index fa062f5..4404b02 100644
 --- a/packages/cli/package.json
@@ -29,7 +127,7 @@ index 4580c6b..0f289bf 100644
  export type ServerInfoOperation<E = never> = () => Effect.Effect<ServerInfoOutput, E>
  
 diff --git a/packages/client/src/promise/generated/types.ts b/packages/client/src/promise/generated/types.ts
-index 96ba475..6b08478 100644
+index 96ba475..e5fa784 100644
 --- a/packages/client/src/promise/generated/types.ts
 +++ b/packages/client/src/promise/generated/types.ts
 @@ -5,7 +5,7 @@ export type ServerInfo = {
@@ -41,6 +139,22 @@ index 96ba475..6b08478 100644
  }
  
  export type PairingCode = { code: string; expires_in: number }
+@@ -636,6 +636,7 @@ export type FormAnswer = { [x: string]: FormValue }
+ export type ModelCompatibility = {
+   reasoningField?: ModelReasoningField
+   requireReasoning?: boolean
++  reasoningPlaceholder?: string
+   maxTokensField?: ModelMaxTokensField
+   requireFinishReason?: boolean
+   requireAssistantAfterTool?: boolean
+@@ -648,6 +649,7 @@ export type ModelCompatibility = {
+ export type ProviderCompatibility = {
+   reasoningField?: ModelReasoningField
+   requireReasoning?: boolean
++  reasoningPlaceholder?: string
+   maxTokensField?: ModelMaxTokensField
+   requireFinishReason?: boolean
+   requireAssistantAfterTool?: boolean
 diff --git a/packages/core/src/codemode/tool.ts b/packages/core/src/codemode/tool.ts
 index ef0d5d6..346cc68 100644
 --- a/packages/core/src/codemode/tool.ts
@@ -491,6 +605,30 @@ index fe641b3..ea489ee 100644
 +    }
 +  }
  }
+diff --git a/packages/protocol/openapi.json b/packages/protocol/openapi.json
+index c502278..45c88f1 100644
+--- a/packages/protocol/openapi.json
++++ b/packages/protocol/openapi.json
+@@ -16815,6 +16815,9 @@
+           "requireReasoning": {
+             "type": "boolean"
+           },
++          "reasoningPlaceholder": {
++            "type": "string"
++          },
+           "maxTokensField": {
+             "$ref": "#/components/schemas/Model.MaxTokensField"
+           },
+@@ -17920,6 +17923,9 @@
+           "requireReasoning": {
+             "type": "boolean"
+           },
++          "reasoningPlaceholder": {
++            "type": "string"
++          },
+           "maxTokensField": {
+             "$ref": "#/components/schemas/Model.MaxTokensField"
+           },
 diff --git a/packages/protocol/src/groups/server.ts b/packages/protocol/src/groups/server.ts
 index 4b4cab1..e010fc1 100644
 --- a/packages/protocol/src/groups/server.ts
@@ -521,6 +659,19 @@ index a9ee506..03fb9d3 100644
            }),
          ),
      )
+diff --git a/packages/schema/src/model-compatibility.ts b/packages/schema/src/model-compatibility.ts
+index 92a0900..1532f3c 100644
+--- a/packages/schema/src/model-compatibility.ts
++++ b/packages/schema/src/model-compatibility.ts
+@@ -21,6 +21,8 @@ export const Compatibility = Schema.Struct({
+   reasoningField: ReasoningField.pipe(optional),
+   /** Require every assistant message to include its reasoning field, even when empty. */
+   requireReasoning: Schema.Boolean.pipe(optional),
++  /** Text sent for a required reasoning field when no reasoning was recorded; for endpoints that reject an empty value. */
++  reasoningPlaceholder: Schema.String.pipe(optional),
+   maxTokensField: MaxTokensField.pipe(optional),
+   requireFinishReason: Schema.Boolean.pipe(optional),
+   requireAssistantAfterTool: Schema.Boolean.pipe(optional),
 diff --git a/packages/schema/src/tool.ts b/packages/schema/src/tool.ts
 index 06dec1c..a515a73 100644
 --- a/packages/schema/src/tool.ts
@@ -10122,7 +10273,7 @@ index 7690704..cc241fa 100644
 +    expect(frame).toContain("Sessions")
 +    expect(frame).toContain("⌕")
 +    expect(frame).toContain("+ New session")
-+    expect(frame).toContain("▾ project/")
++    expect(frame).toContain(`▾ project${process.platform === "win32" ? "\\" : "/"}`)
 +    expect(frame).toContain("1 session")
 +    expect(frame).toContain("Manual tiny fixture")
 +    const railLines = frame.split("\n").map((line) => line.slice(0, 30))

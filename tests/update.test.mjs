@@ -104,7 +104,7 @@ test('fetchLatestRelease falls back to GitHub when the manifest fails validation
     }
     return { status: 200, json: async () => ({ tag_name: 'v0.3.1', published_at: '2026-03-01T00:00:00Z' }) };
   };
-  const { release, source } = await fetchLatestRelease({ cloudUrl: 'https://cloud.test', fetchImpl });
+  const { release, source } = await fetchLatestRelease({ cloudUrl: 'https://cloud.test', fetchImpl, channel: 'stable' });
   assert.equal(source, 'github');
   assert.equal(release.version, '0.3.1');
   assert.equal(release.installSpec, 'github:B-icy/Carthagent#v0.3.1');
@@ -116,6 +116,7 @@ test('fetchLatestRelease forwards cancellation and does not fall back after an a
   let calls = 0;
   await assert.rejects(fetchLatestRelease({
     cloudUrl: 'https://cloud.test',
+    channel: 'stable',
     signal: controller.signal,
     fetchImpl: async (_url, options) => {
       calls++;
@@ -135,11 +136,11 @@ test('latestReleaseCached fetches once, then serves the cache', () => withTempDi
   const fetchImpl = async () => { calls++; return { status: 200, json: async () => manifest }; };
   // Pinned clock: a slow runner must not outrun the cache TTL mid-test.
   const t0 = Date.now();
-  const first = await latestReleaseCached({ cachePath, intervalMs: 1000, now: t0, fetchImpl });
+  const first = await latestReleaseCached({ cachePath, intervalMs: 1000, now: t0, fetchImpl, channel: 'stable' });
   assert.equal(first.release.version, '0.3.0');
   assert.equal(first.fresh, false);
   assert.equal(calls, 1);
-  const second = await latestReleaseCached({ cachePath, intervalMs: 1000, now: t0 + 500, fetchImpl });
+  const second = await latestReleaseCached({ cachePath, intervalMs: 1000, now: t0 + 500, fetchImpl, channel: 'stable' });
   assert.equal(second.release.version, '0.3.0');
   assert.equal(second.fresh, true);
   assert.equal(calls, 1);
@@ -148,13 +149,13 @@ test('latestReleaseCached fetches once, then serves the cache', () => withTempDi
 test('latestReleaseCached returns stale data when refresh fails', () => withTempDir(async dir => {
   const cachePath = join(dir, 'update-check.json');
   writeFileSync(cachePath, JSON.stringify({ checkedAt: Date.now() - 60_000, release: manifest }));
-  const result = await latestReleaseCached({ cachePath, intervalMs: 1000, fetchImpl: async () => { throw new Error('offline'); } });
+  const result = await latestReleaseCached({ cachePath, intervalMs: 1000, channel: 'stable', fetchImpl: async () => { throw new Error('offline'); } });
   assert.equal(result.release.version, '0.3.0');
   assert.equal(result.fresh, false);
 }));
 
 test('latestReleaseCached swallows a cold-cache failure', () => withTempDir(async dir => {
-  const result = await latestReleaseCached({ cachePath: join(dir, 'update-check.json'), intervalMs: 1000, fetchImpl: async () => { throw new Error('offline'); } });
+  const result = await latestReleaseCached({ cachePath: join(dir, 'update-check.json'), intervalMs: 1000, channel: 'stable', fetchImpl: async () => { throw new Error('offline'); } });
   assert.equal(result.release, null);
 }));
 
