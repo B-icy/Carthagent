@@ -20,6 +20,7 @@ function setup() {
   const cloud = {
     account: async (input) => { calls.push(['account', input]); return { email: 'fixture@example.test', sessions: [] }; },
     usage: async (input) => { calls.push(['usage', input]); return { data: [{ alias: 'fixture-model', inputTokens: 12, outputTokens: 8 }] }; },
+    quote: async (input) => { calls.push(['quote', input]); return { introEligible: false, terms: 'Builder is $10/month until cancelled.' }; },
     checkout: async (input) => { calls.push(['checkout', input]); return { url: 'https://billing.example.test/checkout' }; },
     portal: async (input) => { calls.push(['portal', input]); return { url: 'https://billing.example.test/portal' }; },
     revokeCurrent: async (input) => calls.push(['revokeCurrent', input]),
@@ -47,7 +48,18 @@ test('Ship account and billing RPCs use the active profile credential and inject
     ['portal', 'fixture-token', true],
   ]);
   assert.ok(calls.some(([name, input]) => name === 'usage' && input.limit === 10));
-  assert.ok(calls.some(([name, input]) => name === 'checkout' && input.successUrl === 'https://ship.example.test/account'));
+  assert.ok(calls.some(([name, input]) => name === 'checkout' && input.successUrl === 'https://ship.example.test/v1/browser/billing/complete' && input.priceId === 'builder'));
+  await handlers.shipBilling({ action: 'checkout', plan: 'max' }, call);
+  assert.equal(calls.at(-1)[1].priceId, 'max');
+});
+
+test('native plan review uses authenticated server eligibility without creating checkout', async () => {
+  const { calls, handlers } = setup();
+  const result = await handlers.shipBilling({ action: 'quote', plan: 'builder' }, call);
+  assert.equal(result.quote.introEligible, false);
+  assert.equal(result.quote.terms, 'Builder is $10/month until cancelled.');
+  assert.ok(calls.some(([name, input]) => name === 'quote' && input.accessToken === 'fixture-token' && input.plan === 'builder' && input.signal === call.signal));
+  assert.equal(calls.some(([name]) => name === 'checkout'), false);
 });
 
 test('Ship logout revokes either one session or current token and removes current connection', async () => {
@@ -62,7 +74,7 @@ test('Ship logout revokes either one session or current token and removes curren
 test('Ship RPC requires its managed OAuth credential and honors cancellation before cloud traffic', async () => {
   const { ctx, calls, handlers } = setup();
   ctx.integration.connection.resolve = async () => ({ type: 'oauth', methodID: 'other', access: 'wrong' });
-  await assert.rejects(handlers.shipAccount({}, call), { code: 'unauthenticated', message: 'An active Carthagent Ship OAuth connection is required.' });
+  await assert.rejects(handlers.shipAccount({}, call), { code: 'unauthenticated', message: 'An active Carthagent Cloud OAuth connection is required.' });
   assert.equal(calls.some(([name]) => name === 'account'), false);
   const controller = new AbortController();
   controller.abort();

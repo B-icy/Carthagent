@@ -31,7 +31,7 @@ test('Cloud extension gives limit-specific recovery without hiding BYOK', () => 
   assert.equal(notices.length, 3);
   assert.match(notices[0][0], /00:00 UTC/);
   assert.match(notices[1][0], /billing portal/);
-  assert.match(notices[2][0], /subscription is inactive/);
+  assert.match(notices[2][0], /awaiting payment or activation/);
   assert.ok(notices.every(([, tone]) => tone === 'warning'));
-  assert.ok(notices.every(([message]) => /\/login for BYOK/.test(message)));
+  assert.ok(notices.every(([message]) => /\/login/.test(message) && /BYOK|your own provider/.test(message)));
 });

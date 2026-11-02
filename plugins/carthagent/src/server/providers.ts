@@ -120,19 +120,18 @@ function oauthMethod({ env, fetchImpl, sleep, now, openBrowserImpl, agentDir, st
   return {
     integrationID: IntegrationSchema.ID.make(SHIP_INTEGRATION_ID),
     method: {
-      id: OAUTH_METHOD, type: 'oauth' as const, label: 'Sign in with Carthagent Ship',
-      form: [{ type: 'boolean' as const, key: 'importLegacy', title: 'Import a legacy Ship credential instead of signing in?',
-        description: 'Leave disabled for fresh browser approval and updated account permissions.', default: false }] satisfies Form.Fields,
+      id: OAUTH_METHOD, type: 'oauth' as const, label: 'Continue with Carthagent Cloud',
+      ...(env.CARTHAGENT_ADVANCED_AUTH === '1' ? { form: [{ type: 'boolean' as const, key: 'importLegacy', title: 'Import a legacy Cloud credential?', default: false }] satisfies Form.Fields } : {}),
     },
     authorize: async (answer: Form.Answer) => {
       // The legacy file intentionally survives migration. Never let its presence
       // short-circuit an explicit sign-in or recovery from revoked/old scopes.
-      const legacy = answer.importLegacy === true ? await legacyOAuthForOpenCode({ agentDir }) : undefined;
+      const legacy = env.CARTHAGENT_ADVANCED_AUTH === '1' && answer.importLegacy === true ? await legacyOAuthForOpenCode({ agentDir }) : undefined;
       if (legacy) {
         return {
           mode: 'auto' as const,
           url: 'https://api.carthagent.xyz',
-          instructions: 'A legacy Carthagent Ship credential was found and will be migrated into OpenCode integration storage.',
+          instructions: 'A legacy Carthagent Cloud credential was found and will be migrated into native integration storage.',
           callback: Promise.resolve({
             type: 'oauth' as const,
             methodID: IntegrationSchema.MethodID.make(OAUTH_METHOD),
@@ -147,7 +146,7 @@ function oauthMethod({ env, fetchImpl, sleep, now, openBrowserImpl, agentDir, st
       Promise.resolve(openBrowserImpl(url)).catch(() => false);
       return {
         mode: 'auto' as const, url,
-        instructions: `Approve device code ${response.userCode} in your browser.`,
+        instructions: `Sign in and connect this terminal using code ${response.userCode}. Check the account shown in your browser, then return here. If the code expires, start login again.`,
         expiresAt: now() + Number(response.expiresIn || 600) * 1000,
         callback,
       };
@@ -169,13 +168,15 @@ function oauthMethod({ env, fetchImpl, sleep, now, openBrowserImpl, agentDir, st
         });
       },
     ),
-    label: () => 'Carthagent Ship',
+    label: () => 'Carthagent Cloud',
   };
 }
 
 function integrationDefinitions(editor: Parameters<Context['integration']['transform']>[0] extends (editor: infer E) => void ? E : never, options: Parameters<typeof oauthMethod>[0]) {
   editor.method.update(oauthMethod(options));
-  editor.method.update({ integrationID: IntegrationSchema.ID.make(SHIP_INTEGRATION_ID), method: { type: 'key', label: 'Use an Experiential API key' } });
+  if (options.env.CARTHAGENT_ADVANCED_AUTH === '1') {
+    editor.method.update({ integrationID: IntegrationSchema.ID.make(SHIP_INTEGRATION_ID), method: { type: 'key', label: 'Advanced: use an Experiential API key' } });
+  }
   editor.method.update({ integrationID: IntegrationSchema.ID.make(SHIP_INTEGRATION_ID), method: { type: 'env', names: [EXPERIENTIAL_API_KEY_ENV] } });
   editor.update(SHIP_INTEGRATION_ID, integration => { integration.name = EXPERIENTIAL_PROVIDER_NAME; });
 }
@@ -197,7 +198,7 @@ async function loadShipModels({ ctx, fetchImpl, env, baseURL, signal }: {
   const response = await fetchImpl(`${managed ? cloudGatewayUrl(env) : baseURL}/models`, {
     headers: { authorization: `Bearer ${key}` }, signal: signalWithTimeout(signal, DISCOVERY_TIMEOUT),
   });
-  if (!response.ok) throw new Error(`Carthagent Ship model discovery failed (${response.status}).`);
+  if (!response.ok) throw new Error(`Carthagent Cloud model discovery failed (${response.status}).`);
   const models = parseExperientialModels(await response.json()).slice(0, PROFILE_CAP);
   if (connection && managed) return { connection, models, managed };
   return { connection, models, managed };

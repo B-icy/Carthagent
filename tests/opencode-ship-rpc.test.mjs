@@ -40,7 +40,7 @@ test('profile Ship RPC uses resolved native OAuth and loopback account, billing,
       ['DELETE', '/v1/account/sessions/session-target'], ['POST', '/v1/token/revoke'],
     ]);
     assert.ok(requests.every(item => item.authorization === 'Bearer loopback-token'));
-    assert.deepEqual(requests[2].body, { successUrl: `${baseUrl}/account`, cancelUrl: `${baseUrl}/account` });
+    assert.deepEqual(requests[2].body, { successUrl: `${baseUrl}/v1/browser/billing/complete`, cancelUrl: `${baseUrl}/v1/browser/billing/cancelled?plan=builder`, priceId: 'builder' });
     assert.deepEqual(requests[3].body, { returnUrl: `${baseUrl}/account` });
     assert.deepEqual(removed, ['cred-profile']);
   } finally {
@@ -61,7 +61,7 @@ test('profile Ship RPC rejects BYOK, absent auth, and pre-aborted operations wit
       active: async () => connection,
       resolve: async () => connection ? { type: 'key', key: 'byok' } : undefined,
     } } }, { cloudClient });
-    await assert.rejects(handlers.shipAccount({}, rpcCall(new AbortController().signal)), /active Carthagent Ship OAuth/);
+    await assert.rejects(handlers.shipAccount({}, rpcCall(new AbortController().signal)), /active Carthagent Cloud OAuth/);
   }
   const handlers = createHandlers({ integration: { connection: { active: async () => undefined, resolve: async () => undefined } } }, { cloudClient });
   const controller = new AbortController();

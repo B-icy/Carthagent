@@ -1011,8 +1011,8 @@ test('native Ship billing and logout explain how to connect when the typed auth 
       shipLogout: async () => { throw Object.assign(new Error('Not authenticated'), { type: 'ship.unauthenticated' }); },
     }) }),
   } });
-  await assert.rejects(runtime.billing({ action: 'checkout' }), /not connected.*ctg login.*Carthagent Ship/i);
-  await assert.rejects(runtime.logout({}), /not connected.*ctg login.*Carthagent Ship/i);
+  await assert.rejects(runtime.billing({ action: 'checkout' }), /not connected.*ctg login.*Carthagent Cloud/i);
+  await assert.rejects(runtime.logout({}), /not connected.*ctg login.*Carthagent Cloud/i);
 });
 
 test('OAuth forms honor conditional fields, defaults, validation, and typed selections', async () => {

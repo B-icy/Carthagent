@@ -95,8 +95,8 @@ export const Carthagent = Rpc.define({
       output: { type: 'object', properties: { usage: { type: 'object', additionalProperties: true } }, required: ['usage'], additionalProperties: false },
     },
     shipBilling: {
-      input: { type: 'object', properties: { action: { type: 'string', enum: ['checkout', 'portal'] } }, required: ['action'], additionalProperties: false },
-      output: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'], additionalProperties: false },
+      input: { type: 'object', properties: { action: { type: 'string', enum: ['checkout', 'portal', 'quote'] }, plan: { type: 'string', enum: ['builder', 'pro', 'max'] } }, required: ['action'], additionalProperties: false },
+      output: { type: 'object', properties: { url: { type: 'string' }, quote: { type: 'object', additionalProperties: true } }, additionalProperties: false },
       errors: { unauthenticated: { type: 'object', properties: {}, additionalProperties: false } },
     },
     shipLogout: {

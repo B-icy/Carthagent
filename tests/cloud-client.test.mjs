@@ -90,7 +90,7 @@ test('Cloud client sends account, billing, and session requests with bearer auth
 
 test('OAuth and account formatters keep token expiration and account UX deterministic', () => {
   assert.deepEqual(oauthCredentials({ accessToken: 'a', refreshToken: 'r', expiresIn: 900 }, 1_000), { access: 'a', refresh: 'r', expires: 901_000 });
-  assert.match(formatCloudAccount({ accountId: 'acct', balance: { availableNanoUsd: 1_000_000_000 }, subscription: { status: 'none' }, sessions: [{}, { revoked_at: 'x' }] }), /Credit: \$1\.00 available[\s\S]*Plan: Free[\s\S]*1 active, 1 revoked/);
+  assert.match(formatCloudAccount({ accountId: 'acct', balance: { availableNanoUsd: 1_000_000_000 }, subscription: { status: 'none' }, sessions: [{}, { revoked_at: 'x' }] }), /Credit: \$1\.00 available[\s\S]*Plan: No paid plan[\s\S]*1 active, 1 revoked/);
   const managed = formatCloudAccount({
     accountId: 'paid', balance: { availableNanoUsd: 8_000_000_000 },
     subscription: { status: 'active', current_period_end: 1_800_000_000 },
@@ -123,7 +123,7 @@ test('OAuth and account formatters keep token expiration and account UX determin
 test('managed usage recovery distinguishes daily, monthly, subscription, and credit paths', () => {
   assert.match(cloudManagedUsageRecovery('daily_limit_reached'), /00:00 UTC/);
   assert.match(cloudManagedUsageRecovery('monthly_allowance_exhausted'), /billing portal/);
-  assert.match(cloudManagedUsageRecovery({ code: 'subscription_inactive' }), /subscription is inactive/);
+  assert.match(cloudManagedUsageRecovery({ code: 'subscription_inactive' }), /awaiting payment or activation/);
   assert.match(cloudManagedUsageRecovery('insufficient_quota'), /billing checkout/);
   assert.equal(cloudManagedUsageRecovery('upstream timeout'), null);
 });

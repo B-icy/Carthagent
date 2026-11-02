@@ -8,7 +8,9 @@ test('native login policy stays small, named, ordered and excludes upstream prov
   assert.equal(nativeLoginProvider('opencode'), undefined);
   assert.equal(nativeLoginProvider('opencode-go'), undefined);
   assert.equal(nativeLoginProvider('openrouter'), undefined);
-  assert.equal(nativeProviderName('ship'), 'Carthagent Ship');
+  assert.equal(nativeProviderName('ship'), 'Carthagent Cloud');
+  assert.equal(nativeProviderName('Carthagent Ship'), 'Carthagent Cloud');
+  assert.equal(nativeProviderName('cloud'), 'Carthagent Cloud');
   assert.equal(nativeLoginProvider('claudecode').id, 'anthropic');
   assert.equal(nativeLoginProvider('codex').id, 'openai');
   assert.equal(nativeLoginProvider('gemini').id, 'google');
@@ -20,7 +22,7 @@ test('curated login rows preserve actual methods and do not invent subscription 
   const ship = { id: 'experiential-labs', name: 'internal', methods: [{ type: 'oauth', id: 'carthagent-device' }] };
   const rows = nativeLoginProviders([{ id: 'opencode', methods: [] }, anthropic, ship]);
   assert.deepEqual(rows.map(row => row.id), ['experiential-labs', 'anthropic']);
-  assert.equal(rows[0].name, 'Carthagent Ship');
+  assert.equal(rows[0].name, 'Carthagent Cloud');
   assert.deepEqual(rows[1].methods, [{ type: 'key' }]);
   assert.equal(anthropic.name, 'Anthropic');
   assert.equal(ship.name, 'internal');

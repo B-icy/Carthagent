@@ -272,7 +272,7 @@ test('registerExperientialProvider registers one shared provider definition', ()
   assert.equal(registerExperientialProvider(runtime), runtime);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].id, 'experiential-labs');
-  assert.equal(calls[0].config.name, 'Carthagent Ship');
+  assert.equal(calls[0].config.name, 'Carthagent Cloud');
 });
 
 test('ModelRuntime resolves EXPLABS_API_KEY without copying it into provider config', async () => {
