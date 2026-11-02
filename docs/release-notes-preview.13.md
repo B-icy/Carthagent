@@ -33,15 +33,17 @@ reasoning. The delivery plan entry point stays visible in the code-mode catalog,
 and final review accepts single-assertion aliases and assertion arrays. Voyages
 and quest lists activate on mouse release so newly opened dialogs remain open;
 rail clicks select the intended quest and respect modal focus.
+Delivery tool guidance explicitly identifies JSON-text responses and requires
+relative file paths for promised outputs, avoiding prose-as-filename contracts.
 
 ## Provenance
 
 | Input | Exact value |
 | --- | --- |
 | Package | `1.1.0-preview.13` |
-| Prebuild source | `PREBUILD_SOURCE` |
-| Prebuild workflow run | [PREBUILD_RUN](https://github.com/B-icy/Carthagent/actions/runs/PREBUILD_RUN) |
-| Full manifest SHA-256 | `MANIFEST_SHA` |
+| Prebuild source | `e5de273811a11c2f8678b54605c0068ab8cfcf38` |
+| Prebuild workflow run | [41380550073](https://github.com/B-icy/Carthagent/actions/runs/41380550073) |
+| Full manifest SHA-256 | `5083dbe10b6f4be2550ab0abb04c9299197dacabe4b9d3556bd3b03fc9f6151a` |
 | Upstream revision | `843a6c514e606b436a7fe713422ace0a93ad3d61` |
 | CTG patch (combined-v5) SHA-256 | `ec4bb182308ed8b311513aad5c9c7d57dcd0db103f0882f3dc3517d535b4c975` |
 | Lock SHA-256 | `9d78379cd264584a495440a217b9d2ecab524c9a56f7f8b4b5bed3926daa330d` |

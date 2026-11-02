@@ -136,7 +136,9 @@ try {
         name: 'CTG local prompt fixture',
         package: '@opencode/ai/providers/openai-compatible',
         settings: { baseURL: `http://127.0.0.1:${fixture.address().port}/v1` },
-        models: { fixture: { name: 'Fixture', limit: { context: 8192, output: 1024 } } },
+        // This fixture tests host attachment, not compaction; leave room for the
+        // production tool catalog and the preceding multi-turn wrapper checks.
+        models: { fixture: { name: 'Fixture', limit: { context: 32768, output: 1024 } } },
       },
     },
   }));
@@ -317,7 +319,7 @@ try {
     attached.once('close', (code, signal) => {
       clearTimeout(timer);
       if (code === 0) resolveRun(stdout);
-      else reject(new Error(`Attached native CLI exited ${code ?? signal}: ${stderr}`));
+      else reject(new Error(`Attached native CLI exited ${code ?? signal}: ${stderr}\n${stdout}`));
     });
   });
   assert.match(attachedRun, /CTG_FIXTURE_OK/, 'the packaged CLI should attach to and prompt the ensured service');
