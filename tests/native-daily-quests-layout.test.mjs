@@ -21,7 +21,9 @@ test('evidence editing and the complete outbound preview remain native and scrol
   assert.match(page, /bind: "tab"/);
   assert.match(page, /JSON.stringify\(view\(\).preview, null, 2\)/);
   assert.match(page, /JSON.stringify\(record\(\).request, null, 2\)/);
-  assert.match(page, /Ctrl\+P preview, never sends/);
+  assert.match(page, /Ctrl\+G preview, never sends/);
+  assert.match(page, /bind: "ctrl\+g"/);
+  assert.doesNotMatch(page, /bind: "ctrl\+p"|name: "p", ctrl: true/);
   for (const text of page.matchAll(/<text\b([^>]*)>/g)) assert.match(text[1], /flexShrink=\{0\}/);
 });
 

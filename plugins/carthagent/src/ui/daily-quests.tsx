@@ -59,7 +59,7 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string })
   context.keymap.layer(() => ({ commands: [
     { bind: "ctrl+u", title: "Scroll daily quest preview up", run: () => { summary?.scrollBy(-1); } },
     { bind: "ctrl+d", title: "Scroll daily quest preview down", run: () => { summary?.scrollBy(1); } },
-    { bind: "ctrl+p", title: "Validate daily evidence preview", enabled: () => view().phase === "edit" && !view().busy, run: preview },
+    { bind: "ctrl+g", title: "Validate daily evidence preview", enabled: () => view().phase === "edit" && !view().busy, run: preview },
     { bind: "tab", title: "Switch evidence editor / actions", enabled: () => view().phase === "edit" && !view().busy, run: () => { setEditorFocus((focused) => !focused); } },
   ] }));
 
@@ -143,7 +143,7 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string })
       ] : []),
       ...state.snapshot.slate.items.map((q) => ({ name: `${q.definition.title} · ${q.status}`, description: `${q.definition.kind} · UTC window ends ${q.endsAt}`, value: `quest:${q.id}` })),
       ...(detail?.status === "open" && !state.draft ? [{ name: "Choose evidence for selected quest", description: "Select local report data or write a manual claim; no upload", value: "compose" }] : []),
-      ...(state.phase === "edit" ? [{ name: "Validate and preview exact payload", description: "Ctrl+P; canonical UTF-8 limits, no network", value: "preview" }] : []),
+      ...(state.phase === "edit" ? [{ name: "Validate and preview exact payload", description: "Ctrl+G; canonical UTF-8 limits, no network", value: "preview" }] : []),
       ...(state.phase === "preview" ? [
         { name: "Consent and submit this preview…", description: "Fresh explicit consent dialog; no automatic acceptance or rewards", value: "submit" },
         { name: "Edit / redact evidence again", description: "Invalidates the preview; requires validation and fresh consent", value: "edit" },
@@ -226,8 +226,8 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string })
       </box>}</Show>
     </scrollbox>
     <Show when={view().phase === "edit" && view().draft}>
-      <text flexShrink={0} fg={context.theme.text.faint}>Ctrl+J newline · Tab actions · Ctrl+P preview, never sends</text>
-      <textarea ref={editor} flexBasis={0} flexGrow={1} minHeight={2} initialValue={view().draft?.text ?? ""} focused={focus.editorEnabled()} onContentChange={() => syncDailyEditor(editor, controller)} keyBindings={[{ name: "p", ctrl: true, action: "submit" }]} onSubmit={preview} />
+      <text flexShrink={0} fg={context.theme.text.faint}>Ctrl+J newline · Tab actions · Ctrl+G preview, never sends</text>
+      <textarea ref={editor} flexBasis={0} flexGrow={1} minHeight={2} initialValue={view().draft?.text ?? ""} focused={focus.editorEnabled()} onContentChange={() => syncDailyEditor(editor, controller)} keyBindings={[{ name: "g", ctrl: true, action: "submit" }]} onSubmit={preview} />
     </Show>
     <text flexShrink={0} fg={context.theme.text.faint}>↑/↓ Enter · PgUp/Dn · Ctrl+U/D details · Cancel: no send</text>
     <select ref={(node) => { actions = node; focus.attachActions(node); }} onMouseUp={(event) => { if (focus.actionsEnabled()) clickSelect(actions, event); }} flexBasis={0} flexGrow={1} flexShrink={0} minHeight={3} showScrollIndicator options={options()} focused={focus.actionsEnabled()} keyBindings={[{ name: "pageup", action: "move-up-fast" }, { name: "pagedown", action: "move-down-fast" }]} onSelect={(_index, option) => select(option?.value)} />

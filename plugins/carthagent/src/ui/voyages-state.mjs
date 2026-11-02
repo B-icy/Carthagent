@@ -1,3 +1,7 @@
+class LocalVoyagesError extends Error {
+  constructor(code) { super(code); this.code = code; }
+}
+
 /** UI transaction lifetime. Credentials and durable purchase keys remain server-only. */
 export function createVoyagesState({ api, changed = (_state) => {}, now = Date.now, timeoutSignal = () => AbortSignal.timeout(15_000) }) {
   let generation = 0;
@@ -28,7 +32,10 @@ export function createVoyagesState({ api, changed = (_state) => {}, now = Date.n
     catch (error) {
       if (!disposed && current === generation) {
         state.snapshot = undefined;
-        state.error = `${voyagesErrorCode(error)}. Refresh required; no success assumed. Sign in again if access expired or was revoked.`;
+        const code = voyagesErrorCode(error);
+        state.error = code === 'insufficient_coins'
+          ? 'insufficient_coins. Not enough coins for this item. No purchase was made; wallet refreshed.'
+          : `${code}. Refresh required; no success assumed. Sign in again if access expired or was revoked.`;
         emit();
         // Reconcile all failed writes, never replay them. Even if this succeeds,
         // retain the failure message rather than claiming a successful mutation.
@@ -81,10 +88,14 @@ export function createVoyagesState({ api, changed = (_state) => {}, now = Date.n
         if (!snapshot || snapshot.pending || !snapshot.items.some((entry) => entry.item === item.item) || item.price === null || !item.requiresPurchase || !item.available || !item.eligible || snapshot.profile.owned.includes(item.item)) return;
         const { quote } = await api.quote({ slot: item.slot, item: item.itemKey }, networkSignal(tx.signal));
         if (!tx.live()) return;
-        const valid = () => quote.item === item.item && Number.isSafeInteger(quote.price) && quote.price >= 0 && quote.price <= snapshot.profile.coins && Number.isFinite(Date.parse(quote.expiresAt)) && Date.parse(quote.expiresAt) > now();
-        if (!valid()) throw new Error("invalid or expired quote");
+        const validate = () => {
+          if (quote.item !== item.item || !Number.isSafeInteger(quote.price) || quote.price < 0 || !Number.isFinite(Date.parse(quote.expiresAt))) throw new LocalVoyagesError('invalid_quote');
+          if (Date.parse(quote.expiresAt) <= now()) throw new LocalVoyagesError('quote_expired');
+          if (quote.price > snapshot.profile.coins) throw new LocalVoyagesError('insufficient_coins');
+        };
+        validate();
         if (await confirm(quote, snapshot.profile) !== true || !tx.live()) return;
-        if (!valid()) throw new Error("expired quote");
+        validate();
         await api.purchase({ quoteId: quote.id }, networkSignal(tx.signal));
         if (!tx.live()) return;
         await load(tx);
@@ -106,6 +117,7 @@ export function createVoyagesState({ api, changed = (_state) => {}, now = Date.n
 
 /** Native promise RPC throws { type, message, data }, not a nested error map. */
 export function voyagesErrorCode(error) {
+  if (error instanceof LocalVoyagesError) return error.code;
   const code = error?.type === 'voyagesError' ? error.data?.code : undefined;
   return typeof code === 'string' && /^[a-z_]{1,64}$/.test(code) ? code : 'voyages_request_failed';
 }

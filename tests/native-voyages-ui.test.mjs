@@ -43,6 +43,7 @@ test('quote expiry during confirmation prevents purchase', async () => {
   await ui.purchase(item, async () => { now = 21000; return true; });
   assert.deepEqual(writes, []);
   assert.match(uiView.error, /no success assumed/);
+  assert.match(uiView.error, /^quote_expired\./);
   assert.equal(uiView.notice, '');
   controller.dispose();
 });
@@ -70,6 +71,18 @@ test('network/auth failures clear protected state and never report success', asy
   assert.equal(view().snapshot, undefined);
   assert.equal(view().notice, '');
   assert.doesNotMatch(view().error, /secret/);
+});
+
+test('unaffordable authoritative quote explains insufficient coins without confirmation or debit', async () => {
+  const { controller, view, writes } = fixture({ quote: async () => ({ quote: { id: 'q1', item: item.item, price: 40, expiresAt: new Date(20000).toISOString() } }) });
+  await controller.refresh();
+  let confirmations = 0;
+  await controller.purchase(item, async () => { confirmations++; return true; });
+  assert.equal(confirmations, 0);
+  assert.deepEqual(writes, []);
+  assert.match(view().error, /^insufficient_coins\. Not enough coins/);
+  assert.doesNotMatch(view().error, /Sign in|voyages_request_failed/);
+  assert.equal(view().snapshot.profile.coins, 10);
 });
 
 test('account switch and disposal ignore stale callbacks and dialog confirmation', async () => {
