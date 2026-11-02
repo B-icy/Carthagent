@@ -230,8 +230,10 @@ try {
   assert.ok(ship, 'the native provider catalog must supply a real Ship integration record');
   assert.ok(ship.methods.some(({ type, id }) => type === 'oauth' && id === 'carthagent-device'),
     'plugin integration transform must register the Ship device-OAuth method');
-  assert.ok(ship.methods.some(({ type }) => type === 'key'),
-    'plugin integration transform must register the Ship API-key method');
+  assert.equal(ship.methods.some(({ type }) => type === 'key'), false,
+    'fresh Cloud sign-in must hide the advanced API-key method');
+  assert.equal(ship.methods.find(({ type, id }) => type === 'oauth' && id === 'carthagent-device').form?.length ?? 0, 0,
+    'fresh Cloud sign-in must not prompt for legacy import');
   assert.ok(ship.methods.some(({ type, names }) => type === 'env' && names?.includes('EXPLABS_API_KEY')),
     'the native integration catalog resolves BYOK from the named environment credential');
   const models = await client.model.list({ location: { directory: cwd } }, request);
