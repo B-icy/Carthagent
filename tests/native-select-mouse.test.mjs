@@ -4,7 +4,7 @@ import { clickSelect } from '../plugins/carthagent/src/ui/select-mouse.ts';
 
 const node = (scrollOffset, linesPerItem) => {
   const calls = [];
-  return { calls, scrollOffset, linesPerItem, screenY: 10, options: [{}, {}, {}, {}], setSelectedIndex: i => calls.push(['set', i]), selectCurrent: () => calls.push(['select']) };
+  return { calls, scrollOffset, linesPerItem, maxVisibleItems: 3, screenY: 10, options: [{}, {}, {}, {}], setSelectedIndex: i => calls.push(['set', i]), selectCurrent: () => calls.push(['select']) };
 };
 
 test('clicks activate the row under the pointer, accounting for scroll and row height', () => {
@@ -14,7 +14,7 @@ test('clicks activate the row under the pointer, accounting for scroll and row h
 });
 
 test('clicks outside rows or with other buttons are ignored', () => {
-  for (const event of [{ button: 0, y: 9 }, { button: 0, y: 30 }, { button: 2, y: 10 }]) {
+  for (const event of [{ button: 0, y: 9 }, { button: 0, y: 30 }, { button: 0, y: 13 }, { button: 2, y: 10 }]) {
     const n = node(0, 1);
     clickSelect(n, event);
     assert.deepEqual(n.calls, []);
