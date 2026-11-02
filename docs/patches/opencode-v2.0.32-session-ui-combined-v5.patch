@@ -10273,7 +10273,7 @@ index 7690704..cc241fa 100644
 +    expect(frame).toContain("Sessions")
 +    expect(frame).toContain("⌕")
 +    expect(frame).toContain("+ New session")
-+    expect(frame).toContain("▾ project/")
++    expect(frame).toContain(`▾ project${process.platform === "win32" ? "\\" : "/"}`)
 +    expect(frame).toContain("1 session")
 +    expect(frame).toContain("Manual tiny fixture")
 +    const railLines = frame.split("\n").map((line) => line.slice(0, 30))
