@@ -124,6 +124,6 @@ export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "
       <text flexShrink={0} fg={context.theme.text.faint}>Choose Back to return. Cancel in dialogs never saves or purchases.</text>
     </scrollbox>
     <text flexShrink={0} fg={context.theme.text.faint}>↑/↓ Enter · PgUp/Dn choices · Ctrl+U/D profile</text>
-    <select flexBasis={0} flexGrow={1} flexShrink={0} minHeight={3} ref={(node) => { list = node; }} onMouseDown={(event) => clickSelect(list, event)} showScrollIndicator keyBindings={[{ name: "pageup", action: "move-up-fast" }, { name: "pagedown", action: "move-down-fast" }]} options={options()} focused={context.keymap.mode.current() === "base"} onSelect={(_index, option) => select(option?.value)} />
+    <select flexBasis={0} flexGrow={1} flexShrink={0} minHeight={3} ref={(node) => { list = node; }} onMouseUp={(event) => clickSelect(list, event)} showScrollIndicator keyBindings={[{ name: "pageup", action: "move-up-fast" }, { name: "pagedown", action: "move-down-fast" }]} options={options()} focused={context.keymap.mode.current() === "base"} onSelect={(_index, option) => select(option?.value)} />
   </box>;
 }

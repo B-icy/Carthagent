@@ -230,6 +230,6 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string })
       <textarea ref={editor} flexBasis={0} flexGrow={1} minHeight={2} initialValue={view().draft?.text ?? ""} focused={focus.editorEnabled()} onContentChange={() => syncDailyEditor(editor, controller)} keyBindings={[{ name: "p", ctrl: true, action: "submit" }]} onSubmit={preview} />
     </Show>
     <text flexShrink={0} fg={context.theme.text.faint}>↑/↓ Enter · PgUp/Dn · Ctrl+U/D details · Cancel: no send</text>
-    <select ref={(node) => { actions = node; focus.attachActions(node); }} onMouseDown={(event) => { if (focus.actionsEnabled()) clickSelect(actions, event); }} flexBasis={0} flexGrow={1} flexShrink={0} minHeight={3} showScrollIndicator options={options()} focused={focus.actionsEnabled()} keyBindings={[{ name: "pageup", action: "move-up-fast" }, { name: "pagedown", action: "move-down-fast" }]} onSelect={(_index, option) => select(option?.value)} />
+    <select ref={(node) => { actions = node; focus.attachActions(node); }} onMouseUp={(event) => { if (focus.actionsEnabled()) clickSelect(actions, event); }} flexBasis={0} flexGrow={1} flexShrink={0} minHeight={3} showScrollIndicator options={options()} focused={focus.actionsEnabled()} keyBindings={[{ name: "pageup", action: "move-up-fast" }, { name: "pagedown", action: "move-down-fast" }]} onSelect={(_index, option) => select(option?.value)} />
   </box>;
 }

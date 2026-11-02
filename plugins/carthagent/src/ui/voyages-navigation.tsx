@@ -114,7 +114,7 @@ export function VoyagesNavigation(props: NavigationInput) {
         <Show when={view().error}><text flexShrink={0} fg={context.theme.text.feedback.warning.base}> {view().error}. Sign in or refresh.</text></Show>
         <Show when={view().daily}><text flexShrink={0} fg={context.theme.text.muted}> UTC {view().daily?.day}</text></Show>
       </Show>
-      <select ref={actions} onMouseDown={(event) => { if (focused()) clickSelect(actions, event); }} minHeight={1} height={Math.min(18, viewportHeight(), options().length * (props.compact ? 1 : 2))} flexShrink={0} showScrollIndicator showDescription={!props.compact} options={options()} selectedIndex={Math.max(0, options().findIndex((item) => item.value === selection()))} focused={focused()} onChange={(_index, item) => {
+      <select ref={actions} onMouseUp={(event) => { if (focused()) clickSelect(actions, event); }} minHeight={1} height={Math.min(18, viewportHeight(), options().length * (props.compact ? 1 : 2))} flexShrink={0} showScrollIndicator showDescription={!props.compact} options={options()} selectedIndex={Math.max(0, options().findIndex((item) => item.value === selection()))} focused={focused()} onChange={(_index, item) => {
         if (!focused() || view().busy || !item) return;
         setSelection(item.value);
         if (actions) scroll?.scrollChildIntoView(actions.id);
