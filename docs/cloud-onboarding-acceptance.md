@@ -25,16 +25,26 @@ November 2, 2026. This branch is not published beta acceptance. npm `next` remai
   `/tmp/opencode/onboarding-native-reviewed-build.log`
 - RPC regression verifies that eligibility comes from the authenticated server
   and quoting does not create a checkout.
+- Native host acceptance passes at `b715ff282b` after correcting stale fresh-auth
+  and Cloud-name expectations. Both CI installed-package jobs passed. Run
+  41502591162 passed Linux/macOS and Windows 24; Windows 22 hit the two-second
+  PowerShell diagnostics timeout, while its parallel run passed. Windows
+  diagnostics now allow bounded ten-second cold startup.
+- Installed package acceptance and its focused terminal rerun reproduced a
+  reconnect overlay. The same pinned executable passed the source-tree probe;
+  installed-fixture diagnostics are being collected before native merge.
 
 ## Outstanding gates
 
-Backend counterpart: `B-icy/Carthagent-Backend`, branch
-`feature/cloud-onboarding`; its `ONBOARDING_CONVERSION_AUDIT.md` tracks the full
-matrix. Stripe test access is unavailable. First-task/default-model guidance,
+Backend counterpart: `B-icy/Carthagent-Backend` PR #178 merged at
+`b0eacdcbdb71be4c099b1b3839a11164b2d69232`; production deployment 41502378359
+succeeded. Its `ONBOARDING_CONVERSION_AUDIT.md` tracks the full matrix. Live
+authenticated identity and read-only Builder/Pro/Max handoff terms were verified.
+Stripe test access is unavailable. First-task/default-model guidance,
 contextual exhaustion action, remaining legacy/docs naming and full measurement
 segmentation still need work. No new end-to-end paid continuation or visual
 screenshot acceptance is claimed.
 
-Publish a new immutable beta and verify its exact public acquisition and upgrade
-before deploying website instructions for these commands. Preserve the user's
+The deployed website now precedes the native release. Publish a new immutable
+beta and verify its exact public acquisition and upgrade. Preserve the user's
 normal profile and Invest-With-Friends work during acceptance.
