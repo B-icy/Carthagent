@@ -31,6 +31,8 @@ function requestOptions(context: RpcContext, selectedLocation?: SelectedLocation
 export function voyagesClient(context: RpcContext, selectedLocation?: SelectedLocation) {
   const rpc = context.client.rpc(Voyages);
   return {
+    previewReward: (input: { sessionID: string }, signal?: AbortSignal) => rpc.previewReward(input, requestOptions(context, selectedLocation, signal)),
+    claimReward: (input: { sessionID: string; runId: string; snapshot: string }, signal?: AbortSignal) => rpc.claimReward(input, requestOptions(context, selectedLocation, signal)),
     snapshot: (signal?: AbortSignal) => rpc.snapshot({}, requestOptions(context, selectedLocation, signal)) as Promise<VoyagesSnapshot>,
     customize: (input: { version: number; name?: string; shipName?: string; skin?: string; hair?: string; pattern?: string }, signal?: AbortSignal) => rpc.customize(input, requestOptions(context, selectedLocation, signal)),
     equip: (input: { version: number; slot: string; item: string }, signal?: AbortSignal) => rpc.equip(input, requestOptions(context, selectedLocation, signal)),

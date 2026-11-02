@@ -34,6 +34,23 @@ test('canceling customization, equip, purchase and pending retry performs zero w
   assert.deepEqual(writes, []);
 });
 
+test('reward preview cancellation/account switch never claims; confirmed claim refreshes and replay reports no duplicate', async () => {
+  const preview = { runId: 'run', snapshot: 'a'.repeat(64), coins: 25, xp: 100, km: 1, dailyLimit: 3 };
+  let calls = 0;
+  const f = fixture({ previewReward: async () => preview, claimReward: async input => {
+    assert.deepEqual(input, { sessionID: 'session', runId: preview.runId, snapshot: preview.snapshot });
+    return { reward: { coins: 25, xp: 100, km: 1 }, replayed: calls++ > 0 };
+  } });
+  await f.controller.refresh();
+  await f.controller.claimReward('session', async () => false); assert.equal(calls, 0);
+  await f.controller.claimReward('session', async () => { f.controller.invalidate(); return true; }); assert.equal(calls, 0);
+  await f.controller.refresh();
+  await f.controller.claimReward('session', async () => true); assert.equal(calls, 1);
+  assert.match(f.view().notice, /\+25 coins.*\+100 XP.*\+1 km/);
+  await f.controller.claimReward('session', async () => true); assert.equal(calls, 2);
+  assert.match(f.view().notice, /already rewarded.*No duplicate/);
+});
+
 test('quote expiry during confirmation prevents purchase', async () => {
   const { controller, api, writes } = fixture();
   let now = 10000;

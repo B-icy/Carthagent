@@ -36,7 +36,7 @@ The rubric requires every criterion to meet 0.90 for completion. These are class
 
 An attempted cross-quest claim of the same outcome was rejected with `daily_outcome_claimed`. Accepted/terminal records erased their local raw payloads; retry after erasure was rejected with `no_pending_payload`, while IDs remained pollable. Each accepted submission had one provider attempt.
 
-**The current `daily-outcomes-v1` policy has rewards disabled.** Successful assessment did not grant coins, XP, distance or equipment. This matters if launch messaging promises earning through daily quests.
+**The current `daily-outcomes-v1` policy has rewards disabled.** Successful assessment did not grant coins, XP, distance or equipment. The subsequent owner-approved verified-delivery reward path is separate: its production earned claim/replay/restart checks passed; see [reward acceptance results](beta-rewards-e2e-results.md).
 
 ## Validation and remaining scope
 

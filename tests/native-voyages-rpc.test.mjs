@@ -50,14 +50,16 @@ function setup() {
 const rejected = (promise, code, uncertain = false) => assert.rejects(promise, error => error.type === 'voyagesError' && error.message === code && error.data.code === code && error.data.uncertain === uncertain);
 const getQuote = handlers => handlers.quote({ slot: 'hat', item: 'captain' }, call);
 
-test('Voyages is a separate six-method typed error contract', () => {
+test('Voyages has typed profile, purchase and delivery reward methods', () => {
   assert.equal(Voyages.id, 'carthagent.voyages');
-  assert.deepEqual(Object.keys(Voyages.methods), ['snapshot', 'customize', 'equip', 'quote', 'purchase', 'retryPurchase']);
+  assert.deepEqual(Object.keys(Voyages.methods), ['previewReward', 'claimReward', 'snapshot', 'customize', 'equip', 'quote', 'purchase', 'retryPurchase']);
   for (const method of Object.values(Voyages.methods)) assert.ok(method.errors.voyagesError);
 });
 
 test('pinned Effect native conversion accepts every RPC input, output and typed error', () => {
   const samples = {
+    previewReward: [{ sessionID: 'session-1' }, { runId: 'run-1', snapshot: 'a'.repeat(64), coins: 25, xp: 100, km: 1, dailyLimit: 3 }],
+    claimReward: [{ sessionID: 'session-1', runId: 'run-1', snapshot: 'a'.repeat(64) }, { reward: { id: 'reward-1', runId: 'run-1', policyVersion: 'verified-delivery-beta-v1', coins: 25, xp: 100, km: 1, awardedAt: new Date(NOW).toISOString(), basis: 'local_harness_attested' }, replayed: false }],
     snapshot: [{}, { profile, items: [catalog, { ...catalog, item: 'hat:beanie', itemKey: 'beanie', price: null }], pending: { quoteId: 'quote-1', item: catalog.item, price: 5 } }],
     customize: [{ version: 1, name: 'New', skin: 'warm', hair: 'dark', pattern: 'plain' }, { profile }],
     equip: [{ version: 1, slot: 'hat', item: 'beanie' }, { profile }],

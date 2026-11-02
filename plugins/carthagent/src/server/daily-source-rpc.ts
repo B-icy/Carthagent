@@ -1,8 +1,9 @@
 import type { Context } from '@opencode/plugin/promise/plugin';
 import type { RpcCallContext } from '@opencode/plugin/promise/rpc';
 import { constants, closeSync, fstatSync, lstatSync, openSync, readSync, realpathSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
-import { checkDigest, evidenceFresh, fingerprint, requiresReview, reviewFresh, validatePlan } from '../../../../lib/delivery.mjs';
+import { checkDigest, completionIssues, evidenceFresh, fingerprint, requiresReview, reviewFresh, validatePlan, verificationMode } from '../../../../lib/delivery.mjs';
 import { DailySource, type DailySourceReport } from '../daily-source-rpc';
 
 type RecordValue = Record<string, unknown>;
@@ -208,4 +209,35 @@ export function createDailySourceRpcHandlers(ctx: SourceContext) {
 /** Parent-owned composition chooses when to register this local-only boundary. */
 export async function registerDailySourceRpc(ctx: Context) {
   return ctx.rpc.register(DailySource, createDailySourceRpcHandlers(ctx));
+}
+
+/** Reuse the exact native session/worktree ownership and bounded file boundary.
+ * Reward uploads contain digests only, never check output, names or source. */
+export async function verifiedRewardSource(ctx: SourceContext, sessionID: string, signal: AbortSignal) {
+  const ownership = createDailySourceRpcHandlers(ctx);
+  await ownership.report({ sessionID }, { signal, error: (_type: string, code: string) => { throw new Error(code); } } as RpcCallContext<typeof DailySource.methods.report>);
+  const session = await ctx.session.get({ sessionID }, { signal });
+  const directory = canonicalDirectory(session.location.directory);
+  const pointerPath = join(directory, '.harness', 'active.json');
+  const pointer = localJson(pointerPath, 4096);
+  if (!pointer || !record(pointer.value) || typeof pointer.value.path !== 'string') throw invalid();
+  const parts = pointer.value.path.split(sep);
+  if (parts.length !== 4 || parts[0] !== '.harness' || parts[1] !== sessionID || !safeID(parts[2]) || parts[3] !== 'report.json') throw invalid();
+  const filePath = join(directory, ...parts), file = localJson(filePath);
+  if (!file) throw invalid();
+  const { state, checks, evidence } = validateState(file.value, directory, parts[2]);
+  const snapshot = fingerprint(directory, ['.']);
+  const handoff = record(state.handoff) ? state.handoff : {};
+  if (state.status !== 'verified' || verificationMode(state.plan) !== 'required' || handoff.status !== 'verified' || handoff.advisory !== false || handoff.verification !== 'required' || handoff.fingerprint !== snapshot || !checks.length || checks.length > 64 || !requiresReview(state) || !reviewFresh(state, snapshot)) throw new Error('delivery_ineligible');
+  if (Object.values(completionIssues(state, directory, snapshot)).some(items => items.length)) throw new Error('delivery_ineligible');
+  if (checks.some(check => !evidenceFresh(check, evidence[check.id], snapshot, state) || evidence[check.id]?.code !== 0 || evidence[check.id]?.timedOut || evidence[check.id]?.cancelled || evidence[check.id]?.changedDuringCheck || evidence[check.id]?.outputLimit)) throw new Error('delivery_ineligible');
+  const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  const result = { projectId: digest(ctx.location.project.id), runId: parts[2], snapshot,
+    status: 'verified', verification: 'required', checks: checks.map(check => ({ digest: checkDigest(check), snapshot, passed: true })), reviewDigest: digest(state.reviewEvidence) };
+  if (localJson(pointerPath, 4096)?.raw !== pointer.raw || localJson(filePath)?.raw !== file.raw || fingerprint(directory, ['.']) !== snapshot) throw new Error('delivery_changed');
+  await ownership.report({ sessionID }, { signal, error: (_type: string, code: string) => { throw new Error(code); } } as RpcCallContext<typeof DailySource.methods.report>);
+  const latestSession = await ctx.session.get({ sessionID }, { signal });
+  if (latestSession.projectID !== session.projectID || canonicalDirectory(latestSession.location.directory) !== directory) throw new Error('delivery_changed');
+  signal.throwIfAborted();
+  return result;
 }

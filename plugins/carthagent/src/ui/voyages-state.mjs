@@ -57,6 +57,17 @@ export function createVoyagesState({ api, changed = (_state) => {}, now = Date.n
     invalidate,
     dispose() { invalidate(); disposed = true; controller.abort(); },
     refresh() { return run(async (tx) => { state.snapshot = undefined; emit(); await load(tx); }); },
+    claimReward(sessionID, confirm) {
+      return run(async (tx) => {
+        if (!state.snapshot || !sessionID) return;
+        const preview = await api.previewReward({ sessionID }, networkSignal(tx.signal));
+        if (!tx.live() || await confirm(preview) !== true || !tx.live()) return;
+        const result = await api.claimReward({ sessionID, runId: preview.runId, snapshot: preview.snapshot }, networkSignal(tx.signal));
+        if (!tx.live()) return;
+        await load(tx);
+        if (tx.live()) state.notice = result.replayed ? 'This delivery was already rewarded. No duplicate grant.' : `Delivery rewarded: +${result.reward.coins} coins · +${result.reward.xp} XP · +${result.reward.km} km.`;
+      });
+    },
     customize(draft, confirm) {
       return run(async (tx) => {
         const profile = state.snapshot?.profile;

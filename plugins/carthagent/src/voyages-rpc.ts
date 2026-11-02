@@ -44,11 +44,15 @@ const empty = { type: 'object', additionalProperties: false } as const;
 const selection = { type: 'object', properties: { slot, item: key }, required: ['slot', 'item'], additionalProperties: false } as const;
 const profileResult = { type: 'object', properties: { profile }, required: ['profile'], additionalProperties: false } as const;
 const receipt = { type: 'object', properties: { receiptId: text, item: text, price: integer }, required: ['receiptId', 'item', 'price'], additionalProperties: false } as const;
+const reward = { type: 'object', properties: { id: text, runId: text, policyVersion: text, coins: integer, xp: integer, km: integer, awardedAt: text, basis: text }, required: ['id', 'runId', 'policyVersion', 'coins', 'xp', 'km', 'awardedAt', 'basis'], additionalProperties: false } as const;
+const rewardPreview = { type: 'object', properties: { runId: text, snapshot: text, coins: integer, xp: integer, km: integer, dailyLimit: integer }, required: ['runId', 'snapshot', 'coins', 'xp', 'km', 'dailyLimit'], additionalProperties: false } as const;
 
 /** Authenticated server-only Voyages boundary. Confirmation belongs to the UI. */
 export const Voyages = Rpc.define({
   id: 'carthagent.voyages',
   methods: {
+    previewReward: { errors, input: { type: 'object', properties: { sessionID: text }, required: ['sessionID'], additionalProperties: false }, output: rewardPreview },
+    claimReward: { errors, input: { type: 'object', properties: { sessionID: text, runId: text, snapshot: text }, required: ['sessionID', 'runId', 'snapshot'], additionalProperties: false }, output: { type: 'object', properties: { reward, replayed: { type: 'boolean' } }, required: ['reward', 'replayed'], additionalProperties: false } },
     snapshot: { errors, input: empty, output: { type: 'object', properties: { profile, items: { type: 'array', maxItems: 10000, items: item }, pending }, required: ['profile', 'items'], additionalProperties: false } },
     customize: { errors, input: { type: 'object', properties: { version, name, shipName, skin, hair, pattern }, required: ['version'], additionalProperties: false }, output: profileResult },
     equip: { errors, input: { ...selection, properties: { ...selection.properties, version }, required: ['version', 'slot', 'item'] }, output: profileResult },
