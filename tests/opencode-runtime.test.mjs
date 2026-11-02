@@ -785,6 +785,57 @@ test('headless runner passes workspace environment and returns assistant content
   } finally { globalThis.fetch = original; }
 });
 
+test('headless reattaches after HTTP wait header timeouts without replaying admitted work', async () => {
+  const original = globalThis.fetch;
+  let waits = 0, prompts = 0, environments = 0;
+  try {
+    globalThis.fetch = async url => {
+      const pathname = new URL(url).pathname;
+      if (pathname.endsWith('/environment')) { environments++; return new Response(null, { status: 204 }); }
+      if (pathname.endsWith('/prompt')) { prompts++; return new Response('{"data":{"id":"user-long"}}'); }
+      if (pathname.endsWith('/wait')) {
+        if (++waits < 3) throw new TypeError('fetch failed', { cause: Object.assign(new Error('Headers Timeout Error'), { code: 'UND_ERR_HEADERS_TIMEOUT' }) });
+        return new Response(null, { status: 204 });
+      }
+      if (pathname === '/api/session/ses_long') return new Response('{"data":{"id":"ses_long","outcome":"succeeded"}}');
+      if (pathname.endsWith('/message')) return new Response(JSON.stringify({ data: [
+        { id: 'user-long', type: 'user', time: { created: 1 } },
+        { id: 'answer-long', type: 'assistant', finish: 'stop', time: { created: 2 }, content: [{ type: 'text', text: 'Long task completed' }] },
+      ] }));
+      throw new Error(`Unexpected endpoint ${pathname}`);
+    };
+    const result = await runHeadless({ url: 'http://127.0.0.1:3333', headers: {} }, '/workspace', 'long task', { sessionID: 'ses_long' });
+    assert.equal(result.outcome, 'succeeded');
+    assert.equal(result.result.text, 'Long task completed');
+    assert.equal(waits, 3);
+    assert.equal(prompts, 1);
+    assert.equal(environments, 1);
+  } finally { globalThis.fetch = original; }
+});
+
+test('headless does not retry failed prompt admission or unrelated wait errors', async () => {
+  const original = globalThis.fetch;
+  try {
+    for (const admissionFails of [true, false]) {
+      let prompts = 0, waits = 0;
+      globalThis.fetch = async url => {
+        const pathname = new URL(url).pathname;
+        if (pathname.endsWith('/environment')) return new Response(null, { status: 204 });
+        if (pathname.endsWith('/prompt')) {
+          prompts++;
+          if (admissionFails) throw Object.assign(new Error('admission unknown'), { code: 'UND_ERR_HEADERS_TIMEOUT' });
+          return new Response('{"data":{"id":"user-long"}}');
+        }
+        if (pathname.endsWith('/wait')) { waits++; return new Response('unauthorized', { status: 401 }); }
+        throw new Error(`Unexpected endpoint ${pathname}`);
+      };
+      await assert.rejects(runHeadless({ url: 'http://127.0.0.1:3333', headers: {} }, '/workspace', 'task', { sessionID: 'ses_long' }), admissionFails ? /admission unknown/ : /401/);
+      assert.equal(prompts, 1);
+      assert.equal(waits, admissionFails ? 0 : 1);
+    }
+  } finally { globalThis.fetch = original; }
+});
+
 test('pre-aborted headless calls do not create or resume a session or return prior output', async () => {
   const original = globalThis.fetch;
   let requests = 0;

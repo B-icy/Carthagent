@@ -1,20 +1,19 @@
-# Native OpenCode preview: upgrade and migration guide
+# Native Carthagent beta: upgrade and migration guide
 
-The unpublished **1.1.0-preview.9 candidate** inherits native by default from
-preview.8. This is not an installable-release announcement. `ctg native` is a compatibility
+**1.1.0-beta.1** uses the native console by default. `ctg native` is a compatibility
 alias; `CTG_NATIVE` no longer selects a different console. Stable 1.0.7 remains
-the legacy release. Install previews only through an explicit experimental
-channel switch or an exact published tag.
+the legacy release. Select the beta explicitly through the beta channel or its
+exact published version.
 
-See the [preview.9 candidate notes](release-notes-preview.9.md) for current
-evidence. Until publication, use the explicit reviewed-artifact procedure in
-the [manual testing guide](native-manual-testing.md), not the public resolver.
+See the [beta.1 release notes](release-notes-beta.1.md) and
+[launch-readiness report](launch-readiness-live-results.md) for current evidence
+and beta limitations.
 
 ## Before you try it
 
 - The native route uses a checksum-pinned CTG-owned runtime compatible with OpenCode **2.0.32**. It
   does not use, install over, update, or borrow authentication from a regular
-  OpenCode installation. Selecting the experimental release is explicit; no shell-wide routing toggle is needed.
+  OpenCode installation. Selecting the beta release is explicit; no shell-wide routing toggle is needed.
 - Native OpenCode settings, auth, database/sessions, state, and cache belong to
   the CTG profile under `~/.carthagent/opencode/`. `CTG_OPENCODE_HOME` can
   override that profile root. The old CLI's Carthagent data is separate too.
@@ -119,19 +118,18 @@ Only published releases are installable; a draft is not an update. From an
 installation with channel support:
 
 ```sh
-ctg update --channel experimental --check
-ctg update --channel experimental
+ctg update --channel beta --check
+ctg update --channel beta
 ctg
 ```
 
-Only after `v1.1.0-preview.9` and its reviewed assets are published, its exact-tag
-installation form will be:
+The exact-version installation form is:
 
 ```sh
-npm install -g carthagent@1.1.0-preview.9
+npm install -g carthagent@1.1.0-beta.1
 ```
 
-Do not run this for the unpublished candidate. `ctg update --check` checks for
+`ctg update --check` checks for
 an available release. `lib/opencode/update.mjs` contains the shared,
 release-validated update operation: for npm-installed Carthagent it installs
 the validated exact release spec; for a source clone it requires a clean
@@ -149,7 +147,7 @@ first:
 git status --short
 git diff                         # review and preserve any edits before proceeding
 git fetch origin --tags
-git checkout --detach v1.1.0-preview.9  # only after publication; no force option
+git checkout --detach v1.1.0-beta.1  # published release; no force option
 npm ci
 ```
 
@@ -157,7 +155,7 @@ Do not discard or overwrite local changes to make this procedure succeed. If
 the checkout has work you need, commit it or preserve it outside the checkout
 before changing revisions; resolve conflicts or recovery deliberately rather
 than using a destructive reset. The updater is Carthagent's updater, not a
-regular OpenCode updater. Preview.9 inherits the native-default CLI from preview.8.
+regular OpenCode updater. Beta.1 inherits the native-default CLI from the previews.
 Use `ctg update --channel stable` to return to the legacy stable release; neither
 channel switching nor service refresh deletes profiles or legacy transcripts.
 Do not install a moving branch or guess an unpublished version.

@@ -12,7 +12,8 @@ import { selectReport } from '../lib/workspace.mjs';
 const { createJiti } = createRequire(import.meta.url)('jiti');
 const jiti = createJiti(import.meta.url);
 const { DailySource } = await jiti.import('../plugins/carthagent/src/daily-source-rpc.ts');
-const { createDailySourceRpcHandlers, registerDailySourceRpc } = await jiti.import('../plugins/carthagent/src/server/daily-source-rpc.ts');
+const { createDailySourceRpcHandlers, registerDailySourceRpc, verifiedRewardSource } = await jiti.import('../plugins/carthagent/src/server/daily-source-rpc.ts');
+const { createVoyagesRpcHandlers } = await jiti.import('../plugins/carthagent/src/server/voyages-rpc.ts');
 const call = { signal: new AbortController().signal, error(type, message, data) { throw Object.assign(new Error(message), { type, data }); } };
 const rejected = (promise, code) => assert.rejects(promise, error => {
   assert.equal(error.type, 'dailySourceError');
@@ -85,6 +86,79 @@ test('local source uses actual receipt identity, actual goal, no synthetic befor
   f.state.evidence.failure = f.receipt('failure'); f.save();
   assert.equal((await f.read()).source.checks[2].before, 'not_run');
   assert.equal((await f.read()).source.checks[2].after, 'passed');
+});
+
+test('reward source requires a fresh required verified finish and only exports bounded digests', async t => {
+  const f = fixture(t);
+  f.state.status = 'verified';
+  f.state.reviewRequired = true;
+  f.state.evidence.unit = f.receipt();
+  f.state.reviewEvidence = { runId: f.state.runId, revision: f.state.revision, fingerprint: f.current };
+  f.state.handoff = { status: 'verified', verification: 'required', advisory: false, fingerprint: f.current };
+  f.save();
+  const source = await verifiedRewardSource(f.ctx, f.sessionID, call.signal);
+  assert.equal(source.snapshot, f.current);
+  assert.match(source.projectId, /^[a-f0-9]{64}$/);
+  assert.match(source.reviewDigest, /^[a-f0-9]{64}$/);
+  assert.deepEqual(source.checks, [{ digest: checkDigest(f.state.plan.checks[0]), snapshot: f.current, passed: true }]);
+  for (const privateText of [f.root, 'sensitive-argv', 'actual bounded output tail', 'Actual plan goal']) assert.equal(JSON.stringify(source).includes(privateText), false);
+  const original = structuredClone(f.state);
+  for (const mutate of [
+    state => { state.status = 'blocked'; }, state => { state.plan.verification = 'advisory'; },
+    state => { state.handoff.advisory = true; }, state => { state.handoff.fingerprint = '0'.repeat(64); },
+    state => { delete state.reviewEvidence; }, state => { state.reviewFindings = [{ id: 'gap', description: 'unresolved' }]; },
+    state => { state.evidence.unit.code = 1; }, state => { state.evidence.unit.timedOut = true; },
+    state => { state.evidence.unit.revision--; }, state => { state.plan.outputs = ['missing.txt']; },
+    state => { state.stepStatus = { step0: 'pending' }; },
+  ]) {
+    Object.keys(f.state).forEach(key => delete f.state[key]); Object.assign(f.state, structuredClone(original));
+    mutate(f.state); f.save();
+    await assert.rejects(verifiedRewardSource(f.ctx, f.sessionID, call.signal));
+  }
+  Object.assign(f.state, original); f.save();
+  writeFileSync(join(f.root, 'source.txt'), 'changed after handoff');
+  await assert.rejects(verifiedRewardSource(f.ctx, f.sessionID, call.signal), /delivery_ineligible/);
+});
+
+test('native reward claim binds authenticated preview, fresh source and exact retry payload', async t => {
+  const f = fixture(t);
+  f.state.status = 'verified'; f.state.reviewRequired = true;
+  f.state.evidence.unit = f.receipt();
+  f.state.reviewEvidence = { runId: f.state.runId, revision: f.state.revision, fingerprint: f.current };
+  f.state.handoff = { status: 'verified', verification: 'required', advisory: false, fingerprint: f.current }; f.save();
+  let account = 'owner-a', fail = true, committed = false;
+  const sent = [], store = new Map();
+  const ctx = { location: f.ctx.location, session: f.ctx.session, worktree: f.ctx.worktree, integration: { connection: {
+    active: async () => ({ id: account, type: 'credential', method: 'oauth' }),
+    resolve: async () => ({ type: 'oauth', methodID: 'carthagent-device', access: 'fixture-token' }),
+  } } };
+  const options = { profileRoot: join(f.base, 'private-profile'), journal: { get: async key => structuredClone(store.get(key)), set: async (key, state) => { store.set(key, structuredClone(state)); } }, cloudClient: { request: async (path, input) => {
+    if (path.endsWith('/policy')) return { policy: { version: 'verified-delivery-beta-v1', basis: 'local_harness_attested', coins: 25, xp: 100, km: 1, dailyLimit: 3 } };
+    if (input.method === 'GET') {
+      if (!committed) throw Object.assign(Error('not_found'), { status: 404, code: 'not_found' });
+      return { reward: { id: 'reward', runId: f.state.runId, policyVersion: 'verified-delivery-beta-v1', coins: 25, xp: 100, km: 1, awardedAt: new Date().toISOString(), basis: 'local_harness_attested' } };
+    }
+    sent.push(structuredClone(input.body));
+    if (fail) throw Error('lost response after commit');
+    return { reward: { id: 'reward', runId: input.body.runId, policyVersion: 'verified-delivery-beta-v1', coins: 25, xp: 100, km: 1, awardedAt: new Date().toISOString(), basis: 'local_harness_attested' }, replayed: true };
+  } } };
+  let handlers = createVoyagesRpcHandlers(ctx, options);
+  const preview = await handlers.previewReward({ sessionID: f.sessionID }, call);
+  const input = { sessionID: f.sessionID, runId: preview.runId, snapshot: preview.snapshot };
+  account = 'owner-b';
+  await assert.rejects(handlers.claimReward(input, call), /reward_preview_required/); assert.equal(sent.length, 0);
+  account = 'owner-a';
+  await assert.rejects(handlers.claimReward(input, call), error => error.data.uncertain === true);
+  fail = false;
+  handlers = createVoyagesRpcHandlers(ctx, options); // Restart, same durable preview.
+  assert.equal((await handlers.claimReward(input, call)).replayed, true);
+  assert.deepEqual(sent[0], sent[1]);
+  writeFileSync(join(f.root, 'source.txt'), 'changed after confirmation');
+  await assert.rejects(handlers.claimReward(input, call), /delivery_ineligible/); assert.equal(sent.length, 2);
+  committed = true;
+  assert.equal((await handlers.claimReward(input, call)).replayed, true); assert.equal(sent.length, 2);
+  assert.deepEqual(await handlers.previewReward({ sessionID: f.sessionID }, call), preview);
+  await assert.rejects(handlers.claimReward({ ...input, sessionID: 'another-session' }, call), /reward_preview_required/);
 });
 
 test('explicit finish change summary, first-run failed baseline and long output tails are projected', async t => {

@@ -6,17 +6,19 @@ import type { Context } from '@opencode/plugin/promise/plugin';
 import { CloudClient, cloudControlUrl } from '../../../../lib/cloud/client.mjs';
 import { atomicWrite, runtimePaths, withFileLock } from '../../../../lib/opencode/runtime.mjs';
 import { Voyages, voyagesSlots, voyagesAppearance, type VoyagesProfile, type VoyagesItem, type VoyagesQuote, type VoyagesPending } from '../voyages-rpc';
+import { verifiedRewardSource } from './daily-source-rpc';
 
-type Port = Pick<Context, 'integration'>;
+type Port = Pick<Context, 'integration'> & Partial<Pick<Context, 'location' | 'session' | 'worktree'>>;
 type Call = import('@opencode/plugin/promise/rpc').RpcCallContext<typeof Voyages.methods.snapshot>;
 type CloudPort = { request(path: string, options: { method: string; accessToken: string; signal: AbortSignal; body?: unknown }): Promise<unknown> };
 type Pending = VoyagesPending & { key: string };
-type State = { quotes: VoyagesQuote[]; pending?: Pending };
+type State = { quotes: VoyagesQuote[]; pending?: Pending; rewardPreview?: { sessionID: string; runId: string; snapshot: string } };
 class Failure extends Error {
   constructor(readonly code: string, readonly status = 0, readonly uncertain = false) { super(code); }
 }
 const codes = new Set(('authentication_required invalid_token expired_token revoked_token reauthentication_required insufficient_scope milestone_locked purchase_required insufficient_coins profile_not_found not_found not_available version_conflict already_owned quote_expired terms_changed quote_consumed key_conflict rate_limited quote_limit voyages_unavailable internal_error invalid_body unknown_field version_required invalid_name invalid_config invalid_item invalid_id invalid_key wallet_limit').split(' '));
 const noDebit = new Set(('invalid_body unknown_field invalid_id invalid_key milestone_locked insufficient_coins not_found not_available already_owned quote_expired terms_changed authentication_required invalid_token expired_token revoked_token reauthentication_required insufficient_scope').split(' '));
+for (const code of ['delivery_ineligible', 'delivery_conflict', 'snapshot_claimed', 'reward_daily_limit', 'progression_limit', 'invalid_delivery']) codes.add(code);
 type Journal = { get(file: string): Promise<unknown>; set(file: string, state: State): Promise<void> };
 const fileJournal: Journal = {
   async get(file) {
@@ -122,9 +124,14 @@ export function createVoyagesRpcHandlers(ctx: Port, options: { cloudClient?: Clo
     if (raw === undefined) return { quotes: [] };
     const s = obj(raw); check(Array.isArray(s.quotes) && s.quotes.length <= 20);
     const quotes = s.quotes.map(quote).filter(q => Date.parse(q.expiresAt) > now());
-    if (s.pending === undefined) return { quotes };
+    let rewardPreview: State['rewardPreview'];
+    if (s.rewardPreview !== undefined) {
+      const r = obj(s.rewardPreview);
+      if (r.sessionID !== undefined) rewardPreview = { sessionID: str(r.sessionID), runId: str(r.runId), snapshot: str(r.snapshot) };
+    }
+    if (s.pending === undefined) return { quotes, ...(rewardPreview ? { rewardPreview } : {}) };
     const p = obj(s.pending);
-    return { quotes, pending: { quoteId: str(p.quoteId), key: str(p.key), item: fullItem(p.item), price: int(p.price) } };
+    return { quotes, pending: { quoteId: str(p.quoteId), key: str(p.key), item: fullItem(p.item), price: int(p.price) }, ...(rewardPreview ? { rewardPreview } : {}) };
   }
   const write = (a: Access, state: State) => journal.set(`${a.scope}.json`, state);
   function run<T>(fn: (input: Record<string, unknown>, call: Call, a: Access) => Promise<T>) {
@@ -145,7 +152,7 @@ export function createVoyagesRpcHandlers(ctx: Port, options: { cloudClient?: Clo
       const r = await request(a, 'purchases', call.signal, 'POST', { quoteId: pending.quoteId, key: pending.key });
       const receipt = { receiptId: str(r.receiptId), item: fullItem(r.item), price: int(r.price) };
       check(receipt.item === pending.item && receipt.price === pending.price);
-      await write(a, { quotes: [] });
+      await write(a, { quotes: [], ...(state.rewardPreview ? { rewardPreview: state.rewardPreview } : {}) });
       await current(a, call.signal);
       return receipt;
     } catch (error) {
@@ -154,7 +161,7 @@ export function createVoyagesRpcHandlers(ctx: Port, options: { cloudClient?: Clo
       // expiry/debit. Thus 409 quote_expired proves this pair never committed.
       // Auth, key conflicts and all other replay errors remain uncertain.
       if ((!replay && e.status >= 400 && e.status < 500 && noDebit.has(e.code)) || (replay && e.status === 409 && e.code === 'quote_expired')) {
-        try { await write(a, { quotes: [] }); } catch { throw new Failure('storage_failed', 0, true); }
+        try { await write(a, { quotes: [], ...(state.rewardPreview ? { rewardPreview: state.rewardPreview } : {}) }); } catch { throw new Failure('storage_failed', 0, true); }
         throw e;
       }
       throw safe(error, true);
@@ -173,6 +180,45 @@ export function createVoyagesRpcHandlers(ctx: Port, options: { cloudClient?: Clo
     key(input.item);
   }
   return {
+    previewReward: run(async (input, call, a) => {
+      const state = await read(a);
+      const prior = state.rewardPreview;
+      let source: Awaited<ReturnType<typeof rewardSource>> | undefined;
+      let sourceError: unknown;
+      try { source = await rewardSource(input.sessionID, call.signal); } catch (error) { sourceError = error; }
+      if (prior && prior.sessionID === input.sessionID && (!source || source.runId === prior.runId)) {
+        try {
+          const existing = rewardResult(await request(a, `delivery-rewards/${encodeURIComponent(prior.runId)}`, call.signal), prior.runId, true);
+          return { runId: prior.runId, snapshot: prior.snapshot, coins: existing.reward.coins, xp: existing.reward.xp, km: existing.reward.km, dailyLimit: 3 };
+        } catch (error) {
+          if ((error as { status?: number }).status !== 404) throw safe(error);
+        }
+      }
+      if (!source) throw sourceError;
+      const policy = obj((await request(a, 'delivery-rewards/policy', call.signal)).policy);
+      check(policy.version === 'verified-delivery-beta-v1' && policy.basis === 'local_harness_attested' && policy.coins === 25 && policy.xp === 100 && policy.km === 1 && policy.dailyLimit === 3);
+      await write(a, { ...state, rewardPreview: { sessionID: str(input.sessionID), runId: source.runId, snapshot: source.snapshot } });
+      return { runId: source.runId, snapshot: source.snapshot, coins: int(policy.coins, 1), xp: int(policy.xp, 1), km: int(policy.km, 1), dailyLimit: int(policy.dailyLimit, 1) };
+    }),
+    claimReward: run(async (input, call, a) => {
+      const preview = (await read(a)).rewardPreview;
+      if (!preview || preview.sessionID !== input.sessionID || preview.runId !== input.runId || preview.snapshot !== input.snapshot) throw new Failure('reward_preview_required');
+      // Read the receipt first: a committed claim remains recoverable after
+      // source changes or restart. Only an explicit 404 permits a new claim.
+      try {
+        const existing = await request(a, `delivery-rewards/${encodeURIComponent(preview.runId)}`, call.signal);
+        return rewardResult(existing, preview.runId, true);
+      } catch (error) {
+        if ((error as { status?: number }).status !== 404) throw safe(error, true);
+      }
+      const source = await rewardSource(input.sessionID, call.signal);
+      if (source.runId !== input.runId || source.snapshot !== input.snapshot) throw new Failure('delivery_changed');
+      try {
+        const result = await request(a, 'delivery-rewards', call.signal, 'POST', source);
+        check(typeof result.replayed === 'boolean');
+        return rewardResult(result, source.runId, result.replayed as boolean);
+      } catch (error) { throw safe(error, !(error as { status?: number })?.status || (error as { status?: number }).status! >= 500); }
+    }),
     snapshot: run(async (_input, call, a) => {
       const bootstrap = await request(a, 'bootstrap', call.signal);
       check(bootstrap.signedIn === true);
@@ -193,7 +239,7 @@ export function createVoyagesRpcHandlers(ctx: Port, options: { cloudClient?: Clo
       if (state.pending) throw new Failure('purchase_pending', 0, true);
       const q = quote((await request(a, 'quotes', call.signal, 'POST', input)).quote);
       check(q.item === `${input.slot}:${input.item}` && Date.parse(q.expiresAt) > now() && Date.parse(q.expiresAt) <= now() + 125000);
-      await write(a, { quotes: [...state.quotes.filter(v => v.id !== q.id), q].slice(-20) });
+      await write(a, { ...state, quotes: [...state.quotes.filter(v => v.id !== q.id), q].slice(-20) });
       await current(a, call.signal);
       return { quote: q };
     }),
@@ -216,6 +262,17 @@ export function createVoyagesRpcHandlers(ctx: Port, options: { cloudClient?: Clo
       return buy(a, state, call, true);
     }),
   };
+  function rewardResult(result: Record<string, unknown>, runId: string, replayed: boolean) {
+    const r = obj(result.reward);
+    check(r.runId === runId && r.basis === 'local_harness_attested' && r.policyVersion === 'verified-delivery-beta-v1' && r.coins === 25 && r.xp === 100 && r.km === 1);
+    check(Number.isFinite(Date.parse(str(r.awardedAt))));
+    return { reward: { id: str(r.id), runId: str(r.runId), policyVersion: str(r.policyVersion), coins: int(r.coins, 1), xp: int(r.xp, 1), km: int(r.km, 1), awardedAt: str(r.awardedAt), basis: str(r.basis) }, replayed };
+  }
+  async function rewardSource(sessionID: unknown, signal: AbortSignal) {
+    if (!ctx.location || !ctx.session || !ctx.worktree) throw new Failure('delivery_ineligible');
+    try { return await verifiedRewardSource({ location: ctx.location, session: ctx.session, worktree: ctx.worktree }, str(sessionID), signal); }
+    catch (error) { throw new Failure(error instanceof Error && ['delivery_changed', 'not_owned'].includes(error.message) ? error.message : 'delivery_ineligible'); }
+  }
 }
 
 export async function registerVoyagesRpc(ctx: Context) {

@@ -115,7 +115,7 @@ test('review rejects modified receipts, stale coverage, and cancellation', async
   await assert.rejects(captureDeliveryReview(state, cwd, dir, AbortSignal.abort()), /cancelled/);
 });
 
-test('review accepts filesystem aliases of the Git root but rejects ancestor repositories', async t => {
+test('review accepts filesystem aliases of the Git root and nested workspaces', async t => {
   const { cwd, state } = fixture(t);
   const parent = mkdtempSync(join(tmpdir(), 'review-alias-'));
   t.after(() => rmSync(parent, { recursive: true, force: true }));
@@ -126,7 +126,51 @@ test('review accepts filesystem aliases of the Git root but rejects ancestor rep
   assert.match(capture.diff, /diff --git/);
   const child = join(cwd, 'nested');
   mkdirSync(child);
-  await assert.rejects(captureDeliveryReview(state, child, join(child, '.harness')), /workspace Git root/);
+  writeFileSync(join(child, 'new.txt'), 'nested source');
+  const nested = await captureDeliveryReview(state, child, join(child, '.harness'));
+  assert.match(nested.diff, /nested source/);
+  assert.doesNotMatch(nested.diff, /export const amount|export const result/);
+});
+
+test('nested review scopes tracked, staged, deleted and new files and retains freshness', async t => {
+  const { cwd: root, state, params } = fixture(t);
+  const cwd = join(root, 'app café [one]');
+  mkdirSync(cwd);
+  const git = args => execFileSync('git', args, { cwd: root, stdio: 'pipe' });
+  for (const name of ['changed.txt', 'deleted.txt', 'moved.txt']) writeFileSync(join(cwd, name), 'baseline\n');
+  git(['add', '.']);
+  git(['-c', 'user.name=Test', '-c', 'user.email=test@localhost', 'commit', '-qm', 'Nested baseline']);
+  writeFileSync(join(root, 'app.mjs'), 'OUTSIDE_TRACKED_SECRET');
+  writeFileSync(join(root, 'outside.txt'), 'OUTSIDE_NEW_SECRET');
+  writeFileSync(join(cwd, 'changed.txt'), 'inside staged change\n');
+  git(['add', '.']);
+  git(['mv', 'app café [one]/moved.txt', 'outside-moved.txt']);
+  rmSync(join(cwd, 'deleted.txt'));
+  writeFileSync(join(cwd, 'new café.txt'), 'inside new source');
+  for (const name of ['node_modules', '.harness', 'artifacts']) {
+    mkdirSync(join(cwd, name), { recursive: true });
+    writeFileSync(join(cwd, name, 'noise.txt'), 'EXCLUDED_SECRET');
+  }
+  const capture = await captureDeliveryReview(state, cwd, join(cwd, '.harness', 'review'));
+  assert.match(capture.diff, /inside staged change/);
+  assert.match(capture.diff, /deleted file mode/);
+  assert.match(capture.diff, /inside new source/);
+  assert.match(capture.diff, /a\/moved.txt/);
+  assert.doesNotMatch(capture.diff, /OUTSIDE_|outside-moved|EXCLUDED_SECRET/);
+  state.evidence.unit.fingerprint = fingerprint(cwd, ['.']);
+  recordDeliveryReview(state, cwd, params(capture.id));
+  writeFileSync(join(root, 'outside.txt'), 'outside changes do not stale app review');
+  recordDeliveryReview(state, cwd, params(capture.id));
+  writeFileSync(join(cwd, 'new café.txt'), 'changed after review');
+  assert.throws(() => recordDeliveryReview(state, cwd, params(capture.id)), /stale/);
+});
+
+test('nested review rejects untracked symlinks escaping the workspace', async t => {
+  const { cwd: root, state } = fixture(t);
+  const cwd = join(root, 'nested');
+  mkdirSync(cwd);
+  symlinkSync(join(root, 'app.mjs'), join(cwd, 'escape.mjs'));
+  await assert.rejects(captureDeliveryReview(state, cwd, join(cwd, '.harness')), /outside|escape|symlink/i);
 });
 
 test('large diffs retain full receipt instead of silently using output tail', async t => {

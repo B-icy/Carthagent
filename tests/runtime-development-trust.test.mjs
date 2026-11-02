@@ -82,10 +82,11 @@ async function fixture(t, patchSha256 = developmentPatch) {
     writeManifest, writeSums, calls, spawns, spawnVersion, spawnImpl, publicOptions };
 }
 
-test('published preview.13 release trust stays valid independently of the development patch pin', async t => {
+test('packaged release trust stays valid independently of the development patch pin', async t => {
   assert.equal(CTG_RUNTIME_PATCH_SHA256, 'ec4bb182308ed8b311513aad5c9c7d57dcd0db103f0882f3dc3517d535b4c975');
   const published = await readRuntimeReleaseManifest();
-  assert.equal(published.releaseVersion, '1.1.0-preview.13');
+  const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+  assert.equal(published.releaseVersion, packageJson.version);
   const f = await fixture(t, CTG_RUNTIME_PATCH_SHA256);
   assert.deepEqual(await f.runtime.readRuntimeReleaseManifest(f.releasePath), f.release);
   assert.equal(await f.runtime.resolveOpenCode(f.publicOptions), f.binary);
@@ -98,7 +99,7 @@ test('published preview.13 release trust stays valid independently of the develo
   assert.equal(acquisition.expectedCompatibilityVersion, f.runtime.OPENCODE_VERSION);
   assert.equal(acquisition.expectedRuntimeVersion, f.runtime.CTG_RUNTIME_VERSION);
   assert.equal(acquisition.expectedChannel, f.manifest.channel);
-  assert.match(acquisition.baseUrl, /\/v1\.1\.0-preview\.13$/);
+  assert.equal(acquisition.baseUrl, `https://github.com/B-icy/Carthagent/releases/download/v${packageJson.version}`);
   const identity = await f.runtime.runtimeIdentity(f.binary, f.publicOptions);
   assert.equal(identity.kind, 'ctg-owned');
   assert.equal(identity.patchSha256, CTG_RUNTIME_PATCH_SHA256);

@@ -66,6 +66,7 @@ export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "
     ];
     if (!snapshot) return basic;
     return [...basic,
+      ...(props.sessionID ? [{ name: "Claim verified delivery reward", description: "Preview this session’s eligible handoff, then claim once", value: "reward" }] : []),
       ...(props.section !== "equipment" ? [{ name: "Customize captain and ship", description: "Preview names, then explicitly Save", value: "customize" }] : []),
       ...(snapshot.pending ? [{ name: "Resolve pending purchase", description: "Explicit same-pair replay; no automatic new charge", value: "retry" }] : []),
       ...(props.section !== "profile" ? snapshot.items.map((item) => ({ name: voyagesCatalogLabel(snapshot, item), description: `${item.slot} · ${item.itemKey} · ${!item.available ? "unavailable" : !item.eligible ? "ineligible" : canEquip(snapshot, item) ? "confirm equip" : item.price === null ? "purchase unavailable" : "request quote"}${item.reason ? ` · ${item.reason}` : ""}`, value: `item:${item.item}` })) : []),
@@ -80,6 +81,7 @@ export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "
       return;
     }
     if (value === "refresh") { void controller.refresh(); return; }
+    if (value === "reward" && props.sessionID) { void controller.claimReward(props.sessionID, (preview: { coins: number; xp: number; km: number; dailyLimit: number; runId: string; snapshot: string }) => confirm("Claim delivery reward?", `+${preview.coins} coins · +${preview.xp} XP · +${preview.km} km\nUp to ${preview.dailyLimit} deliveries per UTC day.\nRun: ${preview.runId}\nSnapshot: ${preview.snapshot}\nSends delivery/check/review digests, not code or output. Based on local harness verification; the server does not rerun your repository. Replaying this delivery never earns twice.`, "Claim")); return; }
     if (value === "section") { context.ui.router.navigate({ type: "plugin", name: "voyages", data: { ...(props.sessionID ? { sessionID: props.sessionID } : {}), section: props.section === "profile" ? "equipment" : "profile" } }); return; }
     if (value === "daily") { context.ui.router.navigate({ type: "plugin", name: "daily-quests", data: { ...(props.sessionID ? { sessionID: props.sessionID } : {}) } }); return; }
     if (value === "customize") { void customize(); return; }
@@ -120,7 +122,7 @@ export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "
         <text flexShrink={0} fg={context.theme.text.muted}>Hull {snapshot().profile.config.hull} · sail {snapshot().profile.config.sail} · setting {snapshot().profile.config.setting}</text>
         <Show when={snapshot().pending}><text flexShrink={0} fg={context.theme.text.feedback.warning.base}>Purchase pending / outcome unknown. Resolve the saved purchase explicitly; new purchases are blocked.</text></Show>
       </box>}</Show>
-      <text flexShrink={0} fg={context.theme.text.muted}>Live profile · coins · owned equipment · shop. No coding rewards or grants.</text>
+      <text flexShrink={0} fg={context.theme.text.muted}>Verified delivery rewards: open Voyages from a completed Ship session to preview and claim. Daily assessment alone grants no rewards.</text>
       <text flexShrink={0} fg={context.theme.text.faint}>Choose Back to return. Cancel in dialogs never saves or purchases.</text>
     </scrollbox>
     <text flexShrink={0} fg={context.theme.text.faint}>↑/↓ Enter · PgUp/Dn choices · Ctrl+U/D profile</text>
