@@ -58,14 +58,22 @@ lost-response recovery, restart and receipt recovery after source changes.
 
 - Live browser comparison awaits normal user sign-in in `voyages-rewards-e2e`.
 - Live terminal rendering, cancellation and confirmed replay passed.
-- Five-platform runtime candidate and installed beta acceptance remain pending.
-  The Linux x64 prebuild runner shut down during tests; no complete candidate
-  has been produced yet.
+- Five-platform runtime prebuild 41398315323 succeeded on attempt 2. Exact
+  provenance, all archive checksums, embedded metadata and executable hashes
+  passed the production acquisition parser; regenerating the manifest produced
+  the identical candidate. The packaged beta manifest now matches those bytes.
+  Installed beta acceptance remains pending.
 
-Latest full native quality run: lint/build passed; 1,124 tests passed, five
+Pre-manifest full native quality run: lint/build passed; 1,124 tests passed, five
 skipped, six failed solely because the package version is beta.1 while the
 runtime manifest still pins preview.13. These remain release-blocking failures
-until the verified beta candidate is integrated. No trust assertion was relaxed.
+until the verified beta candidate was integrated. The post-integration quality
+run passed: **1,130 tests passed, five skipped, zero failures**, plus lint,
+typecheck and build. Exact candidate/packaged manifest equality and
+`verify-release-version.mjs v1.1.0-beta.1` also passed. No trust assertion was relaxed.
+
+Native PR CI passed all jobs after retrying one Windows Node 24 process-query
+timeout. Native navigation also passed locally: 12 tests / 65 assertions.
 
 The reward backend relies on authenticated local-harness attestation. It does
 not independently execute repositories or prove authorship. Daily classifier
