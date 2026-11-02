@@ -3,6 +3,13 @@
 November 2, 2026. This branch is not published beta acceptance. npm `next` remains
 1.1.0-beta.1 and `latest` remains 1.0.7.
 
+Native PR #238 merged at `a5ad2164d056fee7f7183579ce6cc97305bae53b` after CI
+41504674623 passed. First-task guidance is tracked in PR #239. Beta.2 runtime
+prebuild 41505735348 succeeded. All five downloaded archives, executable digests
+and pinned provenance were independently verified by regenerating the candidate
+manifest locally. Package and lockfile target beta.2 and pin that exact manifest;
+publication remains pending.
+
 ## Changes
 
 - Use Carthagent Cloud for hosted models; retain Ship mode, internal IDs and
@@ -31,8 +38,15 @@ November 2, 2026. This branch is not published beta acceptance. npm `next` remai
   PowerShell diagnostics timeout, while its parallel run passed. Windows
   diagnostics now allow bounded ten-second cold startup.
 - Installed package acceptance and its focused terminal rerun reproduced a
-  reconnect overlay. The same pinned executable passed the source-tree probe;
-  installed-fixture diagnostics are being collected before native merge.
+  reconnect overlay. DEBUG-enabled source and installed probes passed; a normal
+  source run subsequently hit its existing terminal-snapshot deadline. This is
+  timing-sensitive local acceptance, not proof of a fixed runtime defect. Both
+  earlier CI package checks passed, and corrected CI passed before merge.
+- The subsequent full non-focused installed-package run passed all 28
+  probes/scenarios, including terminal semantics, using the package-pinned
+  beta.1 owned runtime (`/tmp/opencode/onboarding-native-package-final.log`).
+  This closes the local rerun gate for the onboarding source; beta.2 still
+  requires acceptance against its own final packaged manifest and release assets.
 
 ## Outstanding gates
 
@@ -40,6 +54,7 @@ Backend counterpart: `B-icy/Carthagent-Backend` PR #178 merged at
 `b0eacdcbdb71be4c099b1b3839a11164b2d69232`; production deployment 41502378359
 succeeded. Its `ONBOARDING_CONVERSION_AUDIT.md` tracks the full matrix. Live
 authenticated identity and read-only Builder/Pro/Max handoff terms were verified.
+Retention follow-up PR #179 also merged and deployment 41505976672 succeeded.
 Stripe test access is unavailable. First-task/default-model guidance,
 contextual exhaustion action, remaining legacy/docs naming and full measurement
 segmentation still need work. No new end-to-end paid continuation or visual
