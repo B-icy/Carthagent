@@ -40,8 +40,10 @@ beta.2 installed-package and public-acquisition acceptance.
 Stripe test-mode access remains unavailable; real decline/SCA, tax/discount and
 the full financial-transition matrix are not verified. No new live purchase or
 end-to-end paid task continuation is claimed. Browser screenshot capture remains
-unavailable. Local terminal acceptance has shown event-stream timing failures,
-although CI package acceptance passed; final draft acceptance is still required.
+unavailable. Local terminal acceptance initially showed event-stream timing
+failures; the subsequent full installed-package run passed all 28 probes/scenarios
+with the pinned beta.1 runtime, as did CI package acceptance. Final beta.2 draft
+acceptance against its own manifest and assets is still required.
 
 Verified-delivery rewards remain 25 coins, 100 XP and 1 km per eligible claimed
 delivery, up to three per UTC day. Daily classifier assessments remain unrewarded.

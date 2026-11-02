@@ -39,6 +39,11 @@ prebuild 41505735348 is running; publication remains pending.
   source run subsequently hit its existing terminal-snapshot deadline. This is
   timing-sensitive local acceptance, not proof of a fixed runtime defect. Both
   earlier CI package checks passed, and corrected CI passed before merge.
+- The subsequent full non-focused installed-package run passed all 28
+  probes/scenarios, including terminal semantics, using the package-pinned
+  beta.1 owned runtime (`/tmp/opencode/onboarding-native-package-final.log`).
+  This closes the local rerun gate for the onboarding source; beta.2 still
+  requires acceptance against its own final packaged manifest and release assets.
 
 ## Outstanding gates
 
