@@ -488,7 +488,13 @@ def main():
                 visible = screen.visible().lower()
                 visible_original = screen.visible()
                 if 'connection lost' in visible or 'reconnecting to the server' in visible:
-                    raise RuntimeError(f'native host reconnect overlay during terminal acceptance: {visible_original!r}')
+                    # This isolated fixture is deleted on exit. Preserve its
+                    # bounded diagnostics in the failure rather than losing the
+                    # server-side reason with the temporary profile.
+                    logs = {str(log.relative_to(root)): log.read_text(errors='replace')[-12000:]
+                            for log in Path(root).rglob('*.log')}
+                    raise RuntimeError(f'native host reconnect overlay during terminal acceptance: '
+                                       f'{visible_original!r}; fixture logs={logs!r}')
                 home_ready = 'shift+tab agents' in visible and 'ctrl+p commands' in visible
                 onboarding_visible = ('connect opencode go' in visible or
                                       'connect an integration to' in visible or

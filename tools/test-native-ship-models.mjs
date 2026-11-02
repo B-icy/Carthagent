@@ -123,7 +123,7 @@ try {
   } while (Date.now() < deadline);
   console.log(JSON.stringify({ modelRequests, models: models.map(model => ({ id: model.id, providerID: model.providerID, connected: model.connected, status: model.status })) }));
   assert.ok(models.some(model => model.id === 'ctg-ship-fixture'), 'Successful Ship OAuth must publish discovered models in the real native model inventory without EXPLABS_API_KEY');
-  assert.equal(ship.name, 'Carthagent Ship', 'The connect picker must show the Ship name');
+  assert.equal(ship.name, 'Carthagent Cloud', 'The connect picker must show the Cloud name');
   assert.deepEqual(integrations.data.map(item => item.id).sort(), ['anthropic', 'experiential-labs', 'google', 'openai', 'xai'], 'Login must contain only the curated major integrations');
   const providers = (await client.provider.list({ location }, request)).data;
   assert.ok(!providers.some(provider => /^opencode(?:-|$)/.test(provider.id)), 'The upstream provider must not be available');

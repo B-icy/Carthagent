@@ -60,7 +60,7 @@ export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "
     const basic = [
       { name: "Refresh authoritative state", description: "Reload live profile and catalog", value: "refresh" },
       { name: "Daily coding quests", description: "Server assignments · selected evidence · explicit external JEV consent", value: "daily" },
-      { name: "Sign in / reconnect", description: "Native provider connection · choose Carthagent Ship device sign-in", value: "signin" },
+      { name: "Sign in / reconnect", description: "Native provider connection · choose Carthagent Cloud device sign-in", value: "signin" },
       { name: "Back", description: props.sessionID ? "Return to selected session" : "Return home", value: "back" },
       ...(props.section ? [{ name: props.section === "profile" ? "Equipment & shop" : "Profile & wallet", description: "Open the other Voyages detail view", value: "section" }] : []),
     ];

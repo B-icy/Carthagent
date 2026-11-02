@@ -28,7 +28,9 @@ export async function fixtureStopDiagnostics({ child, output, elapsedMs }, { run
     ? ['-NoProfile', '-NonInteractive', '-Command', `$p = Get-Process -Id ${child.pid} -ErrorAction SilentlyContinue; if ($null -ne $p) { Write-Output ("pid={0} responding={1}" -f $p.Id, $p.Responding) }`]
     : ['-p', String(child.pid), '-o', 'pid=,ppid=,stat=,etime=,time='];
   try {
-    const { stdout } = await run(command, args, { timeout: 2000, maxBuffer: 4096, windowsHide: true });
+    // Cold PowerShell startup on shared Windows runners can exceed two seconds.
+    // Keep diagnostics bounded without mistaking startup latency for no process.
+    const { stdout } = await run(command, args, { timeout: windows ? 10000 : 2000, maxBuffer: 4096, windowsHide: true });
     const state = stdout.trim();
     // Only numeric process metadata and fixed state codes; never argv, names,
     // environment, stderr, database contents, or OS command error messages.

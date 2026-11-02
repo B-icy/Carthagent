@@ -36,7 +36,7 @@ test('Cloud managed-usage exhaustion is detected only for failed Cloud assistant
   assert.equal(isCloudCreditExhaustion({ type: 'message_end', message: { role: 'assistant', stopReason: 'error', errorMessage: 'credit is exhausted' } }, 'experiential-labs/model'), true);
   assert.match(cloudManagedUsageNotice({ type: 'message_end', message: { role: 'assistant', provider: 'experiential-labs', stopReason: 'error', errorMessage: '429: {"error":{"code":"daily_limit_reached"}}' } }), /00:00 UTC/);
   assert.match(cloudManagedUsageNotice({ type: 'message_end', message: { role: 'assistant', provider: 'experiential-labs', stopReason: 'error', errorMessage: 'monthly_allowance_exhausted' } }), /billing portal/);
-  assert.match(cloudManagedUsageNotice({ type: 'message_end', message: { role: 'assistant', provider: 'experiential-labs', stopReason: 'error', errorMessage: 'subscription_inactive' } }), /subscription is inactive/);
+  assert.match(cloudManagedUsageNotice({ type: 'message_end', message: { role: 'assistant', provider: 'experiential-labs', stopReason: 'error', errorMessage: 'subscription_inactive' } }), /awaiting payment or activation/);
   assert.equal(isCloudCreditExhaustion({ type: 'message_end', message: { role: 'assistant', provider: 'openai', stopReason: 'error', errorMessage: 'daily_limit_reached' } }), false);
   assert.equal(isCloudCreditExhaustion({ type: 'message_end', message: { role: 'assistant', provider: 'experiential-labs', stopReason: 'stop' } }), false);
 });
@@ -69,7 +69,7 @@ test('active model synchronization refreshes welcome blocks without redundant in
 
   syncActiveModel(state, feed, { provider: 'experiential-labs', id: 'gpt-6-luna' });
   assert.equal(state.model, 'experiential-labs/gpt-6-luna');
-  assert.equal(feed.blocks[0].model, 'Carthagent Ship/gpt-6-luna');
+  assert.equal(feed.blocks[0].model, 'Carthagent Cloud/gpt-6-luna');
 });
 
 const SAMPLE_PLAN = {

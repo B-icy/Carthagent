@@ -308,7 +308,7 @@ export default Plugin.define({
         }
         case "account": {
           const result = await shipClient(context, location).account() as { account: Record<string, unknown> };
-          await context.ui.dialog.alert({ title: "Carthagent Ship account", message: cloudAccountText(result.account) });
+          await context.ui.dialog.alert({ title: "Carthagent Cloud account", message: cloudAccountText(result.account) });
           return;
         }
         case "usage": {
@@ -316,24 +316,34 @@ export default Plugin.define({
             shipClient(context, location).account() as Promise<{ account: Record<string, unknown> }>,
             shipClient(context, location).usage({ limit: 50 }) as Promise<{ usage: Record<string, unknown> }>,
           ]);
-          await context.ui.dialog.alert({ title: "Carthagent Ship usage", message: cloudUsageText(usageResult.usage, accountResult.account) });
+          await context.ui.dialog.alert({ title: "Carthagent Cloud usage", message: cloudUsageText(usageResult.usage, accountResult.account) });
           return;
         }
         case "billing": {
-          const action = arg.toLowerCase() || "checkout";
-          if (!["checkout", "portal"].includes(action)) { toast("Usage: /billing [checkout|portal].", "warning"); return; }
-          const { url } = await shipClient(context, location).billing({ action: action as "checkout" | "portal" }) as { url: string };
+          const [action = "checkout", plan = "builder"] = arg.toLowerCase().split(/\s+/).filter(Boolean);
+          if (action === "refresh") {
+            const result = await shipClient(context, location).account() as { account: Record<string, unknown> };
+            await context.ui.dialog.alert({ title: "Cloud access refreshed", message: `${cloudAccountText(result.account)}\n\nYour task stays in this session. When usage is available, send “Continue the task” to resume.` });
+            return;
+          }
+          if (!["checkout", "portal"].includes(action) || !["builder", "pro", "max"].includes(plan)) { toast("Usage: /billing [checkout [builder|pro|max]|portal|refresh].", "warning"); return; }
+          if (action === "checkout") {
+            const { quote } = await shipClient(context, location).billing({ action: "quote", plan: plan as "builder" | "pro" | "max" }) as { quote: { terms: string; changingPlan: boolean } };
+            const proceed = await context.ui.dialog.confirm({ title: "Review Cloud plan", message: `${quote.terms}\n\n${quote.changingPlan ? "Review the exact proration in your browser before confirming the change." : "Continue to Stripe to review and pay."}\nYour task stays in this session. You can also connect your own provider with /login.` });
+            if (proceed !== true) return;
+          }
+          const { url } = await shipClient(context, location).billing({ action: action as "checkout" | "portal", plan: plan as "builder" | "pro" | "max" }) as { url: string };
           const { openBrowser } = await import("../../../lib/cloud/client.mjs");
           const opened = await openBrowser(url).catch(() => false);
-          await context.ui.dialog.alert({ title: action === "portal" ? "Ship billing portal" : "Ship checkout", message: `${opened ? "Opened in your browser." : "Open this URL in your browser:"}\n${url}` });
+          await context.ui.dialog.alert({ title: action === "portal" ? "Cloud billing portal" : "Cloud checkout", message: `${opened ? "Opened in your browser." : "Open this URL in your browser:"}\n${url}\n\nAfter payment, use /billing refresh. Your task stays here; send “Continue the task” when ready.` });
           return;
         }
         case "logout-cloud": {
           const session = arg || undefined;
-          const confirmed = await context.ui.dialog.confirm({ title: session ? "Revoke Ship session" : "Sign out of Carthagent Ship", message: session ? `Revoke Ship session ${session}?` : "Revoke the active Ship session and remove its Carthagent connection?" });
+          const confirmed = await context.ui.dialog.confirm({ title: session ? "Revoke Cloud session" : "Sign out of Carthagent Cloud", message: session ? `Revoke Cloud session ${session}?` : "Revoke the active Cloud session and remove its Carthagent connection?" });
           if (confirmed !== true) return;
           await shipClient(context, location).logout(session ? { session } : {});
-          toast(session ? `Revoked Ship session ${session}.` : "Revoked and removed the active Carthagent Ship connection.", "success");
+          toast(session ? `Revoked Cloud session ${session}.` : "Revoked and removed the active Carthagent Cloud connection.", "success");
           return;
         }
         case "archive": {

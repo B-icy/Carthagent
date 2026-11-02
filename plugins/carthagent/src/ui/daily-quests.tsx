@@ -132,7 +132,7 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string })
     const state = view(), detail = state.detail;
     const basic = [
       { name: "Refresh daily assignments and recovery journal", description: "Read-only; never uploads or replays evidence", value: "refresh" },
-      { name: "Sign in / reconnect", description: "Native Carthagent Ship device sign-in; not grading consent", value: "signin" },
+      { name: "Sign in / reconnect", description: "Native Carthagent Cloud device sign-in; not grading consent", value: "signin" },
       { name: "Back to Voyages", description: "Discard unsent editor contents", value: "back" },
     ];
     if (!state.snapshot) return basic;

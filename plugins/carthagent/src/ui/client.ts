@@ -95,7 +95,7 @@ export function shipClient(context: RpcContext, selectedLocation?: SelectedLocat
   return {
     account: (signal?: AbortSignal) => rpc.shipAccount({}, requestOptions(context, selectedLocation, signal)),
     usage: (input: { limit?: number } = {}, signal?: AbortSignal) => rpc.shipUsage(input, requestOptions(context, selectedLocation, signal)),
-    billing: (input: { action: "checkout" | "portal" }, signal?: AbortSignal) => rpc.shipBilling(input, requestOptions(context, selectedLocation, signal)),
+    billing: (input: { action: "checkout" | "portal" | "quote"; plan?: "builder" | "pro" | "max" }, signal?: AbortSignal) => rpc.shipBilling(input, requestOptions(context, selectedLocation, signal)),
     logout: (input: { session?: string } = {}, signal?: AbortSignal) => rpc.shipLogout(input, requestOptions(context, selectedLocation, signal)),
   };
 }
