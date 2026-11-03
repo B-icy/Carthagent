@@ -240,7 +240,7 @@ test("mouse press focuses the rail and release opens the clicked row without act
 test("signed-out account and invalidation hide protected summaries, reset stale selection, and stay read-only", async () => {
   const f = await fixture({ authenticated: false });
   try {
-    expect(f.app.captureCharFrame()).toContain("authentication_required");
+    expect(f.app.captureCharFrame()).toContain("Sign in to load your voyages");
     expect(f.app.captureCharFrame()).not.toContain("Test captain");
     await f.focus();
     f.app.mockInput.pressArrow("down");
