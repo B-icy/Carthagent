@@ -67,6 +67,17 @@ normal owned-runtime build/provenance and package release workflow.
 - Corrected sidebar stress run: 600 tests passed across seven files and ten
   repetitions, with 3,630 assertions and zero failures. Final runtime checks
   passed all 35 tasks; runtime-pin/workflow checks passed all 25 tests.
+- Prebuild `41696584914` passed Linux x64/ARM64, macOS ARM64, and Windows x64.
+  Intel macOS stopped producing output during the second in-process navigation
+  repetition after all 14 checks passed on the first. Its 30-second Bun timeout
+  did not terminate the stalled process; the exact native blocking operation is
+  not established by the logs.
+- Navigation and seascape stress now run ten complete suites in fresh processes,
+  isolating native renderer/module state between repetitions. A Node parent
+  enforces a 180-second deadline per suite even if Bun's event loop is blocked;
+  failures stop the build immediately. Native prebuild jobs also have a
+  30-minute outer limit. A regression exercises a deliberately blocked child
+  event loop and verifies that the external deadline terminates it.
 - The prior CI Linux artifact independently passed archive/executable verification
   and native-host, native-controls, daily-quest, and native-PTY acceptance.
 - Voyages real-renderer interaction tests: 12 passed, including compact layout,

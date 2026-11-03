@@ -135,6 +135,7 @@ jobs:
             platform: windows
             arch: x64
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -166,9 +167,10 @@ jobs:
           # Persist the same checkout interpretation for the recipe's later
           # git status checks in this isolated upstream clone.
           git -C opencode config --local core.autocrlf false
-          mkdir -p opencode/docs/patches opencode/script/ctg
+          mkdir -p opencode/docs/patches opencode/script/ctg opencode/tools
           git -C ctg show HEAD:docs/patches/opencode-v2.0.32-session-ui-combined-v7.patch > opencode/docs/patches/opencode-v2.0.32-session-ui-combined-v7.patch
           git -C ctg show HEAD:script/ctg/build-owned-runtime.sh > opencode/script/ctg/build-owned-runtime.sh
+          git -C ctg show HEAD:tools/run-native-test-stress.mjs > opencode/tools/run-native-test-stress.mjs
           chmod +x opencode/script/ctg/build-owned-runtime.sh
           cd opencode
           script/ctg/build-owned-runtime.sh "${{ matrix.target }}"

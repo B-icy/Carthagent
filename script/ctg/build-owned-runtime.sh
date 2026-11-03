@@ -36,6 +36,7 @@ fi
 expected_inputs=(
   "docs/patches/opencode-v2.0.32-session-ui-combined-v7.patch"
   "script/ctg/build-owned-runtime.sh"
+  "tools/run-native-test-stress.mjs"
 )
 actual_status="$(git status --porcelain --untracked-files=all)"
 unexpected=""
@@ -51,7 +52,7 @@ while IFS= read -r entry; do
   fi
 done <<< "$actual_status"
 if [[ -n "$unexpected" ]]; then
-  echo "Expected pristine tracked source and only the two reviewed CTG build inputs as untracked files" >&2
+  echo "Expected pristine tracked source and only the reviewed CTG build inputs as untracked files" >&2
   git status --short >&2
   exit 1
 fi
@@ -110,9 +111,9 @@ bun test --cwd packages/core test/shell-retention.test.ts
 bun test --cwd packages/server test/shell-provenance.test.ts
 bun test --cwd packages/tui test/plugin-source.test.ts
 bun test --cwd packages/tui test/clear-session.test.tsx
-bun test --cwd packages/tui --timeout 30000 test/navigation-rail.test.tsx --rerun-each 10
+node tools/run-native-test-stress.mjs 10 180000 bun test --cwd packages/tui --timeout 30000 test/navigation-rail.test.tsx
 bun test --cwd packages/tui --timeout 30000 test/sidebar
-bun test --cwd packages/tui --timeout 30000 test/component/seascape-render.test.tsx --rerun-each 10
+node tools/run-native-test-stress.mjs 10 180000 bun test --cwd packages/tui --timeout 30000 test/component/seascape-render.test.tsx
 bun test --cwd packages/tui --timeout 30000 test/app-lifecycle.test.tsx test/session-panel.test.tsx
 bun test --cwd packages/tui test/util/renderer.test.ts
 bun test --cwd packages/tui test/component/plan-view.test.tsx test/component/transcript-scrollbox.test.ts test/component/seascape.test.ts test/component/session-tabs-rail.test.tsx test/component/session-tabs-marquee.test.ts test/component/session-tabs-mouse.test.tsx test/context/session-tabs-model.test.ts test/ui/layout.test.ts
