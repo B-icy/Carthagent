@@ -4123,7 +4123,7 @@ index 8ecaa95787..2fc1738892 100644
    )
  }
 diff --git a/packages/tui/src/component/session-tabs.tsx b/packages/tui/src/component/session-tabs.tsx
-index fdd23a43cb..0b2f5a9c7e 100644
+index fdd23a43cb..92cf72e0ac 100644
 --- a/packages/tui/src/component/session-tabs.tsx
 +++ b/packages/tui/src/component/session-tabs.tsx
 @@ -20,6 +20,7 @@ import {
@@ -4477,7 +4477,7 @@ index fdd23a43cb..0b2f5a9c7e 100644
    const marquee = createTabMarquee(animations)
    const hovered = marquee.hovered
    createEffect(() => {
-@@ -604,6 +843,140 @@ function VerticalSessionTabs(props: {
+@@ -604,6 +843,151 @@ function VerticalSessionTabs(props: {
      return moveSessionTab(tabs.tabs(), pending.sessionID, pending.index)
    })
    const items = ordered
@@ -4535,6 +4535,17 @@ index fdd23a43cb..0b2f5a9c7e 100644
 +    revealCursor()
 +  }
 +  const selectedRow = () => navigationRows().find((row) => row.id === cursor())
++  createEffect(() => {
++    if (!navigation?.focused() || navigation.current()) return
++    // Folder metadata can arrive before sessions. Anchor a new keyboard focus
++    // to the current session rather than retaining that provisional first row.
++    untrack(() => {
++      const active = activeID()
++      const row = navigationRows().find((row) => row.id === active)
++      if (row) setCursor(row.id)
++      revealCursor()
++    })
++  })
 +  Keymap.createLayer(() => ({
 +    mode: "navigation",
 +    enabled: Boolean(navigation?.focused() && !navigation.current()),
@@ -4618,7 +4629,7 @@ index fdd23a43cb..0b2f5a9c7e 100644
    const highlightColor = createMemo(() =>
      tint(background(), actionHovered(), actionHovered().a),
    )
-@@ -657,9 +1030,20 @@ function VerticalSessionTabs(props: {
+@@ -657,9 +1041,20 @@ function VerticalSessionTabs(props: {
    createEffect(() => {
      if (!scroll) return
      dimensions()
@@ -4641,7 +4652,7 @@ index fdd23a43cb..0b2f5a9c7e 100644
      const height = compact() ? 3 : newTab() ? 1 : 2
      // Scroll after layout: newly opened tabs do not contribute to the scroll range yet.
      const reveal = () => {
-@@ -689,20 +1073,440 @@ function VerticalSessionTabs(props: {
+@@ -689,20 +1084,440 @@ function VerticalSessionTabs(props: {
      const source = dragging()
      if (!source) return
      didDrag = true
@@ -5092,7 +5103,7 @@ index fdd23a43cb..0b2f5a9c7e 100644
    return (
      <box
        ref={(element) => (rail = element)}
-@@ -714,6 +1518,13 @@ function VerticalSessionTabs(props: {
+@@ -714,6 +1529,13 @@ function VerticalSessionTabs(props: {
        paddingTop={1}
        backgroundColor={background()}
        onMouseOut={marquee.leaveHovered}
@@ -5106,7 +5117,7 @@ index fdd23a43cb..0b2f5a9c7e 100644
        onMouseUp={(event) => {
          if (event.button === RIGHT_MOUSE_BUTTON) return
          release()
-@@ -725,8 +1536,9 @@ function VerticalSessionTabs(props: {
+@@ -725,8 +1547,9 @@ function VerticalSessionTabs(props: {
        onMouseDragEnd={release}
      >
        <Show when={compact()}>
@@ -5117,7 +5128,7 @@ index fdd23a43cb..0b2f5a9c7e 100644
        <scrollbox
          ref={(element) => {
            scroll = element
-@@ -739,411 +1551,35 @@ function VerticalSessionTabs(props: {
+@@ -739,411 +1562,35 @@ function VerticalSessionTabs(props: {
          scrollbarOptions={{ visible: false }}
        >
          <box flexShrink={0} flexDirection="column" gap={1} paddingY={compact() ? 1 : 0}>
@@ -5554,7 +5565,7 @@ index fdd23a43cb..0b2f5a9c7e 100644
              <box
                height={1}
                width="100%"
-@@ -1176,7 +1612,8 @@ function VerticalSessionTabs(props: {
+@@ -1176,7 +1623,8 @@ function VerticalSessionTabs(props: {
                  if (suppressClick) return
                  if (!addPressed) return
                  addPressed = false
@@ -5564,7 +5575,7 @@ index fdd23a43cb..0b2f5a9c7e 100644
                }}
                onMouseDragEnd={() => (addPressed = false)}
              >
-@@ -1230,13 +1667,14 @@ function VerticalSessionTabs(props: {
+@@ -1230,13 +1678,14 @@ function VerticalSessionTabs(props: {
                      tabs.close()
                    }}
                  >
@@ -5580,7 +5591,7 @@ index fdd23a43cb..0b2f5a9c7e 100644
        <Show when={compact() && !dragging() && !contextMenu() && hovered()}>
          {(sessionID) => (
            <box
-@@ -1262,6 +1700,7 @@ function VerticalSessionTabs(props: {
+@@ -1262,6 +1711,7 @@ function VerticalSessionTabs(props: {
                      items().find((tab) => tab.sessionID === sessionID())?.title ??
                      "Untitled session",
                    tooltipWidth() - 2,
@@ -5588,7 +5599,7 @@ index fdd23a43cb..0b2f5a9c7e 100644
                  )}
                </text>
                <text fg={theme.text.muted} wrapMode="none" selectable={false}>
-@@ -1279,7 +1718,9 @@ function VerticalSessionTabs(props: {
+@@ -1279,7 +1729,9 @@ function VerticalSessionTabs(props: {
          )}
        </Show>
        <Show when={contextMenu()}>
@@ -5599,7 +5610,7 @@ index fdd23a43cb..0b2f5a9c7e 100644
        </Show>
      </box>
    )
-@@ -1556,7 +1997,7 @@ function HorizontalSessionTabs(props: {
+@@ -1556,7 +2008,7 @@ function HorizontalSessionTabs(props: {
      >
        <Show when={layout().before > 0}>
          <text width={sessionTabOverflowWidth(layout().before)} fg={theme.text.muted} selectable={false}>
@@ -5608,7 +5619,7 @@ index fdd23a43cb..0b2f5a9c7e 100644
          </text>
        </Show>
        <For each={layout().tabs}>
-@@ -1753,7 +2194,7 @@ function HorizontalSessionTabs(props: {
+@@ -1753,7 +2205,7 @@ function HorizontalSessionTabs(props: {
                      tabs.close(tab === NEW_SESSION_TAB ? undefined : tab.sessionID)
                    }}
                  >
@@ -5617,7 +5628,7 @@ index fdd23a43cb..0b2f5a9c7e 100644
                  </text>
                </box>
              </box>
-@@ -1762,7 +2203,7 @@ function HorizontalSessionTabs(props: {
+@@ -1762,7 +2214,7 @@ function HorizontalSessionTabs(props: {
        </For>
        <Show when={layout().after > 0}>
          <text width={sessionTabOverflowWidth(layout().after)} fg={theme.text.muted} selectable={false}>
@@ -11331,10 +11342,10 @@ index 0000000000..af838e8eff
 +})
 diff --git a/packages/tui/test/navigation-rail.test.tsx b/packages/tui/test/navigation-rail.test.tsx
 new file mode 100644
-index 0000000000..eba233e9af
+index 0000000000..678b421385
 --- /dev/null
 +++ b/packages/tui/test/navigation-rail.test.tsx
-@@ -0,0 +1,385 @@
+@@ -0,0 +1,403 @@
 +import { expect, test } from "bun:test"
 +import { InputRenderable, ScrollBoxRenderable, SelectRenderable, TextareaRenderable, TextRenderable, type Renderable } from "@opentui/core"
 +import type { SessionInfo } from "@opencode/client"
@@ -11346,6 +11357,7 @@ index 0000000000..eba233e9af
 +import { directory, json } from "./fixture/tui-client"
 +import { createNavigationState } from "../src/context/navigation"
 +import { takeDraft } from "../src/component/prompt/draft-stash"
++import { Flock } from "@opencode/util/flock"
 +
 +test("owned navigation registrations validate, replace safely, and cannot select another owner's pane", () => {
 +  const persisted: unknown[] = []
@@ -11429,10 +11441,20 @@ index 0000000000..eba233e9af
 +  const focus = node(setup, "navigation-focus")
 +  await setup.mockMouse.click(focus.x + 2, focus.y)
 +  await setup.waitForFrame((frame) => frame.includes("Sidebar focused") && node(setup, "navigation-body").focused)
-+  setup.mockInput.pressArrow("left")
-+  await setup.waitFor(() => !setup.renderer.root.findDescendantById("project-row-ses_navigation_0"))
-+  setup.mockInput.pressArrow("right")
-+  await setup.waitFor(() => !!setup.renderer.root.findDescendantById("project-row-ses_navigation_0"))
++  {
++    // Hold the real persistence lock so this also covers input during a pending
++    // profile write. Collapsing is disk I/O, not work bounded by renderer frames.
++    await using _lock = await Flock.acquire(path.join(setup.state, "test", "tui", "tabs.json"), {
++      dir: path.join(setup.state, "test", "locks"),
++    })
++    await setup.mockInput.pressArrow("left")
++    await setup.renderOnce()
++    expect(setup.renderer.root.findDescendantById("project-row-ses_navigation_0")).toBeDefined()
++    expect(prompt.plainText).toBe("keep this draft")
++  }
++  await waitForFolder(setup, false)
++  await setup.mockInput.pressArrow("right")
++  await waitForFolder(setup, true)
 +  await setup.mockInput.pressArrow("down")
 +  await setup.mockInput.pressEnter()
 +  await setup.waitFor(() => setup.renderer.currentFocusedEditor === prompt)
@@ -11700,10 +11722,17 @@ index 0000000000..eba233e9af
 +      return undefined
 +    },
 +  })
-+  return { ...setup, mutations, async [Symbol.asyncDispose]() { await setup[Symbol.asyncDispose](); await root[Symbol.asyncDispose]() } }
++  return { ...setup, mutations, state: state ?? root.path, async [Symbol.asyncDispose]() { await setup[Symbol.asyncDispose](); await root[Symbol.asyncDispose]() } }
 +}
 +
 +type Fixture = Awaited<ReturnType<typeof fixture>>
++async function waitForFolder(setup: Fixture, expanded: boolean) {
++  const deadline = Date.now() + 5_000
++  while (!!setup.renderer.root.findDescendantById("project-row-ses_navigation_0") !== expanded) {
++    if (Date.now() >= deadline) throw new Error(`Folder did not ${expanded ? "expand" : "collapse"}:\n${setup.captureCharFrame()}`)
++    await Bun.sleep(10)
++  }
++}
 +async function ready(setup: Fixture) {
 +  await setup.ready
 +  // Plugin loading is asynchronous I/O, not frame-driven work.

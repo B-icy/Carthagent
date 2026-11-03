@@ -17,6 +17,8 @@
   Grouped scroll and drag positions now include folder headings and gaps.
 - Focused Projects supports arrows or j/k, left/right to collapse/expand,
   Enter to open, `/` to search, `n` for a new session, and Escape to return.
+  Entering keyboard focus anchors the cursor to the current session, including
+  when folder metadata arrived before the session list during startup.
 - Voyages uses readable quest statuses, completion counts, indented quests,
   theme-aware selection, shorter action descriptions, loading/error/empty states,
   and grapheme/cell-aware truncation. Selection and scroll survive mode switches.
