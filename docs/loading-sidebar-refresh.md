@@ -78,6 +78,10 @@ normal owned-runtime build/provenance and package release workflow.
   failures stop the build immediately. Native prebuild jobs also have a
   30-minute outer limit. A regression exercises a deliberately blocked child
   event loop and verifies that the external deadline terminates it.
+- The isolated runner passed all ten navigation repetitions (140 checks) and
+  all ten seascape repetitions (30 checks) locally. Full package quality passed
+  with 1,139 passing tests, five skips, and zero failures. Replacement native
+  prebuild `41705585182` uses source `e0436a39d0181cbe3991fa6164bb1f57e0e802dc`.
 - The prior CI Linux artifact independently passed archive/executable verification
   and native-host, native-controls, daily-quest, and native-PTY acceptance.
 - Voyages real-renderer interaction tests: 12 passed, including compact layout,
