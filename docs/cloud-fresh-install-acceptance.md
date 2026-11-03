@@ -1,4 +1,4 @@
-# Cloud fresh-install acceptance (in progress)
+# Cloud fresh-install and billing-continuation acceptance
 
 ## Public installed baseline
 
@@ -103,6 +103,33 @@ The Linux release executable SHA-256 is
 `9f998cb2d23e2c18258a5bcb9a9588228e6fef9f089b13bb2f74b80d8ee8d7f6`;
 it differs from the earlier locally compiled candidate recorded above.
 
+PR #246 merged with the tested beta.4 tag preserved in main's ancestry.
+Final quality passed 1,134 tests with five skipped. Cross-platform CI and
+installed-package acceptance passed after the verified draft assets were
+uploaded. Final draft gate `41572639833` passed; GitHub release
+`v1.1.0-beta.4` was published. All five public runtime assets also passed
+verification without a GitHub token. Release workflow `41573285944` passed
+its public default-resolver package acceptance and npm publication with signed
+provenance (transparency log index `3657741998`). After npm processing completed,
+the public registry exposed beta.4 and `next` moved to `1.1.0-beta.4`.
+
+The normal global beta.3 package was uninstalled. A new shell verified that
+`ctg` was absent (the first same-shell lookup retained Bash's stale command
+cache). Public `carthagent@1.1.0-beta.4` was then installed globally.
+`ctg --version` reports beta.4 and `ctg account` retains the production test
+account connection. The current authenticated profile was backed up durably
+before uninstall; it was not moved or reset.
+
+A separate fresh profile launched the public global package without runtime
+overrides or a GitHub token. Its home visibly offers Cloud sign-in at 110 and
+60 columns, and `/login` directly opens production Cloud device authorization.
+The default resolver selected the pinned beta.4 runtime and verified executable
+hash `9f998cb2d23e2c18258a5bcb9a9588228e6fef9f089b13bb2f74b80d8ee8d7f6`.
+The downloaded public npm tarball matched registry integrity
+`sha512-xHRVz2XNB7PFjAwk+phQF02HM8xFrAt4N4d3NnlSr1rmzWO7TN3mquivLErKYj9UYx8f6+n9Cxd93X9DFH1kKA==`
+and exposes SLSA v1 provenance. Stable `latest` remains `1.0.7`; these changes
+are delivered through the `next` channel.
+
 The same task implemented parser, validator, aggregator, exporter and CLI
 source, with 78 self-authored tests passing during continuation. Independent
 probes found defects: invalid sign-only money accepted, unsafe integer cents,
@@ -129,7 +156,7 @@ restart, and explicit real-model paid continuation on the exact same session.
 It does not establish independently verified task success or production
 inference acceptance.
 
-The normal installation remains public beta.3, reauthenticated to the production
-test account. Its prior local session history and settings have not been recovered.
+The normal installation is public beta.4, authenticated to the production
+test account. Its original local session history and settings have not been recovered.
 An additional backup search found production Voyages backups, which are unrelated
 to the lost local profile.
