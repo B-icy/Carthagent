@@ -1,18 +1,33 @@
 # Carthagent
 
-Carthagent checks software work against real acceptance tests and re-proves it whenever source changes.
+**The coding agent that proves its work.**
+
+Carthagent (`ctg`) is an AI coding agent for your terminal. Before it writes code, it declares the acceptance checks for the task. It runs those checks for real, marks earlier results stale when the source changes, and finishes every task **verified** or **blocked**, never "probably done".
+
+[Website](https://carthagent.xyz) · [Install](https://carthagent.xyz/download/) · [Why Carthagent](https://carthagent.xyz/compare/) · [Pricing](https://carthagent.xyz/ship/) · [Research](https://carthagent.xyz/blog/)
 
 ## Install
 
 ```sh
-curl -fsSL https://carthagent.xyz/install | sh
-irm https://carthagent.xyz/install.ps1 | iex
-npm install -g carthagent
+curl -fsSL https://carthagent.xyz/install | sh      # macOS / Linux
+irm https://carthagent.xyz/install.ps1 | iex        # Windows PowerShell
+npm install -g carthagent                           # Node.js 22.19+
 ```
 
-Node.js 22.19+ is required for the npm install. From source: `npm install -g --install-links=true github:B-icy/Carthagent#vX.Y.Z` (replace with a published tag).
+Then connect a model provider and start in your project:
 
-See [workflow.svg](docs/workflow.svg) for the flow and [evaluation history](docs/evaluation.md) for trials, including failures.
+```sh
+ctg login   # your own provider, or Carthagent Cloud hosted models
+ctg
+```
+
+Bring-your-own-key is free and permanently supported. Carthagent Cloud is optional hosted model access (listed as "Carthagent Ship" in 1.0.7). From source: `npm install -g --install-links=true github:B-icy/Carthagent#vX.Y.Z` (replace with a published tag).
+
+## Verified or blocked
+
+In Ship mode, a task is marked verified only when every required check passed against the current source and the change has been reviewed. If that can't be shown, the task stops as blocked and reports why. "Verified" means the declared checks passed with current evidence. It is not proof that the code is free of bugs, and Carthagent is a workflow guardrail, not a security sandbox. Lite mode and plans without checks are not tested.
+
+See [workflow.svg](docs/workflow.svg) for the flow and the [evaluation history](docs/evaluation.md) for trials, including failures. The rest of this README covers internals: the native CLI, update channels and the delivery engine.
 
 ## Native CLI
 
