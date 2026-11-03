@@ -93,7 +93,15 @@ This uncovered two launcher defects addressed in this branch:
 PR #245 merged as `521675b77f156461ed829ef328d892f78797604c` after all Linux,
 macOS and Windows Node 22/24 checks, native-package, native-navigation and
 browser checks passed. The release candidate prebuild selects combined-v6;
-the public package and its immutable manifest remain beta.3 until promotion.
+the public package remains beta.3 until publication.
+
+Beta.4 prebuild run `41569547389` succeeded from reviewed source
+`67035d0758321901ef56a71c3a8e7561274dfd38`. All five downloaded archives and
+embedded executable hashes passed independent local acquisition verification.
+The final package manifest uses those exact candidate hashes and combined-v6.
+The Linux release executable SHA-256 is
+`9f998cb2d23e2c18258a5bcb9a9588228e6fef9f089b13bb2f74b80d8ee8d7f6`;
+it differs from the earlier locally compiled candidate recorded above.
 
 The same task implemented parser, validator, aggregator, exporter and CLI
 source, with 78 self-authored tests passing during continuation. Independent
