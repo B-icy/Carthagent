@@ -53,6 +53,22 @@ normal owned-runtime build/provenance and package release workflow.
 - Corrected beta.5 native prebuild: run `41689731417`, source commit
   `8be12940a4d5726e4f0f90625983c3212c574942`. Combined-v7 SHA-256:
   `d5c0b41f8b57c6d3619bef0b0a480ad4adab319ecbe22d5fd1de6be9b8bc2707`.
+- That prebuild passed both Linux and both macOS targets. Windows passed all
+  140 navigation checks after a transient dependency-download retry, then exposed
+  36 Unix-specific sidebar fixture/assertion failures. Native path resolution and
+  separator-aware expectations correct those tests, including successful folder
+  selection that was incorrectly waiting for a forward slash on Windows.
+- The portable-test revision pins combined-v7 SHA-256
+  `4a3b59d584864d2d0f248bc521b69c350fdfb20ba50e3955675d7432b1a217b4`.
+  Runtime `bun run check` passed again after these corrections.
+- Repeated session-setup fixtures clear their reused tab's process-local draft
+  stash before mounting. The stress run exposed a prior test's retained draft
+  turning `/new` into ordinary text on subsequent repetitions.
+- Corrected sidebar stress run: 600 tests passed across seven files and ten
+  repetitions, with 3,630 assertions and zero failures. Final runtime checks
+  passed all 35 tasks; runtime-pin/workflow checks passed all 25 tests.
+- The prior CI Linux artifact independently passed archive/executable verification
+  and native-host, native-controls, daily-quest, and native-PTY acceptance.
 - Voyages real-renderer interaction tests: 12 passed, including compact layout,
   keyboard and mouse focus, modal isolation, and delayed scroll restoration.
 - Launcher progress tests cover animation, clipping, abort cleanup, redirected

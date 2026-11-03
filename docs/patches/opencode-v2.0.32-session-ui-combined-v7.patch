@@ -12239,7 +12239,7 @@ index 0000000000..fc5c02b814
 +})
 diff --git a/packages/tui/test/sidebar/dialog-folder-browser.test.tsx b/packages/tui/test/sidebar/dialog-folder-browser.test.tsx
 new file mode 100644
-index 0000000000..14fd75cc08
+index 0000000000..8bf8cd893a
 --- /dev/null
 +++ b/packages/tui/test/sidebar/dialog-folder-browser.test.tsx
 @@ -0,0 +1,268 @@
@@ -12371,7 +12371,7 @@ index 0000000000..14fd75cc08
 +
 +    ui.app.mockInput.pressEnter()
 +    await wait(() => ui.frame().includes("inner/"), "entered alpha")
-+    expect(ui.frame()).toContain("work/alpha")
++    expect(ui.frame()).toContain(path.join("work", "alpha"))
 +
 +    ui.app.mockInput.pressArrow("up", { meta: true })
 +    await wait(() => ui.frame().includes("beta/"), "parent")
@@ -12513,10 +12513,10 @@ index 0000000000..14fd75cc08
 +})
 diff --git a/packages/tui/test/sidebar/folder-browser.test.ts b/packages/tui/test/sidebar/folder-browser.test.ts
 new file mode 100644
-index 0000000000..57dcd7b7d3
+index 0000000000..75f5e46d10
 --- /dev/null
 +++ b/packages/tui/test/sidebar/folder-browser.test.ts
-@@ -0,0 +1,629 @@
+@@ -0,0 +1,651 @@
 +import { describe, expect, test } from "bun:test"
 +import path from "path"
 +import { createRoot } from "solid-js"
@@ -12526,8 +12526,8 @@ index 0000000000..57dcd7b7d3
 +type Item = { path: string; type: "file" | "directory" }
 +type File = Parameters<typeof createFolderBrowser>[0]["file"]
 +
-+const anchor = { directory: "/anchor" }
-+const home = "/home/user"
++const anchor = { directory: path.resolve("/anchor") }
++const home = path.resolve("/home/user")
 +
 +function listing(directory: string, data: Item[]) {
 +  return { location: { directory, project: { id: "proj_test", directory, canonical: directory } }, data }
@@ -12535,12 +12535,13 @@ index 0000000000..57dcd7b7d3
 +
 +// Tree of absolute directory -> children; listings are returned relative to the anchor location like the server does.
 +function tree(directories: Record<string, Item[]>) {
++  const native = Object.fromEntries(Object.entries(directories).map(([key, items]) => [path.resolve(key), items]))
 +  const calls: { location: unknown; path: unknown }[] = []
 +  const file = {
 +    list: async (input) => {
 +      calls.push({ location: input?.location, path: input?.path })
 +      const target = String(input?.path)
-+      const children = directories[target]
++      const children = native[target]
 +      if (!children) throw Object.assign(new Error(`Directory not found: ${target}`), { _tag: "FileNotFoundError" })
 +      return listing(
 +        anchor.directory,
@@ -12564,7 +12565,12 @@ index 0000000000..57dcd7b7d3
 +  const file = {
 +    list: (input, options) =>
 +      new Promise((resolve, reject) =>
-+        pending.push({ path: String(input?.path), signal: options?.signal, resolve: resolve as (value: unknown) => void, reject }),
++        pending.push({
++          path: String(input?.path),
++          signal: options?.signal,
++          resolve: resolve as (value: unknown) => void,
++          reject,
++        }),
 +      ),
 +  } as File
 +  return { file, pending }
@@ -12583,7 +12589,7 @@ index 0000000000..57dcd7b7d3
 +    list: async (input) => {
 +      const target = String(input?.path)
 +      calls.push(target)
-+      if (failing.has(target)) throw new Error(`boom ${target}`)
++      if ([...failing].some((value) => path.resolve(value) === target)) throw new Error(`boom ${target}`)
 +      return listing(target, [dir(`${path.basename(target)}-child/`)])
 +    },
 +  } as File
@@ -12604,12 +12610,12 @@ index 0000000000..57dcd7b7d3
 +      },
 +    } as File)
 +    expect(await ctx.browser.open("/work")).toBe(true)
-+    expect(ctx.browser.state.directory).toBe("/work")
++    expect(ctx.browser.state.directory).toBe(path.resolve("/work"))
 +    expect(ctx.browser.state.entries.map((entry) => entry.absolute)).toEqual([
 +      path.resolve("/work/beta"),
 +      path.resolve("/work/alpha"),
 +    ])
-+    expect(calls).toEqual([{ location: anchor, path: "/work" }])
++    expect(calls).toEqual([{ location: anchor, path: path.resolve("/work") }])
 +    ctx.dispose()
 +  })
 +
@@ -12618,7 +12624,7 @@ index 0000000000..57dcd7b7d3
 +      list: async () => listing("/other", [dir("child/")]),
 +    } as File)
 +    await ctx.browser.open("/other")
-+    expect(ctx.browser.state.entries).toEqual([{ name: "child", absolute: "/other/child" }])
++    expect(ctx.browser.state.entries).toEqual([{ name: "child", absolute: path.resolve("/other/child") }])
 +    ctx.dispose()
 +  })
 +
@@ -12631,19 +12637,19 @@ index 0000000000..57dcd7b7d3
 +    await browser.open("/a")
 +    await browser.enter()
 +    await browser.enter()
-+    expect(browser.state.directory).toBe("/a/b/c")
-+    expect(browser.state.history).toEqual(["/a", "/a/b", "/a/b/c"])
++    expect(browser.state.directory).toBe(path.resolve("/a/b/c"))
++    expect(browser.state.history).toEqual(["/a", "/a/b", "/a/b/c"].map((value) => path.resolve(value)))
 +
 +    expect(await browser.back()).toBe(true)
 +    expect(await browser.back()).toBe(true)
-+    expect(browser.state.directory).toBe("/a")
++    expect(browser.state.directory).toBe(path.resolve("/a"))
 +    expect(await browser.back()).toBe(false)
 +    expect(browser.canForward()).toBe(true)
 +    expect(await browser.forward()).toBe(true)
-+    expect(browser.state.directory).toBe("/a/b")
++    expect(browser.state.directory).toBe(path.resolve("/a/b"))
 +
 +    await browser.open("/x")
-+    expect(browser.state.history).toEqual(["/a", "/a/b", "/x"])
++    expect(browser.state.history).toEqual(["/a", "/a/b", "/x"].map((value) => path.resolve(value)))
 +    expect(browser.canForward()).toBe(false)
 +    expect(await browser.forward()).toBe(false)
 +    expect(browser.state.index).toBe(2)
@@ -12657,7 +12663,7 @@ index 0000000000..57dcd7b7d3
 +    await ctx.browser.open("/b")
 +    await ctx.browser.back()
 +    await ctx.browser.open("/a")
-+    expect(ctx.browser.state.history).toEqual(["/a", "/b"])
++    expect(ctx.browser.state.history).toEqual(["/a", "/b"].map((value) => path.resolve(value)))
 +    expect(ctx.browser.state.index).toBe(0)
 +    expect(ctx.browser.canForward()).toBe(true)
 +    ctx.dispose()
@@ -12677,23 +12683,27 @@ index 0000000000..57dcd7b7d3
 +    expect(browser.state.directory).toBe(home)
 +    expect(browser.state.entries.map((entry) => entry.name)).toEqual(["code"])
 +    await browser.up()
-+    expect(browser.state.directory).toBe("/home")
++    expect(browser.state.directory).toBe(path.resolve("/home"))
 +    await browser.root()
-+    expect(browser.state.directory).toBe("/")
++    expect(browser.state.directory).toBe(path.resolve("/"))
 +    expect(browser.canUp()).toBe(false)
 +    expect(await browser.up()).toBe(false)
-+    expect(browser.state.entries.map((entry) => entry.absolute)).toEqual(["/home", "/srv"])
++    expect(browser.state.entries.map((entry) => entry.absolute)).toEqual(
++      ["/home", "/srv"].map((value) => path.resolve(value)),
++    )
 +
 +    browser.setInput("~/code")
 +    await browser.submit()
-+    expect(browser.state.directory).toBe("/home/user/code")
-+    expect(browser.state.input).toBe("/home/user/code")
++    expect(browser.state.directory).toBe(path.resolve("/home/user/code"))
++    expect(browser.state.input).toBe(path.resolve("/home/user/code"))
 +    browser.setInput("../../../srv")
 +    await browser.submit()
-+    expect(browser.state.directory).toBe("/srv")
++    expect(browser.state.directory).toBe(path.resolve("/srv"))
 +    await browser.open("~")
 +    expect(browser.state.directory).toBe(home)
-+    expect(fixture.calls.map((call) => call.path)).toEqual([home, "/home", "/", "/home/user/code", "/srv", home])
++    expect(fixture.calls.map((call) => call.path)).toEqual(
++      [home, "/home", "/", "/home/user/code", "/srv", home].map((value) => path.resolve(value)),
++    )
 +    expect(fixture.calls.every((call) => call.location === anchor)).toBe(true)
 +    ctx.dispose()
 +  })
@@ -12706,13 +12716,15 @@ index 0000000000..57dcd7b7d3
 +    const ctx = setup(fixture.file)
 +    await ctx.browser.open("/data/My Projects")
 +    expect(ctx.browser.state.entries).toEqual([
-+      { name: "Café Δ", absolute: "/data/My Projects/Café Δ" },
-+      { name: "日本語 フォルダ", absolute: "/data/My Projects/日本語 フォルダ" },
++      { name: "Café Δ", absolute: path.resolve("/data/My Projects/Café Δ") },
++      { name: "日本語 フォルダ", absolute: path.resolve("/data/My Projects/日本語 フォルダ") },
 +    ])
 +    ctx.browser.setFilter("café")
 +    await ctx.browser.enter()
-+    expect(ctx.browser.state.directory).toBe("/data/My Projects/Café Δ")
-+    expect(fixture.calls.map((call) => call.path)).toEqual(["/data/My Projects", "/data/My Projects/Café Δ"])
++    expect(ctx.browser.state.directory).toBe(path.resolve("/data/My Projects/Café Δ"))
++    expect(fixture.calls.map((call) => call.path)).toEqual(
++      ["/data/My Projects", "/data/My Projects/Café Δ"].map((value) => path.resolve(value)),
++    )
 +    ctx.dispose()
 +  })
 +
@@ -12729,62 +12741,66 @@ index 0000000000..57dcd7b7d3
 +    const ctx = setup(fixture.file)
 +    const browser = ctx.browser
 +    expect(await browser.open("/data/Project ")).toBe(true)
-+    expect(browser.state.directory).toBe("/data/Project ")
-+    expect(browser.state.entries.map((entry) => entry.absolute)).toEqual(["/data/Project /spaced"])
++    expect(browser.state.directory).toBe(path.resolve("/data/Project "))
++    expect(browser.state.entries.map((entry) => entry.absolute)).toEqual([path.resolve("/data/Project /spaced")])
 +    expect(await browser.open("/data/Project")).toBe(true)
-+    expect(browser.state.directory).toBe("/data/Project")
++    expect(browser.state.directory).toBe(path.resolve("/data/Project"))
 +
 +    browser.setInput("/data/Project ")
 +    expect(await browser.submit()).toBe(true)
-+    expect(browser.state.directory).toBe("/data/Project ")
-+    expect(browser.state.input).toBe("/data/Project ")
++    expect(browser.state.directory).toBe(path.resolve("/data/Project "))
++    expect(browser.state.input).toBe(path.resolve("/data/Project "))
 +
 +    await browser.open("/data")
 +    expect(await browser.open("Project ")).toBe(true)
-+    expect(browser.state.directory).toBe("/data/Project ")
++    expect(browser.state.directory).toBe(path.resolve("/data/Project "))
 +    await browser.open("/data")
 +    browser.setInput(" lead")
 +    expect(await browser.submit()).toBe(true)
-+    expect(browser.state.directory).toBe("/data/ lead")
++    expect(browser.state.directory).toBe(path.resolve("/data/ lead"))
 +    await browser.open("/data")
 +    expect(await browser.open("   ")).toBe(true)
-+    expect(browser.state.directory).toBe("/data/   ")
++    expect(browser.state.directory).toBe(path.resolve("/data/   "))
 +
 +    browser.setInput("")
 +    expect(await browser.submit()).toBe(true)
-+    expect(browser.state.directory).toBe("/data/   ")
++    expect(browser.state.directory).toBe(path.resolve("/data/   "))
 +    await browser.open("~")
 +    expect(browser.state.directory).toBe(home)
 +    await browser.open("~/code")
-+    expect(browser.state.directory).toBe("/home/user/code")
++    expect(browser.state.directory).toBe(path.resolve("/home/user/code"))
 +
-+    expect(fixture.calls.map((call) => call.path)).toEqual([
-+      "/data/Project ",
-+      "/data/Project",
-+      "/data/Project ",
-+      "/data",
-+      "/data/Project ",
-+      "/data",
-+      "/data/ lead",
-+      "/data",
-+      "/data/   ",
-+      "/data/   ",
-+      home,
-+      "/home/user/code",
-+    ])
-+    expect(browser.state.history).toEqual([
-+      "/data/Project ",
-+      "/data/Project",
-+      "/data/Project ",
-+      "/data",
-+      "/data/Project ",
-+      "/data",
-+      "/data/ lead",
-+      "/data",
-+      "/data/   ",
-+      home,
-+      "/home/user/code",
-+    ])
++    expect(fixture.calls.map((call) => call.path)).toEqual(
++      [
++        "/data/Project ",
++        "/data/Project",
++        "/data/Project ",
++        "/data",
++        "/data/Project ",
++        "/data",
++        "/data/ lead",
++        "/data",
++        "/data/   ",
++        "/data/   ",
++        home,
++        "/home/user/code",
++      ].map((value) => path.resolve(value)),
++    )
++    expect(browser.state.history).toEqual(
++      [
++        "/data/Project ",
++        "/data/Project",
++        "/data/Project ",
++        "/data",
++        "/data/Project ",
++        "/data",
++        "/data/ lead",
++        "/data",
++        "/data/   ",
++        home,
++        "/home/user/code",
++      ].map((value) => path.resolve(value)),
++    )
 +    ctx.dispose()
 +  })
 +
@@ -12792,13 +12808,15 @@ index 0000000000..57dcd7b7d3
 +    const fixture = tree({ "/data": [dir("Project ")], "/data/Project ": [] })
 +    const ctx = setup(fixture.file)
 +    expect(await ctx.browser.open("/data/Project ")).toBe(true)
-+    expect(ctx.browser.state.directory).toBe("/data/Project ")
++    expect(ctx.browser.state.directory).toBe(path.resolve("/data/Project "))
 +    expect(ctx.browser.state.error).toBeUndefined()
 +    await ctx.browser.open("/data")
 +    ctx.browser.setInput("Project ")
 +    expect(await ctx.browser.submit()).toBe(true)
-+    expect(ctx.browser.state.directory).toBe("/data/Project ")
-+    expect(fixture.calls.map((call) => call.path)).toEqual(["/data/Project ", "/data", "/data/Project "])
++    expect(ctx.browser.state.directory).toBe(path.resolve("/data/Project "))
++    expect(fixture.calls.map((call) => call.path)).toEqual(
++      ["/data/Project ", "/data", "/data/Project "].map((value) => path.resolve(value)),
++    )
 +    ctx.dispose()
 +  })
 +
@@ -12823,28 +12841,28 @@ index 0000000000..57dcd7b7d3
 +
 +    failing.add("/b")
 +    expect(await browser.back()).toBe(false)
-+    expect(browser.state.error).toMatchObject({ path: "/b", kind: "failed" })
-+    expect(browser.state.directory).toBe("/c")
-+    expect(browser.state.history).toEqual(["/a", "/b", "/c"])
++    expect(browser.state.error).toMatchObject({ path: path.resolve("/b"), kind: "failed" })
++    expect(browser.state.directory).toBe(path.resolve("/c"))
++    expect(browser.state.history).toEqual(["/a", "/b", "/c"].map((value) => path.resolve(value)))
 +    expect(browser.state.index).toBe(2)
 +    expect(browser.state.entries.map((entry) => entry.name)).toEqual(["c-child"])
 +
 +    failing.delete("/b")
 +    expect(await browser.retry()).toBe(true)
-+    expect(browser.state.directory).toBe("/b")
++    expect(browser.state.directory).toBe(path.resolve("/b"))
 +    expect(browser.state.error).toBeUndefined()
-+    expect(browser.state.history).toEqual(["/a", "/b", "/c"])
++    expect(browser.state.history).toEqual(["/a", "/b", "/c"].map((value) => path.resolve(value)))
 +    expect(browser.state.index).toBe(1)
 +    expect(browser.canBack()).toBe(true)
 +    expect(browser.canForward()).toBe(true)
 +
 +    expect(await browser.back()).toBe(true)
-+    expect(browser.state.directory).toBe("/a")
++    expect(browser.state.directory).toBe(path.resolve("/a"))
 +    expect(await browser.forward()).toBe(true)
 +    expect(await browser.forward()).toBe(true)
-+    expect(browser.state.directory).toBe("/c")
++    expect(browser.state.directory).toBe(path.resolve("/c"))
 +    expect(browser.state.index).toBe(2)
-+    expect(fixture.calls).toEqual(["/a", "/b", "/c", "/b", "/b", "/a", "/b", "/c"])
++    expect(fixture.calls).toEqual(["/a", "/b", "/c", "/b", "/b", "/a", "/b", "/c"].map((value) => path.resolve(value)))
 +    ctx.dispose()
 +  })
 +
@@ -12862,23 +12880,25 @@ index 0000000000..57dcd7b7d3
 +
 +    failing.add("/b")
 +    expect(await browser.forward()).toBe(false)
-+    expect(browser.state.error).toMatchObject({ path: "/b" })
-+    expect(browser.state.directory).toBe("/a")
-+    expect(browser.state.history).toEqual(["/a", "/b", "/c"])
++    expect(browser.state.error).toMatchObject({ path: path.resolve("/b") })
++    expect(browser.state.directory).toBe(path.resolve("/a"))
++    expect(browser.state.history).toEqual(["/a", "/b", "/c"].map((value) => path.resolve(value)))
 +    expect(browser.state.index).toBe(0)
 +
 +    failing.delete("/b")
 +    expect(await browser.retry()).toBe(true)
-+    expect(browser.state.directory).toBe("/b")
-+    expect(browser.state.history).toEqual(["/a", "/b", "/c"])
++    expect(browser.state.directory).toBe(path.resolve("/b"))
++    expect(browser.state.history).toEqual(["/a", "/b", "/c"].map((value) => path.resolve(value)))
 +    expect(browser.state.index).toBe(1)
 +    expect(browser.canForward()).toBe(true)
 +    expect(await browser.forward()).toBe(true)
-+    expect(browser.state.directory).toBe("/c")
++    expect(browser.state.directory).toBe(path.resolve("/c"))
 +    expect(await browser.back()).toBe(true)
 +    expect(await browser.back()).toBe(true)
-+    expect(browser.state.directory).toBe("/a")
-+    expect(fixture.calls).toEqual(["/a", "/b", "/c", "/b", "/a", "/b", "/b", "/c", "/b", "/a"])
++    expect(browser.state.directory).toBe(path.resolve("/a"))
++    expect(fixture.calls).toEqual(
++      ["/a", "/b", "/c", "/b", "/a", "/b", "/b", "/c", "/b", "/a"].map((value) => path.resolve(value)),
++    )
 +    ctx.dispose()
 +  })
 +
@@ -12895,11 +12915,11 @@ index 0000000000..57dcd7b7d3
 +    expect(await browser.back()).toBe(false)
 +    failing.add("/x")
 +    expect(await browser.open("/x")).toBe(false)
-+    expect(browser.state.error?.path).toBe("/x")
++    expect(browser.state.error?.path).toBe(path.resolve("/x"))
 +    failing.clear()
 +    expect(await browser.retry()).toBe(true)
-+    expect(browser.state.directory).toBe("/x")
-+    expect(browser.state.history).toEqual(["/a", "/b", "/c", "/x"])
++    expect(browser.state.directory).toBe(path.resolve("/x"))
++    expect(browser.state.history).toEqual(["/a", "/b", "/c", "/x"].map((value) => path.resolve(value)))
 +    expect(browser.state.index).toBe(3)
 +    ctx.dispose()
 +  })
@@ -12958,28 +12978,30 @@ index 0000000000..57dcd7b7d3
 +    await browser.open("/valid/child")
 +    await browser.back()
 +
-+    statuses.set("/missing", 404)
++    statuses.set(path.resolve("/missing"), 404)
 +    expect(await browser.open("/missing")).toBe(false)
-+    expect(browser.state.error).toMatchObject({ path: "/missing", kind: "not-found" })
-+    expect(browser.state.error?.message).toContain("/missing")
-+    expect(browser.state.directory).toBe("/valid")
-+    expect(browser.state.history).toEqual(["/valid", "/valid/child"])
++    expect(browser.state.error).toMatchObject({ path: path.resolve("/missing"), kind: "not-found" })
++    expect(browser.state.error?.message).toContain(path.resolve("/missing"))
++    expect(browser.state.directory).toBe(path.resolve("/valid"))
++    expect(browser.state.history).toEqual(["/valid", "/valid/child"].map((value) => path.resolve(value)))
 +    expect(browser.state.index).toBe(0)
-+    expect(browser.state.entries).toEqual([{ name: "child", absolute: "/valid/child" }])
++    expect(browser.state.entries).toEqual([{ name: "child", absolute: path.resolve("/valid/child") }])
 +    expect(browser.state.pending).toBeUndefined()
 +
-+    statuses.set("/locked", 500)
++    statuses.set(path.resolve("/locked"), 500)
 +    expect(await browser.open("/locked")).toBe(false)
-+    expect(browser.state.error).toMatchObject({ path: "/locked", kind: "unavailable" })
++    expect(browser.state.error).toMatchObject({ path: path.resolve("/locked"), kind: "unavailable" })
 +    expect(browser.state.error?.message).toContain("500")
-+    expect(browser.state.directory).toBe("/valid")
++    expect(browser.state.directory).toBe(path.resolve("/valid"))
 +
-+    statuses.delete("/locked")
++    statuses.delete(path.resolve("/locked"))
 +    expect(await browser.retry()).toBe(true)
-+    expect(browser.state.directory).toBe("/locked")
++    expect(browser.state.directory).toBe(path.resolve("/locked"))
 +    expect(browser.state.error).toBeUndefined()
-+    expect(browser.state.history).toEqual(["/valid", "/locked"])
-+    expect(requests).toEqual(["/valid", "/valid/child", "/valid", "/missing", "/locked", "/locked"])
++    expect(browser.state.history).toEqual(["/valid", "/locked"].map((value) => path.resolve(value)))
++    expect(requests).toEqual(
++      ["/valid", "/valid/child", "/valid", "/missing", "/locked", "/locked"].map((value) => path.resolve(value)),
++    )
 +    expect(mutations).toEqual([])
 +    ctx.dispose()
 +  })
@@ -12990,7 +13012,7 @@ index 0000000000..57dcd7b7d3
 +    await ctx.browser.open("/a")
 +    expect(await ctx.browser.open("/a/file.txt")).toBe(false)
 +    expect(ctx.browser.state.error?.kind).toBe("not-found")
-+    expect(ctx.browser.state.directory).toBe("/a")
++    expect(ctx.browser.state.directory).toBe(path.resolve("/a"))
 +    ctx.dispose()
 +  })
 +
@@ -13000,13 +13022,13 @@ index 0000000000..57dcd7b7d3
 +    const first = ctx.browser.open("/slow")
 +    const second = ctx.browser.open("/fast")
 +    expect(fixture.pending[0].signal?.aborted).toBe(true)
-+    expect(ctx.browser.state.pending).toBe("/fast")
++    expect(ctx.browser.state.pending).toBe(path.resolve("/fast"))
 +    fixture.pending[1].resolve(listing("/fast", [dir("f/")]))
 +    expect(await second).toBe(true)
 +    fixture.pending[0].resolve(listing("/slow", [dir("s/")]))
 +    expect(await first).toBe(false)
-+    expect(ctx.browser.state.directory).toBe("/fast")
-+    expect(ctx.browser.state.history).toEqual(["/fast"])
++    expect(ctx.browser.state.directory).toBe(path.resolve("/fast"))
++    expect(ctx.browser.state.history).toEqual([path.resolve("/fast")])
 +    expect(ctx.browser.state.entries.map((entry) => entry.name)).toEqual(["f"])
 +    ctx.dispose()
 +  })
@@ -13021,7 +13043,7 @@ index 0000000000..57dcd7b7d3
 +    fixture.pending[0].reject(new Error("boom"))
 +    expect(await first).toBe(false)
 +    expect(ctx.browser.state.error).toBeUndefined()
-+    expect(ctx.browser.state.directory).toBe("/fast")
++    expect(ctx.browser.state.directory).toBe(path.resolve("/fast"))
 +    ctx.dispose()
 +  })
 +
@@ -13032,7 +13054,7 @@ index 0000000000..57dcd7b7d3
 +        if (url.pathname !== "/api/fs/list") return undefined
 +        const target = url.searchParams.get("path") ?? ""
 +        requests.push(target)
-+        if (target === "/valid") return json(listing(target, []))
++        if (target === path.resolve("/valid")) return json(listing(target, []))
 +        return new Promise<Response>((_, reject) =>
 +          request.signal.addEventListener("abort", () => reject(request.signal.reason)),
 +        )
@@ -13041,14 +13063,14 @@ index 0000000000..57dcd7b7d3
 +    const ctx = setup(api.file)
 +    await ctx.browser.open("/valid")
 +    const pending = ctx.browser.open("/hang")
-+    expect(ctx.browser.state.pending).toBe("/hang")
++    expect(ctx.browser.state.pending).toBe(path.resolve("/hang"))
 +    ctx.browser.cancel()
 +    expect(await pending).toBe(false)
 +    expect(ctx.browser.state.pending).toBeUndefined()
 +    expect(ctx.browser.state.error).toBeUndefined()
-+    expect(ctx.browser.state.directory).toBe("/valid")
-+    expect(ctx.browser.state.history).toEqual(["/valid"])
-+    expect(requests).toEqual(["/valid", "/hang"])
++    expect(ctx.browser.state.directory).toBe(path.resolve("/valid"))
++    expect(ctx.browser.state.history).toEqual([path.resolve("/valid")])
++    expect(requests).toEqual(["/valid", "/hang"].map((value) => path.resolve(value)))
 +    ctx.dispose()
 +  })
 +
@@ -13066,7 +13088,7 @@ index 0000000000..57dcd7b7d3
 +    browser.setInput("/typed/while/loading")
 +    fixture.pending[1].resolve(listing("/a/b", [dir("alpha/"), dir("beta/")]))
 +    expect(await next).toBe(true)
-+    expect(browser.state.directory).toBe("/a/b")
++    expect(browser.state.directory).toBe(path.resolve("/a/b"))
 +    expect(browser.state.filter).toBe("be")
 +    expect(browser.visible().map((entry) => entry.name)).toEqual(["beta"])
 +    expect(browser.state.input).toBe("/typed/while/loading")
@@ -13082,7 +13104,7 @@ index 0000000000..57dcd7b7d3
 +    browser.setFilter("al")
 +    expect(await browser.enter()).toBe(true)
 +    expect(browser.state.filter).toBe("")
-+    expect(browser.state.input).toBe("/a/alpha")
++    expect(browser.state.input).toBe(path.resolve("/a/alpha"))
 +    expect(browser.visible().map((entry) => entry.name)).toEqual(["x"])
 +    ctx.dispose()
 +  })
@@ -13110,7 +13132,7 @@ index 0000000000..57dcd7b7d3
 +    fixture.pending[0].resolve(listing("/a", []))
 +    expect(await first).toBe(true)
 +    expect(await again).toBe(true)
-+    expect(browser.state.history).toEqual(["/a"])
++    expect(browser.state.history).toEqual([path.resolve("/a")])
 +    ctx.dispose()
 +  })
 +
@@ -13124,11 +13146,11 @@ index 0000000000..57dcd7b7d3
 +    const next = browser.enter()
 +    browser.move(1)
 +    expect(await browser.enter()).toBe(false)
-+    expect(fixture.pending.map((item) => item.path)).toEqual(["/a", "/a/b"])
++    expect(fixture.pending.map((item) => item.path)).toEqual(["/a", "/a/b"].map((value) => path.resolve(value)))
 +    expect(fixture.pending[1].signal?.aborted).toBe(false)
 +    fixture.pending[1].resolve(listing("/a/b", []))
 +    expect(await next).toBe(true)
-+    expect(browser.state.history).toEqual(["/a", "/a/b"])
++    expect(browser.state.history).toEqual(["/a", "/a/b"].map((value) => path.resolve(value)))
 +    ctx.dispose()
 +  })
 +
@@ -13141,26 +13163,32 @@ index 0000000000..57dcd7b7d3
 +    )
 +    const ctx = setup(api.file)
 +    expect(await ctx.browser.open("/somewhere")).toBe(false)
-+    expect(ctx.browser.state.error).toMatchObject({ path: "/somewhere", kind: "failed" })
++    expect(ctx.browser.state.error).toMatchObject({ path: path.resolve("/somewhere"), kind: "failed" })
 +    expect(ctx.browser.state.error?.message).toContain("Transport")
 +    ctx.dispose()
 +  })
 +})
 diff --git a/packages/tui/test/sidebar/new-session-flow.test.tsx b/packages/tui/test/sidebar/new-session-flow.test.tsx
 new file mode 100644
-index 0000000000..2bf5c7afde
+index 0000000000..d0f462ea2a
 --- /dev/null
 +++ b/packages/tui/test/sidebar/new-session-flow.test.tsx
-@@ -0,0 +1,339 @@
+@@ -0,0 +1,386 @@
 +import { InputRenderable } from "@opentui/core"
 +import { expect, test } from "bun:test"
 +import { mkdir } from "node:fs/promises"
 +import path from "node:path"
++import { takeDraft } from "../../src/component/prompt/draft-stash"
 +import { createAppFixture } from "../fixture/app"
 +import { tmpdir } from "../fixture/fixture"
 +import { json } from "../fixture/tui-client"
 +
-+type Created = { id?: string; location?: { directory: string }; agent?: string; model?: { providerID: string; id: string } }
++type Created = {
++  id?: string
++  location?: { directory: string }
++  agent?: string
++  model?: { providerID: string; id: string }
++}
 +
 +const launch = "/tmp/opencode/packages/tui"
 +
@@ -13184,6 +13212,9 @@ index 0000000000..2bf5c7afde
 +}
 +
 +async function start(options: { existing?: boolean; elsewhere?: boolean; newLocation?: "launch" | "inherit" } = {}) {
++  // Fixtures reuse this tab identity; drafts persist across app remounts in the same process.
++  takeDraft("ses_existing")
++  takeDraft(undefined)
 +  const scratch = await tmpdir()
 +  const chosen = path.join(scratch.path, "empty project")
 +  await mkdir(chosen)
@@ -13284,7 +13315,12 @@ index 0000000000..2bf5c7afde
 +    frame,
 +  )
 +  setup.mockInput.pressKey("s", { ctrl: true })
-+  await until(() => frame().includes("Ready.") && frame().includes("/empty project"), "chosen folder", 5000, frame)
++  await until(
++    () => frame().includes("Ready.") && frame().includes(`${path.sep}empty project`),
++    "chosen folder",
++    5000,
++    frame,
++  )
 +}
 +
 +async function until(fn: () => boolean, label: string, timeout = 5000, frame?: () => string) {
@@ -13354,7 +13390,12 @@ index 0000000000..2bf5c7afde
 +  await using setup = run.setup
 +  const frame = () => setup.captureCharFrame()
 +  await setup.ready
-+  await until(() => frame().includes("Original transcript line") && frame().includes("Alpha Model"), "existing", 8000, frame)
++  await until(
++    () => frame().includes("Original transcript line") && frame().includes("Alpha Model"),
++    "existing",
++    8000,
++    frame,
++  )
 +  await setup.mockInput.typeText("kept draft")
 +  await until(() => frame().includes("kept draft"), "draft")
 +
@@ -13383,7 +13424,12 @@ index 0000000000..2bf5c7afde
 +  await until(() => frame().includes("Ready."), "setup from palette", 5000, frame)
 +  expectLaunchFolder(frame())
 +  setup.mockInput.pressEscape()
-+  await until(() => !frame().includes("Ready.") && frame().includes("Original transcript line"), "palette cancel", 5000, frame)
++  await until(
++    () => !frame().includes("Ready.") && frame().includes("Original transcript line"),
++    "palette cancel",
++    5000,
++    frame,
++  )
 +
 +  // The slash command consumes the composer text that invoked it, as every slash command does.
 +  for (let index = 0; index < "kept draft!".length; index++) setup.mockInput.pressBackspace()
@@ -13393,7 +13439,12 @@ index 0000000000..2bf5c7afde
 +  await until(() => frame().includes("Ready."), "setup from slash", 5000, frame)
 +  expectLaunchFolder(frame())
 +  setup.mockInput.pressEscape()
-+  await until(() => !frame().includes("Ready.") && frame().includes("Original transcript line"), "slash cancel", 5000, frame)
++  await until(
++    () => !frame().includes("Ready.") && frame().includes("Original transcript line"),
++    "slash cancel",
++    5000,
++    frame,
++  )
 +  expect(frame()).toContain("Alpha Model")
 +  expect(run.created).toEqual([])
 +  expect(run.prompts).toEqual([])
@@ -13406,7 +13457,12 @@ index 0000000000..2bf5c7afde
 +  await using setup = run.setup
 +  const frame = () => setup.captureCharFrame()
 +  await setup.ready
-+  await until(() => frame().includes("Original transcript line") && frame().includes("Alpha Model"), "existing", 8000, frame)
++  await until(
++    () => frame().includes("Original transcript line") && frame().includes("Alpha Model"),
++    "existing",
++    8000,
++    frame,
++  )
 +
 +  setup.mockInput.pressKey("F7")
 +  await until(() => frame().includes("Ready."), "setup", 5000, frame)
@@ -13432,7 +13488,12 @@ index 0000000000..2bf5c7afde
 +  await using setup = run.setup
 +  const frame = () => setup.captureCharFrame()
 +  await setup.ready
-+  await until(() => frame().includes("Original transcript line") && frame().includes("Alpha Model"), "existing", 8000, frame)
++  await until(
++    () => frame().includes("Original transcript line") && frame().includes("Alpha Model"),
++    "existing",
++    8000,
++    frame,
++  )
 +  await setup.mockInput.typeText("existing draft")
 +  await until(() => frame().includes("existing draft"), "existing draft")
 +
@@ -13460,14 +13521,22 @@ index 0000000000..2bf5c7afde
 +  setup.mockInput.pressEnter()
 +  await until(() => frame().includes("demo/beta"), "beta chosen again", 5000, frame)
 +  setup.mockInput.pressEnter()
-+  await until(() => !frame().includes("Original transcript line") && frame().includes("Beta Model"), "home", 5000, frame)
++  await until(
++    () => !frame().includes("Original transcript line") && frame().includes("Beta Model"),
++    "home",
++    5000,
++    frame,
++  )
 +  expect(frame()).not.toContain("existing draft")
 +
 +  await setup.mockInput.typeText("first new prompt")
 +  setup.mockInput.pressEnter()
 +  run.release.resolve()
 +  await until(() => run.prompts.length === 1, "new prompt", 5000, frame)
-+  expect(run.created[0]).toMatchObject({ location: { directory: run.chosen }, model: { providerID: "demo", id: "beta" } })
++  expect(run.created[0]).toMatchObject({
++    location: { directory: run.chosen },
++    model: { providerID: "demo", id: "beta" },
++  })
 +  expect(run.prompts[0]?.sessionID).not.toBe("ses_existing")
 +
 +  await until(() => frame().includes("Original session"), "original tab", 5000, frame)
@@ -13493,14 +13562,15 @@ index 0000000000..2bf5c7afde
 +})
 diff --git a/packages/tui/test/sidebar/new-session-ownership.test.tsx b/packages/tui/test/sidebar/new-session-ownership.test.tsx
 new file mode 100644
-index 0000000000..52f4bb282b
+index 0000000000..c419bfb939
 --- /dev/null
 +++ b/packages/tui/test/sidebar/new-session-ownership.test.tsx
-@@ -0,0 +1,476 @@
+@@ -0,0 +1,497 @@
 +import { InputRenderable } from "@opentui/core"
 +import { expect, test } from "bun:test"
 +import { mkdir } from "node:fs/promises"
 +import path from "node:path"
++import { takeDraft } from "../../src/component/prompt/draft-stash"
 +import { createAppFixture } from "../fixture/app"
 +import { tmpdir } from "../fixture/fixture"
 +import { json } from "../fixture/tui-client"
@@ -13529,11 +13599,16 @@ index 0000000000..52f4bb282b
 + * Real app with two primary agents (Ship listed first), a durable Lite session and a global variant preference that
 + * differs from the session's, so a lost agent or variant shows up as Ship or the preferred variant.
 + */
-+async function start(options: {
-+  session?: Selection
-+  catalog?: (directory: string) => Entry[]
-+  agents?: (directory: string) => string[]
-+} = {}) {
++async function start(
++  options: {
++    session?: Selection
++    catalog?: (directory: string) => Entry[]
++    agents?: (directory: string) => string[]
++  } = {},
++) {
++  // Fixtures reuse this tab identity; drafts persist across app remounts in the same process.
++  takeDraft("ses_existing")
++  takeDraft(undefined)
 +  const scratch = await tmpdir()
 +  const chosen = path.join(scratch.path, "empty project")
 +  await mkdir(chosen)
@@ -13704,7 +13779,11 @@ index 0000000000..52f4bb282b
 +    run.frame,
 +  )
 +  setup.mockInput.pressKey("s", { ctrl: true })
-+  await until(() => run.frame().includes("Ready.") && run.frame().includes("/empty project"), "chosen", run.frame)
++  await until(
++    () => run.frame().includes("Ready.") && run.frame().includes(`${path.sep}empty project`),
++    "chosen",
++    run.frame,
++  )
 +}
 +
 +async function chooseSetupModel(run: Run, name: string, id: string) {
@@ -13779,7 +13858,8 @@ index 0000000000..52f4bb282b
 +
 +test("a retained variant the chosen folder's model does not support is never sent", async () => {
 +  const run = await start({
-+    catalog: (directory) => (directory.endsWith("empty project") ? [{ ...alpha, variants: ["high"] }, beta] : [alpha, beta]),
++    catalog: (directory) =>
++      directory.endsWith("empty project") ? [{ ...alpha, variants: ["high"] }, beta] : [alpha, beta],
 +  })
 +  await using _scratch = run.scratch
 +  await using _setup = run.setup
@@ -13799,7 +13879,9 @@ index 0000000000..52f4bb282b
 +})
 +
 +test("a captured agent missing at the chosen folder blocks the first send instead of switching agents", async () => {
-+  const run = await start({ agents: (directory) => (directory.endsWith("empty project") ? ["ship"] : ["ship", "lite"]) })
++  const run = await start({
++    agents: (directory) => (directory.endsWith("empty project") ? ["ship"] : ["ship", "lite"]),
++  })
 +  await using _scratch = run.scratch
 +  await using _setup = run.setup
 +  await openExisting(run)
@@ -13950,7 +14032,11 @@ index 0000000000..52f4bb282b
 +    if (row >= 0) await run.setup.mockMouse.click(lines[row]!.indexOf("Original session") + 2, row)
 +    await Bun.sleep(200)
 +  }
-+  await until(() => run.frame().includes("Original transcript line") && run.frame().includes("Alpha Model"), "original", run.frame)
++  await until(
++    () => run.frame().includes("Original transcript line") && run.frame().includes("Alpha Model"),
++    "original",
++    run.frame,
++  )
 +  expect(run.created).toEqual([])
 +  await expectUntouched(run)
 +})
@@ -13971,17 +14057,22 @@ index 0000000000..52f4bb282b
 +  await run.setup.mockInput.typeText(name)
 +  await until(() => run.frame().includes(`${name} Model`), `${name} option`, run.frame)
 +  run.setup.mockInput.pressEnter()
-+  await until(() => run.frame().includes(`${name} Model`) && !run.frame().includes("Select model"), "replaced", run.frame)
++  await until(
++    () => run.frame().includes(`${name} Model`) && !run.frame().includes("Select model"),
++    "replaced",
++    run.frame,
++  )
 +}
 diff --git a/packages/tui/test/sidebar/new-session-preflight.test.tsx b/packages/tui/test/sidebar/new-session-preflight.test.tsx
 new file mode 100644
-index 0000000000..781d5c5ba8
+index 0000000000..4c5f79a579
 --- /dev/null
 +++ b/packages/tui/test/sidebar/new-session-preflight.test.tsx
-@@ -0,0 +1,253 @@
+@@ -0,0 +1,258 @@
 +/** @jsxImportSource @opentui/solid */
 +import { InputRenderable } from "@opentui/core"
 +import { expect, test } from "bun:test"
++import path from "node:path"
 +import type { ModelInfo } from "@opencode/client"
 +import { DialogModel } from "../../src/component/dialog-model"
 +import { DialogNewSession, type NewSessionChoice } from "../../src/component/dialog-new-session"
@@ -14107,7 +14198,11 @@ index 0000000000..781d5c5ba8
 +  ui.setup.mockInput.pressEnter()
 +  await wait(() => ui.started.length === 1, "start")
 +  // A different model than the caller's carries no variant of its own.
-+  expect(ui.started[0]).toEqual({ directory: other, agent: "build", model: { providerID: "provider", modelID: "second" } })
++  expect(ui.started[0]).toEqual({
++    directory: other,
++    agent: "build",
++    model: { providerID: "provider", modelID: "second" },
++  })
 +})
 +
 +test("cancelling nested model and folder pickers returns to setup with prior choices intact", async () => {
@@ -14125,10 +14220,10 @@ index 0000000000..781d5c5ba8
 +  await rendered(ui, "Choose folder for new session")
 +  await rendered(ui, "child/")
 +  ui.setup.mockInput.pressEnter()
-+  await wait(() => ui.calls.includes(`${directory}/child`), "child listing")
++  await wait(() => ui.calls.includes(path.resolve(directory, "child")), "child listing")
 +  ui.setup.mockInput.pressEscape()
 +  await rendered(ui, "Ready")
-+  expect(ui.frame()).not.toContain(`${directory}/child`)
++  expect(ui.frame()).not.toContain(path.resolve(directory, "child"))
 +
 +  ui.setup.mockInput.pressEnter()
 +  await wait(() => ui.started.length === 1, "start")
@@ -14147,14 +14242,14 @@ index 0000000000..781d5c5ba8
 +  ui.setup.mockInput.pressKey("f")
 +  await rendered(ui, "child/")
 +  ui.setup.mockInput.pressEnter()
-+  await wait(() => ui.calls.includes(`${directory}/child`), "child listing")
++  await wait(() => ui.calls.includes(path.resolve(directory, "child")), "child listing")
 +  await Bun.sleep(20)
 +  ui.setup.mockInput.pressKey("s", { ctrl: true })
-+  await rendered(ui, `${directory}/child`)
++  await rendered(ui, path.resolve(directory, "child"))
 +  await rendered(ui, "Ready")
 +  expect(ui.frame()).toContain("first")
 +  // The browser revalidates the folder on confirm; setup reuses that check instead of listing it again.
-+  expect(ui.calls.filter((call) => call === `${directory}/child`)).toHaveLength(2)
++  expect(ui.calls.filter((call) => call === path.resolve(directory, "child"))).toHaveLength(2)
 +
 +  ui.setup.mockInput.pressEscape()
 +  await wait(() => ui.setup.dialog.stack.length === 0, "closed")
@@ -14234,14 +14329,15 @@ index 0000000000..781d5c5ba8
 +})
 diff --git a/packages/tui/test/sidebar/sidebar-hierarchy.test.tsx b/packages/tui/test/sidebar/sidebar-hierarchy.test.tsx
 new file mode 100644
-index 0000000000..39dce86208
+index 0000000000..d1d62b2b02
 --- /dev/null
 +++ b/packages/tui/test/sidebar/sidebar-hierarchy.test.tsx
-@@ -0,0 +1,232 @@
+@@ -0,0 +1,248 @@
 +/** @jsxImportSource @opentui/solid */
 +import { MouseButton } from "@opentui/core"
 +import { testRender } from "@opentui/solid"
 +import { expect, test } from "bun:test"
++import path from "node:path"
 +import { createSignal } from "solid-js"
 +import { ConfigProvider } from "../../src/config"
 +import { EMPTY_SESSION_TAB_STATUS, SessionTabs, type SessionTabsController } from "../../src/component/session-tabs"
@@ -14255,7 +14351,8 @@ index 0000000000..39dce86208
 +import { TestTuiContexts } from "../fixture/tui-environment"
 +import { createTuiResolvedConfig } from "../fixture/tui-runtime"
 +
-+const HOME = "/tmp/opencode/home"
++const HOME = path.resolve("/tmp/carthagent/home")
++const PROJECT = path.join(HOME, "work", "project")
 +
 +async function mount(options: {
 +  width: number
@@ -14282,15 +14379,15 @@ index 0000000000..39dce86208
 +    selectModel: () => counts.model++,
 +    setup: options.setup,
 +    model: () => "DeepSeek V4.1 Flash",
-+    directory: () => options.directory ?? `${HOME}/work/project`,
++    directory: () => options.directory ?? PROJECT,
 +    select: setActive,
 +    close() {},
 +    move() {},
 +    folders: () => [
-+      { id: `dir:${HOME}/work/project`, kind: "directory", directory: `${HOME}/work/project` } as const,
++      { id: `dir:${PROJECT}`, kind: "directory", directory: PROJECT } as const,
 +      { id: "manual:ideas", kind: "manual", name: "Ideas" } as const,
 +    ],
-+    folderFor: (sessionID: string) => (sessionID === "gamma" ? "manual:ideas" : `dir:${HOME}/work/project`),
++    folderFor: (sessionID: string) => (sessionID === "gamma" ? "manual:ideas" : `dir:${PROJECT}`),
 +    createFolder: () => `manual:group-${++counts.group}`,
 +    setFolderCollapsed() {},
 +    status: (sessionID: string) =>
@@ -14305,7 +14402,12 @@ index 0000000000..39dce86208
 +              <ToastProvider>
 +                <DialogProvider>
 +                  <box width="100%" height="100%" flexDirection="row">
-+                    <SessionTabs controller={controller} orientation="vertical" animations={false} width={options.width} />
++                    <SessionTabs
++                      controller={controller}
++                      orientation="vertical"
++                      animations={false}
++                      width={options.width}
++                    />
 +                    <text>transcript</text>
 +                  </box>
 +                </DialogProvider>
@@ -14318,7 +14420,11 @@ index 0000000000..39dce86208
 +    { width: 100, height: 30 },
 +  )
 +  app.renderer.start()
-+  const rail = () => app.captureCharFrame().split("\n").map((line) => line.slice(0, options.width))
++  const rail = () =>
++    app
++      .captureCharFrame()
++      .split("\n")
++      .map((line) => line.slice(0, options.width))
 +  const row = (text: string) => rail().findIndex((line) => line.includes(text))
 +  return { app, counts, active, rail, row }
 +}
@@ -14327,17 +14433,17 @@ index 0000000000..39dce86208
 +  const ui = await mount({ width: 30 })
 +  try {
 +    await ui.app.waitForFrame((frame) => frame.includes("Alpha work") && frame.includes("New session"))
-+    const folder = ui.row("project/")
-+    const path = ui.row("~/work/project")
++    const folder = ui.row(`project${path.sep}`)
++    const location = ui.row("~/work/project")
 +    const actions = ui.row("Browse")
 +    const model = ui.row("DeepSeek V4.1 Flash")
 +    const sessions = ui.row("Sessions")
-+    const firstGroup = ui.row("▾ project/")
++    const firstGroup = ui.row(`▾ project${path.sep}`)
 +    expect(folder).toBeGreaterThanOrEqual(0)
-+    expect([folder, path, actions, model, sessions, firstGroup]).toEqual(
-+      [folder, path, actions, model, sessions, firstGroup].toSorted((a, b) => a - b),
++    expect([folder, location, actions, model, sessions, firstGroup]).toEqual(
++      [folder, location, actions, model, sessions, firstGroup].toSorted((a, b) => a - b),
 +    )
-+    expect(new Set([folder, path, actions, model, sessions]).size).toBe(5)
++    expect(new Set([folder, location, actions, model, sessions]).size).toBe(5)
 +    expect(firstGroup).toBeGreaterThan(sessions)
 +    expect(ui.rail()[actions]).toContain("New session")
 +    expect(ui.rail()[sessions]).toContain("Search")
@@ -14374,10 +14480,10 @@ index 0000000000..39dce86208
 +  const ui = await mount({ width: 30 })
 +  try {
 +    await ui.app.waitForFrame((frame) => frame.includes("Grouped idea"))
-+    expect(ui.row("▾ project/")).toBeGreaterThan(0)
++    expect(ui.row(`▾ project${path.sep}`)).toBeGreaterThan(0)
 +    const group = ui.rail()[ui.row("Ideas")]
 +    expect(group).toContain("# Ideas")
-+    expect(group).not.toContain("Ideas/")
++    expect(group).not.toContain(`Ideas${path.sep}`)
 +  } finally {
 +    ui.app.renderer.destroy()
 +  }
@@ -14403,19 +14509,19 @@ index 0000000000..39dce86208
 +})
 +
 +test("long folder paths keep their leaf and the full path is inspectable on hover or click", async () => {
-+  const directory = `${HOME}/clients/very-long-organisation-name/deeply/nested/final-leaf`
++  const directory = path.join(HOME, "clients", "very-long-organisation-name", "deeply", "nested", "final-leaf")
 +  const ui = await mount({ width: 30, directory })
 +  try {
-+    await ui.app.waitForFrame((frame) => frame.includes("final-leaf/"))
-+    const path = ui.row("…")
-+    expect(path).toBeGreaterThanOrEqual(0)
-+    expect(ui.rail()[path].trimEnd().endsWith("final-leaf")).toBe(true)
++    await ui.app.waitForFrame((frame) => frame.includes(`final-leaf${path.sep}`))
++    const location = ui.row("…")
++    expect(location).toBeGreaterThanOrEqual(0)
++    expect(ui.rail()[location].trimEnd().endsWith("final-leaf")).toBe(true)
 +    expect(ui.app.captureCharFrame()).not.toContain(directory)
-+    await ui.app.mockMouse.moveTo(4, path)
++    await ui.app.mockMouse.moveTo(4, location)
 +    await ui.app.waitForFrame((frame) => frame.includes(directory))
 +    await ui.app.mockMouse.moveTo(60, 20)
 +    await ui.app.waitForFrame((frame) => !frame.includes(directory))
-+    await ui.app.mockMouse.click(4, path)
++    await ui.app.mockMouse.click(4, location)
 +    await ui.app.mockMouse.moveTo(60, 20)
 +    await ui.app.waitForFrame((frame) => frame.includes(directory))
 +    expect(ui.active()).toBe("alpha")
@@ -14433,13 +14539,13 @@ index 0000000000..39dce86208
 +    await ui.app.mockMouse.click(ui.rail()[global].indexOf("New session"), global)
 +    expect(setups).toEqual([undefined])
 +
-+    const heading = ui.row("▾ project/")
++    const heading = ui.row(`▾ project${path.sep}`)
 +    await ui.app.mockMouse.click(4, heading, MouseButton.RIGHT)
 +    await ui.app.waitForFrame((frame) => frame.includes("New session here"))
 +    const lines = ui.app.captureCharFrame().split("\n")
 +    const item = lines.findIndex((line) => line.includes("New session here"))
 +    await ui.app.mockMouse.click(lines[item].indexOf("New session here") + 1, item)
-+    expect(setups).toEqual([undefined, `${HOME}/work/project`])
++    expect(setups).toEqual([undefined, PROJECT])
 +    expect(ui.counts.add).toBe(0)
 +    expect(ui.active()).toBe("alpha")
 +  } finally {
@@ -14451,7 +14557,7 @@ index 0000000000..39dce86208
 +  const ui = await mount({ width: 30, tabs: [], active: "" })
 +  try {
 +    await ui.app.waitForFrame((frame) => frame.includes("Browse") && frame.includes("DeepSeek V4.1 Flash"))
-+    expect(ui.row("project/")).toBeGreaterThanOrEqual(0)
++    expect(ui.row(`project${path.sep}`)).toBeGreaterThanOrEqual(0)
 +    expect(ui.row("New session")).toBeGreaterThanOrEqual(0)
 +  } finally {
 +    ui.app.renderer.destroy()
@@ -14462,7 +14568,12 @@ index 0000000000..39dce86208
 +  const ui = await mount({ width: SESSION_TABS_COMPACT_WIDTH })
 +  try {
 +    await ui.app.waitForFrame((frame) => frame.split("\n")[3]?.slice(0, 5).trim() === "◇")
-+    expect(ui.rail().slice(1, 4).map((line) => line.trim())).toEqual(["⌕", "▤", "◇"])
++    expect(
++      ui
++        .rail()
++        .slice(1, 4)
++        .map((line) => line.trim()),
++    ).toEqual(["⌕", "▤", "◇"])
 +    await ui.app.mockMouse.click(2, 3)
 +    expect(ui.counts.model).toBe(1)
 +    expect(ui.active()).toBe("alpha")
