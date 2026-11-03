@@ -1,8 +1,9 @@
 /** @jsxImportSource @opentui/solid */
 import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
-import { CliRenderEvents, type ScrollBoxRenderable, type SelectRenderable } from "@opentui/core";
+import { CliRenderEvents, TextAttributes, type ScrollBoxRenderable, type SelectRenderable } from "@opentui/core";
 import { useRenderer } from "@opentui/solid";
 import { usePlugin } from "@opencode/plugin/tui";
+import stringWidth from "string-width";
 import { clickSelect } from "./select-mouse.js";
 import { dailyQuestsClient, voyagesClient } from "./client.js";
 import { nativeNavigation, type NavigationInput } from "./native-navigation.js";
@@ -26,12 +27,19 @@ export function VoyagesNavigation(props: NavigationInput) {
   let actions: SelectRenderable | undefined;
   let scroll: ScrollBoxRenderable | undefined;
   let scrollTop = 0;
+  let savedScroll = false;
   let restoreTop: number | undefined;
-  const [viewportHeight, setViewportHeight] = createSignal(3);
+  const [viewportHeight, setViewportHeight] = createSignal(Math.max(1, renderer.height - 1));
   const [railWidth, setRailWidth] = createSignal(0);
+  const [frame, setFrame] = createSignal(0);
   createEffect(() => {
-    if (!props.active) { scrollTop = scroll?.scrollTop ?? scrollTop; return; }
-    if (!view().busy) { restoreTop = scrollTop; renderer.requestRender(); }
+    if (!props.active || !view().busy || process.env.CTG_REDUCED_MOTION === "1") return;
+    const timer = setInterval(() => setFrame((value) => (value + 1) % 4), 120);
+    onCleanup(() => clearInterval(timer));
+  });
+  createEffect(() => {
+    if (!props.active) { scrollTop = scroll?.scrollTop ?? scrollTop; savedScroll = true; return; }
+    if (!view().busy && savedScroll) { restoreTop = scrollTop; renderer.requestRender(); }
   });
   createEffect(() => { void controller.activate(props.active); });
   let binding = JSON.stringify(location());
@@ -52,6 +60,7 @@ export function VoyagesNavigation(props: NavigationInput) {
       if (restoreTop === undefined || view().busy) return;
       scroll.scrollTop = restoreTop;
       restoreTop = undefined;
+      savedScroll = false;
     };
     renderer.on(CliRenderEvents.FRAME, frame);
     onCleanup(() => renderer.off(CliRenderEvents.FRAME, frame));
@@ -74,18 +83,27 @@ export function VoyagesNavigation(props: NavigationInput) {
   };
   // Select draws raw text; fit names and descriptions to the rail.
   const fit = (text: string) => {
-    const room = railWidth() - 3;
-    return room > 0 && text.length > room ? `${text.slice(0, Math.max(0, room - 1))}…` : text;
+    const room = Math.max(1, (railWidth() || props.width) - 4);
+    if (stringWidth(text) <= room) return text;
+    let result = "";
+    for (const { segment } of new Intl.Segmenter().segment(text)) {
+      if (stringWidth(result + segment) > room - 1) break;
+      result += segment;
+    }
+    return `${result}…`;
   };
+  const questStatus = (status: string) => ({ open: "Ready to start", assigned: "Ready to start", in_progress: "In progress", submitted: "Awaiting assessment", assessed_complete: "Complete", assessed_incomplete: "Needs another pass", expired: "Expired" }[status] ?? status.replaceAll("_", " "));
+  const completed = () => view().daily?.items.filter((item) => item.status === "assessed_complete").length ?? 0;
+  const errorLabel = () => /auth|credential|unauthorized/.test(view().error) ? "Sign in to load your voyages" : /timeout/.test(view().error) ? "Connection timed out · Refresh to retry" : "Could not load voyages · Refresh to retry";
   const options = () => entries().map((item) => ({ ...item, name: fit(item.name), description: fit(item.description) }));
   const entries = () => [
-    { name: props.compact ? "Q" : "Daily coding quests", description: "Assignments & assessments", value: "daily" },
-    ...(view().daily?.items.map((quest, index) => ({ name: props.compact ? String(index + 1) : quest.title, description: quest.status, value: `quest:${quest.id}` })) ?? []),
-    { name: props.compact ? "P" : "Profile & wallet", description: "Authoritative profile", value: "profile" },
-    { name: props.compact ? "E" : "Equipment & shop", description: "Preview before any purchase", value: "equipment" },
-    { name: props.compact ? "R" : "Refresh summaries", description: "Read-only; no evidence upload", value: "refresh" },
-    { name: props.compact ? "S" : "Sign in / reconnect", description: "Native Ship device sign-in", value: "signin" },
-    { name: props.compact ? "B" : "Return to coding", description: "Keep the selected session", value: "back" },
+    { name: props.compact ? "Q" : "Daily coding quests", description: view().daily ? `${completed()} of ${view().daily!.items.length} complete · resets UTC` : "Browse today's assignments", value: "daily" },
+    ...(view().daily?.items.map((quest, index) => ({ name: props.compact ? String(index + 1) : `  ${quest.title}`, description: `  ${questStatus(quest.status)}`, value: `quest:${quest.id}` })) ?? []),
+    { name: props.compact ? "P" : "Profile & wallet", description: "Captain, ship & coins", value: "profile" },
+    { name: props.compact ? "E" : "Equipment & shop", description: "Customize your ship", value: "equipment" },
+    { name: props.compact ? "R" : "Refresh", description: "Reload quests & account", value: "refresh" },
+    { name: props.compact ? "S" : view().profile ? "Reconnect account" : "Sign in", description: "Connect Carthagent Cloud", value: "signin" },
+    { name: props.compact ? "B" : "Return to coding", description: "Open your current session", value: "back" },
   ];
   const select = (value?: string) => {
     if (!props.active || context.keymap.mode.current() !== "navigation" || !props.focused || !value) return;
@@ -104,28 +122,23 @@ export function VoyagesNavigation(props: NavigationInput) {
   return <box flexDirection="column" flexGrow={1} minHeight={0} onMouseDown={() => { if (props.active && context.keymap.mode.current() === "base") props.focus(); }}>
     <scrollbox ref={scroll} flexGrow={1} minHeight={0} contentOptions={{ flexDirection: "column" }}>
       <Show when={!props.compact}>
-        <Show when={view().profile}>{(p) => <box flexDirection="column" flexShrink={0} paddingX={1}>
-          <text fg={context.theme.text.base}>{p().name}</text>
-          <text fg={context.theme.text.muted}>{p().shipName}</text>
-          <text fg={context.theme.text.action.primary.base}>Lv {p().level} · {p().coins} coins</text>
-          <text fg={context.theme.text.muted}>XP {p().totalXp}</text>
+        <Show when={view().profile}>{(p) => <box flexDirection="column" flexShrink={0} paddingX={1} paddingTop={1} paddingBottom={1}>
+          <text fg={context.theme.text.base} attributes={TextAttributes.BOLD} wrapMode="none" truncate>{p().name}</text>
+          <text fg={context.theme.text.muted} wrapMode="none" truncate>{p().shipName}</text>
+          <text fg={context.theme.text.base} wrapMode="none" truncate>Lv {p().level} · {p().coins} coins</text>
         </box>}</Show>
-        <Show when={view().busy}><text flexShrink={0} fg={context.theme.text.muted}> Loading summaries…</text></Show>
-        <Show when={view().error}><text flexShrink={0} fg={context.theme.text.feedback.warning.base}> {view().error}. Sign in or refresh.</text></Show>
-        <Show when={view().daily}><text flexShrink={0} fg={context.theme.text.muted}> UTC {view().daily?.day}</text></Show>
+        <Show when={view().busy}><text flexShrink={0} fg={context.theme.text.muted}> {['|', '/', '-', '\\'][frame()]} Loading voyages…</text></Show>
+        <Show when={view().error}><box paddingX={1} paddingY={1} flexShrink={0}><text fg={context.theme.text.feedback.warning.base}>{errorLabel()}</text></box></Show>
+        <Show when={view().daily?.items.length === 0}><text paddingX={1} fg={context.theme.text.muted}>No quests today. Check back after the UTC reset.</text></Show>
       </Show>
-      <select ref={actions} onMouseUp={(event) => { if (focused()) clickSelect(actions, event); }} minHeight={1} height={Math.min(18, viewportHeight(), options().length * (props.compact ? 1 : 2))} flexShrink={0} showScrollIndicator showDescription={!props.compact} options={options()} selectedIndex={Math.max(0, options().findIndex((item) => item.value === selection()))} focused={focused()} onChange={(_index, item) => {
+      <select ref={actions} textColor={context.theme.text.base} descriptionColor={context.theme.text.muted} selectedTextColor={context.theme.text.action.primary.base} selectedBackgroundColor={context.theme.background.action.primary.selected} selectedDescriptionColor={context.theme.text.base} onMouseUp={(event) => { if (focused()) clickSelect(actions, event); }} minHeight={1} height={Math.min(viewportHeight(), options().length * (props.compact ? 1 : 2))} flexShrink={0} showScrollIndicator showDescription={!props.compact} options={options()} selectedIndex={Math.max(0, options().findIndex((item) => item.value === selection()))} focused={focused()} onChange={(_index, item) => {
         if (!focused() || view().busy || !item) return;
         setSelection(item.value);
         if (actions) scroll?.scrollChildIntoView(actions.id);
       }} onSelect={(_index, item) => select(item?.value)} />
-      <Show when={!props.compact}>
-        <text flexShrink={0} fg={context.theme.text.faint}> Badges & friends: no native views yet.</text>
-        <text flexShrink={0} fg={context.theme.text.faint}> Quests: no rewards. No automatic uploads.</text>
-      </Show>
     </scrollbox>
     <Show when={!props.compact}>
-      <text flexShrink={0} fg={context.theme.text.faint}>{focused() ? " ↑/↓ Enter · Esc coding" : " Focus pane to navigate"}</text>
+      <text flexShrink={0} fg={context.theme.text.muted} wrapMode="none" truncate>{focused() ? " ↑/↓ Enter · Esc back" : " Click a row to open"}</text>
     </Show>
   </box>;
 }

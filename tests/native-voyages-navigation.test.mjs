@@ -162,7 +162,6 @@ test('native extension is optional; navigation cannot itself accept consent or p
   assert.match(adapter, /navigation\?: NativeNavigation/);
   assert.match(pane, /!props.active \|\| context.keymap.mode.current\(\) !== "navigation" \|\| !props.focused/);
   assert.match(pane, /showDescription=\{!props.compact\}/);
-  assert.match(pane, /Badges & friends: no native views yet/);
   assert.doesNotMatch(pane, /\.submit\(|\.retry\(|\.purchase\(|\.quote\(|\.customize\(|\.equip\(|dialog\.confirm|consent: true/);
   assert.match(daily, /controller.refresh\(\).then\(\(\) => \{ if \(props.questID\) return controller.select\(props.questID\)/);
   assert.match(voyages, /view\(\).busy \|\| context.keymap.mode.current\(\) !== "base"/);

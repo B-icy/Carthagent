@@ -1210,12 +1210,15 @@ test('native update prefers the exact published registry package', async () => {
   } });
   assert.equal(await runtime.command({ command: 'update', args: [] }), 0);
   const npmPrefix = process.platform === 'win32' ? ['cmd.exe', '/d', '/s', '/c', 'npm'] : ['npm'];
+  const signal = calls[0].options.signal;
+  assert.ok(signal instanceof AbortSignal);
+  assert.equal(signal.aborted, false);
   assert.deepEqual(calls, [{
     argv: [...npmPrefix, 'view', 'carthagent@1.0.4', 'version', '--json'],
-    options: { cwd: '/package/root', timeoutSeconds: 10 },
+    options: { cwd: '/package/root', timeoutSeconds: 10, signal },
   }, {
     argv: [...npmPrefix, 'install', '-g', '--install-links=true', 'carthagent@1.0.4'],
-    options: { cwd: '/package/root', timeoutSeconds: 600 },
+    options: { cwd: '/package/root', timeoutSeconds: 600, signal },
   }]);
 });
 test('native update check reports an available release without invoking the installer', async () => {
@@ -1249,12 +1252,15 @@ test('native updater force-reinstalls only the canonical validated release tag o
   } });
   assert.equal(await runtime.command({ command: 'update', args: ['--force'] }), 0);
   const npmPrefix = process.platform === 'win32' ? ['cmd.exe', '/d', '/s', '/c', 'npm'] : ['npm'];
+  const signal = installs[0].options.signal;
+  assert.ok(signal instanceof AbortSignal);
+  assert.equal(signal.aborted, false);
   assert.deepEqual(installs, [{
     argv: [...npmPrefix, 'view', 'carthagent@1.0.4', 'version', '--json'],
-    options: { cwd: '/package/root', timeoutSeconds: 10 },
+    options: { cwd: '/package/root', timeoutSeconds: 10, signal },
   }, {
     argv: [...npmPrefix, 'install', '-g', '--install-links=true', 'carthagent@1.0.4'],
-    options: { cwd: '/package/root', timeoutSeconds: 600 },
+    options: { cwd: '/package/root', timeoutSeconds: 600, signal },
   }]);
 });
 
