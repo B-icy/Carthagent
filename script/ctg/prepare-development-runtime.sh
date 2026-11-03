@@ -9,7 +9,7 @@ set -euo pipefail
 #
 # Usage: script/ctg/prepare-development-runtime.sh /path/to/clean/opencode-checkout
 EXPECTED_SOURCE="843a6c514e606b436a7fe713422ace0a93ad3d61"
-EXPECTED_PATCH="36869fbba5573cf207ca194e3a9d712b427336a5d510b11002d81feb05f933b4"
+EXPECTED_PATCH="4a3b59d584864d2d0f248bc521b69c350fdfb20ba50e3955675d7432b1a217b4"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PATCH_FILE="$ROOT/docs/patches/opencode-v2.0.32-session-ui-combined-v7.patch"
 

@@ -797,7 +797,7 @@ index 0000000000..2f742d73f3
 +  }).pipe(Effect.scoped),
 +)
 diff --git a/packages/tui/src/app.tsx b/packages/tui/src/app.tsx
-index 88939ebc85..bc175a3faf 100644
+index 88939ebc85..619665c527 100644
 --- a/packages/tui/src/app.tsx
 +++ b/packages/tui/src/app.tsx
 @@ -2,6 +2,7 @@ import { existsSync } from "fs"
@@ -1252,6 +1252,15 @@ index 88939ebc85..bc175a3faf 100644
                onConnected={(providerID) => dialog.replace(() => <DialogModel providerID={providerID} />)}
              />
            ))
+@@ -1020,7 +1173,7 @@ function App() {
+         ? [
+             {
+               name: "opencode.update",
+-              title: "Update OpenCode",
++              title: "Update Carthagent",
+               slash: { name: "update" },
+               run: () => updater.open?.("manual"),
+               category: "System",
 @@ -1046,7 +1199,7 @@ function App() {
                  const restart = client.restart
                  if (!restart) return
@@ -1270,6 +1279,15 @@ index 88939ebc85..bc175a3faf 100644
            await client.api.location
              .reload()
              .then(() => {
+@@ -1126,7 +1279,7 @@ function App() {
+         name: "docs.open",
+         title: "Open docs",
+         run: () => {
+-          openUrl("https://opencode.ai/docs").catch(() => {})
++          openUrl("https://github.com/B-icy/Carthagent#readme").catch(() => {})
+           dialog.clear()
+         },
+         category: "System",
 @@ -1272,7 +1425,7 @@ function App() {
  
    Keymap.createLayer(() => ({
@@ -1423,7 +1441,7 @@ index 10af2019d6..259b561364 100644
  
  export function brailleGraph(values: readonly number[], width = graphWidth) {
 diff --git a/packages/tui/src/component/dialog-config.tsx b/packages/tui/src/component/dialog-config.tsx
-index f2e3f28b83..2e0d04234e 100644
+index f2e3f28b83..b3f74d00fb 100644
 --- a/packages/tui/src/component/dialog-config.tsx
 +++ b/packages/tui/src/component/dialog-config.tsx
 @@ -2,6 +2,7 @@ import { createMemo, createSignal } from "solid-js"
@@ -1434,7 +1452,17 @@ index f2e3f28b83..2e0d04234e 100644
  import { useToast } from "../ui/toast"
  
  type Setting = {
-@@ -402,7 +403,7 @@ export function DialogConfig(props: { current?: string }) {
+@@ -23,7 +24,8 @@ export const settings: Setting[] = [
+     title: "Theme",
+     category: "Appearance",
+     path: ["theme", "name"],
+-    default: "opencode",
++    default: "carthagent",
++    format: (value) => value === "opencode" ? "Classic" : value === "opencode2" ? "Classic 2" : String(value),
+     keywords: ["color scheme", "colors"],
+   },
+   {
+@@ -402,7 +404,7 @@ export function DialogConfig(props: { current?: string }) {
        filterThreshold={0.7}
        onMove={(option) => setSelected(option.value)}
        onSelect={(option) => void change(1, option.value)}
@@ -2485,7 +2513,7 @@ index f6d6412c18..ddab0c6ff5 100644
            onConfirm={(value) => {
              const id = projectID()!
 diff --git a/packages/tui/src/component/dialog-pair.tsx b/packages/tui/src/component/dialog-pair.tsx
-index 0bc0ce44b4..5e9d875450 100644
+index 0bc0ce44b4..bbce155972 100644
 --- a/packages/tui/src/component/dialog-pair.tsx
 +++ b/packages/tui/src/component/dialog-pair.tsx
 @@ -7,6 +7,7 @@ import { useTheme } from "../context/theme"
@@ -2496,6 +2524,15 @@ index 0bc0ce44b4..5e9d875450 100644
  
  export function DialogPair() {
    const client = useClient()
+@@ -68,7 +69,7 @@ export function DialogPair() {
+           </box>
+           <Show when={value.loopback}>
+             <text fg={theme.text.muted} wrapMode="word">
+-              Run `opencode service set hostname 0.0.0.0` to access the service remotely.
++              Remote pairing requires a service configured for remote access.
+             </text>
+           </Show>
+         </box>
 @@ -91,7 +92,7 @@ export function DialogPair() {
        <Show
          when={loadError()}
@@ -2709,7 +2746,7 @@ index f94f906cdf..2495eaf55b 100644
                  <text fg={theme.text.base} wrapMode="word">
                    <b>{item.name}</b>{" "}
 diff --git a/packages/tui/src/component/dialog-update.tsx b/packages/tui/src/component/dialog-update.tsx
-index 9dcf07b214..54469a0b69 100644
+index 9dcf07b214..5bebafdbe2 100644
 --- a/packages/tui/src/component/dialog-update.tsx
 +++ b/packages/tui/src/component/dialog-update.tsx
 @@ -6,6 +6,7 @@ import type { UpdateState } from "../context/update-notification"
@@ -2720,7 +2757,16 @@ index 9dcf07b214..54469a0b69 100644
  
  export function DialogUpdate(props: {
    check?: (signal: AbortSignal) => Promise<string | undefined>
-@@ -133,7 +134,7 @@ export function DialogUpdate(props: {
+@@ -92,7 +93,7 @@ export function DialogUpdate(props: {
+         <DialogHeader
+           title={
+             state().type === "installing"
+-              ? "Updating OpenCode"
++              ? "Updating Carthagent"
+               : state().type === "available" || state().type === "failed"
+                 ? "Update available"
+                 : "Update"
+@@ -133,16 +134,16 @@ export function DialogUpdate(props: {
          {(current) => (
            <Switch>
              <Match when={current.type === "checking"}>
@@ -2729,15 +2775,26 @@ index 9dcf07b214..54469a0b69 100644
              </Match>
              <Match when={current.type === "available"}>
                <text fg={theme.text.muted}>
-@@ -142,7 +143,7 @@ export function DialogUpdate(props: {
+-                An update is available. After installing, you'll be prompted to restart OpenCode.
++                An update is available. After installing, you'll be prompted to restart Carthagent.
+               </text>
              </Match>
              <Match when={current.type === "installing"}>
                <Spinner shimmer={theme.text.base}>
 -                {current.type === "installing" ? `Installing OpenCode ${current.version}…` : ""}
-+                {current.type === "installing" ? `Installing OpenCode ${current.version}${chromeEllipsis()}` : ""}
++                {current.type === "installing" ? `Installing Carthagent ${current.version}${chromeEllipsis()}` : ""}
                </Spinner>
              </Match>
              <Match when={current.type === "installed"}>
+@@ -151,7 +152,7 @@ export function DialogUpdate(props: {
+               </text>
+             </Match>
+             <Match when={current.type === "current"}>
+-              <text fg={theme.text.muted}>OpenCode is already up to date.</text>
++              <text fg={theme.text.muted}>Carthagent is already up to date.</text>
+             </Match>
+             <Match when={current.type === "unavailable"}>
+               <text fg={theme.text.muted} wrapMode="word">
 diff --git a/packages/tui/src/component/dialog-workspaces.tsx b/packages/tui/src/component/dialog-workspaces.tsx
 index 70aaa8ff4b..4f3a049714 100644
 --- a/packages/tui/src/component/dialog-workspaces.tsx
@@ -2769,7 +2826,7 @@ index 70aaa8ff4b..4f3a049714 100644
            ) : (
              <box paddingLeft={DIALOG_LIST_INSET} paddingRight={DIALOG_LIST_INSET}>
 diff --git a/packages/tui/src/component/error-component.tsx b/packages/tui/src/component/error-component.tsx
-index 48ad4b107d..b4e46b9d8e 100644
+index 48ad4b107d..439c84d6da 100644
 --- a/packages/tui/src/component/error-component.tsx
 +++ b/packages/tui/src/component/error-component.tsx
 @@ -6,6 +6,7 @@ import { useClipboard } from "../context/clipboard"
@@ -2789,6 +2846,15 @@ index 48ad4b107d..b4e46b9d8e 100644
        copy: true,
        onUse: copyReport,
      },
+@@ -117,7 +118,7 @@ export function ErrorComponent(props: { error: Error; reset: () => void; mode?:
+         {/* Headline */}
+         <box flexDirection="column" alignItems="center" flexShrink={0}>
+           <text attributes={TextAttributes.BOLD} fg={colors.text}>
+-            OpenCode crashed
++            Carthagent crashed
+           </text>
+           <Show when={showSubtext()}>
+             <text fg={colors.muted}>An unexpected error stopped the session.</text>
 @@ -129,6 +130,7 @@ export function ErrorComponent(props: { error: Error; reset: () => void; mode?:
            flexShrink={0}
            border
@@ -2810,7 +2876,7 @@ index 48ad4b107d..b4e46b9d8e 100644
            bottomTitleAlignment="right"
            paddingLeft={1}
            paddingRight={1}
-@@ -205,7 +208,7 @@ export function ErrorComponent(props: { error: Error; reset: () => void; mode?:
+@@ -205,12 +208,12 @@ export function ErrorComponent(props: { error: Error; reset: () => void; mode?:
            <box flexDirection="column" alignItems="center" flexShrink={0}>
              <text fg={colors.muted}>
                {copyState() === "copied"
@@ -2819,15 +2885,44 @@ index 48ad4b107d..b4e46b9d8e 100644
                  : copyState() === "failed"
                    ? "Clipboard write failed. Try again or report the crash manually."
                    : "Copy the report and open a GitHub issue to help us fix this."}
-@@ -237,7 +240,7 @@ function buildIssueURL(message: string, stack: string, version: string) {
+             </text>
+-            <text fg={colors.muted}>OpenCode {app.version}</text>
++            <text fg={colors.muted}>Carthagent runtime {app.version}</text>
+           </box>
+         </Show>
+       </box>
+@@ -219,27 +222,17 @@ export function ErrorComponent(props: { error: Error; reset: () => void; mode?:
+ }
+ 
+ function buildIssueURL(message: string, stack: string, version: string) {
+-  // Field keys match the ids in .github/ISSUE_TEMPLATE/bug-report.yml so the issue
+-  // form opens pre-filled. Populating os/terminal/reproduce keeps the report past
+-  // the contributing-guidelines compliance check, which pushes for system info.
+-  const url = new URL("https://github.com/anomalyco/opencode/issues/new?template=bug-report.yml")
++  const url = new URL("https://github.com/B-icy/Carthagent/issues/new")
+   url.searchParams.set("title", `TUI crash: ${message}`)
+-  url.searchParams.set("opencode-version", version)
+-  url.searchParams.set("os", describeOS())
+-  url.searchParams.set("terminal", describeTerminal())
+-  url.searchParams.set(
+-    "reproduce",
+-    "Reported automatically from the OpenCode crash screen. If you can, describe what you were doing when it crashed.",
+-  )
+ 
+   // Budget the stack against the fully URL-encoded length (not the raw length) so
+   // the final link stays under GitHub's practical limit; flag truncation so a
    // clipped trace is obvious. searchParams.set handles encoding without throwing,
    // so measuring url.toString() is both correct and safe on any input.
    const MAX_URL_LENGTH = 6000
 -  const marker = "\n… (truncated)"
+-  const head = `The OpenCode TUI crashed with an unexpected error.\n\n**Error:** ${message}\n\n**Stack trace:**\n`
+-  const setBody = (body: string) => url.searchParams.set("description", head + "```\n" + body + "\n```")
 +  const marker = `\n${chromeGlyph("…")} (truncated)`
-   const head = `The OpenCode TUI crashed with an unexpected error.\n\n**Error:** ${message}\n\n**Stack trace:**\n`
-   const setBody = (body: string) => url.searchParams.set("description", head + "```\n" + body + "\n```")
++  const head = `The Carthagent TUI crashed with an unexpected error.\n\n**Runtime:** ${version}\n**OS:** ${describeOS()}\n**Terminal:** ${describeTerminal()}\n\nPlease describe what you were doing when it crashed.\n\n**Error:** ${message}\n\n**Stack trace:**\n`
++  const setBody = (body: string) => url.searchParams.set("body", head + "```\n" + body + "\n```")
  
+   setBody(stack)
+   if (url.toString().length <= MAX_URL_LENGTH) return url
 diff --git a/packages/tui/src/component/logo.tsx b/packages/tui/src/component/logo.tsx
 index 2c3abc3cb0..e9e4e3bf95 100644
 --- a/packages/tui/src/component/logo.tsx
@@ -4028,7 +4123,7 @@ index 8ecaa95787..2fc1738892 100644
    )
  }
 diff --git a/packages/tui/src/component/session-tabs.tsx b/packages/tui/src/component/session-tabs.tsx
-index fdd23a43cb..0b2f5a9c7e 100644
+index fdd23a43cb..92cf72e0ac 100644
 --- a/packages/tui/src/component/session-tabs.tsx
 +++ b/packages/tui/src/component/session-tabs.tsx
 @@ -20,6 +20,7 @@ import {
@@ -4382,7 +4477,7 @@ index fdd23a43cb..0b2f5a9c7e 100644
    const marquee = createTabMarquee(animations)
    const hovered = marquee.hovered
    createEffect(() => {
-@@ -604,6 +843,140 @@ function VerticalSessionTabs(props: {
+@@ -604,6 +843,151 @@ function VerticalSessionTabs(props: {
      return moveSessionTab(tabs.tabs(), pending.sessionID, pending.index)
    })
    const items = ordered
@@ -4440,6 +4535,17 @@ index fdd23a43cb..0b2f5a9c7e 100644
 +    revealCursor()
 +  }
 +  const selectedRow = () => navigationRows().find((row) => row.id === cursor())
++  createEffect(() => {
++    if (!navigation?.focused() || navigation.current()) return
++    // Folder metadata can arrive before sessions. Anchor a new keyboard focus
++    // to the current session rather than retaining that provisional first row.
++    untrack(() => {
++      const active = activeID()
++      const row = navigationRows().find((row) => row.id === active)
++      if (row) setCursor(row.id)
++      revealCursor()
++    })
++  })
 +  Keymap.createLayer(() => ({
 +    mode: "navigation",
 +    enabled: Boolean(navigation?.focused() && !navigation.current()),
@@ -4523,7 +4629,7 @@ index fdd23a43cb..0b2f5a9c7e 100644
    const highlightColor = createMemo(() =>
      tint(background(), actionHovered(), actionHovered().a),
    )
-@@ -657,9 +1030,20 @@ function VerticalSessionTabs(props: {
+@@ -657,9 +1041,20 @@ function VerticalSessionTabs(props: {
    createEffect(() => {
      if (!scroll) return
      dimensions()
@@ -4546,7 +4652,7 @@ index fdd23a43cb..0b2f5a9c7e 100644
      const height = compact() ? 3 : newTab() ? 1 : 2
      // Scroll after layout: newly opened tabs do not contribute to the scroll range yet.
      const reveal = () => {
-@@ -689,20 +1073,440 @@ function VerticalSessionTabs(props: {
+@@ -689,20 +1084,440 @@ function VerticalSessionTabs(props: {
      const source = dragging()
      if (!source) return
      didDrag = true
@@ -4997,7 +5103,7 @@ index fdd23a43cb..0b2f5a9c7e 100644
    return (
      <box
        ref={(element) => (rail = element)}
-@@ -714,6 +1518,13 @@ function VerticalSessionTabs(props: {
+@@ -714,6 +1529,13 @@ function VerticalSessionTabs(props: {
        paddingTop={1}
        backgroundColor={background()}
        onMouseOut={marquee.leaveHovered}
@@ -5011,7 +5117,7 @@ index fdd23a43cb..0b2f5a9c7e 100644
        onMouseUp={(event) => {
          if (event.button === RIGHT_MOUSE_BUTTON) return
          release()
-@@ -725,8 +1536,9 @@ function VerticalSessionTabs(props: {
+@@ -725,8 +1547,9 @@ function VerticalSessionTabs(props: {
        onMouseDragEnd={release}
      >
        <Show when={compact()}>
@@ -5022,7 +5128,7 @@ index fdd23a43cb..0b2f5a9c7e 100644
        <scrollbox
          ref={(element) => {
            scroll = element
-@@ -739,411 +1551,35 @@ function VerticalSessionTabs(props: {
+@@ -739,411 +1562,35 @@ function VerticalSessionTabs(props: {
          scrollbarOptions={{ visible: false }}
        >
          <box flexShrink={0} flexDirection="column" gap={1} paddingY={compact() ? 1 : 0}>
@@ -5459,7 +5565,7 @@ index fdd23a43cb..0b2f5a9c7e 100644
              <box
                height={1}
                width="100%"
-@@ -1176,7 +1612,8 @@ function VerticalSessionTabs(props: {
+@@ -1176,7 +1623,8 @@ function VerticalSessionTabs(props: {
                  if (suppressClick) return
                  if (!addPressed) return
                  addPressed = false
@@ -5469,7 +5575,7 @@ index fdd23a43cb..0b2f5a9c7e 100644
                }}
                onMouseDragEnd={() => (addPressed = false)}
              >
-@@ -1230,13 +1667,14 @@ function VerticalSessionTabs(props: {
+@@ -1230,13 +1678,14 @@ function VerticalSessionTabs(props: {
                      tabs.close()
                    }}
                  >
@@ -5485,7 +5591,7 @@ index fdd23a43cb..0b2f5a9c7e 100644
        <Show when={compact() && !dragging() && !contextMenu() && hovered()}>
          {(sessionID) => (
            <box
-@@ -1262,6 +1700,7 @@ function VerticalSessionTabs(props: {
+@@ -1262,6 +1711,7 @@ function VerticalSessionTabs(props: {
                      items().find((tab) => tab.sessionID === sessionID())?.title ??
                      "Untitled session",
                    tooltipWidth() - 2,
@@ -5493,7 +5599,7 @@ index fdd23a43cb..0b2f5a9c7e 100644
                  )}
                </text>
                <text fg={theme.text.muted} wrapMode="none" selectable={false}>
-@@ -1279,7 +1718,9 @@ function VerticalSessionTabs(props: {
+@@ -1279,7 +1729,9 @@ function VerticalSessionTabs(props: {
          )}
        </Show>
        <Show when={contextMenu()}>
@@ -5504,7 +5610,7 @@ index fdd23a43cb..0b2f5a9c7e 100644
        </Show>
      </box>
    )
-@@ -1556,7 +1997,7 @@ function HorizontalSessionTabs(props: {
+@@ -1556,7 +2008,7 @@ function HorizontalSessionTabs(props: {
      >
        <Show when={layout().before > 0}>
          <text width={sessionTabOverflowWidth(layout().before)} fg={theme.text.muted} selectable={false}>
@@ -5513,7 +5619,7 @@ index fdd23a43cb..0b2f5a9c7e 100644
          </text>
        </Show>
        <For each={layout().tabs}>
-@@ -1753,7 +2194,7 @@ function HorizontalSessionTabs(props: {
+@@ -1753,7 +2205,7 @@ function HorizontalSessionTabs(props: {
                      tabs.close(tab === NEW_SESSION_TAB ? undefined : tab.sessionID)
                    }}
                  >
@@ -5522,7 +5628,7 @@ index fdd23a43cb..0b2f5a9c7e 100644
                  </text>
                </box>
              </box>
-@@ -1762,7 +2203,7 @@ function HorizontalSessionTabs(props: {
+@@ -1762,7 +2214,7 @@ function HorizontalSessionTabs(props: {
        </For>
        <Show when={layout().after > 0}>
          <text width={sessionTabOverflowWidth(layout().after)} fg={theme.text.muted} selectable={false}>
@@ -5632,6 +5738,19 @@ index a6072fe109..59e891b868 100644
          this.renderColor,
          this.outerRenderColor,
        )
+diff --git a/packages/tui/src/component/terminal-pane.tsx b/packages/tui/src/component/terminal-pane.tsx
+index c5e0be3415..f1577b84e7 100644
+--- a/packages/tui/src/component/terminal-pane.tsx
++++ b/packages/tui/src/component/terminal-pane.tsx
+@@ -240,7 +240,7 @@ export function TerminalPane(props: {
+       }
+       if (message.type !== "attached") return
+       if (!("inputProtocol" in message) || message.inputProtocol !== 1) {
+-        setFailure("Persistent terminal server is out of date; restart OpenCode")
++        setFailure("Persistent terminal server is out of date; restart Carthagent")
+         next.close()
+         return
+       }
 diff --git a/packages/tui/src/component/transcript-scrollbox.tsx b/packages/tui/src/component/transcript-scrollbox.tsx
 new file mode 100644
 index 0000000000..f35aef1416
@@ -5664,9 +5783,18 @@ index 0000000000..f35aef1416
 +
 +extend({ transcript_scrollbox: TranscriptScrollBoxRenderable })
 diff --git a/packages/tui/src/config/index.tsx b/packages/tui/src/config/index.tsx
-index 953d5977d0..f053c3840c 100644
+index 953d5977d0..90df5ab763 100644
 --- a/packages/tui/src/config/index.tsx
 +++ b/packages/tui/src/config/index.tsx
+@@ -249,7 +249,7 @@ export const Info = Schema.Struct({
+   }),
+   animations: Schema.optional(Schema.Boolean).annotate({ description: "Enable interface animations" }),
+   highlights: Schema.optional(Schema.Boolean).annotate({
+-    description: "Show the release highlights once after OpenCode updates",
++    description: "Show the release highlights once after Carthagent updates",
+   }),
+   mouse: Schema.optional(Schema.Boolean).annotate({ description: "Enable terminal mouse capture" }),
+   cursor: Schema.optional(Cursor),
 @@ -331,8 +331,8 @@ export function resolve(
        ...input.tabs,
        mode: tabsMode,
@@ -6704,7 +6832,7 @@ index f8fafdce21..b2bca2b046 100644
    }
    if (usage && stringWidth(usage) <= available) return { usage: true, shortcuts: false }
 diff --git a/packages/tui/src/feature-plugins/sidebar/footer.tsx b/packages/tui/src/feature-plugins/sidebar/footer.tsx
-index b875d5ffe8..75609b21f7 100644
+index b875d5ffe8..62d16e43bc 100644
 --- a/packages/tui/src/feature-plugins/sidebar/footer.tsx
 +++ b/packages/tui/src/feature-plugins/sidebar/footer.tsx
 @@ -5,6 +5,7 @@ import { FilePath } from "../../ui/file-path"
@@ -6724,7 +6852,7 @@ index b875d5ffe8..75609b21f7 100644
          </text>
          <box flexGrow={1} gap={1}>
            <box flexDirection="row" justifyContent="space-between">
-@@ -51,7 +52,7 @@ export function SidebarOnboarding(props: { context: Plugin.Context; sessionID: s
+@@ -51,12 +52,12 @@ export function SidebarOnboarding(props: { context: Plugin.Context; sessionID: s
                  }).catch((error) => console.error("Failed to dismiss sidebar onboarding", error))
                }}
              >
@@ -6732,7 +6860,14 @@ index b875d5ffe8..75609b21f7 100644
 +              {chromeGlyph("✕")}
              </text>
            </box>
-           <text fg={props.context.theme.text.muted}>OpenCode includes free models so you can start immediately.</text>
+-          <text fg={props.context.theme.text.muted}>OpenCode includes free models so you can start immediately.</text>
++          <text fg={props.context.theme.text.muted}>Sign in to Carthagent Cloud to get started.</text>
+           <text fg={props.context.theme.text.muted}>
+-            Connect from 75+ providers to use other models, including Claude, GPT, Gemini etc
++            Eligible accounts receive starter credit. You can also connect your own provider.
+           </text>
+           <box
+             id="sidebar.footer.getting-started.connect"
 diff --git a/packages/tui/src/feature-plugins/sidebar/mcp.tsx b/packages/tui/src/feature-plugins/sidebar/mcp.tsx
 index 6018ff0ccb..f192f9ebe1 100644
 --- a/packages/tui/src/feature-plugins/sidebar/mcp.tsx
@@ -6964,7 +7099,7 @@ index 0e333fffcc..18fa75543b 100644
    )
    return (
 diff --git a/packages/tui/src/feature-plugins/system/stats.tsx b/packages/tui/src/feature-plugins/system/stats.tsx
-index 950d322422..ec6fb8625c 100644
+index 950d322422..2aa0b4bd88 100644
 --- a/packages/tui/src/feature-plugins/system/stats.tsx
 +++ b/packages/tui/src/feature-plugins/system/stats.tsx
 @@ -6,6 +6,7 @@ import { useTerminalDimensions } from "@opentui/solid"
@@ -6975,6 +7110,24 @@ index 950d322422..ec6fb8625c 100644
  import { tint } from "../../theme/color"
  import { statsMetrics, statsNumber } from "./stats-data"
  
+@@ -62,7 +63,7 @@ export function StatsPoster(props: { stats: SessionStatsInfo }) {
+     <box width={width()} flexDirection="column" alignItems="center" flexShrink={0} gap={compact() ? 1 : 2}>
+       <box width="100%" flexDirection={width() < 44 ? "column" : "row"} justifyContent="space-between">
+         <text fg={theme.text.base} attributes={TextAttributes.BOLD}>
+-          opencode / stats
++          Carthagent / stats
+         </text>
+         <text fg={theme.text.muted}>{dates()}</text>
+       </box>
+@@ -131,7 +132,7 @@ export function StatsPoster(props: { stats: SessionStatsInfo }) {
+         </For>
+       </box>
+       <box width="100%" flexDirection="row" justifyContent="flex-end">
+-        <text fg={theme.text.base}>opencode.ai</text>
++        <text fg={theme.text.base}>Carthagent</text>
+       </box>
+     </box>
+   )
 @@ -170,7 +171,7 @@ function StatsPage(props: { context: Plugin.Context; onClose: () => void }) {
              <text fg={theme.text.feedback.error.base}>Could not load stats. Reopen /stats to try again.</text>
            }
@@ -7013,6 +7166,29 @@ index 8b1fe2a519..bead551cb8 100644
                {props.message ?? ""}
              </span>
            </text>
+diff --git a/packages/tui/src/feature-plugins/system/storybook/highlights.tsx b/packages/tui/src/feature-plugins/system/storybook/highlights.tsx
+index cf03ecab96..362aa72e31 100644
+--- a/packages/tui/src/feature-plugins/system/storybook/highlights.tsx
++++ b/packages/tui/src/feature-plugins/system/storybook/highlights.tsx
+@@ -9,15 +9,15 @@ import { StoryFooter } from "./footer"
+ const items = [
+   {
+     title: "Built-In Worktree Tools",
+-    body: "Ask OpenCode to use `worktree_create`, `worktree_list`, and `worktree_remove` in Code Mode. You can create isolated worktrees, move sessions into them, and remove them with normal edit approval.",
++    body: "Ask Carthagent to create isolated worktrees, move sessions into them, and remove them with normal edit approval.",
+   },
+   {
+     title: "Safer Remote Pairing",
+-    body: "The first `opencode pair --remote` now warns that it will expose your server and asks for confirmation. For non-interactive use, pass `opencode pair --remote --yes`.",
++    body: "Remote pairing requires a service configured for remote access.",
+   },
+   {
+     title: "Installable Web App",
+-    body: "Use Chrome or Edge’s Install button to install the OpenCode web app, including when it runs behind an authenticating proxy.",
++    body: "The Carthagent native console keeps your projects and sessions close at hand.",
+   },
+   {
+     title: "Clear Session Failures",
 diff --git a/packages/tui/src/feature-plugins/system/storybook/index.tsx b/packages/tui/src/feature-plugins/system/storybook/index.tsx
 index f69e3da68b..aab75d8fc8 100644
 --- a/packages/tui/src/feature-plugins/system/storybook/index.tsx
@@ -7044,10 +7220,10 @@ index f69e3da68b..aab75d8fc8 100644
            { shortcut: "esc", label: "home" },
          ]}
 diff --git a/packages/tui/src/feature-plugins/system/storybook/merman-layouts.tsx b/packages/tui/src/feature-plugins/system/storybook/merman-layouts.tsx
-index 19c6ed906b..d7348f8e3b 100644
+index 19c6ed906b..75199368fb 100644
 --- a/packages/tui/src/feature-plugins/system/storybook/merman-layouts.tsx
 +++ b/packages/tui/src/feature-plugins/system/storybook/merman-layouts.tsx
-@@ -5,6 +5,7 @@ import { useTheme, useThemes } from "../../../context/theme"
+@@ -5,16 +5,17 @@ import { useTheme, useThemes } from "../../../context/theme"
  import { usePlugin } from "../../../plugin/context"
  import type { Story } from "./index"
  import { StoryFooter } from "./footer"
@@ -7055,6 +7231,18 @@ index 19c6ed906b..d7348f8e3b 100644
  
  const fixtures = [
    {
+     id: "deployment",
+     title: "Deployment architecture",
+     source: `flowchart LR
+-  Client[OpenCode client]
++  Client[Carthagent client]
+ 
+   subgraph CF[Cloudflare]
+-    DNS[opencode.ai]
++    DNS[example.com]
+     Web[Console frontend Worker]
+     Proxy[Console API proxy Worker]
+     Infer[inference-next Worker]
 @@ -185,7 +186,7 @@ function MermanLayoutsStory(props: { context: Plugin.Context }) {
          title="storybook / Mermaid layouts"
          details={[`${selected() + 1}/${fixtures.length}`, fixture().id, `${dimensions().width}x${dimensions().height}`]}
@@ -7188,6 +7376,41 @@ index 8c570fb934..11d79d39ba 100644
 +  "█    █▀▀█ █▀█    █   █▀▀█ █▀▀█ █ ▀█ █▀▀  █ ▀▄█   █  ",
 +  " ▀▀▀ ▀  ▀ ▀  ▀   ▀   ▀  ▀ ▀  ▀  ▀▀▀ ▀▀▀▀ ▀   ▀   ▀  ",
 +]
+diff --git a/packages/tui/src/mini/footer.permission.tsx b/packages/tui/src/mini/footer.permission.tsx
+index 6f11e8573a..d751d18475 100644
+--- a/packages/tui/src/mini/footer.permission.tsx
++++ b/packages/tui/src/mini/footer.permission.tsx
+@@ -110,7 +110,7 @@ export function RejectField(props: {
+       minHeight={1}
+       maxHeight={3}
+       wrapMode="word"
+-      placeholder="Tell OpenCode what to do differently"
++      placeholder="Tell Carthagent what to do differently"
+       placeholderColor={props.theme.muted}
+       textColor={props.theme.formfieldText}
+       focusedTextColor={props.theme.formfieldFocusedText}
+@@ -322,7 +322,7 @@ export function RunPermissionBody(props: {
+           {title()}
+         </text>
+         <Show when={!compact() && stage() === "reject"}>
+-          <text fg={props.theme.muted}>Tell OpenCode what to do differently</text>
++          <text fg={props.theme.muted}>Tell Carthagent what to do differently</text>
+         </Show>
+       </box>
+ 
+diff --git a/packages/tui/src/mini/footer.prompt.tsx b/packages/tui/src/mini/footer.prompt.tsx
+index d698f12a33..b10c166c18 100644
+--- a/packages/tui/src/mini/footer.prompt.tsx
++++ b/packages/tui/src/mini/footer.prompt.tsx
+@@ -534,7 +534,7 @@ export function createPromptState(input: PromptInput): PromptState {
+         description: "compact older session context to free space",
+       } satisfies SlashOption,
+       ...EXIT_COMMANDS.map(
+-        (name) => ({ kind: "slash", name, display: `/${name}`, description: "close OpenCode" }) satisfies SlashOption,
++        (name) => ({ kind: "slash", name, display: `/${name}`, description: "close Carthagent" }) satisfies SlashOption,
+       ),
+     ]
+     const hidden = new Set(builtins.map((item) => item.name))
 diff --git a/packages/tui/src/mini/runtime.lifecycle.ts b/packages/tui/src/mini/runtime.lifecycle.ts
 index 6a103bc8dd..db65694f64 100644
 --- a/packages/tui/src/mini/runtime.lifecycle.ts
@@ -7211,6 +7434,19 @@ index 6a103bc8dd..db65694f64 100644
    }
    setTitle(input.sessionTitle)
    const theme = await resolveRunTheme(renderer, tuiConfig.theme, mono)
+diff --git a/packages/tui/src/mini/splash.ts b/packages/tui/src/mini/splash.ts
+index 123b224f45..94316e00c2 100644
+--- a/packages/tui/src/mini/splash.ts
++++ b/packages/tui/src/mini/splash.ts
+@@ -181,7 +181,7 @@ function buildExit(input: SplashWriterInput, ctx: ScrollbackRenderContext): Scro
+   const body_left = (mark[0]?.length ?? 0) + 2
+   const session = "Session  "
+   const label = "Continue "
+-  const command = `opencode mini -s ${meta.session_id}`
++  const command = `ctg -s ${meta.session_id}`
+   const wide = body_left + stringWidth(label + command) <= width
+   const commandHeight = wide ? 1 : Math.ceil(stringWidth(command) / width)
+ 
 diff --git a/packages/tui/src/plugin/api.tsx b/packages/tui/src/plugin/api.tsx
 index 35a4eac6e5..720d27f003 100644
 --- a/packages/tui/src/plugin/api.tsx
@@ -8401,7 +8637,7 @@ index f63ba65250..a4b361664e 100644
                <Show
                  when={props.status}
 diff --git a/packages/tui/src/routes/session/permission.tsx b/packages/tui/src/routes/session/permission.tsx
-index 07338aba69..812d3e97e6 100644
+index 07338aba69..b16020348b 100644
 --- a/packages/tui/src/routes/session/permission.tsx
 +++ b/packages/tui/src/routes/session/permission.tsx
 @@ -5,6 +5,7 @@ import type { TextareaRenderable } from "@opentui/core"
@@ -8421,7 +8657,7 @@ index 07338aba69..812d3e97e6 100644
                  <text fg={theme.text.base}>Permission required</text>
                </box>
                <Show when={props.request.action !== "shell" && current.title}>
-@@ -321,7 +322,7 @@ function RejectPrompt(props: {
+@@ -321,11 +322,11 @@ function RejectPrompt(props: {
      >
        <box gap={1} paddingLeft={1} paddingRight={3} paddingTop={1} paddingBottom={1}>
          <box flexDirection="row" gap={1} paddingLeft={1}>
@@ -8430,6 +8666,11 @@ index 07338aba69..812d3e97e6 100644
            <text fg={theme.text.base}>Reject permission</text>
          </box>
          <box paddingLeft={1}>
+-          <text fg={theme.text.muted}>Tell OpenCode what to do differently</text>
++          <text fg={theme.text.muted}>Tell Carthagent what to do differently</text>
+         </box>
+       </box>
+       <box
 @@ -527,7 +528,7 @@ export function SessionQuestion<const T extends Record<string, string>>(props: {
            when={props.header}
            fallback={
@@ -9285,7 +9526,7 @@ index 09b3806670..5fc5dd5725 100644
  function takeStart(value: string, maxWidth: number) {
 diff --git a/packages/tui/src/ui/glyphs.ts b/packages/tui/src/ui/glyphs.ts
 new file mode 100644
-index 0000000000..8e1a16cc44
+index 0000000000..71a4b4fc32
 --- /dev/null
 +++ b/packages/tui/src/ui/glyphs.ts
 @@ -0,0 +1,197 @@
@@ -9398,7 +9639,7 @@ index 0000000000..8e1a16cc44
 +  "Delegating…": "Delegating...",
 +  "Preparing edit…": "Preparing edit...",
 +  "Forking session…": "Forking session...",
-+  "Installing OpenCode …": "Installing OpenCode ...",
++  "Installing Carthagent …": "Installing Carthagent ...",
 +  "Resolving diff…": "Resolving diff...",
 +  "Loading branches…": "Loading branches...",
 +  "Choose…": "Choose...",
@@ -9598,8 +9839,29 @@ index dbdf6e5a19..f8c07cacf0 100644
  }
  
  function collapseTail(output: string, maxLines: number, maxChars: number) {
+diff --git a/packages/tui/src/util/error-details.ts b/packages/tui/src/util/error-details.ts
+index 552e383d4c..e16969ec41 100644
+--- a/packages/tui/src/util/error-details.ts
++++ b/packages/tui/src/util/error-details.ts
+@@ -8,14 +8,14 @@ export function errorDetails(input: { title: string; error: string; context?: st
+   return {
+     text,
+     prompt: [
+-      "Investigate why this OpenCode component failed in the current project.",
++      "Investigate why this Carthagent component failed in the current project.",
+       text,
+       ...(input.diagnosticRef
+         ? [
+             `Find the server log entry matching reference ${input.diagnosticRef} and inspect its original cause. If the server logs are not accessible from this session, say so and ask for the matching log entry; do not infer the cause from the reference alone.`,
+           ]
+         : []),
+-      "Inspect the relevant project and global OpenCode configuration, startup or loading behavior, required environment variables or credentials, dependencies, and logs. Identify the root cause and recommend a fix. Do not expose credentials.",
++      "Inspect the relevant project and global Carthagent configuration, startup or loading behavior, required environment variables or credentials, dependencies, and logs. Identify the root cause and recommend a fix. Do not expose credentials.",
+     ].join("\n\n"),
+   }
+ }
 diff --git a/packages/tui/src/util/error.ts b/packages/tui/src/util/error.ts
-index 33dff7be58..96cd6c31ca 100644
+index 33dff7be58..1b78d51f85 100644
 --- a/packages/tui/src/util/error.ts
 +++ b/packages/tui/src/util/error.ts
 @@ -1,4 +1,5 @@
@@ -9607,6 +9869,17 @@ index 33dff7be58..96cd6c31ca 100644
 +import { chromeGlyph } from "../ui/glyphs"
  
  type ConfigIssue = { message: string; path: string[] }
+ 
+@@ -24,8 +25,8 @@ export function cliErrorMessage(input: unknown): string | undefined {
+     return [
+       `Model not found: ${field(model, "providerID")}/${field(model, "modelID")}`,
+       ...(suggestions.length ? ["Did you mean: " + suggestions.join(", ")] : []),
+-      "Try: `opencode models` to list available models",
+-      "Or check your config (opencode.json) provider/model names",
++      "Use /models to select an available model",
++      "Or check your configured provider/model names",
+     ].join("\n")
+   }
  
 @@ -63,7 +64,7 @@ export function cliErrorMessage(input: unknown): string | undefined {
        : []
@@ -9806,6 +10079,19 @@ index 09d607ff37..f9bc32c7b3 100644
      title: `Call tool ${source.action}`,
      lines: [`Tool: ${source.action}`],
    }
+diff --git a/packages/tui/src/util/presentation.ts b/packages/tui/src/util/presentation.ts
+index eb24ad0efc..4c46fc1dd7 100644
+--- a/packages/tui/src/util/presentation.ts
++++ b/packages/tui/src/util/presentation.ts
+@@ -29,7 +29,7 @@ export function sessionEpilogue(input: { title: string; sessionID?: string }) {
+     ...wordmark("  "),
+     "",
+     `  ${weak("Session")}${bold}${input.title}${reset}`,
+-    `  ${weak("Continue")}${bold}opencode -s ${input.sessionID}${reset}`,
++    `  ${weak("Continue")}${bold}ctg -s ${input.sessionID}${reset}`,
+     "",
+   ].join("\n")
+ }
 diff --git a/packages/tui/src/util/renderer.ts b/packages/tui/src/util/renderer.ts
 index a0c16faa7b..92df561cfc 100644
 --- a/packages/tui/src/util/renderer.ts
@@ -9879,8 +10165,21 @@ index c7213e2205..95f4dd09b2 100644
        return [{ session, prefix }, ...walk(session.id, [...ancestors, last])]
      })
    }
+diff --git a/packages/tui/src/util/tool-display.ts b/packages/tui/src/util/tool-display.ts
+index 0d565670b3..89c577f4db 100644
+--- a/packages/tui/src/util/tool-display.ts
++++ b/packages/tui/src/util/tool-display.ts
+@@ -39,7 +39,7 @@ export function executeCallSummary(call: ExecuteCall) {
+ 
+ export function webSearchProviderName(provider: unknown) {
+   if (typeof provider !== "string" || !provider) return ""
+-  if (provider === "opencode") return "OpenCode"
++  if (provider === "opencode") return "Built-in search"
+   return `${provider[0].toUpperCase()}${provider.slice(1)}`
+ }
+ 
 diff --git a/packages/tui/test/app-lifecycle.test.tsx b/packages/tui/test/app-lifecycle.test.tsx
-index 2e9833eb6e..353d03e905 100644
+index 2e9833eb6e..6d6907fa21 100644
 --- a/packages/tui/test/app-lifecycle.test.tsx
 +++ b/packages/tui/test/app-lifecycle.test.tsx
 @@ -38,7 +38,7 @@ test.each([100, 44])("Ctrl-O is immediate, dismissible, and prunes cached deleti
@@ -9912,6 +10211,15 @@ index 2e9833eb6e..353d03e905 100644
      setTitle(title)
    }
    const events = createEventStream()
+@@ -337,7 +337,7 @@ test("session lifecycle updates the terminal title and prints the epilogue after
+     await task
+ 
+     expect(stdout).toContain("Renamed session")
+-    expect(stdout).toContain("opencode -s dummy")
++    expect(stdout).toContain("ctg -s dummy")
+     expect(promptRequests).toBe(0)
+   } finally {
+     process.stdout.write = originalWrite
 @@ -354,7 +354,7 @@ test("session title generated while an untitled session is loading remains visib
    const generatedTitle = Promise.withResolvers<void>()
    setup.renderer.setTerminalTitle = (title) => {
@@ -10134,6 +10442,35 @@ index b53525df46..5fd351ae4c 100644
  
  test("/new keeps the active session tab", async () => {
    await using state = await tmpdir()
+diff --git a/packages/tui/test/cli/tui/dialog-mcp.test.tsx b/packages/tui/test/cli/tui/dialog-mcp.test.tsx
+index 1bb343219d..eab8b0c5de 100644
+--- a/packages/tui/test/cli/tui/dialog-mcp.test.tsx
++++ b/packages/tui/test/cli/tui/dialog-mcp.test.tsx
+@@ -39,7 +39,7 @@ test("opens an investigation draft for a failed MCP server at its originating lo
+   const fixture = await renderMcp({ failed: true, location })
+ 
+   try {
+-    await fixture.app.waitForFrame((frame) => frame.includes("Failed !"))
++    await fixture.app.waitForFrame((frame) => frame.includes("Failed ✗"))
+     expect(fixture.app.captureCharFrame()).toContain("view error enter")
+     fixture.app.mockInput.pressEnter()
+     await fixture.app.waitForFrame((frame) => frame.includes("investigate i"))
+@@ -49,13 +49,13 @@ test("opens an investigation draft for a failed MCP server at its originating lo
+     expect(fixture.route.data.type).toBe("home")
+     if (fixture.route.data.type !== "home") throw new Error("Expected investigation to open a new session")
+     expect(fixture.route.data.location).toEqual(location)
+-    expect(fixture.route.data.prompt?.text).toContain("OpenCode component failed in the current project")
++    expect(fixture.route.data.prompt?.text).toContain("Carthagent component failed in the current project")
+     expect(fixture.route.data.prompt?.text).toContain("MCP server: linear")
+     expect(fixture.route.data.prompt?.text).toContain("Status: failed")
+     expect(fixture.route.data.prompt?.text).toContain("Configuration: mcp.servers.linear")
+     expect(fixture.route.data.prompt?.text).toContain("Integration: mcp_linear")
+     expect(fixture.route.data.prompt?.text).toContain("MCP error -32000: Connection closed")
+-    expect(fixture.route.data.prompt?.text).toContain("project and global OpenCode configuration")
++    expect(fixture.route.data.prompt?.text).toContain("project and global Carthagent configuration")
+     expect(fixture.route.data.prompt?.text).not.toContain(location.directory)
+   } finally {
+     fixture.app.renderer.destroy()
 diff --git a/packages/tui/test/cli/tui/dialog-select.test.tsx b/packages/tui/test/cli/tui/dialog-select.test.tsx
 index cd97565f0a..58873e88e9 100644
 --- a/packages/tui/test/cli/tui/dialog-select.test.tsx
@@ -10215,6 +10552,21 @@ index 0000000000..52b26faf85
 +    expect(frame.indexOf("Carthagent Cloud")).toBeLessThan(frame.indexOf("Codex / OpenAI"))
 +  })
 +}
+diff --git a/packages/tui/test/component/dialog-update.test.tsx b/packages/tui/test/component/dialog-update.test.tsx
+index 066933e036..1deaff7ba6 100644
+--- a/packages/tui/test/component/dialog-update.test.tsx
++++ b/packages/tui/test/component/dialog-update.test.tsx
+@@ -48,8 +48,8 @@ test("installation progress replaces checking while the update job is still pend
+     setState({ type: "installing", version: "2.0.0" })
+     await app.waitForFrame(
+       (frame) =>
+-        frame.includes("Updating OpenCode") &&
+-        frame.includes("Installing OpenCode 2.0.0") &&
++        frame.includes("Updating Carthagent") &&
++        frame.includes("Installing Carthagent 2.0.0") &&
+         !frame.includes("Checking"),
+     )
+     expect(app.captureCharFrame()).not.toContain("Skip")
 diff --git a/packages/tui/test/component/plan-view.test.tsx b/packages/tui/test/component/plan-view.test.tsx
 new file mode 100644
 index 0000000000..c2cf606b6f
@@ -10604,6 +10956,19 @@ index a744c2966e..dbae37c530 100644
  
    test("labels tabs by ordinal", () => {
      expect(Array.from({ length: 12 }, (_, index) => sessionTabNumberLabel(index))).toEqual([
+diff --git a/packages/tui/test/feature-plugins/sidebar-footer.test.tsx b/packages/tui/test/feature-plugins/sidebar-footer.test.tsx
+index 8a872f9238..213e0b1e1c 100644
+--- a/packages/tui/test/feature-plugins/sidebar-footer.test.tsx
++++ b/packages/tui/test/feature-plugins/sidebar-footer.test.tsx
+@@ -86,7 +86,7 @@ test("sidebar shows onboarding without a connected integration", async () => {
+   try {
+     const frame = app.captureCharFrame()
+     expect(frame).toContain("Getting started")
+-    expect(frame).toContain("OpenCode includes free models")
++    expect(frame).toContain("Sign in to Carthagent Cloud")
+     expect(frame).toContain("Connect provider")
+     expect(frame).toContain("/connect")
+   } finally {
 diff --git a/packages/tui/test/fixture/app.ts b/packages/tui/test/fixture/app.ts
 index 9be3ac94e3..f30280e2e7 100644
 --- a/packages/tui/test/fixture/app.ts
@@ -10977,10 +11342,10 @@ index 0000000000..af838e8eff
 +})
 diff --git a/packages/tui/test/navigation-rail.test.tsx b/packages/tui/test/navigation-rail.test.tsx
 new file mode 100644
-index 0000000000..6fbb4b314f
+index 0000000000..678b421385
 --- /dev/null
 +++ b/packages/tui/test/navigation-rail.test.tsx
-@@ -0,0 +1,385 @@
+@@ -0,0 +1,403 @@
 +import { expect, test } from "bun:test"
 +import { InputRenderable, ScrollBoxRenderable, SelectRenderable, TextareaRenderable, TextRenderable, type Renderable } from "@opentui/core"
 +import type { SessionInfo } from "@opencode/client"
@@ -10992,6 +11357,7 @@ index 0000000000..6fbb4b314f
 +import { directory, json } from "./fixture/tui-client"
 +import { createNavigationState } from "../src/context/navigation"
 +import { takeDraft } from "../src/component/prompt/draft-stash"
++import { Flock } from "@opencode/util/flock"
 +
 +test("owned navigation registrations validate, replace safely, and cannot select another owner's pane", () => {
 +  const persisted: unknown[] = []
@@ -11074,13 +11440,23 @@ index 0000000000..6fbb4b314f
 +  await setup.mockInput.typeText("keep this draft")
 +  const focus = node(setup, "navigation-focus")
 +  await setup.mockMouse.click(focus.x + 2, focus.y)
-+  await setup.waitFor(() => node(setup, "navigation-body").focused)
-+  setup.mockInput.pressArrow("left")
-+  await setup.waitFor(() => !setup.renderer.root.findDescendantById("project-row-ses_navigation_0"))
-+  setup.mockInput.pressArrow("right")
-+  await setup.waitFor(() => !!setup.renderer.root.findDescendantById("project-row-ses_navigation_0"))
-+  setup.mockInput.pressArrow("down")
-+  setup.mockInput.pressEnter()
++  await setup.waitForFrame((frame) => frame.includes("Sidebar focused") && node(setup, "navigation-body").focused)
++  {
++    // Hold the real persistence lock so this also covers input during a pending
++    // profile write. Collapsing is disk I/O, not work bounded by renderer frames.
++    await using _lock = await Flock.acquire(path.join(setup.state, "test", "tui", "tabs.json"), {
++      dir: path.join(setup.state, "test", "locks"),
++    })
++    await setup.mockInput.pressArrow("left")
++    await setup.renderOnce()
++    expect(setup.renderer.root.findDescendantById("project-row-ses_navigation_0")).toBeDefined()
++    expect(prompt.plainText).toBe("keep this draft")
++  }
++  await waitForFolder(setup, false)
++  await setup.mockInput.pressArrow("right")
++  await waitForFolder(setup, true)
++  await setup.mockInput.pressArrow("down")
++  await setup.mockInput.pressEnter()
 +  await setup.waitFor(() => setup.renderer.currentFocusedEditor === prompt)
 +  expect(prompt.plainText).toBe("keep this draft")
 +  expect(setup.mutations).toEqual([])
@@ -11346,10 +11722,17 @@ index 0000000000..6fbb4b314f
 +      return undefined
 +    },
 +  })
-+  return { ...setup, mutations, async [Symbol.asyncDispose]() { await setup[Symbol.asyncDispose](); await root[Symbol.asyncDispose]() } }
++  return { ...setup, mutations, state: state ?? root.path, async [Symbol.asyncDispose]() { await setup[Symbol.asyncDispose](); await root[Symbol.asyncDispose]() } }
 +}
 +
 +type Fixture = Awaited<ReturnType<typeof fixture>>
++async function waitForFolder(setup: Fixture, expanded: boolean) {
++  const deadline = Date.now() + 5_000
++  while (!!setup.renderer.root.findDescendantById("project-row-ses_navigation_0") !== expanded) {
++    if (Date.now() >= deadline) throw new Error(`Folder did not ${expanded ? "expand" : "collapse"}:\n${setup.captureCharFrame()}`)
++    await Bun.sleep(10)
++  }
++}
 +async function ready(setup: Fixture) {
 +  await setup.ready
 +  // Plugin loading is asynchronous I/O, not frame-driven work.
@@ -11856,7 +12239,7 @@ index 0000000000..fc5c02b814
 +})
 diff --git a/packages/tui/test/sidebar/dialog-folder-browser.test.tsx b/packages/tui/test/sidebar/dialog-folder-browser.test.tsx
 new file mode 100644
-index 0000000000..14fd75cc08
+index 0000000000..8bf8cd893a
 --- /dev/null
 +++ b/packages/tui/test/sidebar/dialog-folder-browser.test.tsx
 @@ -0,0 +1,268 @@
@@ -11988,7 +12371,7 @@ index 0000000000..14fd75cc08
 +
 +    ui.app.mockInput.pressEnter()
 +    await wait(() => ui.frame().includes("inner/"), "entered alpha")
-+    expect(ui.frame()).toContain("work/alpha")
++    expect(ui.frame()).toContain(path.join("work", "alpha"))
 +
 +    ui.app.mockInput.pressArrow("up", { meta: true })
 +    await wait(() => ui.frame().includes("beta/"), "parent")
@@ -12130,10 +12513,10 @@ index 0000000000..14fd75cc08
 +})
 diff --git a/packages/tui/test/sidebar/folder-browser.test.ts b/packages/tui/test/sidebar/folder-browser.test.ts
 new file mode 100644
-index 0000000000..57dcd7b7d3
+index 0000000000..75f5e46d10
 --- /dev/null
 +++ b/packages/tui/test/sidebar/folder-browser.test.ts
-@@ -0,0 +1,629 @@
+@@ -0,0 +1,651 @@
 +import { describe, expect, test } from "bun:test"
 +import path from "path"
 +import { createRoot } from "solid-js"
@@ -12143,8 +12526,8 @@ index 0000000000..57dcd7b7d3
 +type Item = { path: string; type: "file" | "directory" }
 +type File = Parameters<typeof createFolderBrowser>[0]["file"]
 +
-+const anchor = { directory: "/anchor" }
-+const home = "/home/user"
++const anchor = { directory: path.resolve("/anchor") }
++const home = path.resolve("/home/user")
 +
 +function listing(directory: string, data: Item[]) {
 +  return { location: { directory, project: { id: "proj_test", directory, canonical: directory } }, data }
@@ -12152,12 +12535,13 @@ index 0000000000..57dcd7b7d3
 +
 +// Tree of absolute directory -> children; listings are returned relative to the anchor location like the server does.
 +function tree(directories: Record<string, Item[]>) {
++  const native = Object.fromEntries(Object.entries(directories).map(([key, items]) => [path.resolve(key), items]))
 +  const calls: { location: unknown; path: unknown }[] = []
 +  const file = {
 +    list: async (input) => {
 +      calls.push({ location: input?.location, path: input?.path })
 +      const target = String(input?.path)
-+      const children = directories[target]
++      const children = native[target]
 +      if (!children) throw Object.assign(new Error(`Directory not found: ${target}`), { _tag: "FileNotFoundError" })
 +      return listing(
 +        anchor.directory,
@@ -12181,7 +12565,12 @@ index 0000000000..57dcd7b7d3
 +  const file = {
 +    list: (input, options) =>
 +      new Promise((resolve, reject) =>
-+        pending.push({ path: String(input?.path), signal: options?.signal, resolve: resolve as (value: unknown) => void, reject }),
++        pending.push({
++          path: String(input?.path),
++          signal: options?.signal,
++          resolve: resolve as (value: unknown) => void,
++          reject,
++        }),
 +      ),
 +  } as File
 +  return { file, pending }
@@ -12200,7 +12589,7 @@ index 0000000000..57dcd7b7d3
 +    list: async (input) => {
 +      const target = String(input?.path)
 +      calls.push(target)
-+      if (failing.has(target)) throw new Error(`boom ${target}`)
++      if ([...failing].some((value) => path.resolve(value) === target)) throw new Error(`boom ${target}`)
 +      return listing(target, [dir(`${path.basename(target)}-child/`)])
 +    },
 +  } as File
@@ -12221,12 +12610,12 @@ index 0000000000..57dcd7b7d3
 +      },
 +    } as File)
 +    expect(await ctx.browser.open("/work")).toBe(true)
-+    expect(ctx.browser.state.directory).toBe("/work")
++    expect(ctx.browser.state.directory).toBe(path.resolve("/work"))
 +    expect(ctx.browser.state.entries.map((entry) => entry.absolute)).toEqual([
 +      path.resolve("/work/beta"),
 +      path.resolve("/work/alpha"),
 +    ])
-+    expect(calls).toEqual([{ location: anchor, path: "/work" }])
++    expect(calls).toEqual([{ location: anchor, path: path.resolve("/work") }])
 +    ctx.dispose()
 +  })
 +
@@ -12235,7 +12624,7 @@ index 0000000000..57dcd7b7d3
 +      list: async () => listing("/other", [dir("child/")]),
 +    } as File)
 +    await ctx.browser.open("/other")
-+    expect(ctx.browser.state.entries).toEqual([{ name: "child", absolute: "/other/child" }])
++    expect(ctx.browser.state.entries).toEqual([{ name: "child", absolute: path.resolve("/other/child") }])
 +    ctx.dispose()
 +  })
 +
@@ -12248,19 +12637,19 @@ index 0000000000..57dcd7b7d3
 +    await browser.open("/a")
 +    await browser.enter()
 +    await browser.enter()
-+    expect(browser.state.directory).toBe("/a/b/c")
-+    expect(browser.state.history).toEqual(["/a", "/a/b", "/a/b/c"])
++    expect(browser.state.directory).toBe(path.resolve("/a/b/c"))
++    expect(browser.state.history).toEqual(["/a", "/a/b", "/a/b/c"].map((value) => path.resolve(value)))
 +
 +    expect(await browser.back()).toBe(true)
 +    expect(await browser.back()).toBe(true)
-+    expect(browser.state.directory).toBe("/a")
++    expect(browser.state.directory).toBe(path.resolve("/a"))
 +    expect(await browser.back()).toBe(false)
 +    expect(browser.canForward()).toBe(true)
 +    expect(await browser.forward()).toBe(true)
-+    expect(browser.state.directory).toBe("/a/b")
++    expect(browser.state.directory).toBe(path.resolve("/a/b"))
 +
 +    await browser.open("/x")
-+    expect(browser.state.history).toEqual(["/a", "/a/b", "/x"])
++    expect(browser.state.history).toEqual(["/a", "/a/b", "/x"].map((value) => path.resolve(value)))
 +    expect(browser.canForward()).toBe(false)
 +    expect(await browser.forward()).toBe(false)
 +    expect(browser.state.index).toBe(2)
@@ -12274,7 +12663,7 @@ index 0000000000..57dcd7b7d3
 +    await ctx.browser.open("/b")
 +    await ctx.browser.back()
 +    await ctx.browser.open("/a")
-+    expect(ctx.browser.state.history).toEqual(["/a", "/b"])
++    expect(ctx.browser.state.history).toEqual(["/a", "/b"].map((value) => path.resolve(value)))
 +    expect(ctx.browser.state.index).toBe(0)
 +    expect(ctx.browser.canForward()).toBe(true)
 +    ctx.dispose()
@@ -12294,23 +12683,27 @@ index 0000000000..57dcd7b7d3
 +    expect(browser.state.directory).toBe(home)
 +    expect(browser.state.entries.map((entry) => entry.name)).toEqual(["code"])
 +    await browser.up()
-+    expect(browser.state.directory).toBe("/home")
++    expect(browser.state.directory).toBe(path.resolve("/home"))
 +    await browser.root()
-+    expect(browser.state.directory).toBe("/")
++    expect(browser.state.directory).toBe(path.resolve("/"))
 +    expect(browser.canUp()).toBe(false)
 +    expect(await browser.up()).toBe(false)
-+    expect(browser.state.entries.map((entry) => entry.absolute)).toEqual(["/home", "/srv"])
++    expect(browser.state.entries.map((entry) => entry.absolute)).toEqual(
++      ["/home", "/srv"].map((value) => path.resolve(value)),
++    )
 +
 +    browser.setInput("~/code")
 +    await browser.submit()
-+    expect(browser.state.directory).toBe("/home/user/code")
-+    expect(browser.state.input).toBe("/home/user/code")
++    expect(browser.state.directory).toBe(path.resolve("/home/user/code"))
++    expect(browser.state.input).toBe(path.resolve("/home/user/code"))
 +    browser.setInput("../../../srv")
 +    await browser.submit()
-+    expect(browser.state.directory).toBe("/srv")
++    expect(browser.state.directory).toBe(path.resolve("/srv"))
 +    await browser.open("~")
 +    expect(browser.state.directory).toBe(home)
-+    expect(fixture.calls.map((call) => call.path)).toEqual([home, "/home", "/", "/home/user/code", "/srv", home])
++    expect(fixture.calls.map((call) => call.path)).toEqual(
++      [home, "/home", "/", "/home/user/code", "/srv", home].map((value) => path.resolve(value)),
++    )
 +    expect(fixture.calls.every((call) => call.location === anchor)).toBe(true)
 +    ctx.dispose()
 +  })
@@ -12323,13 +12716,15 @@ index 0000000000..57dcd7b7d3
 +    const ctx = setup(fixture.file)
 +    await ctx.browser.open("/data/My Projects")
 +    expect(ctx.browser.state.entries).toEqual([
-+      { name: "Café Δ", absolute: "/data/My Projects/Café Δ" },
-+      { name: "日本語 フォルダ", absolute: "/data/My Projects/日本語 フォルダ" },
++      { name: "Café Δ", absolute: path.resolve("/data/My Projects/Café Δ") },
++      { name: "日本語 フォルダ", absolute: path.resolve("/data/My Projects/日本語 フォルダ") },
 +    ])
 +    ctx.browser.setFilter("café")
 +    await ctx.browser.enter()
-+    expect(ctx.browser.state.directory).toBe("/data/My Projects/Café Δ")
-+    expect(fixture.calls.map((call) => call.path)).toEqual(["/data/My Projects", "/data/My Projects/Café Δ"])
++    expect(ctx.browser.state.directory).toBe(path.resolve("/data/My Projects/Café Δ"))
++    expect(fixture.calls.map((call) => call.path)).toEqual(
++      ["/data/My Projects", "/data/My Projects/Café Δ"].map((value) => path.resolve(value)),
++    )
 +    ctx.dispose()
 +  })
 +
@@ -12346,62 +12741,66 @@ index 0000000000..57dcd7b7d3
 +    const ctx = setup(fixture.file)
 +    const browser = ctx.browser
 +    expect(await browser.open("/data/Project ")).toBe(true)
-+    expect(browser.state.directory).toBe("/data/Project ")
-+    expect(browser.state.entries.map((entry) => entry.absolute)).toEqual(["/data/Project /spaced"])
++    expect(browser.state.directory).toBe(path.resolve("/data/Project "))
++    expect(browser.state.entries.map((entry) => entry.absolute)).toEqual([path.resolve("/data/Project /spaced")])
 +    expect(await browser.open("/data/Project")).toBe(true)
-+    expect(browser.state.directory).toBe("/data/Project")
++    expect(browser.state.directory).toBe(path.resolve("/data/Project"))
 +
 +    browser.setInput("/data/Project ")
 +    expect(await browser.submit()).toBe(true)
-+    expect(browser.state.directory).toBe("/data/Project ")
-+    expect(browser.state.input).toBe("/data/Project ")
++    expect(browser.state.directory).toBe(path.resolve("/data/Project "))
++    expect(browser.state.input).toBe(path.resolve("/data/Project "))
 +
 +    await browser.open("/data")
 +    expect(await browser.open("Project ")).toBe(true)
-+    expect(browser.state.directory).toBe("/data/Project ")
++    expect(browser.state.directory).toBe(path.resolve("/data/Project "))
 +    await browser.open("/data")
 +    browser.setInput(" lead")
 +    expect(await browser.submit()).toBe(true)
-+    expect(browser.state.directory).toBe("/data/ lead")
++    expect(browser.state.directory).toBe(path.resolve("/data/ lead"))
 +    await browser.open("/data")
 +    expect(await browser.open("   ")).toBe(true)
-+    expect(browser.state.directory).toBe("/data/   ")
++    expect(browser.state.directory).toBe(path.resolve("/data/   "))
 +
 +    browser.setInput("")
 +    expect(await browser.submit()).toBe(true)
-+    expect(browser.state.directory).toBe("/data/   ")
++    expect(browser.state.directory).toBe(path.resolve("/data/   "))
 +    await browser.open("~")
 +    expect(browser.state.directory).toBe(home)
 +    await browser.open("~/code")
-+    expect(browser.state.directory).toBe("/home/user/code")
++    expect(browser.state.directory).toBe(path.resolve("/home/user/code"))
 +
-+    expect(fixture.calls.map((call) => call.path)).toEqual([
-+      "/data/Project ",
-+      "/data/Project",
-+      "/data/Project ",
-+      "/data",
-+      "/data/Project ",
-+      "/data",
-+      "/data/ lead",
-+      "/data",
-+      "/data/   ",
-+      "/data/   ",
-+      home,
-+      "/home/user/code",
-+    ])
-+    expect(browser.state.history).toEqual([
-+      "/data/Project ",
-+      "/data/Project",
-+      "/data/Project ",
-+      "/data",
-+      "/data/Project ",
-+      "/data",
-+      "/data/ lead",
-+      "/data",
-+      "/data/   ",
-+      home,
-+      "/home/user/code",
-+    ])
++    expect(fixture.calls.map((call) => call.path)).toEqual(
++      [
++        "/data/Project ",
++        "/data/Project",
++        "/data/Project ",
++        "/data",
++        "/data/Project ",
++        "/data",
++        "/data/ lead",
++        "/data",
++        "/data/   ",
++        "/data/   ",
++        home,
++        "/home/user/code",
++      ].map((value) => path.resolve(value)),
++    )
++    expect(browser.state.history).toEqual(
++      [
++        "/data/Project ",
++        "/data/Project",
++        "/data/Project ",
++        "/data",
++        "/data/Project ",
++        "/data",
++        "/data/ lead",
++        "/data",
++        "/data/   ",
++        home,
++        "/home/user/code",
++      ].map((value) => path.resolve(value)),
++    )
 +    ctx.dispose()
 +  })
 +
@@ -12409,13 +12808,15 @@ index 0000000000..57dcd7b7d3
 +    const fixture = tree({ "/data": [dir("Project ")], "/data/Project ": [] })
 +    const ctx = setup(fixture.file)
 +    expect(await ctx.browser.open("/data/Project ")).toBe(true)
-+    expect(ctx.browser.state.directory).toBe("/data/Project ")
++    expect(ctx.browser.state.directory).toBe(path.resolve("/data/Project "))
 +    expect(ctx.browser.state.error).toBeUndefined()
 +    await ctx.browser.open("/data")
 +    ctx.browser.setInput("Project ")
 +    expect(await ctx.browser.submit()).toBe(true)
-+    expect(ctx.browser.state.directory).toBe("/data/Project ")
-+    expect(fixture.calls.map((call) => call.path)).toEqual(["/data/Project ", "/data", "/data/Project "])
++    expect(ctx.browser.state.directory).toBe(path.resolve("/data/Project "))
++    expect(fixture.calls.map((call) => call.path)).toEqual(
++      ["/data/Project ", "/data", "/data/Project "].map((value) => path.resolve(value)),
++    )
 +    ctx.dispose()
 +  })
 +
@@ -12440,28 +12841,28 @@ index 0000000000..57dcd7b7d3
 +
 +    failing.add("/b")
 +    expect(await browser.back()).toBe(false)
-+    expect(browser.state.error).toMatchObject({ path: "/b", kind: "failed" })
-+    expect(browser.state.directory).toBe("/c")
-+    expect(browser.state.history).toEqual(["/a", "/b", "/c"])
++    expect(browser.state.error).toMatchObject({ path: path.resolve("/b"), kind: "failed" })
++    expect(browser.state.directory).toBe(path.resolve("/c"))
++    expect(browser.state.history).toEqual(["/a", "/b", "/c"].map((value) => path.resolve(value)))
 +    expect(browser.state.index).toBe(2)
 +    expect(browser.state.entries.map((entry) => entry.name)).toEqual(["c-child"])
 +
 +    failing.delete("/b")
 +    expect(await browser.retry()).toBe(true)
-+    expect(browser.state.directory).toBe("/b")
++    expect(browser.state.directory).toBe(path.resolve("/b"))
 +    expect(browser.state.error).toBeUndefined()
-+    expect(browser.state.history).toEqual(["/a", "/b", "/c"])
++    expect(browser.state.history).toEqual(["/a", "/b", "/c"].map((value) => path.resolve(value)))
 +    expect(browser.state.index).toBe(1)
 +    expect(browser.canBack()).toBe(true)
 +    expect(browser.canForward()).toBe(true)
 +
 +    expect(await browser.back()).toBe(true)
-+    expect(browser.state.directory).toBe("/a")
++    expect(browser.state.directory).toBe(path.resolve("/a"))
 +    expect(await browser.forward()).toBe(true)
 +    expect(await browser.forward()).toBe(true)
-+    expect(browser.state.directory).toBe("/c")
++    expect(browser.state.directory).toBe(path.resolve("/c"))
 +    expect(browser.state.index).toBe(2)
-+    expect(fixture.calls).toEqual(["/a", "/b", "/c", "/b", "/b", "/a", "/b", "/c"])
++    expect(fixture.calls).toEqual(["/a", "/b", "/c", "/b", "/b", "/a", "/b", "/c"].map((value) => path.resolve(value)))
 +    ctx.dispose()
 +  })
 +
@@ -12479,23 +12880,25 @@ index 0000000000..57dcd7b7d3
 +
 +    failing.add("/b")
 +    expect(await browser.forward()).toBe(false)
-+    expect(browser.state.error).toMatchObject({ path: "/b" })
-+    expect(browser.state.directory).toBe("/a")
-+    expect(browser.state.history).toEqual(["/a", "/b", "/c"])
++    expect(browser.state.error).toMatchObject({ path: path.resolve("/b") })
++    expect(browser.state.directory).toBe(path.resolve("/a"))
++    expect(browser.state.history).toEqual(["/a", "/b", "/c"].map((value) => path.resolve(value)))
 +    expect(browser.state.index).toBe(0)
 +
 +    failing.delete("/b")
 +    expect(await browser.retry()).toBe(true)
-+    expect(browser.state.directory).toBe("/b")
-+    expect(browser.state.history).toEqual(["/a", "/b", "/c"])
++    expect(browser.state.directory).toBe(path.resolve("/b"))
++    expect(browser.state.history).toEqual(["/a", "/b", "/c"].map((value) => path.resolve(value)))
 +    expect(browser.state.index).toBe(1)
 +    expect(browser.canForward()).toBe(true)
 +    expect(await browser.forward()).toBe(true)
-+    expect(browser.state.directory).toBe("/c")
++    expect(browser.state.directory).toBe(path.resolve("/c"))
 +    expect(await browser.back()).toBe(true)
 +    expect(await browser.back()).toBe(true)
-+    expect(browser.state.directory).toBe("/a")
-+    expect(fixture.calls).toEqual(["/a", "/b", "/c", "/b", "/a", "/b", "/b", "/c", "/b", "/a"])
++    expect(browser.state.directory).toBe(path.resolve("/a"))
++    expect(fixture.calls).toEqual(
++      ["/a", "/b", "/c", "/b", "/a", "/b", "/b", "/c", "/b", "/a"].map((value) => path.resolve(value)),
++    )
 +    ctx.dispose()
 +  })
 +
@@ -12512,11 +12915,11 @@ index 0000000000..57dcd7b7d3
 +    expect(await browser.back()).toBe(false)
 +    failing.add("/x")
 +    expect(await browser.open("/x")).toBe(false)
-+    expect(browser.state.error?.path).toBe("/x")
++    expect(browser.state.error?.path).toBe(path.resolve("/x"))
 +    failing.clear()
 +    expect(await browser.retry()).toBe(true)
-+    expect(browser.state.directory).toBe("/x")
-+    expect(browser.state.history).toEqual(["/a", "/b", "/c", "/x"])
++    expect(browser.state.directory).toBe(path.resolve("/x"))
++    expect(browser.state.history).toEqual(["/a", "/b", "/c", "/x"].map((value) => path.resolve(value)))
 +    expect(browser.state.index).toBe(3)
 +    ctx.dispose()
 +  })
@@ -12575,28 +12978,30 @@ index 0000000000..57dcd7b7d3
 +    await browser.open("/valid/child")
 +    await browser.back()
 +
-+    statuses.set("/missing", 404)
++    statuses.set(path.resolve("/missing"), 404)
 +    expect(await browser.open("/missing")).toBe(false)
-+    expect(browser.state.error).toMatchObject({ path: "/missing", kind: "not-found" })
-+    expect(browser.state.error?.message).toContain("/missing")
-+    expect(browser.state.directory).toBe("/valid")
-+    expect(browser.state.history).toEqual(["/valid", "/valid/child"])
++    expect(browser.state.error).toMatchObject({ path: path.resolve("/missing"), kind: "not-found" })
++    expect(browser.state.error?.message).toContain(path.resolve("/missing"))
++    expect(browser.state.directory).toBe(path.resolve("/valid"))
++    expect(browser.state.history).toEqual(["/valid", "/valid/child"].map((value) => path.resolve(value)))
 +    expect(browser.state.index).toBe(0)
-+    expect(browser.state.entries).toEqual([{ name: "child", absolute: "/valid/child" }])
++    expect(browser.state.entries).toEqual([{ name: "child", absolute: path.resolve("/valid/child") }])
 +    expect(browser.state.pending).toBeUndefined()
 +
-+    statuses.set("/locked", 500)
++    statuses.set(path.resolve("/locked"), 500)
 +    expect(await browser.open("/locked")).toBe(false)
-+    expect(browser.state.error).toMatchObject({ path: "/locked", kind: "unavailable" })
++    expect(browser.state.error).toMatchObject({ path: path.resolve("/locked"), kind: "unavailable" })
 +    expect(browser.state.error?.message).toContain("500")
-+    expect(browser.state.directory).toBe("/valid")
++    expect(browser.state.directory).toBe(path.resolve("/valid"))
 +
-+    statuses.delete("/locked")
++    statuses.delete(path.resolve("/locked"))
 +    expect(await browser.retry()).toBe(true)
-+    expect(browser.state.directory).toBe("/locked")
++    expect(browser.state.directory).toBe(path.resolve("/locked"))
 +    expect(browser.state.error).toBeUndefined()
-+    expect(browser.state.history).toEqual(["/valid", "/locked"])
-+    expect(requests).toEqual(["/valid", "/valid/child", "/valid", "/missing", "/locked", "/locked"])
++    expect(browser.state.history).toEqual(["/valid", "/locked"].map((value) => path.resolve(value)))
++    expect(requests).toEqual(
++      ["/valid", "/valid/child", "/valid", "/missing", "/locked", "/locked"].map((value) => path.resolve(value)),
++    )
 +    expect(mutations).toEqual([])
 +    ctx.dispose()
 +  })
@@ -12607,7 +13012,7 @@ index 0000000000..57dcd7b7d3
 +    await ctx.browser.open("/a")
 +    expect(await ctx.browser.open("/a/file.txt")).toBe(false)
 +    expect(ctx.browser.state.error?.kind).toBe("not-found")
-+    expect(ctx.browser.state.directory).toBe("/a")
++    expect(ctx.browser.state.directory).toBe(path.resolve("/a"))
 +    ctx.dispose()
 +  })
 +
@@ -12617,13 +13022,13 @@ index 0000000000..57dcd7b7d3
 +    const first = ctx.browser.open("/slow")
 +    const second = ctx.browser.open("/fast")
 +    expect(fixture.pending[0].signal?.aborted).toBe(true)
-+    expect(ctx.browser.state.pending).toBe("/fast")
++    expect(ctx.browser.state.pending).toBe(path.resolve("/fast"))
 +    fixture.pending[1].resolve(listing("/fast", [dir("f/")]))
 +    expect(await second).toBe(true)
 +    fixture.pending[0].resolve(listing("/slow", [dir("s/")]))
 +    expect(await first).toBe(false)
-+    expect(ctx.browser.state.directory).toBe("/fast")
-+    expect(ctx.browser.state.history).toEqual(["/fast"])
++    expect(ctx.browser.state.directory).toBe(path.resolve("/fast"))
++    expect(ctx.browser.state.history).toEqual([path.resolve("/fast")])
 +    expect(ctx.browser.state.entries.map((entry) => entry.name)).toEqual(["f"])
 +    ctx.dispose()
 +  })
@@ -12638,7 +13043,7 @@ index 0000000000..57dcd7b7d3
 +    fixture.pending[0].reject(new Error("boom"))
 +    expect(await first).toBe(false)
 +    expect(ctx.browser.state.error).toBeUndefined()
-+    expect(ctx.browser.state.directory).toBe("/fast")
++    expect(ctx.browser.state.directory).toBe(path.resolve("/fast"))
 +    ctx.dispose()
 +  })
 +
@@ -12649,7 +13054,7 @@ index 0000000000..57dcd7b7d3
 +        if (url.pathname !== "/api/fs/list") return undefined
 +        const target = url.searchParams.get("path") ?? ""
 +        requests.push(target)
-+        if (target === "/valid") return json(listing(target, []))
++        if (target === path.resolve("/valid")) return json(listing(target, []))
 +        return new Promise<Response>((_, reject) =>
 +          request.signal.addEventListener("abort", () => reject(request.signal.reason)),
 +        )
@@ -12658,14 +13063,14 @@ index 0000000000..57dcd7b7d3
 +    const ctx = setup(api.file)
 +    await ctx.browser.open("/valid")
 +    const pending = ctx.browser.open("/hang")
-+    expect(ctx.browser.state.pending).toBe("/hang")
++    expect(ctx.browser.state.pending).toBe(path.resolve("/hang"))
 +    ctx.browser.cancel()
 +    expect(await pending).toBe(false)
 +    expect(ctx.browser.state.pending).toBeUndefined()
 +    expect(ctx.browser.state.error).toBeUndefined()
-+    expect(ctx.browser.state.directory).toBe("/valid")
-+    expect(ctx.browser.state.history).toEqual(["/valid"])
-+    expect(requests).toEqual(["/valid", "/hang"])
++    expect(ctx.browser.state.directory).toBe(path.resolve("/valid"))
++    expect(ctx.browser.state.history).toEqual([path.resolve("/valid")])
++    expect(requests).toEqual(["/valid", "/hang"].map((value) => path.resolve(value)))
 +    ctx.dispose()
 +  })
 +
@@ -12683,7 +13088,7 @@ index 0000000000..57dcd7b7d3
 +    browser.setInput("/typed/while/loading")
 +    fixture.pending[1].resolve(listing("/a/b", [dir("alpha/"), dir("beta/")]))
 +    expect(await next).toBe(true)
-+    expect(browser.state.directory).toBe("/a/b")
++    expect(browser.state.directory).toBe(path.resolve("/a/b"))
 +    expect(browser.state.filter).toBe("be")
 +    expect(browser.visible().map((entry) => entry.name)).toEqual(["beta"])
 +    expect(browser.state.input).toBe("/typed/while/loading")
@@ -12699,7 +13104,7 @@ index 0000000000..57dcd7b7d3
 +    browser.setFilter("al")
 +    expect(await browser.enter()).toBe(true)
 +    expect(browser.state.filter).toBe("")
-+    expect(browser.state.input).toBe("/a/alpha")
++    expect(browser.state.input).toBe(path.resolve("/a/alpha"))
 +    expect(browser.visible().map((entry) => entry.name)).toEqual(["x"])
 +    ctx.dispose()
 +  })
@@ -12727,7 +13132,7 @@ index 0000000000..57dcd7b7d3
 +    fixture.pending[0].resolve(listing("/a", []))
 +    expect(await first).toBe(true)
 +    expect(await again).toBe(true)
-+    expect(browser.state.history).toEqual(["/a"])
++    expect(browser.state.history).toEqual([path.resolve("/a")])
 +    ctx.dispose()
 +  })
 +
@@ -12741,11 +13146,11 @@ index 0000000000..57dcd7b7d3
 +    const next = browser.enter()
 +    browser.move(1)
 +    expect(await browser.enter()).toBe(false)
-+    expect(fixture.pending.map((item) => item.path)).toEqual(["/a", "/a/b"])
++    expect(fixture.pending.map((item) => item.path)).toEqual(["/a", "/a/b"].map((value) => path.resolve(value)))
 +    expect(fixture.pending[1].signal?.aborted).toBe(false)
 +    fixture.pending[1].resolve(listing("/a/b", []))
 +    expect(await next).toBe(true)
-+    expect(browser.state.history).toEqual(["/a", "/a/b"])
++    expect(browser.state.history).toEqual(["/a", "/a/b"].map((value) => path.resolve(value)))
 +    ctx.dispose()
 +  })
 +
@@ -12758,26 +13163,32 @@ index 0000000000..57dcd7b7d3
 +    )
 +    const ctx = setup(api.file)
 +    expect(await ctx.browser.open("/somewhere")).toBe(false)
-+    expect(ctx.browser.state.error).toMatchObject({ path: "/somewhere", kind: "failed" })
++    expect(ctx.browser.state.error).toMatchObject({ path: path.resolve("/somewhere"), kind: "failed" })
 +    expect(ctx.browser.state.error?.message).toContain("Transport")
 +    ctx.dispose()
 +  })
 +})
 diff --git a/packages/tui/test/sidebar/new-session-flow.test.tsx b/packages/tui/test/sidebar/new-session-flow.test.tsx
 new file mode 100644
-index 0000000000..2bf5c7afde
+index 0000000000..d0f462ea2a
 --- /dev/null
 +++ b/packages/tui/test/sidebar/new-session-flow.test.tsx
-@@ -0,0 +1,339 @@
+@@ -0,0 +1,386 @@
 +import { InputRenderable } from "@opentui/core"
 +import { expect, test } from "bun:test"
 +import { mkdir } from "node:fs/promises"
 +import path from "node:path"
++import { takeDraft } from "../../src/component/prompt/draft-stash"
 +import { createAppFixture } from "../fixture/app"
 +import { tmpdir } from "../fixture/fixture"
 +import { json } from "../fixture/tui-client"
 +
-+type Created = { id?: string; location?: { directory: string }; agent?: string; model?: { providerID: string; id: string } }
++type Created = {
++  id?: string
++  location?: { directory: string }
++  agent?: string
++  model?: { providerID: string; id: string }
++}
 +
 +const launch = "/tmp/opencode/packages/tui"
 +
@@ -12801,6 +13212,9 @@ index 0000000000..2bf5c7afde
 +}
 +
 +async function start(options: { existing?: boolean; elsewhere?: boolean; newLocation?: "launch" | "inherit" } = {}) {
++  // Fixtures reuse this tab identity; drafts persist across app remounts in the same process.
++  takeDraft("ses_existing")
++  takeDraft(undefined)
 +  const scratch = await tmpdir()
 +  const chosen = path.join(scratch.path, "empty project")
 +  await mkdir(chosen)
@@ -12901,7 +13315,12 @@ index 0000000000..2bf5c7afde
 +    frame,
 +  )
 +  setup.mockInput.pressKey("s", { ctrl: true })
-+  await until(() => frame().includes("Ready.") && frame().includes("/empty project"), "chosen folder", 5000, frame)
++  await until(
++    () => frame().includes("Ready.") && frame().includes(`${path.sep}empty project`),
++    "chosen folder",
++    5000,
++    frame,
++  )
 +}
 +
 +async function until(fn: () => boolean, label: string, timeout = 5000, frame?: () => string) {
@@ -12971,7 +13390,12 @@ index 0000000000..2bf5c7afde
 +  await using setup = run.setup
 +  const frame = () => setup.captureCharFrame()
 +  await setup.ready
-+  await until(() => frame().includes("Original transcript line") && frame().includes("Alpha Model"), "existing", 8000, frame)
++  await until(
++    () => frame().includes("Original transcript line") && frame().includes("Alpha Model"),
++    "existing",
++    8000,
++    frame,
++  )
 +  await setup.mockInput.typeText("kept draft")
 +  await until(() => frame().includes("kept draft"), "draft")
 +
@@ -13000,7 +13424,12 @@ index 0000000000..2bf5c7afde
 +  await until(() => frame().includes("Ready."), "setup from palette", 5000, frame)
 +  expectLaunchFolder(frame())
 +  setup.mockInput.pressEscape()
-+  await until(() => !frame().includes("Ready.") && frame().includes("Original transcript line"), "palette cancel", 5000, frame)
++  await until(
++    () => !frame().includes("Ready.") && frame().includes("Original transcript line"),
++    "palette cancel",
++    5000,
++    frame,
++  )
 +
 +  // The slash command consumes the composer text that invoked it, as every slash command does.
 +  for (let index = 0; index < "kept draft!".length; index++) setup.mockInput.pressBackspace()
@@ -13010,7 +13439,12 @@ index 0000000000..2bf5c7afde
 +  await until(() => frame().includes("Ready."), "setup from slash", 5000, frame)
 +  expectLaunchFolder(frame())
 +  setup.mockInput.pressEscape()
-+  await until(() => !frame().includes("Ready.") && frame().includes("Original transcript line"), "slash cancel", 5000, frame)
++  await until(
++    () => !frame().includes("Ready.") && frame().includes("Original transcript line"),
++    "slash cancel",
++    5000,
++    frame,
++  )
 +  expect(frame()).toContain("Alpha Model")
 +  expect(run.created).toEqual([])
 +  expect(run.prompts).toEqual([])
@@ -13023,7 +13457,12 @@ index 0000000000..2bf5c7afde
 +  await using setup = run.setup
 +  const frame = () => setup.captureCharFrame()
 +  await setup.ready
-+  await until(() => frame().includes("Original transcript line") && frame().includes("Alpha Model"), "existing", 8000, frame)
++  await until(
++    () => frame().includes("Original transcript line") && frame().includes("Alpha Model"),
++    "existing",
++    8000,
++    frame,
++  )
 +
 +  setup.mockInput.pressKey("F7")
 +  await until(() => frame().includes("Ready."), "setup", 5000, frame)
@@ -13049,7 +13488,12 @@ index 0000000000..2bf5c7afde
 +  await using setup = run.setup
 +  const frame = () => setup.captureCharFrame()
 +  await setup.ready
-+  await until(() => frame().includes("Original transcript line") && frame().includes("Alpha Model"), "existing", 8000, frame)
++  await until(
++    () => frame().includes("Original transcript line") && frame().includes("Alpha Model"),
++    "existing",
++    8000,
++    frame,
++  )
 +  await setup.mockInput.typeText("existing draft")
 +  await until(() => frame().includes("existing draft"), "existing draft")
 +
@@ -13077,14 +13521,22 @@ index 0000000000..2bf5c7afde
 +  setup.mockInput.pressEnter()
 +  await until(() => frame().includes("demo/beta"), "beta chosen again", 5000, frame)
 +  setup.mockInput.pressEnter()
-+  await until(() => !frame().includes("Original transcript line") && frame().includes("Beta Model"), "home", 5000, frame)
++  await until(
++    () => !frame().includes("Original transcript line") && frame().includes("Beta Model"),
++    "home",
++    5000,
++    frame,
++  )
 +  expect(frame()).not.toContain("existing draft")
 +
 +  await setup.mockInput.typeText("first new prompt")
 +  setup.mockInput.pressEnter()
 +  run.release.resolve()
 +  await until(() => run.prompts.length === 1, "new prompt", 5000, frame)
-+  expect(run.created[0]).toMatchObject({ location: { directory: run.chosen }, model: { providerID: "demo", id: "beta" } })
++  expect(run.created[0]).toMatchObject({
++    location: { directory: run.chosen },
++    model: { providerID: "demo", id: "beta" },
++  })
 +  expect(run.prompts[0]?.sessionID).not.toBe("ses_existing")
 +
 +  await until(() => frame().includes("Original session"), "original tab", 5000, frame)
@@ -13110,14 +13562,15 @@ index 0000000000..2bf5c7afde
 +})
 diff --git a/packages/tui/test/sidebar/new-session-ownership.test.tsx b/packages/tui/test/sidebar/new-session-ownership.test.tsx
 new file mode 100644
-index 0000000000..52f4bb282b
+index 0000000000..c419bfb939
 --- /dev/null
 +++ b/packages/tui/test/sidebar/new-session-ownership.test.tsx
-@@ -0,0 +1,476 @@
+@@ -0,0 +1,497 @@
 +import { InputRenderable } from "@opentui/core"
 +import { expect, test } from "bun:test"
 +import { mkdir } from "node:fs/promises"
 +import path from "node:path"
++import { takeDraft } from "../../src/component/prompt/draft-stash"
 +import { createAppFixture } from "../fixture/app"
 +import { tmpdir } from "../fixture/fixture"
 +import { json } from "../fixture/tui-client"
@@ -13146,11 +13599,16 @@ index 0000000000..52f4bb282b
 + * Real app with two primary agents (Ship listed first), a durable Lite session and a global variant preference that
 + * differs from the session's, so a lost agent or variant shows up as Ship or the preferred variant.
 + */
-+async function start(options: {
-+  session?: Selection
-+  catalog?: (directory: string) => Entry[]
-+  agents?: (directory: string) => string[]
-+} = {}) {
++async function start(
++  options: {
++    session?: Selection
++    catalog?: (directory: string) => Entry[]
++    agents?: (directory: string) => string[]
++  } = {},
++) {
++  // Fixtures reuse this tab identity; drafts persist across app remounts in the same process.
++  takeDraft("ses_existing")
++  takeDraft(undefined)
 +  const scratch = await tmpdir()
 +  const chosen = path.join(scratch.path, "empty project")
 +  await mkdir(chosen)
@@ -13321,7 +13779,11 @@ index 0000000000..52f4bb282b
 +    run.frame,
 +  )
 +  setup.mockInput.pressKey("s", { ctrl: true })
-+  await until(() => run.frame().includes("Ready.") && run.frame().includes("/empty project"), "chosen", run.frame)
++  await until(
++    () => run.frame().includes("Ready.") && run.frame().includes(`${path.sep}empty project`),
++    "chosen",
++    run.frame,
++  )
 +}
 +
 +async function chooseSetupModel(run: Run, name: string, id: string) {
@@ -13396,7 +13858,8 @@ index 0000000000..52f4bb282b
 +
 +test("a retained variant the chosen folder's model does not support is never sent", async () => {
 +  const run = await start({
-+    catalog: (directory) => (directory.endsWith("empty project") ? [{ ...alpha, variants: ["high"] }, beta] : [alpha, beta]),
++    catalog: (directory) =>
++      directory.endsWith("empty project") ? [{ ...alpha, variants: ["high"] }, beta] : [alpha, beta],
 +  })
 +  await using _scratch = run.scratch
 +  await using _setup = run.setup
@@ -13416,7 +13879,9 @@ index 0000000000..52f4bb282b
 +})
 +
 +test("a captured agent missing at the chosen folder blocks the first send instead of switching agents", async () => {
-+  const run = await start({ agents: (directory) => (directory.endsWith("empty project") ? ["ship"] : ["ship", "lite"]) })
++  const run = await start({
++    agents: (directory) => (directory.endsWith("empty project") ? ["ship"] : ["ship", "lite"]),
++  })
 +  await using _scratch = run.scratch
 +  await using _setup = run.setup
 +  await openExisting(run)
@@ -13567,7 +14032,11 @@ index 0000000000..52f4bb282b
 +    if (row >= 0) await run.setup.mockMouse.click(lines[row]!.indexOf("Original session") + 2, row)
 +    await Bun.sleep(200)
 +  }
-+  await until(() => run.frame().includes("Original transcript line") && run.frame().includes("Alpha Model"), "original", run.frame)
++  await until(
++    () => run.frame().includes("Original transcript line") && run.frame().includes("Alpha Model"),
++    "original",
++    run.frame,
++  )
 +  expect(run.created).toEqual([])
 +  await expectUntouched(run)
 +})
@@ -13588,17 +14057,22 @@ index 0000000000..52f4bb282b
 +  await run.setup.mockInput.typeText(name)
 +  await until(() => run.frame().includes(`${name} Model`), `${name} option`, run.frame)
 +  run.setup.mockInput.pressEnter()
-+  await until(() => run.frame().includes(`${name} Model`) && !run.frame().includes("Select model"), "replaced", run.frame)
++  await until(
++    () => run.frame().includes(`${name} Model`) && !run.frame().includes("Select model"),
++    "replaced",
++    run.frame,
++  )
 +}
 diff --git a/packages/tui/test/sidebar/new-session-preflight.test.tsx b/packages/tui/test/sidebar/new-session-preflight.test.tsx
 new file mode 100644
-index 0000000000..781d5c5ba8
+index 0000000000..4c5f79a579
 --- /dev/null
 +++ b/packages/tui/test/sidebar/new-session-preflight.test.tsx
-@@ -0,0 +1,253 @@
+@@ -0,0 +1,258 @@
 +/** @jsxImportSource @opentui/solid */
 +import { InputRenderable } from "@opentui/core"
 +import { expect, test } from "bun:test"
++import path from "node:path"
 +import type { ModelInfo } from "@opencode/client"
 +import { DialogModel } from "../../src/component/dialog-model"
 +import { DialogNewSession, type NewSessionChoice } from "../../src/component/dialog-new-session"
@@ -13724,7 +14198,11 @@ index 0000000000..781d5c5ba8
 +  ui.setup.mockInput.pressEnter()
 +  await wait(() => ui.started.length === 1, "start")
 +  // A different model than the caller's carries no variant of its own.
-+  expect(ui.started[0]).toEqual({ directory: other, agent: "build", model: { providerID: "provider", modelID: "second" } })
++  expect(ui.started[0]).toEqual({
++    directory: other,
++    agent: "build",
++    model: { providerID: "provider", modelID: "second" },
++  })
 +})
 +
 +test("cancelling nested model and folder pickers returns to setup with prior choices intact", async () => {
@@ -13742,10 +14220,10 @@ index 0000000000..781d5c5ba8
 +  await rendered(ui, "Choose folder for new session")
 +  await rendered(ui, "child/")
 +  ui.setup.mockInput.pressEnter()
-+  await wait(() => ui.calls.includes(`${directory}/child`), "child listing")
++  await wait(() => ui.calls.includes(path.resolve(directory, "child")), "child listing")
 +  ui.setup.mockInput.pressEscape()
 +  await rendered(ui, "Ready")
-+  expect(ui.frame()).not.toContain(`${directory}/child`)
++  expect(ui.frame()).not.toContain(path.resolve(directory, "child"))
 +
 +  ui.setup.mockInput.pressEnter()
 +  await wait(() => ui.started.length === 1, "start")
@@ -13764,14 +14242,14 @@ index 0000000000..781d5c5ba8
 +  ui.setup.mockInput.pressKey("f")
 +  await rendered(ui, "child/")
 +  ui.setup.mockInput.pressEnter()
-+  await wait(() => ui.calls.includes(`${directory}/child`), "child listing")
++  await wait(() => ui.calls.includes(path.resolve(directory, "child")), "child listing")
 +  await Bun.sleep(20)
 +  ui.setup.mockInput.pressKey("s", { ctrl: true })
-+  await rendered(ui, `${directory}/child`)
++  await rendered(ui, path.resolve(directory, "child"))
 +  await rendered(ui, "Ready")
 +  expect(ui.frame()).toContain("first")
 +  // The browser revalidates the folder on confirm; setup reuses that check instead of listing it again.
-+  expect(ui.calls.filter((call) => call === `${directory}/child`)).toHaveLength(2)
++  expect(ui.calls.filter((call) => call === path.resolve(directory, "child"))).toHaveLength(2)
 +
 +  ui.setup.mockInput.pressEscape()
 +  await wait(() => ui.setup.dialog.stack.length === 0, "closed")
@@ -13851,14 +14329,15 @@ index 0000000000..781d5c5ba8
 +})
 diff --git a/packages/tui/test/sidebar/sidebar-hierarchy.test.tsx b/packages/tui/test/sidebar/sidebar-hierarchy.test.tsx
 new file mode 100644
-index 0000000000..39dce86208
+index 0000000000..d1d62b2b02
 --- /dev/null
 +++ b/packages/tui/test/sidebar/sidebar-hierarchy.test.tsx
-@@ -0,0 +1,232 @@
+@@ -0,0 +1,248 @@
 +/** @jsxImportSource @opentui/solid */
 +import { MouseButton } from "@opentui/core"
 +import { testRender } from "@opentui/solid"
 +import { expect, test } from "bun:test"
++import path from "node:path"
 +import { createSignal } from "solid-js"
 +import { ConfigProvider } from "../../src/config"
 +import { EMPTY_SESSION_TAB_STATUS, SessionTabs, type SessionTabsController } from "../../src/component/session-tabs"
@@ -13872,7 +14351,8 @@ index 0000000000..39dce86208
 +import { TestTuiContexts } from "../fixture/tui-environment"
 +import { createTuiResolvedConfig } from "../fixture/tui-runtime"
 +
-+const HOME = "/tmp/opencode/home"
++const HOME = path.resolve("/tmp/carthagent/home")
++const PROJECT = path.join(HOME, "work", "project")
 +
 +async function mount(options: {
 +  width: number
@@ -13899,15 +14379,15 @@ index 0000000000..39dce86208
 +    selectModel: () => counts.model++,
 +    setup: options.setup,
 +    model: () => "DeepSeek V4.1 Flash",
-+    directory: () => options.directory ?? `${HOME}/work/project`,
++    directory: () => options.directory ?? PROJECT,
 +    select: setActive,
 +    close() {},
 +    move() {},
 +    folders: () => [
-+      { id: `dir:${HOME}/work/project`, kind: "directory", directory: `${HOME}/work/project` } as const,
++      { id: `dir:${PROJECT}`, kind: "directory", directory: PROJECT } as const,
 +      { id: "manual:ideas", kind: "manual", name: "Ideas" } as const,
 +    ],
-+    folderFor: (sessionID: string) => (sessionID === "gamma" ? "manual:ideas" : `dir:${HOME}/work/project`),
++    folderFor: (sessionID: string) => (sessionID === "gamma" ? "manual:ideas" : `dir:${PROJECT}`),
 +    createFolder: () => `manual:group-${++counts.group}`,
 +    setFolderCollapsed() {},
 +    status: (sessionID: string) =>
@@ -13922,7 +14402,12 @@ index 0000000000..39dce86208
 +              <ToastProvider>
 +                <DialogProvider>
 +                  <box width="100%" height="100%" flexDirection="row">
-+                    <SessionTabs controller={controller} orientation="vertical" animations={false} width={options.width} />
++                    <SessionTabs
++                      controller={controller}
++                      orientation="vertical"
++                      animations={false}
++                      width={options.width}
++                    />
 +                    <text>transcript</text>
 +                  </box>
 +                </DialogProvider>
@@ -13935,7 +14420,11 @@ index 0000000000..39dce86208
 +    { width: 100, height: 30 },
 +  )
 +  app.renderer.start()
-+  const rail = () => app.captureCharFrame().split("\n").map((line) => line.slice(0, options.width))
++  const rail = () =>
++    app
++      .captureCharFrame()
++      .split("\n")
++      .map((line) => line.slice(0, options.width))
 +  const row = (text: string) => rail().findIndex((line) => line.includes(text))
 +  return { app, counts, active, rail, row }
 +}
@@ -13944,17 +14433,17 @@ index 0000000000..39dce86208
 +  const ui = await mount({ width: 30 })
 +  try {
 +    await ui.app.waitForFrame((frame) => frame.includes("Alpha work") && frame.includes("New session"))
-+    const folder = ui.row("project/")
-+    const path = ui.row("~/work/project")
++    const folder = ui.row(`project${path.sep}`)
++    const location = ui.row("~/work/project")
 +    const actions = ui.row("Browse")
 +    const model = ui.row("DeepSeek V4.1 Flash")
 +    const sessions = ui.row("Sessions")
-+    const firstGroup = ui.row("▾ project/")
++    const firstGroup = ui.row(`▾ project${path.sep}`)
 +    expect(folder).toBeGreaterThanOrEqual(0)
-+    expect([folder, path, actions, model, sessions, firstGroup]).toEqual(
-+      [folder, path, actions, model, sessions, firstGroup].toSorted((a, b) => a - b),
++    expect([folder, location, actions, model, sessions, firstGroup]).toEqual(
++      [folder, location, actions, model, sessions, firstGroup].toSorted((a, b) => a - b),
 +    )
-+    expect(new Set([folder, path, actions, model, sessions]).size).toBe(5)
++    expect(new Set([folder, location, actions, model, sessions]).size).toBe(5)
 +    expect(firstGroup).toBeGreaterThan(sessions)
 +    expect(ui.rail()[actions]).toContain("New session")
 +    expect(ui.rail()[sessions]).toContain("Search")
@@ -13991,10 +14480,10 @@ index 0000000000..39dce86208
 +  const ui = await mount({ width: 30 })
 +  try {
 +    await ui.app.waitForFrame((frame) => frame.includes("Grouped idea"))
-+    expect(ui.row("▾ project/")).toBeGreaterThan(0)
++    expect(ui.row(`▾ project${path.sep}`)).toBeGreaterThan(0)
 +    const group = ui.rail()[ui.row("Ideas")]
 +    expect(group).toContain("# Ideas")
-+    expect(group).not.toContain("Ideas/")
++    expect(group).not.toContain(`Ideas${path.sep}`)
 +  } finally {
 +    ui.app.renderer.destroy()
 +  }
@@ -14020,19 +14509,19 @@ index 0000000000..39dce86208
 +})
 +
 +test("long folder paths keep their leaf and the full path is inspectable on hover or click", async () => {
-+  const directory = `${HOME}/clients/very-long-organisation-name/deeply/nested/final-leaf`
++  const directory = path.join(HOME, "clients", "very-long-organisation-name", "deeply", "nested", "final-leaf")
 +  const ui = await mount({ width: 30, directory })
 +  try {
-+    await ui.app.waitForFrame((frame) => frame.includes("final-leaf/"))
-+    const path = ui.row("…")
-+    expect(path).toBeGreaterThanOrEqual(0)
-+    expect(ui.rail()[path].trimEnd().endsWith("final-leaf")).toBe(true)
++    await ui.app.waitForFrame((frame) => frame.includes(`final-leaf${path.sep}`))
++    const location = ui.row("…")
++    expect(location).toBeGreaterThanOrEqual(0)
++    expect(ui.rail()[location].trimEnd().endsWith("final-leaf")).toBe(true)
 +    expect(ui.app.captureCharFrame()).not.toContain(directory)
-+    await ui.app.mockMouse.moveTo(4, path)
++    await ui.app.mockMouse.moveTo(4, location)
 +    await ui.app.waitForFrame((frame) => frame.includes(directory))
 +    await ui.app.mockMouse.moveTo(60, 20)
 +    await ui.app.waitForFrame((frame) => !frame.includes(directory))
-+    await ui.app.mockMouse.click(4, path)
++    await ui.app.mockMouse.click(4, location)
 +    await ui.app.mockMouse.moveTo(60, 20)
 +    await ui.app.waitForFrame((frame) => frame.includes(directory))
 +    expect(ui.active()).toBe("alpha")
@@ -14050,13 +14539,13 @@ index 0000000000..39dce86208
 +    await ui.app.mockMouse.click(ui.rail()[global].indexOf("New session"), global)
 +    expect(setups).toEqual([undefined])
 +
-+    const heading = ui.row("▾ project/")
++    const heading = ui.row(`▾ project${path.sep}`)
 +    await ui.app.mockMouse.click(4, heading, MouseButton.RIGHT)
 +    await ui.app.waitForFrame((frame) => frame.includes("New session here"))
 +    const lines = ui.app.captureCharFrame().split("\n")
 +    const item = lines.findIndex((line) => line.includes("New session here"))
 +    await ui.app.mockMouse.click(lines[item].indexOf("New session here") + 1, item)
-+    expect(setups).toEqual([undefined, `${HOME}/work/project`])
++    expect(setups).toEqual([undefined, PROJECT])
 +    expect(ui.counts.add).toBe(0)
 +    expect(ui.active()).toBe("alpha")
 +  } finally {
@@ -14068,7 +14557,7 @@ index 0000000000..39dce86208
 +  const ui = await mount({ width: 30, tabs: [], active: "" })
 +  try {
 +    await ui.app.waitForFrame((frame) => frame.includes("Browse") && frame.includes("DeepSeek V4.1 Flash"))
-+    expect(ui.row("project/")).toBeGreaterThanOrEqual(0)
++    expect(ui.row(`project${path.sep}`)).toBeGreaterThanOrEqual(0)
 +    expect(ui.row("New session")).toBeGreaterThanOrEqual(0)
 +  } finally {
 +    ui.app.renderer.destroy()
@@ -14079,7 +14568,12 @@ index 0000000000..39dce86208
 +  const ui = await mount({ width: SESSION_TABS_COMPACT_WIDTH })
 +  try {
 +    await ui.app.waitForFrame((frame) => frame.split("\n")[3]?.slice(0, 5).trim() === "◇")
-+    expect(ui.rail().slice(1, 4).map((line) => line.trim())).toEqual(["⌕", "▤", "◇"])
++    expect(
++      ui
++        .rail()
++        .slice(1, 4)
++        .map((line) => line.trim()),
++    ).toEqual(["⌕", "▤", "◇"])
 +    await ui.app.mockMouse.click(2, 3)
 +    expect(ui.counts.model).toBe(1)
 +    expect(ui.active()).toBe("alpha")
@@ -14104,6 +14598,17 @@ index 96c7831485..f9a91f1ee4 100644
  })
  
  test("vertical tabs account for a resized width", () => {
+diff --git a/packages/tui/test/util/presentation.test.ts b/packages/tui/test/util/presentation.test.ts
+index d1aab4ea49..eff29022b3 100644
+--- a/packages/tui/test/util/presentation.test.ts
++++ b/packages/tui/test/util/presentation.test.ts
+@@ -4,5 +4,5 @@ import { sessionEpilogue } from "../../src/util/presentation"
+ test("formats session continuation summary", () => {
+   const epilogue = sessionEpilogue({ title: "A session", sessionID: "ses_123" })
+   expect(epilogue).toContain("A session")
+-  expect(epilogue).toContain("opencode -s ses_123")
++  expect(epilogue).toContain("ctg -s ses_123")
+ })
 diff --git a/packages/tui/test/util/renderer.test.ts b/packages/tui/test/util/renderer.test.ts
 index a5c4e7b54e..6c015fdf43 100644
 --- a/packages/tui/test/util/renderer.test.ts
@@ -14190,3 +14695,16 @@ index a5c4e7b54e..6c015fdf43 100644
 +  destroyUnacquiredRenderer((data) => calls.push(data))
 +  expect(calls).toEqual(["\x1b[23;0t"])
  })
+diff --git a/packages/tui/test/util/tool-display.test.ts b/packages/tui/test/util/tool-display.test.ts
+index 43c8a03b63..7d579ee1e0 100644
+--- a/packages/tui/test/util/tool-display.test.ts
++++ b/packages/tui/test/util/tool-display.test.ts
+@@ -25,7 +25,7 @@ describe("webSearchProviderLabel", () => {
+     expect(webSearchProviderLabel("exa")).toBe("Web Search via Exa")
+     expect(webSearchProviderLabel("firecrawl")).toBe("Web Search via Firecrawl")
+     expect(webSearchProviderLabel("tavily")).toBe("Web Search via Tavily")
+-    expect(webSearchProviderLabel("opencode")).toBe("Web Search via OpenCode")
++    expect(webSearchProviderLabel("opencode")).toBe("Web Search via Built-in search")
+   })
+ 
+   test("labels providers dynamically", () => {

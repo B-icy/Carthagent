@@ -17,9 +17,13 @@
   Grouped scroll and drag positions now include folder headings and gaps.
 - Focused Projects supports arrows or j/k, left/right to collapse/expand,
   Enter to open, `/` to search, `n` for a new session, and Escape to return.
+  Entering keyboard focus anchors the cursor to the current session, including
+  when folder metadata arrived before the session list during startup.
 - Voyages uses readable quest statuses, completion counts, indented quests,
   theme-aware selection, shorter action descriptions, loading/error/empty states,
   and grapheme/cell-aware truncation. Selection and scroll survive mode switches.
+- Inherited update, crash, permission, onboarding, settings, and resume messages
+  use Carthagent branding. Crash reports open the Carthagent issue tracker.
 
 ## Runtime provenance
 
@@ -32,9 +36,10 @@ It applies to source revision `843a6c514e606b436a7fe713422ace0a93ad3d61`;
 This follows the delayed startup and staged upgrade feedback inspected in
 OpenCode v1.19.5, using the existing CTG runtime and OpenTUI 0.5.17 components.
 
-Published beta.4 continues to use combined-v6. Combined-v7 is a development
-candidate, not a published five-platform runtime. Promoting it requires the
-normal owned-runtime build/provenance and package release workflow.
+Beta.5 promotes combined-v7 from successful five-platform prebuild `41705585182`,
+source commit `e0436a39d0181cbe3991fa6164bb1f57e0e802dc`. Its exact archives,
+executable hashes, and provenance were independently verified before updating
+the packaged release manifest. Beta.4 retains its original combined-v6 artifacts.
 
 ## Verification
 
@@ -42,6 +47,47 @@ normal owned-runtime build/provenance and package release workflow.
 - Runtime `bun run check`: all 35 tasks successful.
 - Linux x64 compiled runtime built successfully.
 - Runtime sidebar/navigation/model/layout tests: 118 passed across 12 files.
+- Final navigation stress run: 140 tests passed across ten full-suite repetitions,
+  including a real held profile lock during folder collapse. Persistence is
+  asynchronous I/O; the acceptance check uses a bounded state wait rather than
+  a renderer-frame deadline. Instrumented writes took up to 641 ms locally.
+- Corrected beta.5 native prebuild: run `41689731417`, source commit
+  `8be12940a4d5726e4f0f90625983c3212c574942`. Combined-v7 SHA-256:
+  `d5c0b41f8b57c6d3619bef0b0a480ad4adab319ecbe22d5fd1de6be9b8bc2707`.
+- That prebuild passed both Linux and both macOS targets. Windows passed all
+  140 navigation checks after a transient dependency-download retry, then exposed
+  36 Unix-specific sidebar fixture/assertion failures. Native path resolution and
+  separator-aware expectations correct those tests, including successful folder
+  selection that was incorrectly waiting for a forward slash on Windows.
+- The portable-test revision pins combined-v7 SHA-256
+  `4a3b59d584864d2d0f248bc521b69c350fdfb20ba50e3955675d7432b1a217b4`.
+  Runtime `bun run check` passed again after these corrections.
+- Repeated session-setup fixtures clear their reused tab's process-local draft
+  stash before mounting. The stress run exposed a prior test's retained draft
+  turning `/new` into ordinary text on subsequent repetitions.
+- Corrected sidebar stress run: 600 tests passed across seven files and ten
+  repetitions, with 3,630 assertions and zero failures. Final runtime checks
+  passed all 35 tasks; runtime-pin/workflow checks passed all 25 tests.
+- Prebuild `41696584914` passed Linux x64/ARM64, macOS ARM64, and Windows x64.
+  Intel macOS stopped producing output during the second in-process navigation
+  repetition after all 14 checks passed on the first. Its 30-second Bun timeout
+  did not terminate the stalled process; the exact native blocking operation is
+  not established by the logs.
+- Navigation and seascape stress now run ten complete suites in fresh processes,
+  isolating native renderer/module state between repetitions. A Node parent
+  enforces a 180-second deadline per suite even if Bun's event loop is blocked;
+  failures stop the build immediately. Native prebuild jobs also have a
+  30-minute outer limit. A regression exercises a deliberately blocked child
+  event loop and verifies that the external deadline terminates it.
+- The isolated runner passed all ten navigation repetitions (140 checks) and
+  all ten seascape repetitions (30 checks) locally. Full package quality passed
+  with 1,139 passing tests, five skips, and zero failures. Replacement native
+  prebuild `41705585182` uses source `e0436a39d0181cbe3991fa6164bb1f57e0e802dc`.
+- That replacement prebuild passed all five native targets, including Intel
+  macOS. Candidate verification regenerated the manifest and independently
+  verified all five archive and executable hashes against the build records.
+- The prior CI Linux artifact independently passed archive/executable verification
+  and native-host, native-controls, daily-quest, and native-PTY acceptance.
 - Voyages real-renderer interaction tests: 12 passed, including compact layout,
   keyboard and mouse focus, modal isolation, and delayed scroll restoration.
 - Launcher progress tests cover animation, clipping, abort cleanup, redirected
@@ -51,8 +97,12 @@ normal owned-runtime build/provenance and package release workflow.
   Early startup cancellation exits with code 130.
 - Standalone compiled-console PTY: Projects/Voyages switching and resizing at
   110×36, 80×24, and 60×20. At 80 columns the rail is compact; at 60 it is hidden
-  by the existing responsive layout. Populated account/quest states are covered
-  by renderer fixtures, not a live authenticated Voyages acceptance run.
+  by the existing responsive layout.
+- Signed-in production acceptance in a fresh durable profile: normal Cloud device
+  authorization completed; Voyages loaded the captain, ship, wallet, and three
+  current daily quests. Sidebar focus and Enter opened daily assignments. Live
+  content remained readable at 110×36, 80×24, and 60×20. Captures are under
+  `sidebar-refresh/signed-in/` in the evidence directory below.
 - Patch application checked against a pristine index of the pinned source.
 
 Local evidence is retained in

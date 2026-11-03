@@ -47,7 +47,7 @@ export const COMMANDS: readonly CarthagentCommand[] = [
   { id: "archive", name: "archive", args: "[search <query>|read <id>|export <id>]", description: "Browse bounded read-only archived sessions" },
   { id: "demo", name: "demo", description: "Run a scripted, provider-free delivery walkthrough" },
   { id: "ctg-workspace", name: "ctg-workspace", args: "[refresh]", description: "Browse and open local CTG workspace projects, tasks, and sessions" },
-  { id: "ctg-open", name: "ctg-open", args: "[search]", description: "Search local CTG sessions and open one in native OpenCode" },
+  { id: "ctg-open", name: "ctg-open", args: "[search]", description: "Search local Carthagent sessions and open one" },
   { id: "ctg-preview", name: "ctg-preview", description: "Preview CTG delivery evidence for the selected session" },
   { id: "ctg-review", name: "ctg-review", description: "Inspect CTG review status for the selected session" },
   { id: "ctg-worktree", name: "ctg-worktree", args: "<project-id> <name>", description: "Create a local CTG worktree" },

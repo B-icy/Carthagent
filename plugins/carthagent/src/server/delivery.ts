@@ -64,10 +64,10 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
   const limitOptions: Record<string, string> = { "delivery-max-tools": "maxTools", "delivery-max-seconds": "maxSeconds", "delivery-max-repairs": "maxRepairs" }
   const sessionOptions = (session: Parameters<typeof effectiveSessionOptions>[0]): Record<string, unknown> => effectiveSessionOptions(session, { ...ctx.options, ...options })
   async function scope(sessionID: string) {
-    if (!sessionID) throw Error("OpenCode sessionID is required")
+    if (!sessionID) throw Error("Carthagent sessionID is required")
     const session = await ctx.session.get({ sessionID })
     const cwd = session.location?.directory
-    if (typeof cwd !== "string" || !cwd) throw Error(`OpenCode session ${sessionID} has no worktree location`)
+    if (typeof cwd !== "string" || !cwd) throw Error(`Carthagent session ${sessionID} has no worktree location`)
     const opts = sessionOptions(session)
     const saved = await ctx.storage.get(sessionKey(sessionID)) as SessionState | undefined
     const data: SessionState = saved ? structuredClone(saved) : { state: null, discovery: newDiscovery(), nudges: 0, touched: false, budget: null, required: [], initialFiles: [] }

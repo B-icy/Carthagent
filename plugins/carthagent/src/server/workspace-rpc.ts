@@ -195,7 +195,7 @@ export async function registerWorkspaceRpc(ctx: Context, options: {
   };
 
   const snapshot = async (requestedProjectID?: string, signal?: AbortSignal): Promise<WorkspaceSnapshot> => {
-    if (requestedProjectID && requestedProjectID !== projectID) throw new Error('Project is outside this OpenCode workspace location');
+    if (requestedProjectID && requestedProjectID !== projectID) throw new Error('Project is outside this Carthagent workspace location');
     const taskState = records();
     const ids = [...new Set([...taskState.tasks.map(record => record.sessionID), ...taskState.operations.map(record => record.sessionID)].filter((id): id is string => typeof id === 'string'))];
     signal?.throwIfAborted();
@@ -242,7 +242,7 @@ export async function registerWorkspaceRpc(ctx: Context, options: {
     },
     createWorktree: async (value, call) => {
       const input = value as { projectID: string; name: string };
-      if (input.projectID !== projectID) throw new Error('Project is outside this OpenCode workspace location');
+      if (input.projectID !== projectID) throw new Error('Project is outside this Carthagent workspace location');
       call.signal.throwIfAborted();
       const result = await ctx.worktree.create({ projectID, name: input.name }, { signal: call.signal });
       return { directory: resolve(result.directory) };
