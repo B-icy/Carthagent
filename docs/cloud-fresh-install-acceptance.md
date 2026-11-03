@@ -88,7 +88,48 @@ This uncovered two launcher defects addressed in this branch:
   30 minutes of observation, extending it for a larger explicit time budget.
   Persistent host execution budgets still apply; `--reset-budget` is explicit.
 
-Final task completion and independent verification are still in progress.
-Candidate changes are not published. The normal installation remains public
-beta.3, now reauthenticated to the production test account. Its prior local
-session history and settings have not been recovered.
+## Task result and remaining acceptance
+
+PR #245 merged as `521675b77f156461ed829ef328d892f78797604c` after all Linux,
+macOS and Windows Node 22/24 checks, native-package, native-navigation and
+browser checks passed. The release candidate prebuild selects combined-v6;
+the public package remains beta.3 until publication.
+
+Beta.4 prebuild run `41569547389` succeeded from reviewed source
+`67035d0758321901ef56a71c3a8e7561274dfd38`. All five downloaded archives and
+embedded executable hashes passed independent local acquisition verification.
+The final package manifest uses those exact candidate hashes and combined-v6.
+The Linux release executable SHA-256 is
+`9f998cb2d23e2c18258a5bcb9a9588228e6fef9f089b13bb2f74b80d8ee8d7f6`;
+it differs from the earlier locally compiled candidate recorded above.
+
+The same task implemented parser, validator, aggregator, exporter and CLI
+source, with 78 self-authored tests passing during continuation. Independent
+probes found defects: invalid sign-only money accepted, unsafe integer cents,
+incorrect record line numbers, split UTF-8/BOM corruption, malformed quote
+acceptance, cross-currency summary totals, nondeterministic timestamps, and
+missing CSV field quoting. CLI tests, fixtures and README were unfinished.
+**The expense task is not accepted as complete.** These findings were submitted
+to the same session for repair, rather than silently fixed outside the task.
+
+Further continuation encountered tunnel 502s and the local Node 26 upstream
+HTTP/2 pool's `ERR_HTTP2_INVALID_SESSION`. The sandbox switched to HTTP/1.1
+and direct localhost access to the same Cloud backend. Unknown-outcome requests
+retained their reservations. At the recorded checkpoint, paid consumption was
+$3.120214780 and outstanding reservations $0.819894980 against the $4 daily
+limit; five requests required reconciliation. No reservations or consumed usage
+were erased. Reducing the model's request envelope was also tried and reverted:
+the gateway cap counts request bytes, and the smaller envelope rejected this
+existing conversation. Full task completion remains blocked.
+
+Durable private receipts include `task-interim-result.json`, file hashes,
+signed payment event IDs and `independent-audit.md`. The evidence establishes
+fresh sign-in, genuine quota rejection, Stripe-test activation, no automatic
+restart, and explicit real-model paid continuation on the exact same session.
+It does not establish independently verified task success or production
+inference acceptance.
+
+The normal installation remains public beta.3, reauthenticated to the production
+test account. Its prior local session history and settings have not been recovered.
+An additional backup search found production Voyages backups, which are unrelated
+to the lost local profile.

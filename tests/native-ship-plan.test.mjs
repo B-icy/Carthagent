@@ -76,10 +76,15 @@ test('development runtime source and preparation recipe pin the actual Ship grap
   assert.doesNotMatch(prepare, /bun (install|run|build)|gh release|npm publish/);
 });
 
-test('the shared release build recipe stays on the published patch', () => {
-  const published = readFileSync(new URL('../docs/patches/opencode-v2.0.32-session-ui-combined-v5.patch', import.meta.url));
+test('the published runtime pin stays on its immutable release patch', () => {
+  const published = readFileSync(new URL('../docs/patches/opencode-v2.0.32-session-ui-combined-v6.patch', import.meta.url));
   const digest = createHash('sha256').update(published).digest('hex');
   assert.equal(CTG_RUNTIME_PATCH_SHA256, digest);
+});
+
+test('the candidate build recipe pins the reviewed onboarding patch', () => {
+  const digest = createHash('sha256').update(patch).digest('hex');
   const build = readFileSync(new URL('../script/ctg/build-owned-runtime.sh', import.meta.url), 'utf8');
   assert.ok(build.includes(`EXPECTED_PATCH="${digest}"`));
+  assert.ok(build.includes('docs/patches/opencode-v2.0.32-session-ui-combined-v6.patch'));
 });
