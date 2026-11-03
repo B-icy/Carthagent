@@ -552,6 +552,27 @@ test('no-prompt interactive explicit model and thinking selection applies to fre
   }
 });
 
+test('headless continuation switches an explicitly requested model before submitting to the same session', async () => {
+  const calls = [];
+  const runtime = await createOpenCodeCliRuntime({ cwd: '/project', stdout: { write() {} }, native: {
+    runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) },
+    headless: { runHeadless: async (_service, _cwd, _prompt, options) => {
+      calls.push(['run', options.sessionID]);
+      assert.equal(options.timeout, 30 * 60_000);
+      return { session: { id: options.sessionID }, outcome: 'failed', terminal: true, messages: [] };
+    } },
+    clientFactory: async () => ({ session: {
+      get: async () => ({ id: 'ses_existing', location: { directory: '/project' }, metadata: {} }),
+      switchModel: async input => calls.push(['switch', input]),
+    } }),
+  } });
+  await runtime.run({ mode: 'headless', options: { session: 'ses_existing', provider: 'fixture', model: 'cheaper-model' }, prompt: 'continue' });
+  assert.deepEqual(calls, [
+    ['switch', { sessionID: 'ses_existing', model: { providerID: 'fixture', id: 'cheaper-model' } }],
+    ['run', 'ses_existing'],
+  ]);
+});
+
 test('resumed interactive model selection verifies workspace ownership before any session mutation or launch', async t => {
   const { mkdtempSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
@@ -576,6 +597,11 @@ test('resumed interactive model selection verifies workspace ownership before an
     mode: 'interactive', options: { session: 'ses_foreign', model: 'fixture/explicit-model', maxTools: '3' }, prompt: '',
   }), /another workspace/);
   assert.deepEqual(calls, [['get', 'ses_foreign']], 'ownership is checked before switching models, updating metadata, or launching TUI');
+  calls.length = 0;
+  await assert.rejects(runtime.run({
+    mode: 'headless', options: { session: 'ses_foreign', model: 'fixture/explicit-model' }, prompt: 'continue',
+  }), /another workspace/);
+  assert.deepEqual(calls, [['get', 'ses_foreign']], 'headless model switches enforce the same workspace boundary');
 });
 
 test('interactive provider or thinking flags without a model fail instead of being silently ignored', async () => {
@@ -786,18 +812,19 @@ test('resumed native sessions merge explicit launcher options into their own wor
   assert.deepEqual(framingOverrides, [{ sessionID: 'ses_existing', enabled: false }]);
 });
 
-test('native login uses OpenCode integration OAuth status and completion lifecycle', async () => {
+test('native login defaults to Cloud on Enter and completes the host OAuth lifecycle', async () => {
   const calls = [];
   const opened = [];
+  const prompts = [];
   const service = { url: 'http://127.0.0.1:1', headers: {} };
   const integration = {
     id: 'experiential-labs', name: 'Carthagent Ship',
     methods: [{ id: 'carthagent-device', type: 'oauth', label: 'Sign in with Carthagent Ship' }],
   };
-  const runtime = await createOpenCodeCliRuntime({ cwd: '/project', io: ioCapture().io, stdin: { isTTY: true }, stdout: { isTTY: true }, openBrowserImpl: async url => { opened.push(url); return true; }, native: {
+  const runtime = await createOpenCodeCliRuntime({ cwd: '/project', io: ioCapture().io, stdin: { isTTY: true }, stdout: { isTTY: true }, readlineFactory: () => ({ close() {}, question: async text => { prompts.push(text); return ''; } }), openBrowserImpl: async url => { opened.push(url); return true; }, native: {
     runtime: {}, service: { ensureService: async () => service }, headless: {},
     clientFactory: async () => ({ integration: {
-      list: async input => { calls.push(['list', input]); return { data: [integration] }; },
+      list: async input => { calls.push(['list', input]); return { data: [{ id: 'openai', name: 'OpenAI', methods: [{ type: 'key' }] }, integration] }; },
       oauth: {
         connect: async input => { calls.push(['connect', input]); return { data: {
           attemptID: 'attempt-1', url: 'https://auth.example/device', instructions: 'Approve access', mode: 'auto',
@@ -809,6 +836,9 @@ test('native login uses OpenCode integration OAuth status and completion lifecyc
     } }),
   } });
   assert.equal(await runtime.login(), 0);
+  assert.match(prompts[0], /1\) Carthagent Cloud \(recommended\)/);
+  assert.match(prompts[0], /Provider number \[1\]:/);
+  assert.equal(calls[1][1].integrationID, 'experiential-labs');
   assert.deepEqual(opened, ['https://auth.example/device']);
   assert.deepEqual(calls.map(([name]) => name), ['list', 'connect', 'status']);
   assert.equal(calls[1][1].methodID, 'carthagent-device');

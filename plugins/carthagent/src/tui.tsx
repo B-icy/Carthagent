@@ -3,7 +3,7 @@ import { Plugin } from "@opencode/plugin/tui";
 import { Show } from "solid-js";
 import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { nativeProviderName } from "../../../lib/opencode/provider-policy.mjs";
+import { nativeLoginProvider, nativeProviderName } from "../../../lib/opencode/provider-policy.mjs";
 import { framePrompt } from "../../../lib/tui/framing.mjs";
 import { carthagentConfigPath, loadCarthagentConfig, resolveReviewMode, reviewKickoff, saveCarthagentConfig } from "../../../lib/review.mjs";
 import { COMMANDS, NATIVE_COMMAND_COLLISIONS } from "./ui/commands.js";
@@ -114,7 +114,7 @@ export default Plugin.define({
           context.ui.router.navigate({ type: "plugin", name: "daily-quests", data: { ...(sessionID ? { sessionID } : {}) } });
           return;
         case "login":
-          context.keymap.dispatch("provider.connect");
+          context.keymap.dispatch("provider.connect", arg ? nativeLoginProvider(arg)?.id ?? arg : "experiential-labs");
           return;
         case "help": case "ctg-help":
           await context.ui.dialog.alert({ title: "Carthagent commands", message: COMMANDS.map((command) => `/${command.name}${command.args ? ` ${command.args}` : ""}${command.aliases?.length ? ` (${command.aliases.map((alias) => `/${alias}`).join(", ")})` : ""} — ${command.description}`).join("\n") + "\n\nCtrl+R sessions · Ctrl+T settings · Ctrl+N new session are native Carthagent actions." });

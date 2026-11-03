@@ -9,9 +9,9 @@ set -euo pipefail
 #
 # Usage: script/ctg/prepare-development-runtime.sh /path/to/clean/opencode-checkout
 EXPECTED_SOURCE="843a6c514e606b436a7fe713422ace0a93ad3d61"
-EXPECTED_PATCH="ec4bb182308ed8b311513aad5c9c7d57dcd0db103f0882f3dc3517d535b4c975"
+EXPECTED_PATCH="31e15c7f92f82177bf1b6106732926951c4d751bde36b61f3e1e283818ea5631"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-PATCH_FILE="$ROOT/docs/patches/opencode-v2.0.32-session-ui-combined-v5.patch"
+PATCH_FILE="$ROOT/docs/patches/opencode-v2.0.32-session-ui-combined-v6.patch"
 
 if [[ $# -ne 1 ]]; then
   echo "Usage: $0 /path/to/clean/opencode-checkout" >&2
@@ -48,5 +48,5 @@ git -C "$SOURCE" apply --check "$PATCH_FILE"
 git -C "$SOURCE" apply "$PATCH_FILE"
 
 echo "source=$EXPECTED_SOURCE"
-echo "patch=docs/patches/opencode-v2.0.32-session-ui-combined-v5.patch"
+echo "patch=docs/patches/opencode-v2.0.32-session-ui-combined-v6.patch"
 echo "patch_sha256=$actual_patch"
