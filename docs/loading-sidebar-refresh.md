@@ -36,9 +36,10 @@ It applies to source revision `843a6c514e606b436a7fe713422ace0a93ad3d61`;
 This follows the delayed startup and staged upgrade feedback inspected in
 OpenCode v1.19.5, using the existing CTG runtime and OpenTUI 0.5.17 components.
 
-Published beta.4 continues to use combined-v6. Combined-v7 is a development
-candidate, not a published five-platform runtime. Promoting it requires the
-normal owned-runtime build/provenance and package release workflow.
+Beta.5 promotes combined-v7 from successful five-platform prebuild `41705585182`,
+source commit `e0436a39d0181cbe3991fa6164bb1f57e0e802dc`. Its exact archives,
+executable hashes, and provenance were independently verified before updating
+the packaged release manifest. Beta.4 retains its original combined-v6 artifacts.
 
 ## Verification
 
@@ -82,6 +83,9 @@ normal owned-runtime build/provenance and package release workflow.
   all ten seascape repetitions (30 checks) locally. Full package quality passed
   with 1,139 passing tests, five skips, and zero failures. Replacement native
   prebuild `41705585182` uses source `e0436a39d0181cbe3991fa6164bb1f57e0e802dc`.
+- That replacement prebuild passed all five native targets, including Intel
+  macOS. Candidate verification regenerated the manifest and independently
+  verified all five archive and executable hashes against the build records.
 - The prior CI Linux artifact independently passed archive/executable verification
   and native-host, native-controls, daily-quest, and native-PTY acceptance.
 - Voyages real-renderer interaction tests: 12 passed, including compact layout,

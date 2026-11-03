@@ -21,6 +21,18 @@
 - Cross-platform sidebar fixture paths and isolated draft state.
 - Native renderer stress checks run in fresh processes with external deadlines to prevent indefinitely stalled CI jobs.
 
+## Validation
+
+The Linux candidate was exercised through the real launcher and an authenticated
+production Cloud account. Voyages loaded the profile, wallet, and three daily
+quests; sidebar actions opened both assignments and profile details. Terminal
+layouts were checked at 110×36, 80×24, and 60×20. Package quality passed 1,139
+tests with five skips, and all 35 runtime check tasks passed. The isolated native
+stress runner passed 140 navigation checks and 30 seascape checks locally.
+
+These checks establish startup, navigation, account loading, and display behavior.
+They do not establish completion of the earlier expense-reporting coding task.
+
 Install or update the beta:
 
 ```sh
