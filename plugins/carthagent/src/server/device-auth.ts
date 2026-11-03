@@ -43,7 +43,7 @@ export function createDeviceAuthController({ env = process.env, fetchImpl = glob
       method: 'POST', body: input, signal,
     });
     const authorization = await createAuthorization({
-      clientName: `Carthagent OpenCode (${process.env.HOSTNAME || 'device'})`,
+      clientName: `Carthagent (${process.env.HOSTNAME || 'device'})`,
       installId: shipInstallId({ agentDir }),
     }, signal);
     const flowId = randomUUID();

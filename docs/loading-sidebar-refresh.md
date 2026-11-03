@@ -20,6 +20,8 @@
 - Voyages uses readable quest statuses, completion counts, indented quests,
   theme-aware selection, shorter action descriptions, loading/error/empty states,
   and grapheme/cell-aware truncation. Selection and scroll survive mode switches.
+- Inherited update, crash, permission, onboarding, settings, and resume messages
+  use Carthagent branding. Crash reports open the Carthagent issue tracker.
 
 ## Runtime provenance
 
@@ -51,8 +53,12 @@ normal owned-runtime build/provenance and package release workflow.
   Early startup cancellation exits with code 130.
 - Standalone compiled-console PTY: Projects/Voyages switching and resizing at
   110×36, 80×24, and 60×20. At 80 columns the rail is compact; at 60 it is hidden
-  by the existing responsive layout. Populated account/quest states are covered
-  by renderer fixtures, not a live authenticated Voyages acceptance run.
+  by the existing responsive layout.
+- Signed-in production acceptance in a fresh durable profile: normal Cloud device
+  authorization completed; Voyages loaded the captain, ship, wallet, and three
+  current daily quests. Sidebar focus and Enter opened daily assignments. Live
+  content remained readable at 110×36, 80×24, and 60×20. Captures are under
+  `sidebar-refresh/signed-in/` in the evidence directory below.
 - Patch application checked against a pristine index of the pinned source.
 
 Local evidence is retained in

@@ -69,7 +69,7 @@ test('native workspace RPC snapshots journaled sessions, enforces location owner
   await assert.rejects(registered.open({ sessionID: 'foreign-session' }, { signal: new AbortController().signal }), /another workspace location/);
   assert.deepEqual(await registered.open({ sessionID: 'root-session' }, { signal: new AbortController().signal }), { opened: true, directory: root });
   assert.deepEqual(await registered.createWorktree({ projectID: 'project-id', name: 'task' }, { signal: new AbortController().signal }), { directory: join(base, 'new-worktree') });
-  await assert.rejects(registered.createWorktree({ projectID: 'other-project', name: 'task' }, { signal: new AbortController().signal }), /outside this OpenCode workspace/);
+  await assert.rejects(registered.createWorktree({ projectID: 'other-project', name: 'task' }, { signal: new AbortController().signal }), /outside this Carthagent workspace/);
   const controller = new AbortController(); controller.abort(new Error('cancelled'));
   await assert.rejects(registered.snapshot({}, { signal: controller.signal }), /cancelled/);
   await new Promise(resolve => setTimeout(resolve, 20));
