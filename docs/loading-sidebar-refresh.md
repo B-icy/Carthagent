@@ -46,6 +46,13 @@ normal owned-runtime build/provenance and package release workflow.
 - Runtime `bun run check`: all 35 tasks successful.
 - Linux x64 compiled runtime built successfully.
 - Runtime sidebar/navigation/model/layout tests: 118 passed across 12 files.
+- Final navigation stress run: 140 tests passed across ten full-suite repetitions,
+  including a real held profile lock during folder collapse. Persistence is
+  asynchronous I/O; the acceptance check uses a bounded state wait rather than
+  a renderer-frame deadline. Instrumented writes took up to 641 ms locally.
+- Corrected beta.5 native prebuild: run `41689731417`, source commit
+  `8be12940a4d5726e4f0f90625983c3212c574942`. Combined-v7 SHA-256:
+  `d5c0b41f8b57c6d3619bef0b0a480ad4adab319ecbe22d5fd1de6be9b8bc2707`.
 - Voyages real-renderer interaction tests: 12 passed, including compact layout,
   keyboard and mouse focus, modal isolation, and delayed scroll restoration.
 - Launcher progress tests cover animation, clipping, abort cleanup, redirected
