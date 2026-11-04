@@ -2456,7 +2456,7 @@ index 344d9fcf04..d9c95db2b3 100644
    )
 diff --git a/packages/tui/src/component/dialog-new-session.tsx b/packages/tui/src/component/dialog-new-session.tsx
 new file mode 100644
-index 0000000000..290b11210d
+index 0000000000..7d12d0a8ca
 --- /dev/null
 +++ b/packages/tui/src/component/dialog-new-session.tsx
 @@ -0,0 +1,320 @@
@@ -2507,7 +2507,7 @@ index 0000000000..290b11210d
 +  const [completion, setCompletion] = createSignal("")
 +  let pathInput: InputRenderable | undefined
 +  const resolve = (value: string) => path.resolve(props.directory, value === "~" ? props.home : value.startsWith("~/") ? path.join(props.home, value.slice(2)) : value || ".")
-+  const dirty = () => resolve(draft()) !== directory()
++  const dirty = () => resolve(draft()) !== resolve(directory())
 +  createEffect(() => {
 +    const value = draft()
 +    setCompletion("")
@@ -14918,10 +14918,10 @@ index 0000000000..e6a323263a
 +}
 diff --git a/packages/tui/test/sidebar/new-session-preflight.test.tsx b/packages/tui/test/sidebar/new-session-preflight.test.tsx
 new file mode 100644
-index 0000000000..00b6db8195
+index 0000000000..e3865dd484
 --- /dev/null
 +++ b/packages/tui/test/sidebar/new-session-preflight.test.tsx
-@@ -0,0 +1,291 @@
+@@ -0,0 +1,302 @@
 +/** @jsxImportSource @opentui/solid */
 +import { InputRenderable } from "@opentui/core"
 +import { expect, test } from "bun:test"
@@ -15020,6 +15020,17 @@ index 0000000000..00b6db8195
 +  })
 +  expect(ui.setup.dialog.stack.length).toBe(0)
 +  expect(ui.creates).toEqual([])
++})
++
++test("an unchanged noncanonical path stays ready and preserves the validated location", async () => {
++  const start = `${directory}/.`
++  const ui = await mount({ start })
++  await using _ = ui.setup
++  await rendered(ui, "Ready")
++  ui.setup.mockInput.pressEnter()
++  await wait(() => ui.started.length === 1, "start")
++  expect(ui.started[0]?.directory).toBe(start)
++  expect(ui.calls).toEqual([start])
 +})
 +
 +test("an invalid folder shows an actionable error and blocks start instead of falling back", async () => {

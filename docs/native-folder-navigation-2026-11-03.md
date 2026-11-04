@@ -29,8 +29,8 @@ This adapts those interactions to the existing Solid/OpenTUI implementation and 
 - Runtime development trust and native Ship/Plan packaging checks: **18 passed**.
 - TUI typecheck passed after final changes. Full runtime `bun run check` passed during implementation (35 typecheck tasks; existing repository lint warnings).
 - Linux x64 native development binary built successfully.
-- Development v9 patch tree: `53684031f3a8c4735d39dd027471e19176a7fb3a`.
-- Development patch SHA-256: `bf9dd691e21d87344b38b6b42ceca2886e47614e96d1d39c23e3b16c3ad63293`.
+- Development v9 patch tree: `364d553fc1b4f74956ab5b1c3a485d155e2d0514`.
+- Development patch SHA-256: `eda717ebe6b5d258b3c79153a23130b0f267491bc145cae8da183f2284a25e3e`.
 - Expanded runtime suite: **1,613 passed, 2 skipped, zero failures**; native TUI typecheck passed.
 - Published combined-v8, release manifest, npm version, and published runtime pin are unchanged.
 
