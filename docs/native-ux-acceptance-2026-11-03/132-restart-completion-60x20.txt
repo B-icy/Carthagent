@@ -1,0 +1,20 @@
+
+  Daily quests                            Resets in 0h 36m
+  Catch a regression
+  Show the same test failing before the fix and passing
+  afterward.
+
+
+
+    ✓ Quest complete
+    Your submitted work met all the conditions.
+    Keep building. Explore your other daily quests.
+
+
+   ▶ Back to quests
+     Continue coding
+     Details
+
+
+  ↑↓ Enter select · Ctrl+U/D scroll · Esc back
+

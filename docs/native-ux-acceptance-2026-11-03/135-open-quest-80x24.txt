@@ -1,0 +1,24 @@
+ Projects
+ Voyages     Daily quests                                     Resets in 0h 35m
+ Focus       Resolve a review finding
+▄▄▄▄▄▄▄▄▄▄▄  Resolve a concrete correctness issue found in review.
+     ⌕
+     ▤         Conditions · assessed after Submit
+     ◇         ○ Describe the goal and completed change
+               ○ Resolve a concrete correctness issue found in review.
+     N         ○ Record an issue, supporting evidence, and its resolution
+
+     N         Selected work
+               Choose a completed Ship session
+     +
+
+
+
+
+              ▶ Choose completed work
+                Continue coding
+                Details
+                Back to quests
+
+             ↑↓ Enter select · Ctrl+U/D scroll · Esc back
+

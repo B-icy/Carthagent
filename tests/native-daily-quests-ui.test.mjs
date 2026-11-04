@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createDailyQuestsState, dailyErrorCode, dailySubmissionLabel } from '../plugins/carthagent/src/ui/daily-quests-state.mjs';
 import { dailyRequest } from '../plugins/carthagent/src/daily-evidence.mjs';
+import { selectedQuestEvidence } from '../plugins/carthagent/src/ui/quest-evidence.mjs';
 import { dailyCancellationNotice, handleDailyQuestsEvent } from '../plugins/carthagent/src/ui/daily-quests-events.mjs';
 
 const ACCOUNT = 'a'.repeat(64);
@@ -46,6 +47,37 @@ async function compose(f) {
   await f.controller.compose(async () => ({ id: SUB, evidence: evidence(), provenance: 'Selected local result; review before sharing.' }));
 }
 async function preview(f) { await compose(f); f.controller.preview(); }
+
+test('page reopen restores selected evidence only after same-account reads, without writes', async () => {
+  const draftCache = new Map();
+  const first = fixture({}, { draftCache });
+  await preview(first);
+  const selected = first.view().preview;
+  first.controller.dispose();
+  const second = fixture({}, { draftCache });
+  await second.controller.refresh();
+  await second.controller.select(QUEST);
+  assert.deepEqual(second.view().preview, selected);
+  assert.deepEqual(second.writes, []);
+  second.controller.dispose();
+  const other = fixture({}, { draftCache });
+  other.remote().accountKey = OTHER;
+  await other.controller.refresh(); await other.controller.select(QUEST);
+  assert.equal(other.view().draft, undefined);
+  assert.equal(draftCache.size, 0);
+});
+
+test('large recorded evidence fits the upload budget with explicit whole-record omissions', () => {
+  const input = evidence();
+  input.checks = Array.from({ length: 12 }, (_, i) => ({ ...input.checks[0], name: `check-${i}`, result: 'x'.repeat(1024) }));
+  input.findings = [{ issue: 'issue', evidence: 'detail', resolution: 'fixed' }];
+  const bounded = selectedQuestEvidence(input);
+  assert.ok(bounded.omitted > 0);
+  assert.ok(Buffer.byteLength(JSON.stringify(bounded.evidence)) <= 12288);
+  assert.doesNotThrow(() => dailyRequest(SUB, bounded.evidence));
+  assert.ok(bounded.evidence.checks.every(check => check.result.length === 1024));
+  assert.equal(input.checks.length, 12);
+});
 
 // Model the pinned SelectRenderable's numeric-index retention/clamping. The
 // production helper must call its real setSelectedIndex before options shrink.
@@ -492,7 +524,7 @@ test('unknown submit clears raw UI then reads exact same-ID journal without repl
   assert.equal(f.view().snapshot.records[0].id, SUB);
   assert.deepEqual(f.view().snapshot.records[0].request, dailyRequest(SUB, evidence()));
   assert.equal(f.view().snapshot.records[0].submission, null);
-  assert.match(f.view().error, /^network_error\..*no success assumed/);
+  assert.match(f.view().error, /check submission status/i);
   await f.controller.refresh();
   assert.equal(f.writes.length, 1);
   await f.controller.retry(SUB, async shown => {
@@ -531,7 +563,7 @@ test('auth/conflict errors clear protected state, redact unsafe RPC content and 
       assert.equal(f.view().detail, undefined);
       assert.equal(f.view().draft, undefined);
       assert.equal(f.view().preview, undefined);
-      assert.match(f.view().error, new RegExp(`^${code}\\.`));
+      assert.match(f.view().error, new RegExp(code));
       assert.doesNotMatch(f.view().error, /secret|credential and raw/);
     }
   }
@@ -552,26 +584,28 @@ test('a different account on successful or failed write reconciliation is not ol
     assert.equal(f.view().snapshot, undefined);
     assert.equal(f.view().detail, undefined);
     assert.equal(f.view().draft, undefined);
-    assert.match(f.view().error, /^daily_account_changed\./);
+    assert.match(f.view().error, /account changed/);
     await f.controller.refresh();
     assert.equal(f.view().snapshot.accountKey, OTHER);
     assert.equal(f.view().error, '');
   }
 });
 
-test('refresh hides old protected state synchronously and explicit refresh may load a new account', async () => {
+test('refresh retains selected work for the same account but clears it on account mismatch', async () => {
   const f = fixture();
   await preview(f);
   const next = deferred();
   f.api.snapshot = () => next.promise;
   const pending = f.controller.refresh();
-  assert.equal(f.view().snapshot, undefined);
-  assert.equal(f.view().detail, undefined);
-  assert.equal(f.view().draft, undefined);
-  assert.equal(f.view().preview, undefined);
+  assert.equal(f.view().snapshot.accountKey, ACCOUNT);
+  assert.ok(f.view().draft);
+  assert.ok(f.view().preview);
   next.resolve({ ...snapshot(), accountKey: OTHER });
   await pending;
-  assert.equal(f.view().snapshot.accountKey, OTHER);
+  assert.equal(f.view().snapshot, undefined);
+  assert.equal(f.view().draft, undefined);
+  assert.equal(f.view().preview, undefined);
+  assert.match(f.view().error, /account changed/);
 });
 
 test('retry is ID-bound to the shown saved request, no edited payload or fresh UUID', async () => {
@@ -708,7 +742,7 @@ test('per-request timeout shows safe failure and read-only reconciliation', asyn
   await started.promise;
   timers.at(-1).abort(new DOMException('secret unsafe timeout', 'TimeoutError'));
   await pending;
-  assert.match(f.view().error, /^daily_request_failed\./);
+  assert.match(f.view().error, /connection and refresh/);
   assert.doesNotMatch(f.view().error, /secret/);
   assert.equal(f.view().draft, undefined);
   assert.equal(f.view().preview, undefined);
@@ -770,9 +804,58 @@ test('failed explicit retry reconciles same durable payload without a second ret
   });
   assert.deepEqual(f.writes, [['retry', { accountKey: ACCOUNT, id: SUB }]]);
   assert.deepEqual(f.view().snapshot.records[0].request, dailyRequest(SUB, evidence()));
-  assert.match(f.view().error, /^key_conflict\./);
+  assert.match(f.view().error, /key_conflict/);
   assert.equal(f.view().draft, undefined);
   assert.equal(f.view().preview, undefined);
   await f.controller.refresh();
   assert.equal(f.writes.length, 1);
+});
+
+test('background polling preserves the current quest, draft and overview', async () => {
+  const f = fixture();
+  f.remote().slate.items.push(quest(NEXT));
+  f.remote().records.push({ ...record(), request: null, submission: submission() });
+  await f.controller.refresh();
+  await f.controller.select(NEXT);
+  await f.controller.compose(async () => ({ id: NEXT, evidence: evidence(), provenance: 'Other work' }));
+  f.controller.preview();
+  const selected = clone(f.view().preview);
+  await f.controller.poll(SUB, { follow: false });
+  assert.equal(f.view().detail.id, NEXT);
+  assert.deepEqual(f.view().preview, selected);
+  f.controller.overview();
+  await f.controller.poll(SUB, { follow: false });
+  assert.equal(f.view().detail, undefined);
+  await f.controller.select(NEXT);
+  assert.deepEqual(f.view().preview, selected);
+  assert.deepEqual(f.writes, []);
+});
+
+test('temporary read errors retain selected work; identity errors clear it', async () => {
+  const f = fixture();
+  await preview(f);
+  const selected = clone(f.view().preview);
+  f.api.snapshot = async () => { throw rpcError('request_failed'); };
+  await f.controller.refresh();
+  assert.deepEqual(f.view().preview, selected);
+  assert.equal(f.view().detail.id, QUEST);
+  assert.match(f.view().error, /Connection interrupted/);
+  f.api.snapshot = async () => { throw rpcError('expired_token'); };
+  await f.controller.refresh();
+  assert.equal(f.view().preview, undefined);
+  assert.equal(f.view().snapshot, undefined);
+  assert.deepEqual(f.writes, []);
+});
+
+test('refresh removes a selected quest and cached work when its slate expires', async () => {
+  const f = fixture();
+  await preview(f);
+  f.remote().slate.items = [quest(NEXT)];
+  await f.controller.refresh();
+  assert.equal(f.view().detail, undefined);
+  assert.equal(f.view().preview, undefined);
+  f.remote().slate.items.push(quest());
+  await f.controller.refresh();
+  await f.controller.select(QUEST);
+  assert.equal(f.view().draft, undefined);
 });

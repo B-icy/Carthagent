@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 EXPECTED_SOURCE="843a6c514e606b436a7fe713422ace0a93ad3d61"
 EXPECTED_LOCK="9d78379cd264584a495440a217b9d2ecab524c9a56f7f8b4b5bed3926daa330d"
-EXPECTED_PATCH="4a3b59d584864d2d0f248bc521b69c350fdfb20ba50e3955675d7432b1a217b4"
+EXPECTED_PATCH="3fa9c71b87209ab12729c44f2dea5ca21b08ce18cea447d1c1c8169fe0b4838b"
 TARGET="${1:-opencode-linux-x64}"
 HOST_PLATFORM="$(node -p 'process.platform')"
 HOST_ARCH="$(node -p 'process.arch')"
@@ -34,7 +34,7 @@ if ! git diff --cached --quiet HEAD --; then
   exit 1
 fi
 expected_inputs=(
-  "docs/patches/opencode-v2.0.32-session-ui-combined-v7.patch"
+  "docs/patches/opencode-v2.0.32-session-ui-combined-v8.patch"
   "script/ctg/build-owned-runtime.sh"
   "tools/run-native-test-stress.mjs"
 )
@@ -87,7 +87,7 @@ if [[ "$(bun --version)" != "1.4.2" ]]; then
   exit 1
 fi
 
-patch_file="$ROOT/docs/patches/opencode-v2.0.32-session-ui-combined-v7.patch"
+patch_file="$ROOT/docs/patches/opencode-v2.0.32-session-ui-combined-v8.patch"
 actual_patch="$("${HASH_COMMAND[@]}" "$patch_file" | awk '{print $1}')"
 if [[ "$actual_patch" != "$EXPECTED_PATCH" ]]; then
   echo "Patch checksum mismatch: $actual_patch" >&2
@@ -109,6 +109,8 @@ bun run --cwd packages/tui typecheck
 bun test --cwd packages/core test/session-compaction.test.ts
 bun test --cwd packages/core test/shell-retention.test.ts
 bun test --cwd packages/server test/shell-provenance.test.ts
+bun test --cwd packages/server test/fs.test.ts
+bun test --cwd packages/theme test/theme.test.ts
 bun test --cwd packages/tui test/plugin-source.test.ts
 bun test --cwd packages/tui test/clear-session.test.tsx
 node tools/run-native-test-stress.mjs 10 180000 bun test --cwd packages/tui --timeout 30000 test/navigation-rail.test.tsx

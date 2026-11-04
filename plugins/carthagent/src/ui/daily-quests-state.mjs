@@ -9,7 +9,26 @@ function freeze(value) {
   return value;
 }
 const localError = code => ({ type: 'dailyQuestError', data: { code } });
-const failureMessage = code => `${code}. Refresh required; no success assumed. Sign in again if access expired or was revoked.`;
+const failureMessage = code => ({
+  not_found: 'No submission found yet. Use Retry saved submission to check again and resend the same request.',
+  request_failed: 'Connection interrupted. Check submission status before trying again.',
+  daily_request_failed: 'Could not load quests. Check your connection and refresh.',
+  authentication_required: 'Sign in to Carthagent Cloud to load your quests.',
+  expired_token: 'Your sign-in expired. Reconnect to continue.',
+  revoked_token: 'Your sign-in was revoked. Reconnect to continue.',
+  daily_quest_expired: 'This quest has closed. Refresh to see today’s quests.',
+  daily_quest_complete: 'This quest is already complete. Refresh to see the result.',
+  daily_submission_active: 'Your submission is still being checked. Check status in a moment.',
+  submission_pending: 'A previous submission needs a status check before sending more work.',
+  daily_outcome_claimed: 'This work already completed a quest. Choose different work.',
+  daily_submission_limit: 'Today’s submission limit was reached. Try a new quest tomorrow.',
+  rate_limited: 'Too many requests. Wait a moment, then check status.',
+  daily_grading_unavailable: 'Assessment is temporarily unavailable. Try again later.',
+  daily_source_unavailable: 'No recorded Ship delivery in this session. Complete the work in Ship mode, then choose it here.',
+  invalid_daily_evidence: 'This work cannot be submitted yet. Check the selected summary and results.',
+  storage_failed: 'Could not save submission recovery. Check available disk space, then retry.',
+  daily_account_changed: 'Your account changed. Choose work again for the current account.',
+}[code] ?? `Could not complete this action (${code}). Refresh or check submission status.`);
 
 /** Native promise RPC errors are { type, message, data }. Never render messages. */
 export function dailyErrorCode(error) {
@@ -36,14 +55,15 @@ export function dailySubmissionLabel(submission) {
  * Dialog callbacks receive detached copies plus a live() lifetime predicate.
  * Cancel/back/invalidate synchronously revoke any outstanding dialog callback.
  */
-export function createDailyQuestsState({ api, changed = (_state) => {}, timeoutSignal = () => AbortSignal.timeout(15_000) }) {
+export function createDailyQuestsState({ api, changed = (_state) => {}, timeoutSignal = () => AbortSignal.timeout(15_000), draftCache }) {
   let generation = 0;
   let disposed = false;
   let controller = new AbortController();
   const state = { snapshot: undefined, detail: undefined, busy: false, error: '', draft: undefined, preview: undefined, phase: 'overview' };
+  const drafts = draftCache ?? new Map();
   const emit = () => { if (!disposed) changed(copy(state)); };
   const clearDraft = () => { state.draft = undefined; state.preview = undefined; state.phase = 'overview'; };
-  const clearProtected = () => { state.snapshot = undefined; state.detail = undefined; clearDraft(); };
+  const clearProtected = () => { drafts.clear(); state.snapshot = undefined; state.detail = undefined; clearDraft(); };
   const revoke = () => {
     generation++;
     controller.abort();
@@ -65,6 +85,10 @@ export function createDailyQuestsState({ api, changed = (_state) => {}, timeoutS
       throw localError('daily_account_changed');
     }
     state.snapshot = snapshot;
+    for (const [id, saved] of drafts) {
+      if (saved.draft.accountKey !== snapshot.accountKey || !snapshot.slate.items.some(q => q.id === id && q.status === 'open')) drafts.delete(id);
+    }
+    if (state.detail && !knownQuest(state.detail.id)) { state.detail = undefined; clearDraft(); }
     emit();
     return tx.live();
   }
@@ -85,7 +109,7 @@ export function createDailyQuestsState({ api, changed = (_state) => {}, timeoutS
     state.detail = detail;
     emit();
   }
-  async function run(action) {
+  async function run(action, { write = false } = {}) {
     if (disposed || state.busy) return;
     const current = generation;
     const signal = controller.signal;
@@ -96,12 +120,14 @@ export function createDailyQuestsState({ api, changed = (_state) => {}, timeoutS
     try { if (tx.live()) await action(tx); }
     catch (error) {
       if (tx.live()) {
-        clearProtected();
-        state.error = failureMessage(dailyErrorCode(error));
+        const code = dailyErrorCode(error);
+        const retain = !write && ['request_failed', 'daily_request_failed', 'daily_source_unavailable', 'rate_limited'].includes(code);
+        if (!retain) clearProtected();
+        state.error = failureMessage(code);
         emit();
         // Read the durable journal only. Never replay a write, assume success,
         // or resurrect raw evidence from a callback after an unknown outcome.
-        try { await loadSnapshot(tx); }
+        try { if (!retain) await loadSnapshot(tx); }
         catch (reconcileError) {
           if (tx.live()) {
             clearProtected();
@@ -122,15 +148,33 @@ export function createDailyQuestsState({ api, changed = (_state) => {}, timeoutS
 
   return {
     invalidate,
-    dispose() { if (!disposed) { invalidate(); disposed = true; controller.abort(); } },
+    dispose() {
+      if (disposed) return;
+      if (!draftCache || state.busy) invalidate();
+      else {
+        if (state.draft) drafts.set(state.draft.questId, copy({ draft: state.draft, preview: state.preview, phase: state.phase }));
+        revoke(); state.snapshot = undefined; state.detail = undefined; clearDraft();
+      }
+      disposed = true; controller.abort();
+    },
     refresh() {
-      return run(async tx => { clearProtected(); emit(); await loadSnapshot(tx, null); });
+      return run(async tx => {
+        const id = state.detail?.id;
+        if (await loadSnapshot(tx)) {
+          if (id && knownQuest(id)) await loadDetail(id, tx);
+          if (state.detail?.status !== 'open') clearDraft();
+        }
+      });
     },
     select(id) {
       return run(async tx => {
         if (!knownQuest(id)) return;
+        if (state.draft) drafts.set(state.draft.questId, { draft: state.draft, preview: state.preview, phase: state.phase });
         clearDraft(); state.detail = undefined; emit();
         await loadDetail(id, tx);
+        if (tx.live() && state.detail?.status === 'open' && drafts.has(id)) {
+          Object.assign(state, drafts.get(id)); emit();
+        }
       });
     },
     compose(makeDraft) {
@@ -138,7 +182,7 @@ export function createDailyQuestsState({ api, changed = (_state) => {}, timeoutS
         const detail = copy(state.detail);
         const accountKey = state.snapshot?.accountKey;
         if (!accountKey || !detail || detail.status !== 'open' || !knownQuest(detail.id)) return;
-        clearDraft(); emit();
+        emit();
         if (!tx.live()) return;
         const draft = await makeDraft(copy(detail), tx.live, tx.signal);
         if (!draft || !tx.live() || state.snapshot?.accountKey !== accountKey || state.detail?.id !== detail.id) return;
@@ -169,7 +213,14 @@ export function createDailyQuestsState({ api, changed = (_state) => {}, timeoutS
     cancelDraft() {
       if (disposed) return;
       if (state.busy) revoke();
+      if (state.draft) drafts.delete(state.draft.questId);
       clearDraft(); state.error = ''; emit();
+    },
+    overview() {
+      if (disposed || state.busy) return;
+      if (state.draft) drafts.set(state.draft.questId, { draft: state.draft, preview: state.preview, phase: state.phase });
+      clearDraft();
+      state.detail = undefined; state.error = ''; emit();
     },
     submit(confirm) {
       return run(async tx => {
@@ -182,17 +233,26 @@ export function createDailyQuestsState({ api, changed = (_state) => {}, timeoutS
         if (state.draft?.id !== draft.id || state.snapshot?.accountKey !== draft.accountKey || !state.preview) return;
         await api.submit({ accountKey: draft.accountKey, questId: draft.questId, ...copy(request) }, networkSignal(tx.signal));
         if (tx.live()) await refreshedWrite(tx, draft.questId);
-      });
+      }, { write: true });
     },
-    poll(id) {
+    poll(id, { follow = true } = {}) {
       return run(async tx => {
         const record = savedRecord(id);
         const questId = record?.questId ?? (state.detail?.latestSubmission?.id === id ? state.detail.id : undefined);
         if (!questId || !tx.accountKey) return;
-        clearDraft(); state.detail = undefined; emit();
+        const selected = state.detail?.id;
+        if (follow && selected !== questId) {
+          if (state.draft) drafts.set(state.draft.questId, { draft: state.draft, preview: state.preview, phase: state.phase });
+          clearDraft(); state.detail = undefined; emit();
+        }
         if (!tx.live()) return;
         await api.poll({ id }, networkSignal(tx.signal));
-        if (await loadSnapshot(tx)) await loadDetail(questId, tx);
+        if (await loadSnapshot(tx)) {
+          if (follow || selected === questId) {
+            await loadDetail(questId, tx);
+            if (state.detail?.status !== 'open' || state.draft?.id === id) { drafts.delete(questId); clearDraft(); }
+          }
+        }
       });
     },
     retry(id, confirm) {
@@ -203,7 +263,7 @@ export function createDailyQuestsState({ api, changed = (_state) => {}, timeoutS
         if (await confirm(shown, tx.live) !== true || !tx.live()) return;
         await api.retry({ accountKey: tx.accountKey, id: record.id }, networkSignal(tx.signal));
         if (tx.live()) await refreshedWrite(tx, record.questId);
-      });
+      }, { write: true });
     },
     forget(id, confirm) {
       return run(async tx => {
@@ -212,7 +272,7 @@ export function createDailyQuestsState({ api, changed = (_state) => {}, timeoutS
         if (await confirm(freeze(copy(record)), tx.live) !== true || !tx.live()) return;
         await api.forgetPayload({ accountKey: tx.accountKey, id: record.id }, networkSignal(tx.signal));
         if (tx.live()) await refreshedWrite(tx, record.questId);
-      });
+      }, { write: true });
     },
   };
 }

@@ -1,55 +1,39 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { questConditions, questStatus, questReset, assessmentFeedback } from '../plugins/carthagent/src/ui/quest-presentation.mjs';
 
 const page = await readFile(new URL('../plugins/carthagent/src/ui/daily-quests.tsx', import.meta.url), 'utf8');
-const voyages = await readFile(new URL('../plugins/carthagent/src/ui/voyages.tsx', import.meta.url), 'utf8');
-const tui = await readFile(new URL('../plugins/carthagent/src/tui.tsx', import.meta.url), 'utf8');
-const server = await readFile(new URL('../plugins/carthagent/src/index.ts', import.meta.url), 'utf8');
-
-test('daily quests are registered in the native plugin and reachable from Voyages', () => {
-  assert.match(server, /registerDailyQuestsRpc\(context\)/);
-  assert.match(server, /registerDailySourceRpc\(context\)/);
-  assert.match(tui, /name: "daily-quests", render:.*DailyQuestsPage/);
-  assert.match(voyages, /name: "Daily coding quests"/);
-  assert.match(voyages, /name: "daily-quests"/);
+const quest = { id: 'q', status: 'open', definition: { templateId: 'tests-regression-v1', criteria: [{ id: 'outcome' }, { id: 'focus' }, { id: 'regression' }] } };
+test('conditions distinguish recorded passing checks from before-and-after regression evidence', () => {
+  const evidence = { goal: 'Fix input', change: 'Reject negative input', revision: 'a', findings: [], checks: [{ before: 'not_run', after: 'passed', revision: 'a', result: 'negative input rejected' }] };
+  assert.equal(questConditions(quest, evidence)[2].detected, false);
+  evidence.checks[0].before = 'failed';
+  assert.equal(questConditions(quest, evidence)[2].detected, true);
+  evidence.checks[0].revision = 'b';
+  assert.equal(questConditions(quest, evidence)[2].detected, false);
+  assert.equal(questStatus(quest), 'Choose work');
 });
-
-test('evidence editing and the complete outbound preview remain native and scrollable', () => {
-  assert.match(page, /<scrollbox ref=\{summary\} flexBasis=\{0\} flexGrow=\{1\} minHeight=\{1\}/);
-  assert.match(page, /<textarea ref=\{editor\}[^>]*onContentChange=\{\(\) => syncDailyEditor\(editor, controller\)\}/);
-  assert.match(page, /bind: "tab"/);
-  assert.match(page, /JSON.stringify\(view\(\).preview, null, 2\)/);
-  assert.match(page, /JSON.stringify\(record\(\).request, null, 2\)/);
-  assert.match(page, /Ctrl\+G preview, never sends/);
-  assert.match(page, /bind: "ctrl\+g"/);
-  assert.doesNotMatch(page, /bind: "ctrl\+p"|name: "p", ctrl: true/);
-  for (const text of page.matchAll(/<text\b([^>]*)>/g)) assert.match(text[1], /flexShrink=\{0\}/);
+test('authoritative results and unresolved sends have distinct visible states', () => {
+  const record = { questId: 'q', createdAt: '2026-11-03', submission: null };
+  assert.equal(questStatus(quest, [record]), 'Check submission status');
+  record.submission = { status: 'queued' };
+  assert.equal(questStatus(quest, [record]), 'Checking your submission…');
+  record.submission = { status: 'graded', decision: 'needs_evidence', scores: { outcome: 1, focus: 1, regression: 0.4 } };
+  assert.deepEqual(assessmentFeedback(quest, record.submission), ['Explain the same test failing on the defect and passing after the fix. A setup or syntax error alone is not regression evidence. Use Details → Edit selected work → Edit change summary.']);
+  assert.equal(questStatus({ ...quest, status: 'assessed_complete' }, [record]), 'Complete');
 });
-
-test('daily cancellation helper is wired to the actual actions ref and page-scoped notice', () => {
-  assert.match(page, /actions = node; focus.attachActions\(node\)/);
-  assert.match(page, /handleDailyQuestsEvent\(\{\s*controller, event: details, location: location\(\), changedLocation, actions/);
-  assert.match(page, /interrupted: !!\(view\(\).draft \|\| view\(\).preview \|\| replayID\(\) \|\| activeDialog\)/);
-  assert.match(page, /notice: setCancellationNotice/);
-  assert.match(page, /<Show when=\{cancellationNotice\(\)\}>/);
-  assert.match(page, /stop\(\); actions = undefined; controller.dispose\(\)/);
+test('reset label is bounded at expiry', () => {
+  assert.equal(questReset('2026-11-04T00:00:00Z', Date.parse('2026-11-03T23:30:00Z')), 'Resets in 0h 30m');
+  assert.equal(questReset('2026-11-04T00:00:00Z', Date.parse('2026-11-05T00:00:00Z')), 'Closed for today');
 });
-
-test('selection starts empty and external consent, retention, uncertainty and no-reward limits are explicit', () => {
-  assert.match(page, /let goal = false, change = false/);
-  assert.match(page, /new Set<string>\(\), findings = new Set<string>\(\)/);
-  assert.match(page, /Consent and send/);
-  assert.match(page, /External JEV receives/);
+test('normal quest flow uses selected work, explicit Submit and bounded actions', () => {
+  assert.doesNotMatch(page, /<textarea|Validate and preview|Consent and submit/);
+  assert.match(page, /option\(state.preview \? "Submit"/);
+  assert.match(page, /height=\{Math.min\(4, options\(\).length\)\} flexShrink=\{0\}/);
+  assert.match(page, /Submit shares this work with Carthagent & its assessor/);
   assert.match(page, /Metadata: 90 days/);
-  assert.match(page, /not a background deletion timer/);
-  assert.match(page, /automatic secret detection is not provided/);
-  assert.match(page, /not independent verification/);
-  assert.match(page, /No coins, XP, distance, inventory or other rewards/);
-  assert.match(page, /Earlier failed-before execution is not recorded and is never inferred/);
-  assert.match(page, /c\.after === "passed" \? "fresh" : "not fresh"/);
-  assert.match(page, /\(\{ name: id, before, after, revision, result \}\)/);
-  assert.match(page, /view\(\)\.draft\?\.provenance/);
-  assert.match(page, /This does not cancel a server job, withdraw evidence already sent, or promise provider\/backup deletion/);
-  assert.doesNotMatch(page, /session\.export|file\.read|sendNativeReviewKickoff|outputTail/);
+  assert.match(page, /handleDailyQuestsEvent/);
+  assert.match(page, /source.checks.map/);
+  assert.doesNotMatch(page, /session\.export|file\.read|outputTail/);
 });

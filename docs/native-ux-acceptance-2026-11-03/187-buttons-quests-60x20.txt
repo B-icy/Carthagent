@@ -1,0 +1,20 @@
+
+  Quests                                 Resets in 23h 19m
+
+    › Handle an edge case
+    Handle a specific boundary or invalid input safely.
+    Choose work →
+
+      Test an edge case
+    Add a regression test that protects a specific
+    boundary.
+    Choose work →
+
+      Review a failure path
+    Resolve a concrete failure-handling risk found in
+    review.
+    Choose work →
+
+  [c Completed (0)] [s Character] [r Refresh] [Esc Coding]
+  ↑↓ Enter select · Ctrl+U/D scroll · Esc back
+

@@ -1,0 +1,20 @@
+
+
+
+
+    Browse folders                                   esc
+
+    ← Back  ↑ Up  ~ Home  + New folder              Path
+
+    …e/carthagent-acceptance/beta5-ux-review/workspace
+    ⌕      Search folders
+
+    3 folders
+     › .harness/
+       native-folder-acceptance/
+       terminal-created/
+
+    Open enter                      Select folder ctrl+s
+
+  ◆ CTG
+

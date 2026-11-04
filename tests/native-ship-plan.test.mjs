@@ -10,7 +10,7 @@ import ts from 'typescript';
 import { parseOpenCodeArgs } from '../lib/opencode/cli.mjs';
 import { normalizeSessionOptions } from '../lib/opencode/session-options.mjs';
 
-const patch = readFileSync(new URL('../docs/patches/opencode-v2.0.32-session-ui-combined-v7.patch', import.meta.url), 'utf8');
+const patch = readFileSync(new URL('../docs/patches/opencode-v2.0.32-session-ui-development-v8.patch', import.meta.url), 'utf8');
 const path = 'packages/tui/src/routes/session/plan-items.ts';
 const section = patch.split(`diff --git a/${path} b/${path}\n`)[1]?.split('\ndiff --git ')[0];
 assert.ok(section, 'the plan graph parser is part of the reproducible runtime patch');
@@ -72,7 +72,7 @@ test('development runtime source and preparation recipe pin the actual Ship grap
   assert.equal(CTG_DEVELOPMENT_RUNTIME_PATCH_SHA256, digest);
   const prepare = readFileSync(new URL('../script/ctg/prepare-development-runtime.sh', import.meta.url), 'utf8');
   assert.ok(prepare.includes(`EXPECTED_PATCH="${digest}"`));
-  assert.ok(prepare.includes('docs/patches/opencode-v2.0.32-session-ui-combined-v7.patch'));
+  assert.ok(prepare.includes('docs/patches/opencode-v2.0.32-session-ui-development-v8.patch'));
   assert.doesNotMatch(prepare, /bun (install|run|build)|gh release|npm publish/);
 });
 
@@ -83,9 +83,9 @@ test('the published runtime pin stays on its immutable release patch', () => {
 });
 
 test('the candidate build recipe pins the reviewed sidebar patch', () => {
-  const published = readFileSync(new URL('../docs/patches/opencode-v2.0.32-session-ui-combined-v7.patch', import.meta.url));
+  const published = readFileSync(new URL('../docs/patches/opencode-v2.0.32-session-ui-combined-v8.patch', import.meta.url));
   const digest = createHash('sha256').update(published).digest('hex');
   const build = readFileSync(new URL('../script/ctg/build-owned-runtime.sh', import.meta.url), 'utf8');
   assert.ok(build.includes(`EXPECTED_PATCH="${digest}"`));
-  assert.ok(build.includes('docs/patches/opencode-v2.0.32-session-ui-combined-v7.patch'));
+  assert.ok(build.includes('docs/patches/opencode-v2.0.32-session-ui-combined-v8.patch'));
 });

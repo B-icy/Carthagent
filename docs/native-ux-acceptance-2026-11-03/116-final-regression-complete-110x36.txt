@@ -1,0 +1,36 @@
+ Projects        Voyages
+                                Daily quests                                                Resets in 0h 43m
+ Focus sidebar
+                                Catch a regression
+ CURRENT FOLDER                 Show the same test failing before the fix and passing afterward.
+ workspace/
+ …e/beta5-ux-review/workspace
+ ▤ Browse  + New session
+ Model: Beam 1.0 501B A23B        ✓ Quest complete
+                                  Your submitted work met all the conditions.
+ Sessions      Search + Group     Keep building. Explore your other daily quests.
+ ▾ # UX Review
+   No sessions in this group
+
+ ▾ # Terminal review        1
+   Native terminal acceptance
+   Ready · workspace
+
+ ▾ terminal-created/
+   No sessions in this group
+
+ ▾ workspace/       1 session
+   New session
+   Ready
+
+
+
+
+
+                                 ▶ Back to quests
+                                   Continue coding
+                                   Details
+
+ ctrl+x n new  ctrl+x m model
+ Right-click to rename & move   ↑↓ Enter select · Ctrl+U/D scroll · Esc back
+

@@ -72,9 +72,11 @@ test.each([30, 18])("real Voyages navigator renders account and assignment summa
   const f = await fixture({ width });
   try {
     const frame = f.app.captureCharFrame();
-    expect(frame).toContain("Test captain");
+    expect(frame).not.toContain("Test captain");
     expect(frame).toContain("10 coins");
-    expect(frame).toContain("Daily coding");
+    expect(frame).toContain("Quests");
+    expect(frame).toContain("Friends · WIP");
+    expect(frame).not.toContain("Review a change");
     expect(frame).not.toContain("must not appear");
     expect(f.calls).toEqual(["profile", "daily"]);
     expect(f.routes).toHaveLength(0);
@@ -90,7 +92,7 @@ test("rail focus owns arrows/Enter; palette or modal mode cannot trigger a route
     expect(f.list()).toBeInstanceOf(SelectRenderable);
     f.app.mockInput.pressArrow("down");
     await f.app.renderOnce();
-    expect(f.list().getSelectedOption()?.value).toBe("quest:quest-one");
+    expect(f.list().getSelectedOption()?.value).toBe("equipment");
     for (const mode of ["modal", "palette", "base"]) {
       f.setMode(mode);
       await f.app.renderOnce();
@@ -102,7 +104,7 @@ test("rail focus owns arrows/Enter; palette or modal mode cannot trigger a route
     await f.app.renderOnce();
     f.app.mockInput.pressEnter();
     await f.app.renderOnce();
-    expect(f.routes).toEqual([{ type: "plugin", name: "daily-quests", data: { sessionID: "coding-session", questID: "quest-one" } }]);
+    expect(f.routes).toEqual([{ type: "plugin", name: "voyages", data: { sessionID: "coding-session", section: "equipment" } }]);
     expect(f.mode()).toBe("base");
     expect(f.calls).toEqual(["profile", "daily"]);
   } finally { f.app.renderer.destroy(); }
@@ -114,13 +116,13 @@ test("Projects/Voyages toggles retain selection and do not route, submit or purc
     await f.focus();
     f.app.mockInput.pressArrow("down");
     await f.app.renderOnce();
-    expect(f.list().getSelectedOption()?.value).toBe("quest:quest-one");
+    expect(f.list().getSelectedOption()?.value).toBe("equipment");
     f.setActive(false);
     await f.settle();
     expect(f.app.captureCharFrame()).not.toContain("Test captain");
     f.setActive(true);
     await f.settle();
-    expect(f.list().getSelectedOption()?.value).toBe("quest:quest-one");
+    expect(f.list().getSelectedOption()?.value).toBe("equipment");
     expect(f.routes).toHaveLength(0);
     expect(f.calls).toEqual(["profile", "daily", "profile", "daily"]);
   } finally { f.app.renderer.destroy(); }
@@ -134,19 +136,19 @@ test("compact mode uses the same mounted selection and keyboard behavior", async
     await f.app.renderOnce();
     const list = f.list();
     f.setCompact(true);
-    f.app.resize(5, 36);
+    f.app.resize(11, 36);
     await f.app.renderOnce();
     expect(f.list()).toBe(list);
-    expect(f.list().getSelectedOption()?.value).toBe("quest:quest-one");
+    expect(f.list().getSelectedOption()?.value).toBe("equipment");
     expect(f.app.captureCharFrame()).not.toContain("Test captain");
     f.app.mockInput.pressEnter();
     await f.app.renderOnce();
-    expect(f.routes).toEqual([{ type: "plugin", name: "daily-quests", data: { sessionID: "coding-session", questID: "quest-one" } }]);
+    expect(f.routes).toEqual([{ type: "plugin", name: "voyages", data: { sessionID: "coding-session", section: "equipment" } }]);
   } finally { f.app.renderer.destroy(); }
 });
 
 test("switching modes preserves the Voyages scroll position at a short terminal height", async () => {
-  const f = await fixture({ height: 12 });
+  const f = await fixture({ height: 6 });
   try {
     const scroll = f.scroll();
     scroll.scrollBy(5);
@@ -164,7 +166,7 @@ test("switching modes preserves the Voyages scroll position at a short terminal 
 });
 
 test("slow summary reads preserve scrolled position after an intervening loading layout", async () => {
-  const f = await fixture({ height: 12 });
+  const f = await fixture({ height: 6 });
   try {
     const scroll = f.scroll();
     scroll.scrollTo(100);
@@ -190,12 +192,12 @@ test("short terminal keyboard navigation keeps the highlighted action on screen"
   const f = await fixture({ height: 12 });
   try {
     await f.focus();
-    for (let index = 0; index < 7; index++) {
+    for (let index = 0; index < 3; index++) {
       f.app.mockInput.pressArrow("down");
       await f.app.renderOnce();
     }
     expect(f.list().getSelectedOption()?.value).toBe("back");
-    expect(f.app.captureCharFrame()).toContain("Return to coding");
+    expect(f.app.captureCharFrame()).toContain("Coding");
     expect(f.list().height).toBeLessThanOrEqual(f.scroll().viewport.height);
     expect(f.routes).toHaveLength(0);
   } finally { f.app.renderer.destroy(); }
@@ -204,7 +206,7 @@ test("short terminal keyboard navigation keeps the highlighted action on screen"
 test("mouse press focuses the rail and release opens the clicked row without acting through a modal", async () => {
   const f = await fixture();
   try {
-    const row = f.app.captureCharFrame().split("\n").findIndex((line) => line.includes("Daily coding quests"));
+    const row = f.app.captureCharFrame().split("\n").findIndex((line) => line.includes("Quests"));
     expect(row).toBeGreaterThanOrEqual(0);
     for (const mode of ["modal", "palette"]) {
       f.setMode(mode);
@@ -226,13 +228,12 @@ test("mouse press focuses the rail and release opens the clicked row without act
     await f.app.renderOnce();
     expect(f.routes).toEqual([{ type: "plugin", name: "daily-quests", data: { sessionID: "coding-session" } }]);
     expect(f.mode()).toBe("base");
-    const questRow = f.app.captureCharFrame().split("\n").findIndex((line) => line.includes("Review a change"));
-    expect(questRow).toBeGreaterThanOrEqual(0);
-    await f.app.mockMouse.click(5, questRow);
+    const friendsRow = f.app.captureCharFrame().split("\n").findIndex((line) => line.includes("Friends · WIP"));
+    expect(friendsRow).toBeGreaterThanOrEqual(0);
+    await f.app.mockMouse.click(5, friendsRow);
     await f.app.renderOnce();
     expect(f.routes).toEqual([
       { type: "plugin", name: "daily-quests", data: { sessionID: "coding-session" } },
-      { type: "plugin", name: "daily-quests", data: { sessionID: "coding-session", questID: "quest-two" } },
     ]);
   } finally { f.app.renderer.destroy(); }
 });

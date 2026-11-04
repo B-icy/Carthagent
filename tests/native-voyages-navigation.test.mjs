@@ -27,7 +27,7 @@ test('navigation loads only when selected, reads once per activation and retains
   assert.deepEqual(f.last(), {
     busy: false, error: '',
     profile: { name: 'Captain', shipName: 'Ship', coins: 10, level: 3, totalXp: 200 },
-    daily: { day: '2026-10-30', endsAt: '2026-10-31T00:00:00Z', items: [{ id: 'quest-one', title: 'Protect a boundary', status: 'open' }] },
+    daily: { day: '2026-10-30', endsAt: '2026-10-31T00:00:00Z', items: [{ id: 'quest-one', title: 'Protect a boundary', status: 'Choose work' }] },
   });
   assert.doesNotMatch(JSON.stringify(f.last()), /private|consent|evidence|quoteId|owned|criteria/);
   await f.controller.activate(true);
@@ -161,8 +161,8 @@ test('native extension is optional; navigation cannot itself accept consent or p
   assert.match(tui, /if \(navigation\) cleanups.push\(navigation.register/);
   assert.match(adapter, /navigation\?: NativeNavigation/);
   assert.match(pane, /!props.active \|\| context.keymap.mode.current\(\) !== "navigation" \|\| !props.focused/);
-  assert.match(pane, /showDescription=\{!props.compact\}/);
+  assert.match(pane, /showDescription=\{false\}/);
   assert.doesNotMatch(pane, /\.submit\(|\.retry\(|\.purchase\(|\.quote\(|\.customize\(|\.equip\(|dialog\.confirm|consent: true/);
-  assert.match(daily, /controller.refresh\(\).then\(\(\) => \{ if \(props.questID\) return controller.select\(props.questID\)/);
+  assert.match(daily, /controller.refresh\(\).then\(async \(\) => \{\s*if \(props.questID\) await openQuest\(props.questID\)/);
   assert.match(voyages, /view\(\).busy \|\| context.keymap.mode.current\(\) !== "base"/);
 });

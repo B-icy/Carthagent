@@ -1,0 +1,36 @@
+ [Projects]      [Voyages]
+                                Shop
+                                35 coins · Level 1
+                                ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+ workspace/                     ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+[▤ Browse] [+ New session]      ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                                ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+ Sessions     [Search] [More]   ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+ ▾ # Terminal review        1   ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   Native terminal acceptance   ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                                                                                                   ▀▀▀▀▀▀▀▀▀
+              Browse folders                                                               [esc]   ▀▀▀▀▀▀▀▀▀
+ ▾ workspac                                                                                        ▀▀▀▀▀▀▀▀▀
+   New sess   [← Back] [↑ Up] [~ Home] [+ New folder]                                     [Path]   ▀▀▀▀▀▀▀▀▀
+                                                                                                   ▀▀▀▀▀▀▀▀▀
+              /home/baissi/.local/share/carthagent-acceptance/beta5-ux-review/workspace            ▀▀▀▀▀▀▀▀▀
+              ⌕      Search folders
+
+              4 folders
+               › .harness/
+                 native-folder-acceptance/
+                 picker-layout-review/
+                 terminal-created/
+
+              [Open enter]                                                [Select folder ctrl+s]
+
+
+
+
+                                 ▶ [Hairstyles]
+                                   [Hats]                                                                  █
+                                   [Tops]
+                                   [Bottoms]
+                                   [Shoes]
+                                ↑↓ Enter select · Ctrl+U/D scroll · Esc back
+
