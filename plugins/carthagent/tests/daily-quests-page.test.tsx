@@ -13,6 +13,36 @@ const quest = { id: "11111111-1111-4111-8111-111111111111", status: "open", ends
   criteria: [{ id: "outcome", text: "Goal and achieved outcome" }, { id: "focus", text: "Specific behavior" }, { id: "validation", text: "Relevant check" }],
 } };
 
+test("choosing recorded work discovers unvisited durable sessions across inventory pages", async () => {
+  let layer: () => { commands: { bind: string; run: () => void }[] };
+  const inventory: unknown[] = [], selected: unknown[] = [];
+  const source = { runId: "22222222-2222-4222-8222-222222222222", revision: "a".repeat(64), planRevision: 1, freshness: "current", goal: "Handle a boundary", change: "Validate the input", checks: [], findings: [], truncated: false };
+  const context = {
+    theme: resolveThemeDocument(parseThemeDocument(theme), "dark"), location: { directory: "/review" },
+    data: { session: { get: () => undefined, list: () => [] }, location: { default: () => ({ directory: "/review" }) }, listen: () => () => {} },
+    client: {
+      session: { list: async (input: { cursor?: string }) => {
+        inventory.push(input);
+        return input.cursor ? { data: [{ id: "durable", title: "Completed boundary fix", projectID: "project", location: { directory: "/review" } }], cursor: {} } : { data: [], cursor: { next: "page-two" } };
+      } },
+      rpc: () => ({ snapshot: async () => ({ accountKey: "a".repeat(64), slate: { endsAt: quest.endsAt, items: [quest] }, records: [] }), detail: async () => ({ ...quest, latestSubmission: null }), report: async () => ({ source }) }),
+    },
+    keymap: { layer: (value: typeof layer) => { layer = value; }, mode: { current: () => "base" } },
+    ui: { router: { navigate: () => {} }, dialog: { clear: () => {}, select: async (input: unknown) => { selected.push(input); return "durable"; } } },
+  } as unknown as Context;
+  const app = await testRender(() => <PluginContextProvider value={context}><DailyQuestsPage questID={quest.id} /></PluginContextProvider>, { width: 110, height: 36 });
+  const settle = async () => { for (let i = 0; i < 20; i++) { await Promise.resolve(); await app.renderOnce(); } };
+  try {
+    await settle();
+    layer().commands.find(c => c.bind === "return")!.run();
+    await settle();
+    expect(inventory).toEqual([{ directory: "/review", limit: 100, order: "desc" }, { directory: "/review", limit: 100, order: "desc", cursor: "page-two" }]);
+    expect(selected).toEqual([{ title: "Choose completed work", options: [{ title: "Completed boundary fix", value: "durable", description: "Recorded Ship work" }] }]);
+    expect(app.captureCharFrame()).toContain("Completed boundary fix");
+    expect(app.captureCharFrame()).toContain("Submit");
+  } finally { app.renderer.destroy(); }
+});
+
 test.each([[110, 36], [60, 20]])("completed quests leave the active board but remain readable at %ix%i", async (width, height) => {
   const items = [{ ...quest, status: "assessed_complete" }, { ...quest, id: "second", definition: { ...quest.definition, templateId: "tests-regression-v1" } }];
   let layer: () => { commands: { bind: string; run: () => void }[] };

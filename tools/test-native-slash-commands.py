@@ -83,12 +83,13 @@ class Tui:
         else:
             os.write(self.master, command_name.encode('utf8'))
             self.drain(.35)
-            os.write(self.master, b'\t')
+            os.write(self.master, b'\t' if separator else b'\r')
             self.drain(.15)
             if separator:
                 os.write(self.master, (' ' + arguments).encode('utf8'))
                 self.drain(.12)
-            os.write(self.master, b'\r')
+            if separator:
+                os.write(self.master, b'\r')
         if extra_enter:
             self.drain(.12)
             os.write(self.master, b'\r')
@@ -158,12 +159,10 @@ def main():
             'activeScriptAbsent': True, 'completeDocument': html.startswith('<!doctype html>') and html.endswith('</html>')}
 
         stats_start = len(tui.raw)
-        os.write(tui.master, b'/stats')
-        tui.drain(.3)
-        stats_result = tui.submit_slash('/stats details')
-        tui.drain(.2)
+        stats_result = tui.submit_slash('/stats')
+        tui.wait_for(lambda: 'Input tokens:' in tui.screen.visible(), 'session stats dialog')
         visible = tui.screen.visible()
-        stats_status = 'PASS' if 'Input tokens: not reported' in visible and 'Cost: not reported' in visible else 'FAIL'
+        stats_status = 'PASS' if 'Input tokens: 17' in visible and 'Output tokens: 9' in visible and 'Cost: $0.0000' in visible else 'FAIL'
         stats_details = {'dialogRendered': stats_status == 'PASS',
             'observedNativeStatsInstead': 'Usage statistics' in visible,
             'rendered': visible[-1000:]}
@@ -173,20 +172,20 @@ def main():
         else:
             os.write(tui.master, b'\x1b')
             tui.drain(.3)
-        stats_result = {'typed': '/stats details',
+        stats_result = {'typed': '/stats',
             'ptyBytes': len(tui.raw) - stats_start,
             'visibleTail': tui.screen.visible()[-500:]}
         checks['statsDispatch'] = {**stats_result, 'status': stats_status}
-        checks['statsActualSessionAndUnknownHandling'] = stats_details
+        checks['statsActualSessionUsage'] = stats_details
 
         checks['guideTaskDispatch'] = tui.submit_slash('/guide framed task marker', 'GUIDE_FIXTURE_REPLY')
-        checks['guideToggleDispatch'] = tui.submit_slash('/guide ')
+        checks['guideToggleDispatch'] = tui.submit_slash('/guide ', 'framing disabled')
         toggle_prompt = 'GUIDE_TOGGLE_SENTINEL exact text'
         os.write(tui.master, b'\x15')
         tui.drain(.1)
         tui.send_prompt(toggle_prompt, 'FIXTURE_REPLY')
-        tui.drain(.3)
         provider_log = Path(fixture['providerLog'])
+        tui.wait_for(lambda: provider_log.exists() and toggle_prompt in provider_log.read_text(), 'guide toggle provider request')
         provider_prompts = json.loads(provider_log.read_text()) if provider_log.exists() else []
         toggle_provider_prompt = next((text for text in provider_prompts if toggle_prompt in text), '')
         toggle_status = 'PASS' if toggle_provider_prompt == toggle_prompt else 'FAIL'
