@@ -27,7 +27,7 @@ import { shipAgentDir } from '../../../../lib/ship-auth.mjs';
 import { createHash } from 'node:crypto';
 import { legacyOAuthForOpenCode, nativeCredentialFile, nativeCredentialDatabaseFile, readNativeOAuthCredential, refreshNativeCredential, refreshSingleFlight } from '../../../../lib/opencode/credentials.mjs';
 import { createDeviceAuthController } from './device-auth.ts';
-import { createSessionIdentity, isManagedShipCredential, shipTelemetryHeaders } from './telemetry.ts';
+import { createSessionIdentity, isManagedShipCredential, sessionRunMode, shipTelemetryHeaders } from './telemetry.ts';
 import { nativeLoginProvider } from '../../../../lib/opencode/provider-policy.mjs';
 
 const OAUTH_METHOD = 'carthagent-device';
@@ -299,6 +299,24 @@ export async function registerProviders(ctx: Context, options: ProviderRegistrat
   });
   registrations.push(providerRegistration);
 
+  // Run mode is per session (the service env is shared by TUI and headless
+  // launches); analytics only, so a lookup failure falls back silently.
+  const runModes = new Map<string, string>();
+  const runModeFor = async (sessionID: string) => {
+    const key = String(sessionID || '');
+    const cached = runModes.get(key);
+    if (cached) return cached;
+    const session = key && typeof ctx.session.get === 'function'
+      ? await Promise.resolve().then(() => ctx.session.get({ sessionID: key })).catch(() => undefined)
+      : undefined;
+    const mode = sessionRunMode(session as { metadata?: Record<string, unknown> } | undefined, env);
+    if (session) {
+      if (runModes.size >= 1000) runModes.delete(runModes.keys().next().value as string);
+      runModes.set(key, mode);
+    }
+    return mode;
+  };
+
   const providerHook = await ctx.session.hook('http.request', async event => {
     if (event.model.providerID !== EXPERIENTIAL_PROVIDER_ID) return;
     let credential;
@@ -311,7 +329,7 @@ export async function registerProviders(ctx: Context, options: ProviderRegistrat
     const headers = new Headers(event.request.headers);
     const telemetry = shipTelemetryHeaders({
       sessionID: event.sessionID, kind: event.kind, body, env, agentDir,
-      identity,
+      identity, runMode: await runModeFor(event.sessionID),
       requestID: event.request.headers.get('x-carthagent-request-id') || identity.request(event.sessionID, event.kind),
       requestSecret,
     });

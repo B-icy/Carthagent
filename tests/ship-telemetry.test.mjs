@@ -8,7 +8,7 @@ import os from 'node:os';
 
 const packageVersion = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')).version;
 import {
-  installIdPath, shipInstallId, providerMode,
+  installIdPath, shipInstallId, providerMode, installPingHeaders, isCiEnvironment,
   noteEngineSession, noteAgentTurn, shipRequestHeaders, resetShipContext,
 } from '../lib/ship-telemetry.mjs';
 import { managedCloudRequestOptions } from '../lib/providers/experiential.mjs';
@@ -251,7 +251,20 @@ test('update check sends the install headers to the control plane only', async t
   assert.equal(control.headers['x-carthagent-node'], process.versions.node);
   assert.equal(control.headers['x-carthagent-provider-mode'], 'none');
   assert.equal(control.headers['x-carthagent-version'], packageVersion);
+  assert.equal(control.headers['x-carthagent-ci'], undefined);
   assert.equal(github.headers['x-carthagent-install-id'], undefined);
+});
+
+test('install pings from CI runners are marked so they stay out of install analytics', t => {
+  const agentDir = tmp(t);
+  assert.equal(isCiEnvironment({}), false);
+  assert.equal(isCiEnvironment({ CI: 'false' }), false);
+  assert.equal(isCiEnvironment({ CI: '0' }), false);
+  assert.equal(isCiEnvironment({ CI: 'true' }), true);
+  assert.equal(isCiEnvironment({ GITHUB_ACTIONS: 'true' }), true);
+  assert.equal(installPingHeaders({ env: { CI: 'true' }, agentDir })['x-carthagent-ci'], '1');
+  assert.equal(installPingHeaders({ env: { GITHUB_ACTIONS: 'true' }, agentDir })['x-carthagent-ci'], '1');
+  assert.equal(installPingHeaders({ env: {}, agentDir })['x-carthagent-ci'], undefined);
 });
 
 test('managed requests carry thread, turn, install and run-mode headers', t => {

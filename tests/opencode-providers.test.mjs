@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readLegacyCarthagentCredential, refreshSingleFlight, refreshNativeCredential, credentialStorageKey, nativeCredentialFile, nativeCredentialDatabaseFile, readNativeOAuthCredential } from '../lib/opencode/credentials.mjs';
-import { createSessionIdentity, managedRequestIdentity, shipTelemetryHeaders } from '../plugins/carthagent/src/server/telemetry.ts';
+import { createSessionIdentity, managedRequestIdentity, sessionRunMode, shipTelemetryHeaders } from '../plugins/carthagent/src/server/telemetry.ts';
 import { registerProviders, providerConstants } from '../plugins/carthagent/src/server/providers.ts';
 import { createDeviceAuthController } from '../plugins/carthagent/src/server/device-auth.ts';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -159,7 +159,7 @@ test('refresh pins original A despite active B before lock and during receipt wa
   await assert.rejects(method.refresh(a), /no longer stored/);
 });
 
-function fakeContext({ integrations = ['experiential-labs', 'anthropic', 'openai-codex'], connections = {}, failAt, disposeFailure } = {}) {
+function fakeContext({ integrations = ['experiential-labs', 'anthropic', 'openai-codex'], connections = {}, failAt, disposeFailure, sessions = {} } = {}) {
   const hooks = [];
   const events = [];
   const providerTransforms = [];
@@ -219,11 +219,17 @@ function fakeContext({ integrations = ['experiential-labs', 'anthropic', 'openai
         async resolve(connection) { return connection.credential; },
       },
     },
-    session: { async hook(name, callback, options) {
-      if (failAt === `hook:${name}`) throw new Error(`injected hook failure: ${name}`);
-      hooks.push({ name, callback, options });
-      return registrations(`hook:${name}`);
-    } },
+    session: {
+      async hook(name, callback, options) {
+        if (failAt === `hook:${name}`) throw new Error(`injected hook failure: ${name}`);
+        hooks.push({ name, callback, options });
+        return registrations(`hook:${name}`);
+      },
+      async get({ sessionID }) {
+        if (!sessions[sessionID]) throw new Error(`unknown session ${sessionID}`);
+        return sessions[sessionID];
+      },
+    },
     storage: {
       async get(key) { return storage.get(key); },
       async set(key, value) { storage.set(key, value); },
@@ -249,6 +255,18 @@ test('session telemetry uses stable session-derived thread IDs and request-kind 
   assert.equal(headers['x-carthagent-turn'], '1');
   assert.ok(headers['x-carthagent-request-id']);
   assert.equal(headers['x-carthagent-version'], 'test');
+  assert.equal(headers['x-carthagent-run-mode'], undefined);
+  const printed = shipTelemetryHeaders({ sessionID: 'ses_native_non_uuid', kind: 'generate', body: '{}', env: {}, agentDir: '/missing', identity: identities, runMode: 'print', version: 'test' });
+  assert.equal(printed['x-carthagent-run-mode'], 'print');
+});
+
+test('native run mode comes from the session stamp, then the env, then interactive', () => {
+  const session = mode => ({ metadata: { 'carthagent.runMode': mode } });
+  assert.equal(sessionRunMode(session('print'), {}), 'print');
+  assert.equal(sessionRunMode(session('interactive'), { CARTHAGENT_RUN_MODE: 'print' }), 'interactive');
+  assert.equal(sessionRunMode(session('bogus'), { CARTHAGENT_RUN_MODE: 'rpc' }), 'rpc');
+  assert.equal(sessionRunMode({ metadata: {} }, {}), 'interactive');
+  assert.equal(sessionRunMode(undefined, {}), 'interactive');
 });
 
 test('parallel token refresh callers share one rotation result and failures can retry', async () => {
@@ -585,7 +603,9 @@ test('provider registration uses native provider transforms and cleanup; refresh
     anthropic: { connection: { id: 'claude', credential: { type: 'oauth', access: 'claude-token' } } },
     'openai-codex': { connection: { id: 'codex', credential: { type: 'oauth', access: 'codex-token' } } },
   };
-  const fake = fakeContext({ integrations: ['experiential-labs', 'anthropic', 'openai-codex'], connections });
+  const fake = fakeContext({ integrations: ['experiential-labs', 'anthropic', 'openai-codex'], connections, sessions: {
+    ses_headless_run: { id: 'ses_headless_run', location: { directory: '/project' }, metadata: { 'carthagent.runMode': 'print' } },
+  } });
   const fetchCalls = [];
   const fetchImpl = async (url, init) => {
     fetchCalls.push([String(url), init]);
@@ -626,7 +646,12 @@ test('provider registration uses native provider transforms and cleanup; refresh
   const hookedRequestEvent = { ...nativeSession, request: new Request(request, { headers: { 'x-carthagent-request-id': modelRequest.headers['x-carthagent-request-id'] } }) };
   await hooksByName['http.request'].callback(hookedRequestEvent);
   assert.equal(hookedRequestEvent.request.headers.get('x-carthagent-thread-id')?.length, 36);
+  assert.equal(hookedRequestEvent.request.headers.get('x-carthagent-run-mode'), 'interactive',
+    'sessions without a launcher stamp are TUI sessions');
   assert.equal(hookedRequestEvent.request.headers.get('Idempotency-Key'), modelRequest.headers['x-carthagent-request-id']);
+  const headlessEvent = { ...nativeSession, sessionID: 'ses_headless_run', request: new Request('https://gateway.example/v1/chat/completions', { method: 'POST', body: JSON.stringify({ model: 'gpt-6-luna', messages: [] }) }) };
+  await hooksByName['http.request'].callback(headlessEvent);
+  assert.equal(headlessEvent.request.headers.get('x-carthagent-run-mode'), 'print', 'headless launches report print mode');
   const retry = new Request('https://gateway.example/v1/chat/completions', { method: 'POST', headers: { 'x-carthagent-request-id': modelRequest.headers['x-carthagent-request-id'] }, body: JSON.stringify({ model: 'gpt-6-luna', messages: [] }) });
   const retryRequestEvent = { ...nativeSession, request: retry };
   await hooksByName['http.request'].callback(retryRequestEvent);

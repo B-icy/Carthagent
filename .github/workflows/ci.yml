@@ -7,6 +7,11 @@ on:
 permissions:
   contents: read
 
+# The passive release check doubles as the anonymous install ping; CI runners
+# must not register as installs.
+env:
+  CARTHAGENT_NO_UPDATE_CHECK: '1'
+
 jobs:
   test:
     # GitHub requires push access to read draft release assets. The runtime

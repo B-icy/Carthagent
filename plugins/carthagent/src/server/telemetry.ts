@@ -47,6 +47,16 @@ export function managedRequestIdentity({ sessionID, kind, body, secret = '' }: {
   return createHash('sha256').update(`${secret}\0${sessionID}\0${kind}\0${body}`).digest('hex');
 }
 
+/** Run mode the launcher stamped on the session (child sessions inherit it).
+ * Sessions without it were opened from the TUI, so native defaults to
+ * interactive; an explicit CARTHAGENT_RUN_MODE still wins over the default. */
+export function sessionRunMode(session: { metadata?: Record<string, unknown> } | undefined, env: NodeJS.ProcessEnv = process.env) {
+  const stamped = String(session?.metadata?.['carthagent.runMode'] ?? '').trim();
+  if (RUN_MODES.has(stamped)) return stamped;
+  const configured = String(env.CARTHAGENT_RUN_MODE || '').trim();
+  return RUN_MODES.has(configured) ? configured : 'interactive';
+}
+
 export function shipTelemetryHeaders({
   sessionID,
   kind,
@@ -57,6 +67,7 @@ export function shipTelemetryHeaders({
   requestSecret = 'carthagent-opencode-request-v1',
   requestID,
   turn,
+  runMode: sessionMode,
   version = packageVersion(),
 }: {
   sessionID: string; kind: string; body: string; env?: NodeJS.ProcessEnv;
@@ -64,6 +75,7 @@ export function shipTelemetryHeaders({
   requestSecret?: string; version?: string;
   requestID?: string;
   turn?: number;
+  runMode?: string;
 }) {
   const headers: Record<string, string> = {
     'x-carthagent-install-id': shipInstallId({ agentDir }),
@@ -74,7 +86,7 @@ export function shipTelemetryHeaders({
   headers['x-carthagent-thread-id'] = UUID.test(String(sessionID))
     ? String(sessionID).toLowerCase() : identity.thread(sessionID);
   headers['x-carthagent-turn'] = String(Math.max(0, Math.trunc(turn ?? identity.turn(sessionID))));
-  const runMode = String(env.CARTHAGENT_RUN_MODE || '').trim();
+  const runMode = String(sessionMode || env.CARTHAGENT_RUN_MODE || '').trim();
   if (RUN_MODES.has(runMode)) headers['x-carthagent-run-mode'] = runMode;
   headers['x-carthagent-request-id'] = requestID || generatedRequestID || managedRequestIdentity({ sessionID, kind, body, secret: requestSecret });
   return headers;
