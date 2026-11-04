@@ -1,6 +1,6 @@
 # Beta.7 candidate acceptance
 
-This records the November 4 follow-up to beta.6. Publication and installed release acceptance are still pending.
+This records the November 4 follow-up to beta.6. Five-platform prebuild passed; publication and installed release acceptance are still pending.
 
 ## Fixes
 
@@ -48,8 +48,10 @@ Sequential candidate account reads using the original normal and acceptance prof
 
 ## Outstanding release gates and limits
 
-Five-platform prebuild, promoted manifest, installed/default-resolver acceptance, authenticated upgrade preservation, and publication remain pending. The published beta.6 manifest and combined-v8 patch are retained unchanged during candidate preparation.
+Five-platform prebuild [41801398244](https://github.com/B-icy/Carthagent/actions/runs/41801398244) passed at source `eca43034a28f6006b4d339c87fa2c9150e4840dd`. All archive hashes verified locally. Its manifest is promoted unchanged for beta.7; combined-v8 remains unchanged. The Linux release executable is `a3c07f23118a3121c4e5f8012d2aea9bdd1d80483b24f0d26ea24dcea99bc98f`.
 
-The first prebuild passed Linux and macOS on both architectures but failed Windows new-session tests. An unchanged path was compared in normalized versus original form, incorrectly marking it dirty. Both sides now use identical normalization, with an additional equivalent-path regression. A fresh five-platform prebuild is required for these revised bytes.
+Installed/default-resolver acceptance, installed authenticated upgrade preservation, and publication remain pending.
+
+The first prebuild passed Linux and macOS on both architectures but failed Windows new-session tests. An unchanged path was compared in normalized versus original form, incorrectly marking it dirty. Both sides now use identical normalization, with an additional equivalent-path regression. All 68 sidebar regressions and typecheck passed locally; the revised five-platform prebuild passed on every platform.
 
 The earlier 44-item checklist is not fully recertified. Historical completed-run browsing, lost-profile recovery, live oversized evidence, forced mid-upload termination, and real payment completion/explicit continuation remain outside this pass. Offline billing tests do not constitute a live payment. No claim is made that every possible UI state or external-provider outcome has been exercised.
