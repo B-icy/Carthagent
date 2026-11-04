@@ -419,6 +419,7 @@ test('native run rejects only options without an enforcement contract and persis
   await assert.rejects(runtime.run({ mode: 'headless', options: { prompt: 'task', strict: false }, prompt: 'task' }), /does not advertise required enforcement capabilities/);
   assert.equal(await runtime.run({ mode: 'headless', options: { prompt: 'task', autoFraming: false }, prompt: 'task' }), 0);
   assert.deepEqual(sessions[0]['carthagent.options'], { guide: false });
+  assert.equal(sessions[0]['carthagent.runMode'], 'print', 'headless sessions are stamped for Ship run-mode analytics');
 });
 
 test('native run resolves and persists the enforced codegraph index cap per session', async t => {

@@ -19,7 +19,9 @@ async function serverFixture(t, envOverrides = {}) {
   const token = 'test-token';
   const child = spawn(process.execPath, [serverPath], {
     cwd: root,
-    env: { ...process.env, CARTHAGENT_WORKSPACE: cwd, CARTHAGENT_PORT: String(port), CARTHAGENT_SERVER_TOKEN: token, ...envOverrides },
+    // The passive release check doubles as the install ping; keep test
+    // servers off the production control plane unless a test opts in.
+    env: { ...process.env, CARTHAGENT_WORKSPACE: cwd, CARTHAGENT_PORT: String(port), CARTHAGENT_SERVER_TOKEN: token, CARTHAGENT_NO_UPDATE_CHECK: '1', ...envOverrides },
     stdio: ['ignore', 'pipe', 'pipe']
   });
   t.after(() => { child.kill('SIGTERM'); rmSync(cwd, { recursive: true, force: true }); });
@@ -81,7 +83,7 @@ test('dashboard status reports an available update from the release cache', asyn
   writeFileSync(cachePath, JSON.stringify({ checkedAt: Date.now(), release: { version: '99.0.0', tag: 'v99.0.0' } }));
   const channelPath = join(dir, 'update-channel.json');
   writeFileSync(channelPath, JSON.stringify({ version: 1, channel: 'stable' }));
-  const server = await serverFixture(t, { CARTHAGENT_UPDATE_CHECK_FILE: cachePath, CARTHAGENT_UPDATE_CHANNEL_FILE: channelPath });
+  const server = await serverFixture(t, { CARTHAGENT_NO_UPDATE_CHECK: '', CARTHAGENT_UPDATE_CHECK_FILE: cachePath, CARTHAGENT_UPDATE_CHANNEL_FILE: channelPath });
   let body = {};
   for (let i = 0; i < 50 && !body.update; i++) {
     body = await (await fetch(`${server.url}/api/status`, { headers: { 'x-carthagent-token': server.token } })).json();
