@@ -1,6 +1,6 @@
 # Beta.7 candidate acceptance
 
-This records the November 4 follow-up to beta.6. Five-platform prebuild passed; publication and installed release acceptance are still pending.
+This records the November 4 follow-up to beta.6. Five-platform prebuild, final PR CI, draft installed acceptance, and published anonymous-download acceptance passed. GitHub beta.7 is public and the release workflow successfully submitted npm publication with signed provenance.
 
 ## Fixes
 
@@ -36,7 +36,7 @@ Native screenshots are under `~/.local/share/carthagent-acceptance/beta5-ux-revi
 
 Daily quests remain separate from verified Ship rewards. No quest submission, purchase, equipment change, or customization was committed in these checks.
 
-Sequential candidate account reads using the original normal and acceptance profiles authenticated to the same accounts as beta.6. Credential identity metadata, all 10 project rows, 3 sessions, and 61 transcript messages were preserved. OAuth values/update timestamps may rotate during refresh and are not compared as immutable records. Installed-release preservation will be checked separately.
+Sequential candidate and installed beta.7 account reads using the original normal and acceptance profiles authenticated to the same accounts as beta.6. Credential identity metadata, all 10 project rows, 3 sessions, and 61 transcript messages were preserved. OAuth values/update timestamps may rotate during refresh and are not compared as immutable records. Installed preservation used the exact CI-built release runtime; the separate CI gates exercised default acquisition.
 
 ## Candidate provenance
 
@@ -50,7 +50,15 @@ Sequential candidate account reads using the original normal and acceptance prof
 
 Five-platform prebuild [41801398244](https://github.com/B-icy/Carthagent/actions/runs/41801398244) passed at source `eca43034a28f6006b4d339c87fa2c9150e4840dd`. All archive hashes verified locally. Its manifest is promoted unchanged for beta.7; combined-v8 remains unchanged. The Linux release executable is `a3c07f23118a3121c4e5f8012d2aea9bdd1d80483b24f0d26ea24dcea99bc98f`.
 
-Installed/default-resolver acceptance, installed authenticated upgrade preservation, and publication remain pending.
+## Final release evidence
+
+- [PR #253](https://github.com/B-icy/Carthagent/pull/253) merged as `72829a1857bcc649cf92aae10df52059feae1a6a` after [all nine PR CI jobs passed](https://github.com/B-icy/Carthagent/actions/runs/41804379403). Initial download failures preceded draft asset upload; the failed jobs passed after upload.
+- Immutable release tag: `v1.1.0-beta.7` at `dcfc4e04aac066b70f4f7f241a0d3c6136f071c1`.
+- [Draft acceptance](https://github.com/B-icy/Carthagent/actions/runs/41805902929): full repository quality and non-focused installed/default-resolver gate passed, with draft identity and tag ancestry checked before and after.
+- [Published acceptance and npm publication](https://github.com/B-icy/Carthagent/actions/runs/41806815554): full installed gate passed through anonymous runtime acquisition; npm accepted `carthagent@1.1.0-beta.7` with signed provenance and the `next` tag.
+- [Public GitHub prerelease](https://github.com/B-icy/Carthagent/releases/tag/v1.1.0-beta.7): all five archives and manifest digests match the promoted pins.
+- Exact release Linux slash-command acceptance passed. Installed authenticated profile preservation passed for both original profiles.
+- npm registry propagation confirmed: `carthagent@1.1.0-beta.7` is available, `next` is `1.1.0-beta.7`, and stable `latest` remains `1.0.7`.
 
 The first prebuild passed Linux and macOS on both architectures but failed Windows new-session tests. An unchanged path was compared in normalized versus original form, incorrectly marking it dirty. Both sides now use identical normalization, with an additional equivalent-path regression. All 68 sidebar regressions and typecheck passed locally; the revised five-platform prebuild passed on every platform.
 
