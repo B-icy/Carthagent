@@ -58,7 +58,7 @@ Five-platform prebuild [41801398244](https://github.com/B-icy/Carthagent/actions
 - [Published acceptance and npm publication](https://github.com/B-icy/Carthagent/actions/runs/41806815554): full installed gate passed through anonymous runtime acquisition; npm accepted `carthagent@1.1.0-beta.7` with signed provenance and the `next` tag.
 - [Public GitHub prerelease](https://github.com/B-icy/Carthagent/releases/tag/v1.1.0-beta.7): all five archives and manifest digests match the promoted pins.
 - Exact release Linux slash-command acceptance passed. Installed authenticated profile preservation passed for both original profiles.
-- Stable `latest` remains `1.0.7`. npm publication may take several minutes to propagate after the workflow succeeds.
+- npm registry propagation confirmed: `carthagent@1.1.0-beta.7` is available, `next` is `1.1.0-beta.7`, and stable `latest` remains `1.0.7`.
 
 The first prebuild passed Linux and macOS on both architectures but failed Windows new-session tests. An unchanged path was compared in normalized versus original form, incorrectly marking it dirty. Both sides now use identical normalization, with an additional equivalent-path regression. All 68 sidebar regressions and typecheck passed locally; the revised five-platform prebuild passed on every platform.
 
