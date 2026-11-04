@@ -1,0 +1,24 @@
+[Projects]
+[Voyages]
+
+▄▄▄▄▄▄▄▄▄▄▄
+    [⌕]
+    [▤]
+    [◇]
+                    ▄▀▀▀ ▄▀▀▄ █▀▀▄ ▀▀█▀▀ █  █ ▄▀▀▄ ▄▀▀▀ █▀▀▀ █▄  █ ▀▀█▀▀
+     N              █    █▀▀█ █▀█    █   █▀▀█ █▀▀█ █ ▀█ █▀▀  █ ▀▄█   █
+                     ▀▀▀ ▀  ▀ ▀  ▀   ▀   ▀  ▀ ▀  ▀  ▀▀▀ ▀▀▀▀ ▀   ▀   ▀
+     N
+▄▄▄▄▄▄▄▄▄▄▄
+    [+]
+▀▀▀▀▀▀▀▀▀▀▀
+
+             ┃
+             ┃  What are we building today?
+             ┃
+             ┃  [Ship][Lite][Plan][Build] ·Beam 1...1B A23B Carthagent Cloud
+             ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+             /…/beta5-ux-review/workspace    shift+tab agents  ctrl+p commands
+
+             ◆ CTG                                     Carthagent 1.1.0-beta.5
+

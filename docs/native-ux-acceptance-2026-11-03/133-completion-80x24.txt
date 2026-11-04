@@ -1,0 +1,24 @@
+ Projects
+ Voyages     Daily quests                                     Resets in 0h 35m
+ Focus       Catch a regression
+▄▄▄▄▄▄▄▄▄▄▄  Show the same test failing before the fix and passing afterward.
+     ⌕
+     ▤
+     ◇
+               ✓ Quest complete
+     N         Your submitted work met all the conditions.
+               Keep building. Explore your other daily quests.
+     N
+
+     +
+
+
+
+
+              ▶ Back to quests
+                Continue coding
+                Details
+
+
+             ↑↓ Enter select · Ctrl+U/D scroll · Esc back
+

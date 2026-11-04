@@ -196,13 +196,12 @@ test('replacing or destroying native action refs does not retain a stale focus l
   assert.equal(replacement.focusCalls, 1);
 });
 
-test('page wires focus lifecycle and selection guard; pinned renderer exposes the used focus event contract', async () => {
+test('simplified page guards action focus; pinned renderer retains the editor focus contract', async () => {
   const page = await readFile(new URL('../plugins/carthagent/src/ui/daily-quests.tsx', import.meta.url), 'utf8');
-  assert.match(page, /createEffect\(\(\) => focus\.reconcile\(\)\)/);
-  assert.match(page, /mode: context\.keymap\.mode\.current\(\)/);
-  assert.match(page, /ref=\{\(node\) => \{ actions = node; focus\.attachActions\(node\); \}\}/);
-  assert.match(page, /if \(!value \|\| !focus\.actionsEnabled\(\)\) return/);
-  assert.match(page, /onCleanup\(\(\) => \{ focus\.dispose\(\)/);
+  assert.match(page, /focused=\{enabled\(\)\}/);
+  assert.match(page, /context\.keymap\.mode\.current\(\) === "base"/);
+  assert.match(page, /if \(!value \|\| !enabled\(\)\) return/);
+  assert.match(page, /controller\.dispose\(\); closeOwnDialog\(\)/);
   const api = await readFile(new URL('../node_modules/@opentui/core/Renderable.d.ts', import.meta.url), 'utf8');
   assert.match(api, /FOCUSED = "focused"/);
   assert.match(api, /focus\(\): void/);

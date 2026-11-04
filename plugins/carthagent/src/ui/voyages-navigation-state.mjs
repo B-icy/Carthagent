@@ -1,4 +1,5 @@
 import { voyagesErrorCode } from './voyages-state.mjs';
+import { questCopy, questStatus } from './quest-presentation.mjs';
 
 /** Read-only summaries only. Never retain recovery payloads, catalog or consent. */
 export function createVoyagesNavigationState({ profile, daily, changed = (_state) => {}, timeoutSignal = () => AbortSignal.timeout(15_000) }) {
@@ -29,7 +30,7 @@ export function createVoyagesNavigationState({ profile, daily, changed = (_state
       };
       state.daily = {
         day: assignments.slate.day, endsAt: assignments.slate.endsAt,
-        items: assignments.slate.items.map((quest) => ({ id: quest.id, title: quest.definition.title, status: quest.status })),
+        items: assignments.slate.items.map((quest) => ({ id: quest.id, title: questCopy(quest).title, status: quest.status === 'assessed_complete' ? quest.status : questStatus(quest, assignments.records) })),
       };
     } catch (error) {
       if (!disposed && active && generation === current) {

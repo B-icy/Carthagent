@@ -1,0 +1,36 @@
+ Projects        Voyages
+                                Daily quests                                                Resets in 0h 33m
+ Focus sidebar
+                                Resolve a review finding
+ CURRENT FOLDER                 Resolve a concrete correctness issue found in review.
+ workspace/
+ …e/beta5-ux-review/workspace
+ ▤ Browse  + New session          Conditions · assessed after Submit
+ Model: Beam 1.0 501B A23B        ○ Describe the goal and completed change
+                                  ○ Resolve a concrete correctness issue found in review.
+ Sessions      Search + Group     ○ Record an issue, supporting evidence, and its resolution
+ ▾ # UX Review
+   No sessions in this group
+
+ ▾ # Terminal review        1     Selected work
+   Native terminal acceptance     Choose a completed Ship session
+   Ready · workspace
+
+ ▾ terminal-created/
+   No sessions in this group
+
+ ▾ workspace/       1 session
+   New session
+   Ready
+
+
+
+
+
+                                 ▶ Choose completed work
+                                   Continue coding
+                                   Details
+                                   Back to quests
+ ctrl+x n new  ctrl+x m model
+ Right-click to rename & move   ↑↓ Enter select · Ctrl+U/D scroll · Esc back
+

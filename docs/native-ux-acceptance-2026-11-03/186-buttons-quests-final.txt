@@ -1,0 +1,24 @@
+[Projects]
+[Voyages]    Quests                                          Resets in 23h 19m
+
+35 coins       › Handle an edge case
+               Handle a specific boundary or invalid input safely.
+               Choose work →
+ ▶ [Quest]
+   [Shop]        Test an edge case
+   [You]       Add a regression test that protects a specific boundary.
+   [Code]      Choose work →
+
+ Friends         Review a failure path
+ WIP           Resolve a concrete failure-handling risk found in review.
+               Choose work →
+
+
+
+
+
+
+
+             [c Completed (0)] [s Character] [r Refresh] [Esc Coding]
+             ↑↓ Enter select · Ctrl+U/D scroll · Esc back
+

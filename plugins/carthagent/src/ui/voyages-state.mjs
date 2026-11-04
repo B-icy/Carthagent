@@ -161,5 +161,6 @@ export function canEquip(snapshot, item) {
 export function voyagesCatalogLabel(snapshot, item) {
   const category = snapshot.profile.owned.includes(item.item) ? 'Owned' : item.price === null ? 'Retired' : item.requiresPurchase ? 'Shop' : 'Free';
   const price = item.price === null ? 'price unavailable / retired' : `${item.price} coins`;
-  return `${category} · ${item.name} · ${price}`;
+  const shortfall = category === 'Shop' && item.price > snapshot.profile.coins ? ` · need ${item.price - snapshot.profile.coins} more` : '';
+  return `${category} · ${item.name} · ${price}${shortfall}`;
 }

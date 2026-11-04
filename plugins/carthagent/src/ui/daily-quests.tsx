@@ -1,235 +1,282 @@
 /** @jsxImportSource @opentui/solid */
 import { For, Show, createEffect, createSignal, on, onCleanup, onMount } from "solid-js";
 import { createHash, randomUUID } from "node:crypto";
-import type { ScrollBoxRenderable, SelectRenderable, TextareaRenderable } from "@opentui/core";
+import { TextAttributes, type ScrollBoxRenderable, type SelectRenderable } from "@opentui/core";
+import { useTerminalDimensions } from "@opentui/solid";
 import { usePlugin } from "@opencode/plugin/tui";
 import { clickSelect } from "./select-mouse.js";
 import { dailyQuestsClient, dailySourceClient } from "./client.js";
-import type { DailyEvidence, DailyQuestDetail, DailySnapshot, DailySubmission, DailyRecord } from "../daily-quests-rpc.js";
-import type { DailySourceReport } from "../daily-source-rpc.js";
-import { createDailyQuestsState, dailySubmissionLabel } from "./daily-quests-state.mjs";
+import type { DailyEvidence, DailyQuestDetail, DailySnapshot, DailyRecord } from "../daily-quests-rpc.js";
+import { createDailyQuestsState } from "./daily-quests-state.mjs";
 import { handleDailyQuestsEvent } from "./daily-quests-events.mjs";
-import { syncDailyEditor } from "./daily-editor.mjs";
-import { createDailyEditorFocus } from "./daily-editor-focus.mjs";
+import { selectedQuestEvidence } from "./quest-evidence.mjs";
+import { assessmentFeedback, questConditions, questCopy, questReset, questStatus, submissionText } from "./quest-presentation.mjs";
 
-type Request = NonNullable<DailyRecord['request']>;
 type View = {
   snapshot?: DailySnapshot; detail?: DailyQuestDetail; busy: boolean; error: string;
   draft?: { accountKey: string; questId: string; id: string; text: string; provenance: string };
-  preview?: Request; phase: "overview" | "edit" | "preview";
+  preview?: NonNullable<DailyRecord["request"]>; phase: string;
 };
-
-/** Stable opaque references, not proof of authorship. Never send a local path. */
 function reference(...parts: string[]) {
   const h = createHash("sha256").update(JSON.stringify(parts)).digest("hex");
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
 }
+const privacy = "Submit sends the selected summary, checks and findings to Carthagent and its external assessment provider (JEV). No transcript or whole project is uploaded. Review selected text for secrets before submitting. Project/outcome/run references stay with Carthagent. Assessment is not independent verification. Daily quests do not award coins or XP.\n\nRaw evidence: pending up to 24 hours, erased after processing; outages may delay cleanup. Metadata: 90 days. Provider policy applies; immediate provider/backup deletion is not promised. An interrupted send keeps an exact private local recovery copy for up to 24 hours, erased on acceptance or next journal access after expiry. Erase saved evidence removes that local copy, not a server job.";
 
-const privacy = "Only the exact preview below is sent to Carthagent. External JEV receives the revision, goal, change, checks, findings and server rubric, not project/outcome/run IDs. No transcript or whole project is uploaded. Review and remove secrets yourself; automatic secret detection is not provided.\n\nBackend raw evidence: pending up to 24 hours, erased on terminal processing (outages can delay cleanup). Metadata: 90 days. Provider policy applies; immediate provider/backup deletion is not promised. Unknown-send recovery stores this exact payload in a private local journal until acceptance is known or for up to 24 hours on the next journal access, not a background deletion timer. You can erase its local payload while retaining the submission ID.\n\nClassifier assessment is not independent verification. No coins, XP, distance, inventory or other rewards. Signing in or running Ship is not consent.";
-
-export function DailyQuestsPage(props: { sessionID?: string; questID?: string }) {
+export function DailyQuestsPage(props: { sessionID?: string; questID?: string; drafts?: Map<string, Map<string, unknown>> }) {
   const context = usePlugin();
+  const dimensions = useTerminalDimensions();
+  const compact = () => dimensions().height < 26;
   const location = () => (props.sessionID ? context.data.session.get(props.sessionID)?.location : undefined) ?? context.location ?? context.data.location.default();
   const [view, setView] = createSignal<View>({ busy: false, error: "", phase: "overview" });
-  const [editorFocus, setEditorFocus] = createSignal(true);
-  const [replayID, setReplayID] = createSignal<string>();
-  const [cancellationNotice, setCancellationNotice] = createSignal("");
-  const controller = createDailyQuestsState({ api: dailyQuestsClient(context, location), changed: (next: View) => setView(next) });
+  const [details, setDetails] = createSignal(false);
+  const [notice, setNotice] = createSignal("");
+  const [clock, setClock] = createSignal(Date.now());
+  const [questIndex, setQuestIndex] = createSignal(0);
+  const [completed, setCompleted] = createSignal(false);
+  const visibleQuests = () => (view().snapshot?.slate.items ?? []).filter(q => (q.status === "assessed_complete") === completed());
+  const completedCount = () => view().snapshot?.slate.items.filter(q => q.status === "assessed_complete").length ?? 0;
+  const toggleCompleted = () => { if (!enabled() || view().detail) return; setCompleted(value => !value); setQuestIndex(0); summary?.scrollTo(0); };
+  const cacheKey = JSON.stringify(location());
+  if (props.drafts && !props.drafts.has(cacheKey)) props.drafts.set(cacheKey, new Map());
+  const controller = createDailyQuestsState({ api: dailyQuestsClient(context, location), changed: (next: View) => setView(next), draftCache: props.drafts?.get(cacheKey) });
   const sourceApi = dailySourceClient(context, location);
   let summary: ScrollBoxRenderable | undefined;
-  let editor: TextareaRenderable | undefined;
   let actions: SelectRenderable | undefined;
-  const focus = createDailyEditorFocus({
-    state: () => ({ phase: view().phase, hasDraft: !!view().draft, busy: view().busy, editorFocus: editorFocus(), mode: context.keymap.mode.current() }),
-    editor: () => editor,
-  });
-  createEffect(() => focus.reconcile());
-  const preview = () => { if (view().phase === "edit") syncDailyEditor(editor, controller); controller.preview(); };
   let activeDialog: symbol | undefined;
+  const enabled = () => !view().busy && context.keymap.mode.current() === "base";
   const ownDialog = async <T,>(show: () => Promise<T>): Promise<T> => {
     const token = Symbol(); activeDialog = token;
     try { return await show(); } finally { if (activeDialog === token) activeDialog = undefined; }
   };
-  const closeOwnDialog = () => {
-    if (!activeDialog) return;
-    activeDialog = undefined;
-    context.ui.dialog.clear();
-  };
+  const closeOwnDialog = () => { if (activeDialog) { activeDialog = undefined; context.ui.dialog.clear(); } };
   const confirm = (title: string, message: string, label: string) => ownDialog(() => context.ui.dialog.confirm({ title, message, label: { confirm: label, cancel: "Cancel" } }));
-  context.keymap.layer(() => ({ commands: [
-    { bind: "ctrl+u", title: "Scroll daily quest preview up", run: () => { summary?.scrollBy(-1); } },
-    { bind: "ctrl+d", title: "Scroll daily quest preview down", run: () => { summary?.scrollBy(1); } },
-    { bind: "ctrl+g", title: "Validate daily evidence preview", enabled: () => view().phase === "edit" && !view().busy, run: preview },
-    { bind: "tab", title: "Switch evidence editor / actions", enabled: () => view().phase === "edit" && !view().busy, run: () => { setEditorFocus((focused) => !focused); } },
-  ] }));
-
-  const chooseProjection = async (source: DailySourceReport, sessionID: string, live: () => boolean): Promise<DailyEvidence | undefined> => {
-    let goal = false, change = false;
-    const checks = new Set<string>(), findings = new Set<string>();
-    while (live()) {
-      const selected = await ownDialog(() => context.ui.dialog.select({
-        title: "Select local evidence · nothing included by default",
-        options: [
-          { title: "Done selecting", value: "done", description: "Open editable JSON; nothing is sent yet" },
-          { title: `${goal ? "Remove" : "Include"} recorded goal`, value: "goal", description: "May contain private task text" },
-          { title: `${change ? "Remove" : "Include"} recorded change`, value: "change", description: source.change ? "Recorded claim, not independently verified" : "Not recorded; remains empty" },
-          ...source.checks.map((c) => ({ title: `${checks.has(c.id) ? "Remove" : "Include"} check ${c.id}`, value: `check:${c.id}`, description: `${c.after} · ${c.after === "passed" ? "fresh" : "not fresh"} · includes output tail, potentially sensitive; before not recorded` })),
-          ...source.findings.map((f) => ({ title: `${findings.has(f.id) ? "Remove" : "Include"} finding ${f.id}`, value: `finding:${f.id}`, description: "Includes issue, evidence and resolution text; model/user-authored claim" })),
-        ],
-      }));
-      if (!live() || selected === undefined) return;
-      if (selected === "done") break;
-      if (selected === "goal") goal = !goal;
-      else if (selected === "change") change = !change;
-      else {
-        const isCheck = selected.startsWith("check:");
-        const id = selected.slice(isCheck ? 6 : 8), set = isCheck ? checks : findings;
-        if (set.has(id)) set.delete(id); else set.add(id);
-      }
-    }
-    if (!live()) return;
-    const session = context.data.session.get(sessionID);
-    const project = reference("daily-project-v1", session?.projectID ?? location().directory);
-    return {
-      projectId: project, outcomeId: reference("daily-outcome-v1", project, source.runId), runId: source.runId,
-      revision: source.revision, goal: goal ? source.goal : "", change: change ? source.change : "",
-      checks: source.checks.filter((c) => checks.has(c.id)).map(({ id, before, after, revision, result }) => ({ name: id, before, after, revision, result })),
-      findings: source.findings.filter((f) => findings.has(f.id)).map(({ issue, evidence, resolution }) => ({ issue, evidence, resolution })),
-    };
+  const coding = () => context.ui.router.navigate(props.sessionID ? { type: "session", sessionID: props.sessionID } : { type: "home" });
+  const resetFocus = () => { actions?.setSelectedIndex(0); summary?.scrollTo(0); };
+  const moveQuest = (delta: number) => {
+    const items = visibleQuests();
+    const index = Math.max(0, Math.min(items.length - 1, questIndex() + delta));
+    setQuestIndex(index);
+    if (items[index]) summary?.scrollChildIntoView(`daily-quest-${items[index].id}`);
   };
-
-  const compose = () => controller.compose(async (_quest: DailyQuestDetail, live: () => boolean, signal: AbortSignal) => {
-    const kind = await ownDialog(() => context.ui.dialog.select({ title: "Choose evidence source", options: [
-      { title: "Select actual local Ship report", value: "local", description: "Owned session only; choose individual checks/findings, no transcript" },
-      { title: "Write a structured manual claim", value: "manual", description: "Blank evidence, not a claim that checks ran; edit every field" },
-    ] }));
-    if (!kind || !live()) return;
-    if (kind === "manual") {
-      const project = reference("daily-project-v1", props.sessionID ? context.data.session.get(props.sessionID)?.projectID ?? location().directory : location().directory);
-      return { id: randomUUID(), evidence: { projectId: project, outcomeId: randomUUID(), runId: randomUUID(), revision: "", goal: "", change: "", checks: [], findings: [] }, provenance: "Manual user claim. Enter a genuine 40/64-hex revision. Empty evidence does not establish completion. Keep project/outcome/run IDs when revising the same outcome; they do not prove authorship." };
-    }
-    const sessions = context.data.session.list().filter((s) => s.location.directory === location().directory);
-    const sessionID = props.sessionID ?? await ownDialog(() => context.ui.dialog.select({ title: "Choose local Ship session", options: sessions.map((s) => ({ title: s.title ?? s.id, value: s.id, description: s.id })) }));
-    if (!sessionID || !live()) return;
-    const { source } = await sourceApi.report({ sessionID }, AbortSignal.any([signal, AbortSignal.timeout(15_000)]));
-    if (!live()) return;
-    if (!source) throw new Error("daily_source_unavailable");
-    const evidence = await chooseProjection(source, sessionID, live);
-    if (!evidence || !live()) return;
-    return { id: randomUUID(), evidence, provenance: `Local Ship session ${sessionID} · run ${source.runId} · plan revision ${source.planRevision} · ${source.freshness}. Source revision is the actual workspace fingerprint, not the plan revision. Earlier failed-before execution is not recorded and is never inferred. Selected text is editable and remains a user claim, not independent verification.${source.truncated ? " Source projection is truncated; inspect and correct missing details before submitting." : ""}` };
+  createEffect(() => {
+    const count = visibleQuests().length;
+    if (questIndex() >= count) setQuestIndex(Math.max(0, count - 1));
   });
+  const back = () => {
+    if (!enabled()) return;
+    resetFocus();
+    if (details()) { setDetails(false); return; }
+    if (view().detail) { controller.overview(); return; }
+    if (completed()) { toggleCompleted(); return; }
+    coding();
+  };
+  context.keymap.layer(() => ({ priority: 30, commands: [
+    { bind: "ctrl+u", title: "Scroll quest up", run: () => { summary?.scrollBy(-4); } },
+    { bind: "ctrl+d", title: "Scroll quest down", run: () => { summary?.scrollBy(4); } },
+    { bind: "escape", title: "Back", enabled, run: back },
+    { bind: "up", title: "Previous choice", enabled, run: () => { if (view().detail || !view().snapshot) actions?.moveUp(); else moveQuest(-1); } },
+    { bind: "down", title: "Next choice", enabled, run: () => { if (view().detail || !view().snapshot) actions?.moveDown(); else moveQuest(1); } },
+    { bind: "return", title: "Select", enabled, run: () => { if (view().detail || !view().snapshot) { actions?.selectCurrent(); return; } const q = visibleQuests()[questIndex()]; if (q) void openQuest(q.id); } },
+    { bind: "c", title: "Active / completed quests", enabled: () => enabled() && !view().detail, run: toggleCompleted },
+    { bind: "s", title: "Character", enabled: () => enabled() && !view().detail, run: () => select("ship") },
+    { bind: "r", title: "Refresh quests", enabled: () => enabled() && !view().detail, run: () => { void controller.refresh(); } },
+  ] }));
+  const evidence = (): DailyEvidence | undefined => view().preview?.evidence;
+  const records = () => view().snapshot?.records ?? [];
+  const pending = () => records().find(r => r.request || r.submission?.status === "queued" || r.submission?.status === "grading");
+  const selectedRecord = () => records().filter(r => r.questId === view().detail?.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
 
-  const submit = () => controller.submit(({ quest, request }: { quest: DailyQuestDetail; request: Request }) => confirm(
-    "Explicit consent for this one JEV submission",
-    `${quest.definition.title}\nSubmission ${request.id}\nSend only the exact JSON shown in the scrollable preview to Carthagent for external JEV grading? Review/redact before consent. Raw backend evidence: pending up to 24h, erased on terminal processing; metadata 90d. Outages can delay cleanup. Provider/backup deletion is not guaranteed. No rewards or independent verification.\n\nCancel to review the preview and full retention notice again. This authorizes this submission only.`,
-    "Consent and send",
-  ));
-  const retry = (id: string) => controller.retry(id, (record: DailyRecord) => confirm("Retry the SAME consented submission?", `Submission ${record.id}\nReplay only the exact saved ID/body shown in the scrollable recovery preview to Carthagent/external JEV under the same retention notice? Poll first when possible. This cannot edit evidence or create a replacement ID. Cancel keeps it pending.`, "Replay same request"));
-  const forget = (id: string) => controller.forget(id, (record: DailyRecord) => confirm("Erase local recovery payload?", `Submission ${record.id}\nErase the selected evidence from the local journal. Keep the stable submission/quest IDs for read-only status checks. Exact replay will no longer be possible. This does not cancel a server job, withdraw evidence already sent, or promise provider/backup deletion.`, "Erase local payload"));
-
-  const statusText = (submission: DailySubmission) => `${dailySubmissionLabel(submission)}\nSubmission ${submission.id} · provider attempts ${submission.attempts}/4\nCreated ${submission.createdAt}${submission.nextAttemptAt ? ` · next attempt ${submission.nextAttemptAt}` : ""}${submission.finishedAt ? ` · finished ${submission.finishedAt}` : ""}${submission.errorCode ? `\nProcessing code: ${submission.errorCode}` : ""}${submission.model ? `\nModel ${submission.model} · rubric ${submission.rubricVersion}` : ""}${submission.scores ? `\nUncalibrated rubric scores (not confidence): ${Object.entries(submission.scores).map(([id, score]) => `${id}: ${score}`).join(" · ")}` : ""}`;
+  const chooseWork = async (automatic = false) => {
+    await controller.compose(async (quest: DailyQuestDetail, live: () => boolean, signal: AbortSignal) => {
+      const sessions = context.data.session.list().filter(s => s.location.directory === location().directory);
+      const sources = new Map<string, Awaited<ReturnType<typeof sourceApi.report>>>();
+      let unreadable = 0;
+      if (!automatic) {
+        for (let i = 0; i < sessions.length && live(); i += 4) {
+          await Promise.all(sessions.slice(i, i + 4).map(async s => {
+            try { const result = await sourceApi.report({ sessionID: s.id }, AbortSignal.any([signal, AbortSignal.timeout(15_000)])); if (result.source) sources.set(s.id, result); }
+            catch { unreadable++; }
+          }));
+        }
+        if (!live()) return;
+        if (!sources.size) { setNotice(unreadable ? "Could not read recorded work from some sessions. Refresh and try choosing work again." : "No recorded Ship work in this folder yet. Finish a task in Ship mode, then return here."); return; }
+        if (unreadable) setNotice("Some sessions could not be read. Showing available recorded work; try again if yours is missing.");
+      }
+      const sessionID = automatic ? props.sessionID : await ownDialog(() => context.ui.dialog.select({
+        title: "Choose completed work",
+        options: sessions.filter(s => sources.has(s.id)).map(s => ({ title: s.title || "Untitled session", value: s.id, description: sources.get(s.id)?.source?.freshness === "stale" ? "Checks need refreshing" : "Recorded Ship work" })),
+      }));
+      if (!sessionID || !live()) return;
+      const { source } = sources.get(sessionID) ?? await sourceApi.report({ sessionID }, AbortSignal.any([signal, AbortSignal.timeout(15_000)]));
+      if (!live()) return;
+      if (!source) { if (!automatic) setNotice("No recorded Ship delivery in that session. Finish the task in Ship mode, then choose it here."); return; }
+      const session = context.data.session.get(sessionID);
+      const project = reference("daily-project-v1", session?.projectID ?? location().directory);
+      const selected: DailyEvidence = {
+        projectId: project, outcomeId: reference("daily-outcome-v1", project, source.runId), runId: source.runId,
+        revision: source.revision, goal: source.goal, change: source.change,
+        checks: source.checks.map(({ id, before, after, revision, result }) => ({ name: id, before, after, revision, result })),
+        findings: source.findings.map(({ issue, evidence, resolution }) => ({ issue, evidence, resolution })),
+      };
+      const bounded = selectedQuestEvidence(selected, quest.definition.kind);
+      setNotice([source.truncated || bounded.omitted ? "Some recorded evidence exceeded the size limit and was omitted. Review selected work in Details." : "", source.freshness === "stale" ? "This work has changed since verification. Run its checks again in Ship mode." : ""].filter(Boolean).join(" "));
+      return { id: randomUUID(), evidence: bounded.evidence, provenance: session?.title && session.title !== "New session" ? session.title : source.goal.slice(0, 100) || "Selected Ship session" };
+    });
+    controller.preview();
+    resetFocus();
+  };
+  const openQuest = async (id: string) => {
+    resetFocus(); setDetails(false); setNotice("");
+    await controller.select(id);
+    if (props.sessionID && !view().draft && view().detail?.status === "open" && !pending()) await chooseWork(true);
+  };
+  const submit = async () => {
+    // Clicking Submit is authorization for the frozen selection shown on this page.
+    // The controller still binds it to the account, quest and live page lifetime.
+    if (!view().preview || pending()) return;
+    await controller.submit(async () => true);
+    resetFocus();
+  };
+  const editSelection = () => controller.compose(async (_quest: DailyQuestDetail, live: () => boolean) => {
+    const saved = view().preview;
+    if (!saved) return;
+    const selected = structuredClone(saved.evidence);
+    const field = await ownDialog(() => context.ui.dialog.select({ title: "Edit selected work", options: [
+      { title: "Edit goal", value: "goal" }, { title: "Edit change summary", value: "change" },
+      ...selected.checks.map((c, i) => ({ title: `Remove check: ${c.name}`, value: `check:${i}` })),
+      ...selected.findings.map((f, i) => ({ title: `Remove finding: ${f.issue}`, value: `finding:${i}` })),
+    ] }));
+    if (!field || !live()) return;
+    if (field === "goal" || field === "change") {
+      const text = await ownDialog(() => context.ui.dialog.prompt({ title: field === "goal" ? "Goal" : "Change summary", value: selected[field] }));
+      if (text === undefined || !live()) return;
+      selected[field] = text;
+    } else {
+      const [kind, index] = field.split(":");
+      if (kind === "check") selected.checks.splice(Number(index), 1); else selected.findings.splice(Number(index), 1);
+    }
+    return { id: saved.id, evidence: selected, provenance: view().draft?.provenance ?? "Selected work" };
+  }).then(() => controller.preview());
   const options = () => {
-    const state = view(), detail = state.detail;
-    const basic = [
-      { name: "Refresh daily assignments and recovery journal", description: "Read-only; never uploads or replays evidence", value: "refresh" },
-      { name: "Sign in / reconnect", description: "Native Carthagent Cloud device sign-in; not grading consent", value: "signin" },
-      { name: "Back to Voyages", description: "Discard unsent editor contents", value: "back" },
-    ];
-    if (!state.snapshot) return basic;
-    return [...basic,
-      ...(replayID() ? [
-        { name: "Confirm exact saved replay…", description: "Review the scrollable recovery preview first; explicit same-ID replay", value: "confirm-replay" },
-        { name: "Close recovery preview", description: "No replay; keep saved payload", value: "close-replay" },
-      ] : []),
-      ...state.snapshot.slate.items.map((q) => ({ name: `${q.definition.title} · ${q.status}`, description: `${q.definition.kind} · UTC window ends ${q.endsAt}`, value: `quest:${q.id}` })),
-      ...(detail?.status === "open" && !state.draft ? [{ name: "Choose evidence for selected quest", description: "Select local report data or write a manual claim; no upload", value: "compose" }] : []),
-      ...(state.phase === "edit" ? [{ name: "Validate and preview exact payload", description: "Ctrl+G; canonical UTF-8 limits, no network", value: "preview" }] : []),
-      ...(state.phase === "preview" ? [
-        { name: "Consent and submit this preview…", description: "Fresh explicit consent dialog; no automatic acceptance or rewards", value: "submit" },
-        { name: "Edit / redact evidence again", description: "Invalidates the preview; requires validation and fresh consent", value: "edit" },
-      ] : []),
-      ...(state.draft ? [{ name: "Discard unsent evidence", description: "Clear local editor; no submission", value: "cancel" }] : []),
-      ...(detail?.latestSubmission ? [{ name: "Poll selected quest's latest submission", description: "Read-only authoritative status; no provider dispatch", value: `poll:${detail.latestSubmission.id}` }] : []),
-      ...state.snapshot.records.flatMap((r) => [
-        { name: `Poll saved ${r.id}`, description: r.submission ? dailySubmissionLabel(r.submission) : "Outcome unknown; stable ID retained, including previous UTC days", value: `poll:${r.id}` },
-        ...(r.request ? [
-          { name: `Review exact replay ${r.id}`, description: "Saved same ID/body; explicit confirmation, never automatic", value: `retry:${r.id}` },
-          { name: `Erase local payload ${r.id}`, description: "Keep ID for polling; cannot replay afterward", value: `forget:${r.id}` },
-        ] : []),
-      ]),
+    const state = view(), q = state.detail;
+    const option = (name: string, value: string) => ({ name, value, description: "" });
+    if (details()) return [option("Back to quest", "back"), ...(state.draft ? [option("Edit selected work", "edit")] : []),
+      ...records().filter(r => r.request).flatMap(r => [option("Retry saved submission", `retry:${r.id}`), option("Erase saved evidence", `forget:${r.id}`)])];
+    if (!state.snapshot) return [option("Refresh", "refresh"), option("Sign in", "signin"), option("Back to coding", "back")];
+    if (!q) return [];
+    const record = selectedRecord();
+    if (q.status === "assessed_complete") return [option("Back to quests", "back"), option("Details", "details")];
+    return [
+      ...(pending() ? [option("Check submission status", `poll:${pending()!.id}`)] : q.status === "open" ? [option(state.preview ? "Submit" : "Choose completed work", state.preview ? "submit" : "choose")] : []),
+      ...(q.status === "open" && state.preview ? [option("Change work", "choose")] : []),
+      ...(record?.request ? [option("Retry saved submission", `retry:${record.id}`)] : []),
+      option("Details", "details"), option("Back to quests", "back"),
     ];
   };
   const select = (value?: string) => {
-    // A stale native refocus must not turn editor Enter into an action.
-    if (!value || !focus.actionsEnabled()) return;
-    if (value === "back") { context.ui.router.navigate({ type: "plugin", name: "voyages", data: { ...(props.sessionID ? { sessionID: props.sessionID } : {}) } }); return; }
-    if (value === "signin") { controller.invalidate(); closeOwnDialog(); context.keymap.dispatch("provider.connect"); return; }
-    if (value === "refresh") { setReplayID(undefined); void controller.refresh(); return; }
-    if (value === "compose") { setCancellationNotice(""); setEditorFocus(true); void compose(); return; }
-    if (value === "preview") { preview(); return; }
+    if (!value || !enabled()) return;
+    if (value === "back") return back();
+    if (value === "coding") return coding();
+    if (value === "details") { resetFocus(); setDetails(true); return; }
+    if (value === "edit") { void editSelection(); return; }
+    if (value === "choose") { setNotice(""); void chooseWork(); return; }
     if (value === "submit") { void submit(); return; }
-    if (value === "edit") { setEditorFocus(true); controller.backToEdit(); return; }
-    if (value === "cancel") { controller.cancelDraft(); return; }
-    if (value === "close-replay") { setReplayID(undefined); return; }
-    if (value === "confirm-replay") { const id = replayID(); if (id) { void retry(id).finally(() => setReplayID(undefined)); } return; }
-    const colon = value.indexOf(":"), id = value.slice(colon + 1);
-    if (value.startsWith("quest:")) void controller.select(id);
+    if (value === "refresh") { void controller.refresh(); return; }
+    if (value === "signin") { controller.invalidate(); closeOwnDialog(); context.keymap.dispatch("provider.connect"); return; }
+    if (value === "ship") { context.ui.router.navigate({ type: "plugin", name: "voyages", data: { sessionID: props.sessionID, section: "profile" } }); return; }
+    const id = value.slice(value.indexOf(":") + 1);
+    if (value.startsWith("quest:")) void openQuest(id);
     if (value.startsWith("poll:")) void controller.poll(id);
-    if (value.startsWith("retry:")) { setCancellationNotice(""); controller.cancelDraft(); setReplayID(id); }
-    if (value.startsWith("forget:")) void forget(id);
+    if (value.startsWith("retry:")) void controller.retry(id, () => confirm("Retry saved submission?", "Check whether the server received it, then resend the same saved work only if absent.", "Retry"));
+    if (value.startsWith("forget:")) void controller.forget(id, () => confirm("Erase saved evidence?", "Keep the submission ID for status checks. The saved work cannot be resent afterward. This does not cancel an accepted assessment.", "Erase"));
   };
   onMount(() => {
     let binding = JSON.stringify(location());
-    const stop = context.data.listen(({ details }) => {
-      const nextBinding = JSON.stringify(location());
-      const changedLocation = binding !== nextBinding;
-      binding = nextBinding;
-      void handleDailyQuestsEvent({
-        controller, event: details, location: location(), changedLocation, actions,
-        interrupted: !!(view().draft || view().preview || replayID() || activeDialog),
-        clearReplay: () => setReplayID(undefined), closeDialog: closeOwnDialog, notice: setCancellationNotice,
-      });
+    const stop = context.data.listen(({ details: event }) => {
+      const next = JSON.stringify(location()), changedLocation = binding !== next; binding = next;
+      void handleDailyQuestsEvent({ controller, event, location: location(), changedLocation, actions,
+        interrupted: !!(view().draft || activeDialog), clearReplay: () => setDetails(false), closeDialog: closeOwnDialog, notice: setNotice });
     });
-    // A navigator link selects only an assignment in the authenticated slate.
-    // It never composes evidence or opens a consent dialog.
-    void controller.refresh().then(() => { if (props.questID) return controller.select(props.questID); });
-    // The router reuses this page when another rail quest is opened.
-    createEffect(on(() => props.questID, (questID) => { if (questID) void controller.select(questID); }, { defer: true }));
-    onCleanup(() => { focus.dispose(); stop(); actions = undefined; controller.dispose(); closeOwnDialog(); });
+    void controller.refresh().then(async () => {
+      if (props.questID) await openQuest(props.questID);
+      const record = pending();
+      if (record) await controller.poll(record.id, { follow: false });
+    });
+    createEffect(on(() => props.questID, id => { if (id) void openQuest(id); }, { defer: true }));
+    const timer = setInterval(() => {
+      setClock(Date.now());
+      const record = pending();
+      if (record?.submission && !view().busy && !activeDialog) void controller.poll(record.id, { follow: false });
+    }, 5000);
+    onCleanup(() => { clearInterval(timer); stop(); controller.dispose(); closeOwnDialog(); });
   });
-  return <box flexDirection="column" flexGrow={1} padding={1}>
-    <text flexShrink={0} fg={context.theme.text.action.primary.base}>CARTHAGENT · DAILY CODING QUESTS</text>
-    <scrollbox ref={summary} flexBasis={0} flexGrow={1} minHeight={1} contentOptions={{ flexDirection: "column" }}>
-      <text flexShrink={0} fg={context.theme.text.muted}>Classifier-assessed submitted evidence, not independent verification. No rewards. Refresh/poll never uploads evidence.</text>
-      <Show when={cancellationNotice()}><text flexShrink={0} fg={context.theme.text.feedback.warning.base}>{cancellationNotice()}</text></Show>
-      <Show when={view().busy}><text flexShrink={0} fg={context.theme.text.feedback.warning.base}>Awaiting response / explicit selection or consent. Other actions locked.</text></Show>
+  return <box flexDirection="column" flexGrow={1} minHeight={0} paddingX={2} paddingY={1} overflow="hidden" backgroundColor={context.theme.background.base}>
+    <box flexDirection="row" flexShrink={0} paddingBottom={compact() ? 0 : 1}>
+      <text flexShrink={0} fg={context.theme.text.base} attributes={TextAttributes.BOLD}>{details() ? "Quest details" : completed() && !view().detail ? "Completed quests" : "Quests"}</text>
+      <box flexGrow={1} />
+      <Show when={view().snapshot}><text fg={context.theme.text.muted}>{questReset(view().snapshot!.slate.endsAt, clock())}</text></Show>
+    </box>
+    <scrollbox ref={summary} flexBasis={0} flexGrow={1} minHeight={1} overflow="hidden" contentOptions={{ flexDirection: "column" }}>
+      <Show when={view().busy}><text flexShrink={0} fg={context.theme.text.muted}>Loading…</text></Show>
       <Show when={view().error}><text flexShrink={0} fg={context.theme.text.feedback.error.base}>{view().error}</text></Show>
-      <Show when={view().snapshot} fallback={<text flexShrink={0} fg={context.theme.text.muted}>Protected assignments and evidence hidden until successful authentication and refresh.</text>}>{(snapshot) => <box flexDirection="column" flexShrink={0}>
-        <text flexShrink={0} fg={context.theme.text.base}>UTC day {snapshot().slate.day} · closes {snapshot().slate.endsAt} · policy {snapshot().slate.policyVersion}</text>
-        <text flexShrink={0} fg={context.theme.text.muted}>New submissions close at the server's UTC boundary. Accepted jobs can finish afterward. Select a quest below for its actual criteria.</text>
-        <For each={snapshot().records}>{(r) => <text flexShrink={0} fg={context.theme.text.muted}>{r.submission ? statusText(r.submission) : `Outcome unknown / no confirmed acceptance · submission ${r.id} · quest ${r.questId}${r.request ? " · exact replay payload available" : " · payload erased; poll ID only"}`}</text>}</For>
+      <Show when={notice()}><text flexShrink={0} fg={context.theme.text.feedback.warning.base}>{notice()}</text></Show>
+      <Show when={!view().detail && view().snapshot}>{(snapshot) => <box flexShrink={0} flexDirection="column">
+        <Show when={!visibleQuests().length}><box paddingY={1} flexDirection="column" flexShrink={0}>
+          <text fg={context.theme.text.base}>{completed() ? "No completed quests yet" : snapshot().slate.items.length ? "All quests complete" : "No quests today"}</text>
+          <Show when={!completed()}><text fg={context.theme.text.muted}>New quests at the next reset.</text></Show>
+        </box></Show>
+        <For each={visibleQuests()}>{(q, index) => <box id={`daily-quest-${q.id}`} flexDirection="column" flexShrink={0} marginTop={1} paddingX={2} paddingY={compact() ? 0 : 1} backgroundColor={questIndex() === index() ? context.theme.background.raised.high : context.theme.background.raised.base} onMouseUp={() => { if (enabled()) { setQuestIndex(index()); void openQuest(q.id); } }}>
+          <text flexShrink={0} fg={questIndex() === index() ? context.theme.text.formfield.focused : context.theme.text.base} attributes={TextAttributes.BOLD}>{questIndex() === index() ? "› " : "  "}{q.status === "assessed_complete" ? "✓ " : ""}{questCopy(q).title}</text>
+          <text flexShrink={0} fg={context.theme.text.base}>{questCopy(q).goal}</text>
+          <text flexShrink={0} fg={q.status === "assessed_complete" ? context.theme.text.feedback.success.base : context.theme.text.action.primary.base}>{questStatus(q, records())} →</text>
+        </box>}</For>
       </box>}</Show>
-      <Show when={view().detail}>{(detail) => <box flexDirection="column" flexShrink={0}>
-        <text flexShrink={0} fg={context.theme.text.action.primary.base}>{detail().definition.title} · {detail().status}</text>
-        <text flexShrink={0} fg={context.theme.text.muted}>Quest {detail().id} · {detail().definition.kind} · ends {detail().endsAt} · rubric {detail().definition.rubricVersion}</text>
-        <For each={detail().definition.criteria}>{(c) => <text flexShrink={0} fg={context.theme.text.base}>{c.id}: {c.text}</text>}</For>
-        <Show when={detail().latestSubmission}>{(s) => <text flexShrink={0} fg={context.theme.text.base}>{statusText(s())}</text>}</Show>
-      </box>}</Show>
-      <Show when={view().draft}><text flexShrink={0} fg={context.theme.text.muted}>{view().draft?.provenance}</text></Show>
-      <Show when={view().phase === "preview" && view().preview}>
-        <text flexShrink={0} fg={context.theme.text.base}>{privacy}</text>
-        <text flexShrink={0} fg={context.theme.text.base}>{`Exact request for quest ${view().draft?.questId}:\n${JSON.stringify(view().preview, null, 2)}`}</text>
-      </Show>
-      <Show when={view().snapshot?.records.find((r) => r.id === replayID() && r.request)}>{(record) => <box flexDirection="column" flexShrink={0}>
-        <text flexShrink={0} fg={context.theme.text.base}>{privacy}</text>
-        <text flexShrink={0} fg={context.theme.text.base}>{`Exact saved recovery request · quest ${record().questId}:\n${JSON.stringify(record().request, null, 2)}`}</text>
+      <Show when={view().detail}>{q => <box flexDirection="column" flexShrink={0}>
+        <text flexShrink={0} fg={context.theme.text.base} attributes={TextAttributes.BOLD}>{questCopy(q()).title}</text>
+        <text flexShrink={0} fg={context.theme.text.base}>{questCopy(q()).goal}</text>
+        <Show when={q().status === "assessed_complete"} fallback={<>
+          <Show when={!q().latestSubmission || view().preview || details()}><box flexDirection="column" flexShrink={0} marginTop={1} paddingX={2} paddingY={compact() ? 0 : 1} backgroundColor={context.theme.background.raised.base}>
+          <text flexShrink={0} fg={context.theme.text.muted}>What counts</text>
+          <For each={questConditions(q(), evidence())}>{c => <text flexShrink={0} fg={context.theme.text.base}>{c.detected ? "•" : "○"} {c.text}{c.detected ? " · recorded" : ""}</text>}</For>
+          </box></Show>
+          <box flexDirection="column" flexShrink={0} marginTop={1} paddingX={2} paddingY={compact() ? 0 : 1} backgroundColor={context.theme.background.raised.base}>
+          <text flexShrink={0} fg={context.theme.text.muted}>{view().preview || !q().latestSubmission ? "Selected work" : "Submitted work"}</text>
+          <text flexShrink={0} fg={context.theme.text.base}>{view().draft?.provenance ?? (q().latestSubmission ? "Submission received. See assessment below." : "Choose a completed Ship session")}</text>
+          </box>
+        </>}><box flexDirection="column" flexShrink={0} marginTop={1} padding={2} backgroundColor={context.theme.background.raised.base}>
+          <text flexShrink={0} fg={context.theme.text.feedback.success.base} attributes={TextAttributes.BOLD}>✓ Quest complete</text>
+          <text flexShrink={0} fg={context.theme.text.base}>Your submitted work met all the conditions.</text>
+        </box></Show>
+        <Show when={q().status !== "assessed_complete" && q().latestSubmission}>{s => <>
+          <text flexShrink={0}>{submissionText(s())}</text>
+          <For each={assessmentFeedback(q(), s())}>{text => <text flexShrink={0}>Needs evidence: {text}</text>}</For>
+        </>}</Show>
+        <Show when={selectedRecord() && !selectedRecord()?.submission}><text flexShrink={0}>Submission not confirmed. Your saved request is available for a status check.</text></Show>
+        <Show when={details()}>
+          <text flexShrink={0} marginTop={1}>{privacy}</text>
+          <text flexShrink={0}>Quest {q().id} · closes {q().endsAt} · rubric {q().definition.rubricVersion}</text>
+          <For each={q().definition.criteria}>{c => <text flexShrink={0}>{c.id}: {c.text}</text>}</For>
+          <Show when={evidence()}>{e => <>
+            <text flexShrink={0}>Goal: {e().goal}{"\n"}Change: {e().change}{"\n"}Revision: {e().revision}</text>
+            <For each={e().checks}>{c => <text flexShrink={0}>{c.name}: {c.before} → {c.after}{"\n"}{c.result}</text>}</For>
+            <For each={e().findings}>{f => <text flexShrink={0}>{f.issue}{"\n"}{f.evidence}{"\n"}{f.resolution}</text>}</For>
+          </>}</Show>
+          <For each={records()}>{r => <text flexShrink={0}>{`Submission ${r.id}\n${r.submission ? JSON.stringify(r.submission, null, 2) : r.request ? JSON.stringify(r.request, null, 2) : "Saved evidence erased; status checks remain available."}`}</text>}</For>
+        </Show>
       </box>}</Show>
     </scrollbox>
-    <Show when={view().phase === "edit" && view().draft}>
-      <text flexShrink={0} fg={context.theme.text.faint}>Ctrl+J newline · Tab actions · Ctrl+G preview, never sends</text>
-      <textarea ref={editor} flexBasis={0} flexGrow={1} minHeight={2} initialValue={view().draft?.text ?? ""} focused={focus.editorEnabled()} onContentChange={() => syncDailyEditor(editor, controller)} keyBindings={[{ name: "g", ctrl: true, action: "submit" }]} onSubmit={preview} />
+    <Show when={view().preview && !details() && view().detail?.status === "open"}>
+      <text flexShrink={0} fg={context.theme.text.muted}>Submit shares this work with Carthagent & its assessor. See Details.</text>
     </Show>
-    <text flexShrink={0} fg={context.theme.text.faint}>↑/↓ Enter · PgUp/Dn · Ctrl+U/D details · Cancel: no send</text>
-    <select ref={(node) => { actions = node; focus.attachActions(node); }} onMouseUp={(event) => { if (focus.actionsEnabled()) clickSelect(actions, event); }} flexBasis={0} flexGrow={1} flexShrink={0} minHeight={3} showScrollIndicator options={options()} focused={focus.actionsEnabled()} keyBindings={[{ name: "pageup", action: "move-up-fast" }, { name: "pagedown", action: "move-down-fast" }]} onSelect={(_index, option) => select(option?.value)} />
+    <Show when={view().detail || !view().snapshot} fallback={<box flexDirection="row" flexShrink={0} gap={1} paddingTop={1}>
+      <text fg={context.theme.text.action.secondary.base} onMouseUp={toggleCompleted}>c {completed() ? "Active" : `Completed (${completedCount()})`}</text>
+      <text fg={context.theme.text.action.secondary.base} onMouseUp={() => select("ship")}>s Character</text>
+      <text fg={context.theme.text.action.secondary.base} onMouseUp={() => select("refresh")}>r Refresh</text>
+      <text fg={context.theme.text.action.secondary.base} onMouseUp={coding}>Esc Coding</text>
+    </box>}>
+      <select ref={actions} height={Math.min(4, options().length)} flexShrink={0} backgroundColor={context.theme.background.base} focusedBackgroundColor={context.theme.background.base} focusedTextColor={context.theme.text.action.secondary.base} textColor={context.theme.text.action.secondary.base} selectedTextColor={context.theme.text.formfield.focused} selectedBackgroundColor={context.theme.background.formfield.focused} showDescription={false} showScrollIndicator options={options()} focused={enabled()} onMouseUp={event => { if (enabled()) clickSelect(actions, event); }} onSelect={(_index, option) => select(option?.value)} />
+    </Show>
+    <text flexShrink={0} fg={context.theme.text.muted}>↑↓ Enter select · Ctrl+U/D scroll · Esc back</text>
   </box>;
 }

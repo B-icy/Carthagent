@@ -26,10 +26,15 @@ const OPENCODE_BUILTIN_THEMES = new Set(["opencode", "tokyonight"]);
 export default Plugin.define({
   id: "carthagent.tui",
   setup(context) {
+    const questDrafts = new Map<string, Map<string, unknown>>();
     const unregister = context.ui.router.register({ name: "carthagent", render: ({ data }) => <WorkspacePage view={String(data?.view ?? "workspace")} refreshKey={String(data?.refresh ?? "")} sessionID={typeof data?.sessionID === "string" ? data.sessionID : undefined} /> });
     const cleanups = [unregister];
     cleanups.push(context.ui.router.register({ name: "voyages", render: ({ data }) => <VoyagesPage sessionID={typeof data?.sessionID === "string" ? data.sessionID : undefined} section={data?.section === "profile" || data?.section === "equipment" ? data.section : undefined} /> }));
-    cleanups.push(context.ui.router.register({ name: "daily-quests", render: ({ data }) => <DailyQuestsPage sessionID={typeof data?.sessionID === "string" ? data.sessionID : undefined} questID={typeof data?.questID === "string" ? data.questID : undefined} /> }));
+    cleanups.push(context.ui.router.register({ name: "daily-quests", render: ({ data }) => <DailyQuestsPage drafts={questDrafts} sessionID={typeof data?.sessionID === "string" ? data.sessionID : undefined} questID={typeof data?.questID === "string" ? data.questID : undefined} /> }));
+    const clearQuestDrafts = () => { for (const drafts of questDrafts.values()) drafts.clear(); };
+    cleanups.push(clearQuestDrafts, context.data.listen(({ details }) => {
+      if (["credential.switched", "credential.updated", "provider.updated", "integration.updated", "server.connected", "server.disconnected"].includes(details.type)) clearQuestDrafts();
+    }));
     const navigation = nativeNavigation(context);
     if (navigation) cleanups.push(navigation.register({ name: "voyages", title: "Voyages", render: (input) => <VoyagesNavigation {...input} /> }));
     const lifecycle = new AbortController();
@@ -108,7 +113,7 @@ export default Plugin.define({
       const sessionApi = sessionControls(context, location);
       switch (id) {
         case "voyages":
-          context.ui.router.navigate({ type: "plugin", name: "voyages", data: { ...(sessionID ? { sessionID } : {}) } });
+          context.ui.router.navigate({ type: "plugin", name: "daily-quests", data: { ...(sessionID ? { sessionID } : {}) } });
           return;
         case "quests":
           context.ui.router.navigate({ type: "plugin", name: "daily-quests", data: { ...(sessionID ? { sessionID } : {}) } });
@@ -117,7 +122,7 @@ export default Plugin.define({
           context.keymap.dispatch("provider.connect", arg ? nativeLoginProvider(arg)?.id ?? arg : "experiential-labs");
           return;
         case "help": case "ctg-help":
-          await context.ui.dialog.alert({ title: "Carthagent commands", message: COMMANDS.map((command) => `/${command.name}${command.args ? ` ${command.args}` : ""}${command.aliases?.length ? ` (${command.aliases.map((alias) => `/${alias}`).join(", ")})` : ""} — ${command.description}`).join("\n") + "\n\nCtrl+R sessions · Ctrl+T settings · Ctrl+N new session are native Carthagent actions." });
+          await context.ui.dialog.select({ title: "Carthagent commands · search to filter", options: COMMANDS.map(command => ({ title: `/${command.name}${command.args ? ` ${command.args}` : ""}`, description: command.description, value: command.name })) });
           return;
         case "resume": {
           const query = arg.toLowerCase();

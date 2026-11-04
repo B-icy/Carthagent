@@ -1,0 +1,36 @@
+ Projects        Voyages
+                                Daily quests                                                Resets in 0h 33m
+ Focus sidebar
+                                2 of 3 complete
+ CURRENT FOLDER
+ workspace/
+ …e/beta5-ux-review/workspace     › ✓ Improve a behavior
+ ▤ Browse  + New session          Explain the old behavior, the change, and the result.
+ Model: Beam 1.0 501B A23B        Complete →
+
+ Sessions      Search + Group
+ ▾ # UX Review
+   No sessions in this group        ✓ Catch a regression
+                                  Show the same test failing before the fix and passing afterward.
+ ▾ # Terminal review        1     Complete →
+   Native terminal acceptance
+   Ready · workspace
+
+ ▾ terminal-created/                Resolve a review finding
+   No sessions in this group      Resolve a concrete correctness issue found in review.
+                                  Choose work →
+ ▾ workspace/       1 session
+   New session
+   Ready                        Coins & XP are earned through verified Ship deliveries.
+
+
+
+
+
+
+
+
+
+ ctrl+x n new  ctrl+x m model   s Your ship   r Refresh   Esc Coding
+ Right-click to rename & move   ↑↓ Enter select · Ctrl+U/D scroll · Esc back
+

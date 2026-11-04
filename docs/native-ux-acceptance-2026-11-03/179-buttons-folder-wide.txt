@@ -1,0 +1,35 @@
+ [Projects]      [Voyages]
+
+
+                              ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+ workspace/                   ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+[▤ Browse] [+ New session]    ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                              ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+ Sessions     [Search] [More] ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+ ▾ # Terminal review        1 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   Native terminal acceptance ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                                                                                                   ▀▀▀▀▀▀▀▀▀▀▀
+              Browse folders                                                               [esc]   ▀▀▀▀▀▀▀▀▀▀▀
+ ▾ workspac                                                                                        ▀▀▀▀▀▀▀▀▀▀▀
+   New sess   [← Back] [↑ Up] [~ Home] [+ New folder]                                     [Path]   ▀▀▀▀▀▀▀▀▀▀▀
+                                                                                                   ▀▀▀▀▀▀▀▀▀▀▀
+              /home/baissi/.local/share/carthagent-acceptance/beta5-ux-review/workspace            ▀▀▀▀▀▀▀▀▀▀▀
+ + New sess   ⌕      Search folders                                                                ▀▀▀▀▀▀▀▀▀▀▀
+                                                                                                   ▀▀▀▀▀▀▀▀▀▀▀
+              4 folders                                                                            ▀▀▀▀▀▀▀▀▀▀▀
+               › .harness/
+                 native-folder-acceptance/
+                 picker-layout-review/
+                 terminal-created/
+
+              [Open enter]                                                [Select folder ctrl+s]
+
+                                ┃
+                                ┃  Pick the hardest bug. Start there.
+                                ┃
+                                ┃  [Ship][Lite][Plan][Build] · Beam 1.0 501B A23B Carthagent Cloud
+                                ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                                /…/carthagent-…/beta5-ux-review/workspace  shift+tab agents  ctrl+p commands
+
+                                ◆ CTG                                                Carthagent 1.1.0-beta.5
+

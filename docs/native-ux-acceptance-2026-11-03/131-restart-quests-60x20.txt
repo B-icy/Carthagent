@@ -1,0 +1,20 @@
+
+  Daily quests                            Resets in 0h 36m
+  2 of 3 complete                                        █
+                                                         █
+    › ✓ Improve a behavior                               ▀
+    Explain the old behavior, the change, and the
+    result.
+    Complete →
+
+      ✓ Catch a regression
+    Show the same test failing before the fix and
+    passing afterward.
+    Complete →
+
+      Resolve a review finding
+    Resolve a concrete correctness issue found in
+
+  s Your ship   r Refresh   Esc Coding
+  ↑↓ Enter select · Ctrl+U/D scroll · Esc back
+

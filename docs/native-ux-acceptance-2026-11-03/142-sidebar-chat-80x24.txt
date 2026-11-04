@@ -1,0 +1,24 @@
+ Projects    ┃
+ Voyages
+ Focus          + Thought · 2.6s
+▄▄▄▄▄▄▄▄▄▄▄
+     ⌕          Retained verbatim. Nothing has been sent, altered, or written
+     ▤          to any file.
+     ◇
+▄▄▄▄▄▄▄▄▄▄▄     Draft held:
+     N
+▀▀▀▀▀▀▀▀▀▀▀     │ UNSENT REVIEW DRAFT: retain this while switching panes/help
+     N
+                It's preserved in this session's context, so switching panes
+     +          or opening help won't clear it. When you come back, tell me
+                what to do with it — send, edit, discard, or keep holding.
+
+                Lite · DeepSeek V4.1 Flash · 3.4s · 102.1 tok/s
+
+             ┃
+             ┃
+             ┃
+             ┃   Ship  Lite  Plan  Build  ·DeepSe...1 Flash Carthagent Cloud
+             ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+             /…/beta5-ux-review/workspace   7.2K (5%) · $0.00  ctrl+p commands
+

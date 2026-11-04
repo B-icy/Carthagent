@@ -21,6 +21,7 @@
     },
     "background": {
       "base": "$hue.neutral.900",
+      "navigation": "#15121d",
       "raised": { "base": "$hue.neutral.800", "high": "$hue.neutral.700", "max": "$hue.neutral.600" },
       "action": {
         "primary": { "base": "$hue.yellow.400", "$hovered": "$hue.yellow.300", "$pressed": "$hue.yellow.500" },
