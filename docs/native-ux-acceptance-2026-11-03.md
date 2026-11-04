@@ -26,6 +26,16 @@ The root package now declares `@resvg/resvg-js`, and installed-package acceptanc
 renders a small SVG to verify the installed native binding. The help PTY probe now
 checks the searchable dialog's current marker instead of the removed alias text.
 
+### Verified beta.6 candidate
+
+Five native targets passed prebuild run `41756279114` from source commit
+`ea9986417247abb8993f5e897f324a6e45c38462`: Linux x64/arm64, macOS x64/arm64,
+and Windows x64. All five archive checksums and provenance were verified locally.
+Regenerating the manifest through the production archive validator reproduced the
+workflow candidate byte-for-byte. The beta.6 package version, runtime manifest,
+and published patch pin are promoted together from those verified outputs.
+Final draft/default-resolver and authenticated upgrade acceptance remain release gates.
+
 ## Environment and evidence
 
 The identity and matrix below describe the initial acceptance build. The later
