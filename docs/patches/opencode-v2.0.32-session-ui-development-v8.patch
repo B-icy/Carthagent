@@ -12630,7 +12630,7 @@ index 0000000000..cb614720fd
 +})
 diff --git a/packages/tui/test/sidebar/dialog-folder-browser.test.tsx b/packages/tui/test/sidebar/dialog-folder-browser.test.tsx
 new file mode 100644
-index 0000000000..84231200ab
+index 0000000000..1c85a41609
 --- /dev/null
 +++ b/packages/tui/test/sidebar/dialog-folder-browser.test.tsx
 @@ -0,0 +1,303 @@
@@ -12768,7 +12768,7 @@ index 0000000000..84231200ab
 +
 +    ui.app.mockInput.pressEnter()
 +    await wait(() => ui.frame().includes("inner/"), "entered alpha")
-+    expect(ui.frame()).toContain(path.join("work", "alpha"))
++    expect(ui.frame()).toContain("work/alpha")
 +
 +    ui.app.mockInput.pressArrow("up", { meta: true })
 +    await wait(() => ui.frame().includes("beta/"), "parent")
@@ -14003,10 +14003,10 @@ index 0000000000..1df22b0917
 +})
 diff --git a/packages/tui/test/sidebar/new-session-ownership.test.tsx b/packages/tui/test/sidebar/new-session-ownership.test.tsx
 new file mode 100644
-index 0000000000..c419bfb939
+index 0000000000..c678d58056
 --- /dev/null
 +++ b/packages/tui/test/sidebar/new-session-ownership.test.tsx
-@@ -0,0 +1,497 @@
+@@ -0,0 +1,498 @@
 +import { InputRenderable } from "@opentui/core"
 +import { expect, test } from "bun:test"
 +import { mkdir } from "node:fs/promises"
@@ -14212,10 +14212,11 @@ index 0000000000..c419bfb939
 +  setup.mockInput.pressEnter()
 +  await until(
 +    () =>
++      run.frame().includes("No subfolders here") &&
 +      run
 +        .frame()
 +        .split("\n")
-+        .some((line) => line.includes(" In ") && line.includes("empty project")),
++        .some((line) => line.includes("empty project")),
 +    "chosen listing",
 +    run.frame,
 +  )

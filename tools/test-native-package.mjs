@@ -77,6 +77,10 @@ try {
   assert.equal(manifest.dependencies['solid-js'], '1.9.12');
   assert.equal(manifest.dependencies['web-tree-sitter'], '0.25.10');
   assert.equal(manifest.dependencies['web-tree-sitter-legacy'], 'npm:web-tree-sitter@0.22.6');
+  const { Resvg } = createRequire(join(installedPlugin, 'package.json'))('@resvg/resvg-js');
+  const preview = new Resvg('<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><rect width="2" height="2" fill="red"/></svg>').render();
+  assert.equal(preview.width, 2, 'installed artwork renderer must load its native binding');
+  assert.equal(preview.pixels.length, 16);
   const sharedRuntime = ['@opentui/core', '@opentui/solid', 'solid-js'];
   for (const name of sharedRuntime) {
     const hostResolution = createRequire(join(installed, 'package.json')).resolve(name);

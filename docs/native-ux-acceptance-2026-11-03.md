@@ -8,8 +8,23 @@ real daily quests completed through the Windows Terminal UI. This is development
 acceptance, not a published-release certification or completion of every item in
 the wider repair checklist. Remaining gaps are listed below.
 
-Changes are uncommitted and unreleased on `feat/simple-voyages-quests` at the time
-of this report. Published beta.5 and its immutable runtime pins are separate.
+The original development report preceded the commits on `feat/simple-voyages-quests`.
+Beta.6 release preparation is tracked in PR #251. Published beta.5 and its immutable
+runtime pins remain separate until candidate artifacts pass release acceptance.
+
+### Release-candidate corrections
+
+The first five-platform prebuild exposed stale test expectations for the simplified
+folder picker: the removed `In` prefix and Windows paths displayed with forward
+slashes. Only those runtime test assertions changed; the accepted runtime UI source
+is unchanged. The corrected combined/development v8 patch SHA-256 is
+`506b994ca9399e2b636dbbacd29de2dd82e4e9dbda1fed7162d824d8fa0e892e`.
+The full local sidebar suite passed 64 tests and 404 assertions after correction.
+
+Package CI also exposed a missing published dependency for the artwork renderer.
+The root package now declares `@resvg/resvg-js`, and installed-package acceptance
+renders a small SVG to verify the installed native binding. The help PTY probe now
+checks the searchable dialog's current marker instead of the removed alias text.
 
 ## Environment and evidence
 
