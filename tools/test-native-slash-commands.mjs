@@ -44,7 +44,8 @@ const host = await nativeFixture({ plugin, verifyInventory: true,
       : 'FIXTURE_REPLY';
     const chunk = (delta, finish_reason = null) => 'data: ' + JSON.stringify({ id:'ctg-slash-offline', object:'chat.completion.chunk', created:1, model:'fixture', choices:[{index:0,delta,finish_reason}] }) + '\\n\\n';
     response.writeHead(200, { 'content-type':'text/event-stream', connection:'close' });
-    response.end(chunk({role:'assistant',content:reply}) + chunk({},'stop') + 'data: [DONE]\\n\\n');
+    const usage = 'data: ' + JSON.stringify({ id:'ctg-slash-offline', object:'chat.completion.chunk', created:1, model:'fixture', choices:[], usage:{prompt_tokens:17,completion_tokens:9,total_tokens:26} }) + '\\n\\n';
+    response.end(chunk({role:'assistant',content:reply}) + chunk({},'stop') + usage + 'data: [DONE]\\n\\n');
   }});
 try {
  const session = await host.client.session.create({ location:host.location, model:host.model, title:'slash command acceptance' }, host.request());

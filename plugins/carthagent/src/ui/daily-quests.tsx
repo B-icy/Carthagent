@@ -89,7 +89,21 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string; d
 
   const chooseWork = async (automatic = false) => {
     await controller.compose(async (quest: DailyQuestDetail, live: () => boolean, signal: AbortSignal) => {
-      const sessions = context.data.session.list().filter(s => s.location.directory === location().directory);
+      // The UI cache contains visited sessions, not the complete durable inventory.
+      // Read the current folder's inventory so a restart does not hide recorded work.
+      const sessions = [...context.data.session.list().filter(s => s.location.directory === location().directory)];
+      if (!automatic) {
+        let cursor: string | undefined;
+        const seen = new Set<string>();
+        do {
+          const page = await context.client.session.list({ directory: location().directory, limit: 100, order: "desc", ...(cursor ? { cursor } : {}) }, { signal });
+          if (!live()) return;
+          for (const session of page.data) if (session.location.directory === location().directory && !sessions.some(s => s.id === session.id)) sessions.push(session);
+          const next = page.cursor?.next;
+          cursor = next && !seen.has(next) ? next : undefined;
+          if (cursor) seen.add(cursor);
+        } while (cursor);
+      }
       const sources = new Map<string, Awaited<ReturnType<typeof sourceApi.report>>>();
       let unreadable = 0;
       if (!automatic) {
@@ -111,7 +125,7 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string; d
       const { source } = sources.get(sessionID) ?? await sourceApi.report({ sessionID }, AbortSignal.any([signal, AbortSignal.timeout(15_000)]));
       if (!live()) return;
       if (!source) { if (!automatic) setNotice("No recorded Ship delivery in that session. Finish the task in Ship mode, then choose it here."); return; }
-      const session = context.data.session.get(sessionID);
+      const session = sessions.find(s => s.id === sessionID) ?? context.data.session.get(sessionID);
       const project = reference("daily-project-v1", session?.projectID ?? location().directory);
       const selected: DailyEvidence = {
         projectId: project, outcomeId: reference("daily-outcome-v1", project, source.runId), runId: source.runId,
