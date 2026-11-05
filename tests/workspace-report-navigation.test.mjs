@@ -30,7 +30,7 @@ test('workspace report owns a component-scoped Escape/Tab/PageUp/PageDown layer 
   assert.match(page, /const base = \(\) => context\.keymap\.mode\.current\(\) === "base"/);
   // Escape from the Filter returns to the list first; only then does it leave the view.
   assert.match(page, /const escape = \(\) => \{ if \(filterFocused\(\)\) \{ setFilterFocused\(false\); return; \} back\(\); \}/);
-  assert.match(page, /onMouseUp=\{back\}>← Back/);
+  assert.match(page, /onMouseUp=\{pointer\.action\(back\)\}>← Back/);
 });
 
 test('Filter and navigation list arbitrate one focus owner for pointer and Tab', () => {
@@ -41,7 +41,7 @@ test('Filter and navigation list arbitrate one focus owner for pointer and Tab',
 });
 
 test('report content scrolls in a bounded viewport instead of shrinking rows over each other', () => {
-  assert.match(page, /return <box flexDirection="column" flexGrow=\{1\} minHeight=\{0\} overflow="hidden" padding=\{1\}>/);
+  assert.match(page, /return <box flexDirection="column" flexGrow=\{1\} minHeight=\{0\} overflow="hidden" padding=\{1\}[^>\n]*>/);
   assert.match(page, /<scrollbox ref=\{\(node\) => \{ content = node; \}\} flexBasis=\{0\} flexGrow=\{1\} minHeight=\{1\}/);
   for (const text of page.matchAll(/<text\b([^>]*)>/g)) assert.match(text[1], /flexShrink=\{0\}/, `text must not shrink: ${text[1].slice(0, 80)}`);
   for (const box of page.slice(page.indexOf('<scrollbox')).matchAll(/<box\b([^>]*)>/g)) assert.match(box[1], /flexShrink=\{0\}/);
