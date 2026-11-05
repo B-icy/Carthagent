@@ -8,6 +8,7 @@ import { framePrompt } from "../../../lib/tui/framing.mjs";
 import { carthagentConfigPath, loadCarthagentConfig, resolveReviewMode, reviewKickoff, saveCarthagentConfig } from "../../../lib/review.mjs";
 import { COMMANDS, NATIVE_COMMAND_COLLISIONS, commandErrorMessage, helpSelectionCommand } from "./ui/commands.js";
 import { Workspace, rpcEventOptions, sessionControls, workspaceClient, shipClient, archiveClient, cloudAccountText, cloudUsageText, archiveItemText } from "./ui/client.js";
+import { independentReviewText } from "./ui/workspace-live.js";
 import { findNativeResumeSession } from "./ui/resume-session.mjs";
 import { cliConfigDirectory, cliConfigPath, readCliConfig, writeNativeTheme } from "./ui/host-state.js";
 import { WorkspacePage } from "./ui/workspace.js";
@@ -27,7 +28,7 @@ export default Plugin.define({
   id: "carthagent.tui",
   setup(context) {
     const questDrafts = new Map<string, Map<string, unknown>>();
-    const unregister = context.ui.router.register({ name: "carthagent", render: ({ data }) => <WorkspacePage view={String(data?.view ?? "workspace")} refreshKey={String(data?.refresh ?? "")} sessionID={typeof data?.sessionID === "string" ? data.sessionID : undefined} /> });
+    const unregister = context.ui.router.register({ name: "carthagent", render: ({ data }) => <WorkspacePage view={String(data?.view ?? "workspace")} refreshKey={String(data?.refresh ?? "")} sessionID={typeof data?.sessionID === "string" ? data.sessionID : undefined} returnSessionID={typeof data?.returnSessionID === "string" ? data.returnSessionID : undefined} /> });
     const cleanups = [unregister];
     cleanups.push(context.ui.router.register({ name: "voyages", render: ({ data }) => <VoyagesPage sessionID={typeof data?.sessionID === "string" ? data.sessionID : undefined} section={data?.section === "profile" || data?.section === "equipment" ? data.section : undefined} /> }));
     cleanups.push(context.ui.router.register({ name: "daily-quests", render: ({ data }) => <DailyQuestsPage drafts={questDrafts} sessionID={typeof data?.sessionID === "string" ? data.sessionID : undefined} questID={typeof data?.questID === "string" ? data.questID : undefined} /> }));
@@ -442,7 +443,7 @@ export default Plugin.define({
           context.ui.router.navigate({ type: "plugin", name: "carthagent", data: { view: id, ...(sessionID ? { sessionID } : {}) } });
           return;
         case "ctg-workspace":
-          context.ui.router.navigate({ type: "plugin", name: "carthagent", data: { view: "workspace" } });
+          context.ui.router.navigate({ type: "plugin", name: "carthagent", data: { view: "workspace", ...(sessionID ? { returnSessionID: sessionID } : {}) } });
           return;
         case "ctg-open": {
           const api = workspaceClient(context, location);
@@ -466,8 +467,8 @@ export default Plugin.define({
           const api = workspaceClient(context, location);
           if (!api) { toast("CTG workspace service is unavailable.", "warning"); return; }
           try {
-            const result = id === "ctg-review" ? await api.review({ sessionID }) : await api.delivery({ sessionID });
-            toast(result ? JSON.stringify(result) : "No CTG status is recorded for this session.", "info");
+            const result = id === "ctg-review" ? independentReviewText(await api.review({ sessionID })) : await api.delivery({ sessionID });
+            toast(typeof result === "string" ? result : result ? JSON.stringify(result) : "No CTG status is recorded for this session.", "info");
           } catch (error) { toast(commandErrorMessage(error), "error"); }
           return;
         }
