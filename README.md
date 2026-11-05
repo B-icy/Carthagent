@@ -291,20 +291,23 @@ Tests cover contract validation, stale evidence, required validators, timeouts/c
 
 ### beta.7 launch audit and repair checkout (isolated QA clone)
 
-This checkout is an isolated QA clone of `v1.1.0-beta.7` (`dcfc4e0`). It carries bounded fixes from a launch audit (commits `9cb7968` through `105c25a`). It is not a release: nothing here was published or pushed. The published release pin (`CTG_RUNTIME_PATCH_SHA256`, combined-v9 patch) is unchanged.
+This checkout is an isolated QA clone of `v1.1.0-beta.7` (`dcfc4e0`). It carries bounded fixes from a launch audit (commits `9cb7968` through `a7b18c1`). It is not a release: nothing here was published or pushed. The published release pin (`CTG_RUNTIME_PATCH_SHA256`, combined-v9 patch) is unchanged.
 
 - **Plugin fixes** (`plugins/carthagent`) load from this checkout after a restart: readable signed-out errors and `/help` selection, workspace/report Back, Escape, scrolling, Filter focus and pointer actions, Voyages rail clicks, list wheel, quest Details default, and refresh preservation that restores a Voyages preview or highlighted quest only when the reload returns the same account binding, and a single `/clear` entry.
-- **Native fixes** exist only as a development runtime. `docs/patches/opencode-v2.0.32-session-ui-development-v15.patch` (sha256 `46be8ef1…a3a6`) adds folder/new-session repairs, pointer Send, model badge, footer palette, sidebar restore and divider, a reachable unsent draft tab, the Permissions scope label, dialog selection after resize, context-menu closing on resize, and typed combining marks. `lib/opencode/runtime.mjs` accepts a runtime built from it as a development runtime. `script/ctg/prepare-development-runtime.sh` applies this patch to a clean upstream `843a6c5` checkout. To build the runtime, use Bun 1.4.2 with a copy of `script/ctg/build-owned-runtime.sh`. That script pins the combined-v9 patch, so the copy needs the v15 patch path and hash. On a 1-CPU host, its typecheck steps also need `--singleThreaded`. Select the build with `CTG_OWNED_OPENCODE_RUNTIME=<runtime dir> node bin/ctg.mjs`. Without that variable, `ctg` uses the published beta.7 runtime and none of the native fixes apply.
+- **Native fixes** exist only as a development runtime. `docs/patches/opencode-v2.0.32-session-ui-development-v16.patch` (sha256 `e02b2e5c…da43`) adds folder/new-session repairs, pointer Send, model badge, a footer palette entry that stays clickable at narrow widths, sidebar restore and divider, a reachable unsent draft tab that keeps its folder, model and text when the last session tab closes, the Permissions scope label, dialog selection after resize, context-menu closing on resize, and typed combining marks. The candidate built from it on this host is `/tmp/ctg-native-candidate/runtime/narrow-draft-v16` (Linux ARM64 binary sha256 `1c6716d5…619c`). `lib/opencode/runtime.mjs` accepts a runtime built from it as a development runtime. `script/ctg/prepare-development-runtime.sh` applies this patch to a clean upstream `843a6c5` checkout. To build the runtime, use Bun 1.4.2 with a copy of `script/ctg/build-owned-runtime.sh`. That script pins the combined-v9 patch, so the copy needs the v16 patch path and hash. On a 1-CPU host, its typecheck steps also need `--singleThreaded`. Select the build with `CTG_OWNED_OPENCODE_RUNTIME=<runtime dir> node bin/ctg.mjs`. Without that variable, `ctg` uses the published beta.7 runtime and none of the native fixes apply.
 
 To check the repository (Node tests limited to one worker):
 
 ```sh
 npm run typecheck
-env -u NO_COLOR TERM=xterm-256color CARTHAGENT_TRUECOLOR=1 sh -c \
+env -u NO_COLOR TERM=xterm-256color CARTHAGENT_NO_TRUECOLOR=0 CARTHAGENT_TRUECOLOR=1 \
+  PYTHON=/path/to/python-with-requirements/bin/python3 sh -c \
   "npm run lint && npm run build && node --test --test-concurrency=1 tests/*.test.mjs && npm run test:python"
 ```
 
-Under `TERM=dumb` (4-bit colour), the legacy `tests/tui.test.mjs` comet test fails. It is a test false positive, not a product defect, so run the suite with a truecolor terminal. Native TUI tests run in the patched upstream tree with `bun test --cwd packages/tui --timeout 30000 …`. On a loaded host, the 5 s default timeout is too short for `command-selection.test.tsx`.
+`npm run test:python` uses `$PYTHON`, then a repository `.venv`, then the system `python3`. That interpreter needs the packages in `scenarios/game/requirements.txt`, including Pillow. In the audit environment the system `python3` lacked Pillow and two game-grader imports failed, so the passing gate ran with a separate interpreter that had them installed.
+
+Under `TERM=dumb` (4-bit colour), the legacy `tests/tui.test.mjs` comet test fails. It is a test false positive, not a product defect, so run the suite with truecolor enabled as shown. Native TUI tests run in the patched upstream tree with `bun test --cwd packages/tui --timeout 30000 …`. On a loaded host, the 5 s default timeout is too short for `command-selection.test.tsx`.
 
 Audit and retest evidence lives outside this repository. It has no credentials or account identifiers: account views were omitted or redacted. Start with the final report, `artifacts/beta7-launch-audit/final/final-report.md` in the original Carthagent checkout. It links the original findings, each fix's before/after PNGs, regression logs and gate logs.
 
