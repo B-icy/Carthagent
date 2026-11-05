@@ -289,4 +289,29 @@ node evaluate.mjs --task cli --mode both --allow-live   # live A/B eval — spen
 
 Tests cover contract validation, stale evidence, required validators, timeouts/cancellation, compaction, actual-engine session budgets, report conflicts, and dashboard auth. Native CI covers Windows/macOS/Linux on Node 22/24; a separate Linux job runs the bundled real-browser suite. WSL JS/browser evidence is local and separate; WSL Python validation remains unperformed successfully. This does not establish all terminals or browsers as supported/tested. `PI_CLI` points the suite at a non-standard engine location.
 
+### beta.7 launch audit and repair checkout (isolated QA clone)
+
+This checkout is an isolated QA clone of `v1.1.0-beta.7` (`dcfc4e0`). It carries bounded fixes from a launch audit (commits `9cb7968` through `105c25a`). It is not a release: nothing here was published or pushed. The published release pin (`CTG_RUNTIME_PATCH_SHA256`, combined-v9 patch) is unchanged.
+
+- **Plugin fixes** (`plugins/carthagent`) load from this checkout after a restart: readable signed-out errors and `/help` selection, workspace/report Back, Escape, scrolling, Filter focus and pointer actions, Voyages rail clicks, list wheel, quest Details default and refresh preservation, and a single `/clear` entry.
+- **Native fixes** exist only as a development runtime. `docs/patches/opencode-v2.0.32-session-ui-development-v15.patch` (sha256 `46be8ef1…a3a6`) adds folder/new-session repairs, pointer Send, model badge, footer palette, sidebar restore and divider, a reachable unsent draft tab, the Permissions scope label, dialog selection after resize, context-menu closing on resize, and typed combining marks. `lib/opencode/runtime.mjs` accepts a runtime built from it as a development runtime. `script/ctg/prepare-development-runtime.sh` applies this patch to a clean upstream `843a6c5` checkout. To build the runtime, use Bun 1.4.2 with a copy of `script/ctg/build-owned-runtime.sh`. That script pins the combined-v9 patch, so the copy needs the v15 patch path and hash. On a 1-CPU host, its typecheck steps also need `--singleThreaded`. Select the build with `CTG_OWNED_OPENCODE_RUNTIME=<runtime dir> node bin/ctg.mjs`. Without that variable, `ctg` uses the published beta.7 runtime and none of the native fixes apply.
+
+To check the repository (Node tests limited to one worker):
+
+```sh
+npm run typecheck
+env -u NO_COLOR TERM=xterm-256color CARTHAGENT_TRUECOLOR=1 sh -c \
+  "npm run lint && npm run build && node --test --test-concurrency=1 tests/*.test.mjs && npm run test:python"
+```
+
+Under `TERM=dumb` (4-bit colour), the legacy `tests/tui.test.mjs` comet test fails. It is a test false positive, not a product defect, so run the suite with a truecolor terminal. Native TUI tests run in the patched upstream tree with `bun test --cwd packages/tui --timeout 30000 …`. On a loaded host, the 5 s default timeout is too short for `command-selection.test.tsx`.
+
+Audit and retest evidence lives outside this repository. It has no credentials or account identifiers: account views were omitted or redacted. Start with the final report, `artifacts/beta7-launch-audit/final/final-report.md` in the original Carthagent checkout. It links the original findings, each fix's before/after PNGs, regression logs and gate logs.
+
+The audit's limits:
+- Linux ARM64 only, under a software Wayland compositor (sway, foot, tmux) with virtual pointer and keyboard input. It does not certify macOS, Windows, other terminals or physical input devices.
+- Layout findings come from PNG captures, OCR and pane text, without direct image review. Aesthetic judgements are qualified.
+- Not tested: clipboard paste, the live permission/question dialog, IME composition, purchases, equip, saves, quest/reward submission, logout and publishing.
+- Two historical sign-in failures stay unresolved. AUTH-001 was a one-time "OAuth method not found" on the first `/login` after startup. AUTH-002 was one approved device sign-in that left the terminal signed out.
+
 See [repository quality gates](docs/quality.md) and [controlled evaluation readiness](docs/evaluation-readiness.md). Review admission is persistently bounded locally; delivery operations now share a workspace lock and explicit active-run pointer with same-run live reconciliation. See [coordination and recovery](docs/workspace-coordination.md) for limits and interrupted-lock handling. No controlled paid comparison yet establishes lower cost or fewer interventions for complete web deliveries.
