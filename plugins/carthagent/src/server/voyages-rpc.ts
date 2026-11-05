@@ -103,8 +103,8 @@ export function createVoyagesRpcHandlers(ctx: Port, options: { cloudClient?: Clo
     let credential;
     try { credential = await ctx.integration.connection.resolve(active); } catch { throw new Failure('authentication_required', 401); }
     if (credential?.type !== 'oauth' || credential.methodID !== 'carthagent-device' || !credential.access) throw new Failure('authentication_required', 401);
-    const scope = join(directory, createHash('sha256').update(JSON.stringify([baseUrl, active.id])).digest('hex'));
-    return { id: active.id, token: credential.access, scope };
+    const accountKey = createHash('sha256').update(JSON.stringify([baseUrl, active.id])).digest('hex');
+    return { id: active.id, token: credential.access, accountKey, scope: join(directory, accountKey) };
   }
   type Access = Awaited<ReturnType<typeof access>>;
   async function current(a: Access, signal: AbortSignal) {
@@ -229,7 +229,7 @@ export function createVoyagesRpcHandlers(ctx: Port, options: { cloudClient?: Clo
       const items = shop.items.map(value => item(value, owned)); check(new Set(items.map(i => i.item)).size === items.length);
       const state = await read(a); await current(a, call.signal);
       const pending = state.pending;
-      return { profile: p, items, ...(pending ? { pending: { quoteId: pending.quoteId, item: pending.item, price: pending.price } } : {}) };
+      return { accountKey: a.accountKey, profile: p, items, ...(pending ? { pending: { quoteId: pending.quoteId, item: pending.item, price: pending.price } } : {}) };
     }),
     customize: run(async (input, call, a) => versioned(a, 'profile', input, call, 'PATCH')),
     equip: run(async (input, call, a) => { selection(input); return versioned(a, 'equip', input, call, 'POST'); }),

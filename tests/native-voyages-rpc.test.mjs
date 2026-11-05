@@ -6,6 +6,7 @@ import { mkdtempSync } from 'node:fs';
 import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { JsonSchema, Schema, SchemaRepresentation } from 'effect';
@@ -60,7 +61,7 @@ test('pinned Effect native conversion accepts every RPC input, output and typed 
   const samples = {
     previewReward: [{ sessionID: 'session-1' }, { runId: 'run-1', snapshot: 'a'.repeat(64), coins: 25, xp: 100, km: 1, dailyLimit: 3 }],
     claimReward: [{ sessionID: 'session-1', runId: 'run-1', snapshot: 'a'.repeat(64) }, { reward: { id: 'reward-1', runId: 'run-1', policyVersion: 'verified-delivery-beta-v1', coins: 25, xp: 100, km: 1, awardedAt: new Date(NOW).toISOString(), basis: 'local_harness_attested' }, replayed: false }],
-    snapshot: [{}, { profile, items: [catalog, { ...catalog, item: 'hat:beanie', itemKey: 'beanie', price: null }], pending: { quoteId: 'quote-1', item: catalog.item, price: 5 } }],
+    snapshot: [{}, { accountKey: 'a'.repeat(64), profile, items: [catalog, { ...catalog, item: 'hat:beanie', itemKey: 'beanie', price: null }], pending: { quoteId: 'quote-1', item: catalog.item, price: 5 } }],
     customize: [{ version: 1, name: 'New', skin: 'warm', hair: 'dark', pattern: 'plain' }, { profile }],
     equip: [{ version: 1, slot: 'hat', item: 'beanie' }, { profile }],
     quote: [{ slot: 'hat', item: 'captain' }, { quote: authoritativeQuote }],
@@ -114,7 +115,8 @@ test('confirmed retry identity mismatch never sends, and only proven expired rep
 
 test('snapshot validates authoritative DTOs, strips extras and uses native credentials', async () => {
   const s = setup();
-  assert.deepEqual(await s.handlers.snapshot({}, call), { profile, items: [catalog] });
+  const binding = (baseUrl, id) => createHash('sha256').update(JSON.stringify([baseUrl, id])).digest('hex');
+  assert.deepEqual(await s.handlers.snapshot({}, call), { accountKey: binding('https://api.example.test', 'account-a'), profile, items: [catalog] });
   assert.deepEqual(s.requests.map(r => r.path), ['/v1/voyages/bootstrap', '/v1/voyages/shop']);
   for (const request of s.requests) { assert.equal(request.accessToken, 'secret-fixture'); assert.equal(request.signal, call.signal); }
   assert.equal(JSON.stringify(await s.handlers.snapshot({}, call)).includes('secret-fixture'), false);
@@ -215,6 +217,12 @@ test('account and API origin isolate pending; account switch during request is f
   s.switchAccount('account-a');
   assert.ok((await s.handlers.snapshot({}, call)).pending);
   assert.equal((await s.make('https://other.example.test').snapshot({}, call)).pending, undefined);
+  // The non-secret binding the page compares before restoring a position changes with the account and API origin.
+  const keyA = (await s.handlers.snapshot({}, call)).accountKey;
+  assert.notEqual((await s.make('https://other.example.test').snapshot({}, call)).accountKey, keyA);
+  s.switchAccount('account-b');
+  assert.notEqual((await s.handlers.snapshot({}, call)).accountKey, keyA);
+  s.switchAccount('account-a');
   await rejected(s.make('https://other.example.test').retryPurchase({ quoteId: 'quote-1' }, call), 'no_pending_purchase');
 });
 

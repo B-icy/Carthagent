@@ -245,3 +245,91 @@ test("an account change during refresh never restores the old quest, preview or 
     expect(frame).toContain("Quests");
   } finally { app.renderer.destroy(); }
 });
+
+// Quest IDs come from a shared daily catalog, so the same IDs can appear for another account.
+async function overviewFixture() {
+  const second = { ...quest, id: "second", definition: { ...quest.definition, templateId: "tests-regression-v1" } };
+  const third = { ...quest, id: "third", definition: { ...quest.definition, templateId: "review-correctness-v1" } };
+  const state = { account: "a".repeat(64) as string | undefined, items: [quest, second, third] };
+  const reads: string[] = [], sends: string[] = [];
+  let gate: Promise<void> | undefined, release = () => {};
+  let layer: () => { commands: { bind: string; run: () => void }[] };
+  let listener: ((event: { details: { type: string; data?: unknown } }) => void) | undefined;
+  const context = {
+    theme: resolveThemeDocument(parseThemeDocument(theme), "dark"), location: { directory: "/review" },
+    data: { session: { get: () => undefined, list: () => [] }, location: { default: () => ({ directory: "/review" }) }, listen: (next: typeof listener) => { listener = next; return () => {}; } },
+    client: { rpc: () => ({
+      snapshot: async () => { if (gate) await gate; return { ...(state.account ? { accountKey: state.account } : {}), slate: { endsAt: quest.endsAt, items: state.items }, records: [] }; },
+      detail: async ({ id }: { id: string }) => { reads.push(id); return { ...state.items.find(q => q.id === id), latestSubmission: null }; },
+      submit: async () => { sends.push("submit"); throw new Error("must not submit"); },
+      retry: async () => { sends.push("retry"); throw new Error("must not retry"); },
+    }) },
+    keymap: { layer: (value: typeof layer) => { layer = value; }, mode: { current: () => "base" } },
+    ui: { router: { navigate: () => {} }, dialog: { clear: () => {} } },
+  } as unknown as Context;
+  const app = await testRender(() => <PluginContextProvider value={context}><DailyQuestsPage /></PluginContextProvider>, { width: 110, height: 36 });
+  const settle = async () => { for (let i = 0; i < 16; i++) { await Promise.resolve(); await app.renderOnce(); } };
+  const key = (bind: string) => layer().commands.find(c => c.bind === bind)!.run();
+  await settle();
+  key("down"); key("down"); await settle();
+  return {
+    app, state, second, third, reads, sends, settle, key,
+    highlighted: () => app.captureCharFrame().split("\n").find(line => line.includes("› "))?.replace(/[█▀▄]/g, "").trim(),
+    hold: () => { gate = new Promise(resolve => { release = () => { gate = undefined; resolve(); }; }); },
+    release: async () => { release(); await settle(); },
+    event: (type: string, data?: unknown) => listener?.({ details: { type, data } }),
+  };
+}
+
+test("same-account refresh keeps the highlighted overview quest without opening it, and Enter opens that quest", async () => {
+  const f = await overviewFixture();
+  try {
+    expect(f.highlighted()).toBe("› Resolve a review finding");
+    f.hold();
+    f.event("credential.updated");
+    await f.settle();
+    expect(f.highlighted()).toBeUndefined();
+    await f.release();
+    expect(f.highlighted()).toBe("› Resolve a review finding");
+    expect(f.reads).toEqual([]);
+    expect(f.app.captureCharFrame()).not.toContain("Choose completed work");
+    f.key("return"); await f.settle();
+    expect(f.reads).toEqual(["third"]);
+    expect(f.sends).toEqual([]);
+  } finally { f.app.renderer.destroy(); }
+});
+
+test("same-account refresh follows the highlighted quest to its new position in a reordered list", async () => {
+  const f = await overviewFixture();
+  try {
+    f.state.items = [f.second, f.third, quest];
+    f.event("provider.updated");
+    await f.settle();
+    expect(f.highlighted()).toBe("› Resolve a review finding");
+    f.key("return"); await f.settle();
+    expect(f.reads).toEqual(["third"]);
+    expect(f.sends).toEqual([]);
+  } finally { f.app.renderer.destroy(); }
+});
+
+test("a removed highlighted quest falls back to the first quest", async () => {
+  const f = await overviewFixture();
+  try {
+    f.state.items = [quest, f.second];
+    f.event("credential.updated");
+    await f.settle();
+    expect(f.highlighted()).toBe("› Improve a behavior");
+    expect(f.reads).toEqual([]); expect(f.sends).toEqual([]);
+  } finally { f.app.renderer.destroy(); }
+});
+
+test.each([["changed", "b".repeat(64)], ["unknown", undefined]])("a %s account with the same shared quest IDs does not restore the highlighted quest", async (_label, account) => {
+  const f = await overviewFixture();
+  try {
+    f.state.account = account;
+    f.event("credential.updated");
+    await f.settle();
+    expect(f.highlighted() ?? "").not.toContain("Resolve a review finding");
+    expect(f.reads).toEqual([]); expect(f.sends).toEqual([]);
+  } finally { f.app.renderer.destroy(); }
+});

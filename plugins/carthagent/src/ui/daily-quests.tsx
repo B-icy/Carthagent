@@ -210,7 +210,7 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string; d
     if (value.startsWith("retry:")) void controller.retry(id, () => confirm("Retry saved submission?", "Check whether the server received it, then resend the same saved work only if absent.", "Retry"));
     if (value.startsWith("forget:")) void controller.forget(id, () => confirm("Erase saved evidence?", "Keep the submission ID for status checks. The saved work cannot be resent afterward. This does not cancel an accepted assessment.", "Erase"));
   };
-  type Reopen = { accountKey: string; questId?: string; draft?: { draft: NonNullable<View["draft"]>; preview: View["preview"]; phase: string }; details: boolean; dialog: boolean };
+  type Reopen = { accountKey: string; questId?: string; overviewId?: string; draft?: { draft: NonNullable<View["draft"]>; preview: View["preview"]; phase: string }; details: boolean; dialog: boolean };
   let reopen: Reopen | undefined;
   let reconcile = 0;
   onMount(() => {
@@ -221,6 +221,7 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string; d
       const before = view();
       const saved: Reopen | undefined = changedLocation ? undefined : reopen ?? (before.snapshot ? {
         accountKey: before.snapshot.accountKey, questId: before.detail?.id, details: details(), dialog: !!activeDialog,
+        overviewId: before.detail ? undefined : visibleQuests()[questIndex()]?.id,
         draft: before.draft ? { draft: before.draft, preview: before.preview, phase: before.phase } : undefined,
       } : undefined);
       let refreshing: Promise<unknown> | undefined;
@@ -237,7 +238,13 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string; d
       setReconciling(!!refreshing);
       if (!refreshing) return;
       void refreshing.then(async () => {
-        if (token !== reconcile || !saved?.questId || view().snapshot?.accountKey !== saved.accountKey) return;
+        if (token !== reconcile || !saved || !view().snapshot?.accountKey || view().snapshot?.accountKey !== saved.accountKey) return;
+        // The board only regains its highlight; the quest is not opened, so no action list is restored.
+        if (!saved.questId) {
+          const index = visibleQuests().findIndex(q => q.id === saved.overviewId);
+          if (index >= 0) { setQuestIndex(index); summary?.scrollChildIntoView(`daily-quest-${saved.overviewId}`); }
+          return;
+        }
         if (saved.draft) controller.adopt(saved.draft);
         await controller.select(saved.questId);
         if (token !== reconcile || view().detail?.id !== saved.questId) return;

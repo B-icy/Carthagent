@@ -15,7 +15,7 @@ test.each([[110, 36], [80, 24], [60, 20]])("shop previews and back navigation wo
   const context = {
     theme: resolveThemeDocument(parseThemeDocument(theme), "dark"), location: { directory: "/review" },
     data: { session: { get: () => undefined }, location: { default: () => ({ directory: "/review" }) }, listen: () => () => {} },
-    client: { rpc: () => ({ snapshot: async () => ({ profile, items: [{ item: "hat:beanie", itemKey: "beanie", name: "Beanie", slot: "hat", price: 40, requiresPurchase: true, available: true, eligible: true, reason: null }] }), quote: async () => writes.push("quote"), equip: async () => writes.push("equip") }) },
+    client: { rpc: () => ({ snapshot: async () => ({ accountKey: "a".repeat(64), profile, items: [{ item: "hat:beanie", itemKey: "beanie", name: "Beanie", slot: "hat", price: 40, requiresPurchase: true, available: true, eligible: true, reason: null }] }), quote: async () => writes.push("quote"), equip: async () => writes.push("equip") }) },
     keymap: { layer: (value: typeof layer) => { layer = value; }, mode: { current: () => "base" } },
     ui: { router: { navigate: (route: unknown) => routes.push(route) }, dialog: { clear: () => {} } },
   } as unknown as Context;
@@ -50,7 +50,7 @@ async function shopFixture(section: "equipment" | "profile" = "equipment", width
   const context = {
     theme: resolveThemeDocument(parseThemeDocument(theme), "dark"), location: { directory: "/review" },
     data: { session: { get: () => undefined }, location: { default: () => ({ directory: "/review" }) }, listen: (next: typeof listener) => { listener = next; return () => {}; } },
-    client: { rpc: () => ({ snapshot: async () => { reads++; return { profile, items: catalog }; }, quote: async () => writes.push("quote"), equip: async () => writes.push("equip"), purchase: async () => writes.push("purchase"), customize: async () => writes.push("customize"), previewReward: async () => writes.push("previewReward"), claimReward: async () => writes.push("claim") }) },
+    client: { rpc: () => ({ snapshot: async () => { reads++; return { accountKey: "a".repeat(64), profile, items: catalog }; }, quote: async () => writes.push("quote"), equip: async () => writes.push("equip"), purchase: async () => writes.push("purchase"), customize: async () => writes.push("customize"), previewReward: async () => writes.push("previewReward"), claimReward: async () => writes.push("claim") }) },
     keymap: { layer: () => {}, mode: { current: () => "base" } },
     ui: { router: { navigate: (route: unknown) => routes.push(route) }, dialog: { clear: () => {}, confirm: async () => { writes.push("confirm"); return false; }, select: async () => { writes.push("dialog"); return undefined; } } },
   } as unknown as Context;
@@ -118,5 +118,104 @@ test("same-account reload keeps the chosen category and its window; a credential
     await f.settle();
     expect(f.list().getSelectedOption()?.value).toBe("category:hairStyle");
     expect(f.writes).toEqual([]); expect(f.routes).toEqual([]);
+  } finally { f.app.renderer.destroy(); }
+});
+
+// Catalog item IDs are shared by every account, so an item ID alone never proves the reload belongs to the same captain.
+async function identityFixture(accountKey: () => string | undefined) {
+  const writes: string[] = [];
+  let cleared = 0;
+  let listener: ((event: { details: { type: string; data?: unknown } }) => void) | undefined;
+  let gate: Promise<void> | undefined;
+  let release = () => {};
+  const rich = { ...profile, coins: 1000 };
+  const quote = { id: "quote-1", item: "sail:i3", price: 400, expiresAt: "2999-01-01T00:00:00Z" };
+  const context = {
+    theme: resolveThemeDocument(parseThemeDocument(theme), "dark"), location: { directory: "/review" },
+    data: { session: { get: () => undefined }, location: { default: () => ({ directory: "/review" }) }, listen: (next: typeof listener) => { listener = next; return () => {}; } },
+    client: { rpc: () => ({
+      snapshot: async () => { if (gate) await gate; const key = accountKey(); return { ...(key ? { accountKey: key } : {}), profile: rich, items: catalog }; },
+      quote: async () => { writes.push("quote"); return { quote }; }, equip: async () => writes.push("equip"), purchase: async () => writes.push("purchase"), retryPurchase: async () => writes.push("retryPurchase"), customize: async () => writes.push("customize"),
+    }) },
+    keymap: { layer: () => {}, mode: { current: () => "base" } },
+    ui: { router: { navigate: () => writes.push("navigate") }, dialog: { clear: () => { cleared++; }, confirm: () => new Promise(() => {}) } },
+  } as unknown as Context;
+  const app = await testRender(() => <PluginContextProvider value={context}><VoyagesPage section="equipment" /></PluginContextProvider>, { width: 110, height: 36 });
+  const settle = async () => { for (let i = 0; i < 12; i++) { await Promise.resolve(); await app.renderOnce(); } };
+  await settle();
+  const find = (node: Renderable): SelectRenderable | undefined => node instanceof SelectRenderable ? node : node.getChildren().map(find).find(Boolean);
+  const list = () => find(app.renderer.root)!;
+  const choose = async (value: string) => { list().setSelectedIndex(list().options.findIndex(o => o.value === value)); list().selectCurrent(); await settle(); };
+  const highlight = async (value: string) => { list().setSelectedIndex(list().options.findIndex(o => o.value === value)); await settle(); };
+  await choose("category:sail");
+  await choose("item:sail:i3");
+  await highlight("buy-preview");
+  return {
+    app, list, settle, writes, cleared: () => cleared,
+    hold: () => { gate = new Promise(resolve => { release = () => { gate = undefined; resolve(); }; }); },
+    release: async () => { release(); await settle(); },
+    event: (type: string, data?: unknown) => listener?.({ details: { type, data } }),
+  };
+}
+const previewShown = (frame: string) => frame.includes("Preview · choose Equip or Buy to save") || frame.includes("sail item 3");
+
+test("same-account reload restores the preview and its action only after the account binding matches", async () => {
+  const f = await identityFixture(() => "a".repeat(64));
+  try {
+    expect(f.list().getSelectedOption()?.value).toBe("buy-preview");
+    f.hold();
+    f.event("credential.updated");
+    await f.settle();
+    // Cleared synchronously and kept clear until the reload is verified: no old title, preview or Buy action.
+    expect(previewShown(f.app.captureCharFrame())).toBe(false);
+    expect(f.list().options.some(o => o.value === "buy-preview")).toBe(false);
+    await f.release();
+    expect(previewShown(f.app.captureCharFrame())).toBe(true);
+    expect(f.list().getSelectedOption()?.value).toBe("buy-preview");
+    expect(f.writes).toEqual([]);
+  } finally { f.app.renderer.destroy(); }
+});
+
+test.each(["credential.updated", "provider.updated", "integration.updated", "server.connected"])("a changed account binding after %s never restores the shared-ID preview, Buy action or category", async (type) => {
+  let key = "a".repeat(64);
+  const f = await identityFixture(() => key);
+  try {
+    key = "b".repeat(64);
+    f.hold();
+    f.event(type);
+    await f.settle();
+    expect(previewShown(f.app.captureCharFrame())).toBe(false);
+    await f.release();
+    expect(previewShown(f.app.captureCharFrame())).toBe(false);
+    expect(f.list().options.some(o => o.value === "buy-preview" || o.value === "back")).toBe(false);
+    expect(f.list().getSelectedOption()?.value).toBe("category:hairStyle");
+    expect(f.writes).toEqual([]);
+  } finally { f.app.renderer.destroy(); }
+});
+
+test("an unknown account binding fails closed", async () => {
+  let key: string | undefined = "a".repeat(64);
+  const f = await identityFixture(() => key);
+  try {
+    key = undefined;
+    f.event("credential.updated");
+    await f.settle();
+    expect(previewShown(f.app.captureCharFrame())).toBe(false);
+    expect(f.list().getSelectedOption()?.value).toBe("category:hairStyle");
+    expect(f.writes).toEqual([]);
+  } finally { f.app.renderer.destroy(); }
+});
+
+test("an open Buy confirmation closes synchronously on reload and nothing is sent", async () => {
+  const f = await identityFixture(() => "a".repeat(64));
+  try {
+    f.list().selectCurrent();
+    await f.settle();
+    expect(f.writes).toEqual(["quote"]);
+    const before = f.cleared();
+    f.event("credential.updated");
+    expect(f.cleared()).toBeGreaterThan(before);
+    await f.settle();
+    expect(f.writes).toEqual(["quote"]);
   } finally { f.app.renderer.destroy(); }
 });
