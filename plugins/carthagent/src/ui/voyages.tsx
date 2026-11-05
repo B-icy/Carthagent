@@ -1,8 +1,8 @@
 /** @jsxImportSource @opentui/solid */
-import { Show, createSignal, onCleanup, onMount } from "solid-js";
+import { Show, createEffect, createSignal, on, onCleanup, onMount } from "solid-js";
 import { TextAttributes, type ScrollBoxRenderable, type SelectRenderable } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/solid";
-import { clickSelect } from "./select-mouse.js";
+import { clickSelect, createSelectMemory, wheelSelect } from "./select-mouse.js";
 import { usePlugin } from "@opencode/plugin/tui";
 import { voyagesClient, type VoyagesSnapshot, type VoyagesProfile, type VoyagesItem, type VoyagesQuote } from "./client.js";
 import { canEquip, createVoyagesState, handleVoyagesEvent, voyagesCatalogLabel } from "./voyages-state.mjs";
@@ -24,9 +24,10 @@ export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "
   const [view, setView] = createSignal<ViewState>({ busy: false, error: "", notice: "" });
   const controller = createVoyagesState({ api: voyagesClient(context, location), changed: (next: ViewState) => setView(next) });
   const back = () => context.ui.router.navigate(props.sessionID ? { type: "session", sessionID: props.sessionID } : { type: "home" });
+  const memory = createSelectMemory(() => list);
   const goBack = () => {
-    if (previewItem()) { setPreviewItem(undefined); return; }
-    if (category()) { setCategory(undefined); return; }
+    if (previewItem()) { memory.reset(); setPreviewItem(undefined); return; }
+    if (category()) { memory.reset(); setCategory(undefined); return; }
     back();
   };
   let summary: ScrollBoxRenderable | undefined;
@@ -109,7 +110,7 @@ export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "
   const select = (value?: string) => {
     if (!value || view().busy || context.keymap.mode.current() !== "base") return;
     if (value === "back") { goBack(); return; }
-    if (value.startsWith("category:")) { setCategory(value.slice(9) as VoyagesSlot); list?.setSelectedIndex(0); return; }
+    if (value.startsWith("category:")) { memory.reset(); setCategory(value.slice(9) as VoyagesSlot); return; }
     if (value === "equip-preview" || value === "buy-preview") { const item = previewItem(); if (item) void chooseItem(item); return; }
     if (value === "signin") {
       controller.invalidate();
@@ -123,7 +124,7 @@ export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "
     if (value === "customize") { void customize(); return; }
     if (value === "retry") { void retry(); return; }
     const item = view().snapshot?.items.find((entry) => `item:${entry.item}` === value);
-    if (item) { setPreviewItem(item); list?.setSelectedIndex(0); summary?.scrollTo(0); }
+    if (item) { memory.reset(); setPreviewItem(item); summary?.scrollTo(0); }
   };
   onMount(() => {
     let binding = JSON.stringify(location());
@@ -136,11 +137,24 @@ export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "
         setPreviewItem(undefined); setAppearance({});
         closeOwnDialog();
         if (type !== "server.disconnected") void controller.refresh();
-      } else void handleVoyagesEvent(controller, details, location(), () => { setPreviewItem(undefined); setAppearance({}); closeOwnDialog(); });
+      } else {
+        // Every reload clears account data and page dialogs synchronously and keeps the list inert while busy.
+        // Only an explicit credential switch also discards the catalog position; other reloads return to it.
+        const position = type !== "credential.switched";
+        const shown = position ? previewItem()?.item : undefined;
+        void Promise.resolve(handleVoyagesEvent(controller, details, location(), () => {
+          setAppearance({}); closeOwnDialog();
+          if (!position) { setPreviewItem(undefined); setCategory(undefined); memory.reset(); }
+        })).then(() => {
+          if (shown && previewItem()?.item === shown) setPreviewItem(view().snapshot?.items.find(entry => entry.item === shown));
+        });
+      }
     });
     void controller.refresh();
     onCleanup(() => { stop(); controller.dispose(); closeOwnDialog(); });
   });
+  // While a reload is in flight the list is inert and shows a transient shape; restore once it settles.
+  createEffect(on(options, () => { if (!view().busy) memory.sync(); }, { defer: true }));
   return <box flexDirection="column" flexGrow={1} minHeight={0} paddingX={2} paddingY={1} overflow="hidden" backgroundColor={context.theme.background.base}>
     <text flexShrink={0} fg={context.theme.text.base} attributes={TextAttributes.BOLD}>{previewItem()?.name ?? (props.section === "equipment" ? category() ? labels[category()!] : "Shop" : "Character")}</text>
     {/* Split the remaining height: wrapped profile rows scroll instead of shrinking over one another. */}
@@ -162,7 +176,7 @@ export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "
         <Show when={snapshot().pending}><text flexShrink={0} fg={context.theme.text.feedback.warning.base}>Purchase pending / outcome unknown. Resolve the saved purchase explicitly; new purchases are blocked.</text></Show>
       </box>}</Show>
     </scrollbox>
-    <select height={5} flexShrink={0} backgroundColor={context.theme.background.base} focusedBackgroundColor={context.theme.background.base} focusedTextColor={context.theme.text.action.secondary.base} textColor={context.theme.text.action.secondary.base} selectedTextColor={context.theme.text.formfield.focused} selectedBackgroundColor={context.theme.background.formfield.focused} showDescription={false} ref={(node) => { list = node; }} onMouseUp={(event) => clickSelect(list, event)} showScrollIndicator keyBindings={[{ name: "pageup", action: "move-up-fast" }, { name: "pagedown", action: "move-down-fast" }]} options={options()} focused={!view().busy && context.keymap.mode.current() === "base"} onSelect={(_index, option) => select(option?.value)} />
+    <select height={5} flexShrink={0} backgroundColor={context.theme.background.base} focusedBackgroundColor={context.theme.background.base} focusedTextColor={context.theme.text.action.secondary.base} textColor={context.theme.text.action.secondary.base} selectedTextColor={context.theme.text.formfield.focused} selectedBackgroundColor={context.theme.background.formfield.focused} showDescription={false} ref={(node) => { list = node; }} onMouseUp={(event) => clickSelect(list, event)} onMouseScroll={(event) => wheelSelect(list, event, !view().busy && context.keymap.mode.current() === "base")} onChange={(_index, option) => memory.changed(option)} showScrollIndicator keyBindings={[{ name: "pageup", action: "move-up-fast" }, { name: "pagedown", action: "move-down-fast" }]} options={options()} focused={!view().busy && context.keymap.mode.current() === "base"} onSelect={(_index, option) => select(option?.value)} />
     <text flexShrink={0} fg={context.theme.text.muted}>↑↓ Enter select · Ctrl+U/D scroll · Esc back</text>
   </box>;
 }

@@ -216,6 +216,13 @@ export function createDailyQuestsState({ api, changed = (_state) => {}, timeoutS
       if (state.draft) drafts.delete(state.draft.questId);
       clearDraft(); state.error = ''; emit();
     },
+    /** Re-offer a draft saved before an event reload, only for the same verified account and a still-open quest. */
+    adopt(saved) {
+      if (disposed || state.busy || !saved?.draft || saved.draft.accountKey !== state.snapshot?.accountKey) return false;
+      if (!state.snapshot.slate.items.some(q => q.id === saved.draft.questId && q.status === 'open')) return false;
+      drafts.set(saved.draft.questId, copy(saved));
+      return true;
+    },
     overview() {
       if (disposed || state.busy) return;
       if (state.draft) drafts.set(state.draft.questId, { draft: state.draft, preview: state.preview, phase: state.phase });

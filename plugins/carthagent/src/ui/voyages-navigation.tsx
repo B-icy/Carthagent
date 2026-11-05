@@ -4,7 +4,7 @@ import { CliRenderEvents, TextAttributes, type ScrollBoxRenderable, type SelectR
 import { useRenderer } from "@opentui/solid";
 import { usePlugin } from "@opencode/plugin/tui";
 import stringWidth from "string-width";
-import { clickSelect } from "./select-mouse.js";
+import { createSelectPointer } from "./select-mouse.js";
 import { dailyQuestsClient, voyagesClient } from "./client.js";
 import { nativeNavigation, type NavigationInput } from "./native-navigation.js";
 import { createVoyagesNavigationState } from "./voyages-navigation-state.mjs";
@@ -116,7 +116,8 @@ export function VoyagesNavigation(props: NavigationInput) {
     if (value === "daily") open("daily-quests");
   };
   const focused = () => props.active && props.focused && context.keymap.mode.current() === "navigation";
-  return <box flexDirection="column" flexGrow={1} minHeight={0} onMouseDown={() => { if (props.active && context.keymap.mode.current() === "base") props.focus(); }}>
+  const pointer = createSelectPointer(() => actions, focused);
+  return <box flexDirection="column" flexGrow={1} minHeight={0} onMouseDown={() => { if (props.active && context.keymap.mode.current() === "base") props.focus(); }} onMouseUp={(event) => pointer.release(event)}>
     <scrollbox ref={scroll} flexGrow={1} minHeight={0} contentOptions={{ flexDirection: "column" }}>
       <Show when={props.compact && view().profile}><text paddingX={1} paddingY={1} flexShrink={0} fg={context.theme.text.base}>{view().profile!.coins} coins</text></Show>
       <Show when={!props.compact}>
@@ -126,7 +127,7 @@ export function VoyagesNavigation(props: NavigationInput) {
         <Show when={view().busy}><text flexShrink={0} fg={context.theme.text.muted}> {['|', '/', '-', '\\'][frame()]} Loading voyages…</text></Show>
         <Show when={view().error}><box paddingX={1} paddingY={1} flexShrink={0}><text fg={context.theme.text.feedback.warning.base}>{errorLabel()}</text></box></Show>
       </Show>
-      <select ref={actions} textColor={context.theme.text.base} descriptionColor={context.theme.text.muted} selectedTextColor={context.theme.text.base} selectedBackgroundColor={context.theme.background.raised.high} selectedDescriptionColor={context.theme.text.base} onMouseUp={(event) => { if (focused()) clickSelect(actions, event); }} minHeight={1} height={Math.min(viewportHeight(), options().length)} flexShrink={0} showScrollIndicator showDescription={false} options={options()} selectedIndex={Math.max(0, options().findIndex((item) => item.value === selection()))} focused={focused()} onChange={(_index, item) => {
+      <select ref={actions} textColor={context.theme.text.base} descriptionColor={context.theme.text.muted} selectedTextColor={context.theme.text.base} selectedBackgroundColor={context.theme.background.raised.high} selectedDescriptionColor={context.theme.text.base} onMouseDown={(event) => pointer.press(event)} minHeight={1} height={Math.min(viewportHeight(), options().length)} flexShrink={0} showScrollIndicator showDescription={false} options={options()} selectedIndex={Math.max(0, options().findIndex((item) => item.value === selection()))} focused={focused()} onChange={(_index, item) => {
         if (!focused() || view().busy || !item) return;
         setSelection(item.value);
         if (actions) scroll?.scrollChildIntoView(actions.id);

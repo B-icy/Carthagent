@@ -4,11 +4,12 @@ import { createHash, randomUUID } from "node:crypto";
 import { TextAttributes, type ScrollBoxRenderable, type SelectRenderable } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/solid";
 import { usePlugin } from "@opencode/plugin/tui";
-import { clickSelect } from "./select-mouse.js";
+import { clickSelect, createSelectMemory } from "./select-mouse.js";
 import { dailyQuestsClient, dailySourceClient } from "./client.js";
 import type { DailyEvidence, DailyQuestDetail, DailySnapshot, DailyRecord } from "../daily-quests-rpc.js";
 import { createDailyQuestsState } from "./daily-quests-state.mjs";
 import { handleDailyQuestsEvent } from "./daily-quests-events.mjs";
+import { voyagesEventAction } from "./voyages-state.mjs";
 import { selectedQuestEvidence } from "./quest-evidence.mjs";
 import { assessmentFeedback, questConditions, questCopy, questReset, questStatus, submissionText } from "./quest-presentation.mjs";
 
@@ -44,7 +45,11 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string; d
   let summary: ScrollBoxRenderable | undefined;
   let actions: SelectRenderable | undefined;
   let activeDialog: symbol | undefined;
-  const enabled = () => !view().busy && context.keymap.mode.current() === "base";
+  const [reconciling, setReconciling] = createSignal(false);
+  const [usableWidth, setUsableWidth] = createSignal<number>();
+  const enabled = () => !view().busy && !reconciling() && context.keymap.mode.current() === "base";
+  // Submit is never a positional default: until the user picks a row, the list rests on non-sending Details.
+  const memory = createSelectMemory(() => actions, options => options[0]?.value === "submit" ? Math.max(0, options.findIndex(o => o.value === "details")) : 0);
   const ownDialog = async <T,>(show: () => Promise<T>): Promise<T> => {
     const token = Symbol(); activeDialog = token;
     try { return await show(); } finally { if (activeDialog === token) activeDialog = undefined; }
@@ -52,7 +57,7 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string; d
   const closeOwnDialog = () => { if (activeDialog) { activeDialog = undefined; context.ui.dialog.clear(); } };
   const confirm = (title: string, message: string, label: string) => ownDialog(() => context.ui.dialog.confirm({ title, message, label: { confirm: label, cancel: "Cancel" } }));
   const coding = () => context.ui.router.navigate(props.sessionID ? { type: "session", sessionID: props.sessionID } : { type: "home" });
-  const resetFocus = () => { actions?.setSelectedIndex(0); summary?.scrollTo(0); };
+  const resetFocus = () => { memory.reset(); memory.sync(); summary?.scrollTo(0); };
   const moveQuest = (delta: number) => {
     const items = visibleQuests();
     const index = Math.max(0, Math.min(items.length - 1, questIndex() + delta));
@@ -205,12 +210,45 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string; d
     if (value.startsWith("retry:")) void controller.retry(id, () => confirm("Retry saved submission?", "Check whether the server received it, then resend the same saved work only if absent.", "Retry"));
     if (value.startsWith("forget:")) void controller.forget(id, () => confirm("Erase saved evidence?", "Keep the submission ID for status checks. The saved work cannot be resent afterward. This does not cancel an accepted assessment.", "Erase"));
   };
+  type Reopen = { accountKey: string; questId?: string; draft?: { draft: NonNullable<View["draft"]>; preview: View["preview"]; phase: string }; details: boolean; dialog: boolean };
+  let reopen: Reopen | undefined;
+  let reconcile = 0;
   onMount(() => {
     let binding = JSON.stringify(location());
     const stop = context.data.listen(({ details: event }) => {
       const next = JSON.stringify(location()), changedLocation = binding !== next; binding = next;
-      void handleDailyQuestsEvent({ controller, event, location: location(), changedLocation, actions,
-        interrupted: !!(view().draft || activeDialog), clearReplay: () => setDetails(false), closeDialog: closeOwnDialog, notice: setNotice });
+      if (!changedLocation && voyagesEventAction(event, location()) === "ignore") return;
+      const before = view();
+      const saved: Reopen | undefined = changedLocation ? undefined : reopen ?? (before.snapshot ? {
+        accountKey: before.snapshot.accountKey, questId: before.detail?.id, details: details(), dialog: !!activeDialog,
+        draft: before.draft ? { draft: before.draft, preview: before.preview, phase: before.phase } : undefined,
+      } : undefined);
+      let refreshing: Promise<unknown> | undefined;
+      memory.quiet(() => {
+        refreshing = handleDailyQuestsEvent({ controller, event, location: location(), changedLocation, actions,
+          interrupted: !!(view().draft || activeDialog), clearReplay: () => setDetails(false), closeDialog: closeOwnDialog, notice: setNotice });
+      });
+      // A background reload never restores a highlighted Submit.
+      memory.forget(value => value === "submit");
+      // The old identity is already gone. Keep activation off until the reload has been compared with it, so a
+      // late Enter or click cannot land on whatever row the transient overview shows.
+      const token = ++reconcile;
+      reopen = refreshing ? saved : undefined;
+      setReconciling(!!refreshing);
+      if (!refreshing) return;
+      void refreshing.then(async () => {
+        if (token !== reconcile || !saved?.questId || view().snapshot?.accountKey !== saved.accountKey) return;
+        if (saved.draft) controller.adopt(saved.draft);
+        await controller.select(saved.questId);
+        if (token !== reconcile || view().detail?.id !== saved.questId) return;
+        if (saved.details) setDetails(true);
+        if (saved.draft && !saved.dialog && view().draft?.id === saved.draft.draft.id) setNotice("");
+      }).finally(() => {
+        if (token !== reconcile) return;
+        reopen = undefined;
+        setReconciling(false);
+        memory.sync();
+      });
     });
     void controller.refresh().then(async () => {
       if (props.questID) await openQuest(props.questID);
@@ -225,17 +263,20 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string; d
     }, 5000);
     onCleanup(() => { clearInterval(timer); stop(); controller.dispose(); closeOwnDialog(); });
   });
+  // While a reload is in flight the list is inert and shows a transient shape; restore once it settles.
+  createEffect(on(options, () => { if (!view().busy && !reconciling()) memory.sync(); }, { defer: true }));
   return <box flexDirection="column" flexGrow={1} minHeight={0} paddingX={2} paddingY={1} overflow="hidden" backgroundColor={context.theme.background.base}>
     <box flexDirection="row" flexShrink={0} paddingBottom={compact() ? 0 : 1}>
       <text flexShrink={0} fg={context.theme.text.base} attributes={TextAttributes.BOLD}>{details() ? "Quest details" : completed() && !view().detail ? "Completed quests" : "Quests"}</text>
       <box flexGrow={1} />
       <Show when={view().snapshot}><text fg={context.theme.text.muted}>{questReset(view().snapshot!.slate.endsAt, clock())}</text></Show>
     </box>
-    <scrollbox ref={summary} flexBasis={0} flexGrow={1} minHeight={1} overflow="hidden" contentOptions={{ flexDirection: "column" }}>
-      <Show when={view().busy}><text flexShrink={0} fg={context.theme.text.muted}>Loading…</text></Show>
-      <Show when={view().error}><text flexShrink={0} fg={context.theme.text.feedback.error.base}>{view().error}</text></Show>
-      <Show when={notice()}><text flexShrink={0} fg={context.theme.text.feedback.warning.base}>{notice()}</text></Show>
-      <Show when={!view().detail && view().snapshot}>{(snapshot) => <box flexShrink={0} flexDirection="column">
+    {/* Wrapped text measures against the content box, which ignores the scrollbar column; bound it to the viewport. */}
+    <scrollbox ref={summary} flexBasis={0} flexGrow={1} minHeight={1} overflow="hidden" contentOptions={{ flexDirection: "column" }} viewportOptions={{ onSizeChange: () => setUsableWidth(summary?.viewport.width) }}>
+      <Show when={view().busy || reconciling()}><text flexShrink={0} width={usableWidth()} fg={context.theme.text.muted}>Loading…</text></Show>
+      <Show when={view().error}><text flexShrink={0} width={usableWidth()} fg={context.theme.text.feedback.error.base}>{view().error}</text></Show>
+      <Show when={notice()}><text flexShrink={0} width={usableWidth()} fg={context.theme.text.feedback.warning.base}>{notice()}</text></Show>
+      <Show when={!view().detail && view().snapshot}>{(snapshot) => <box flexShrink={0} width={usableWidth()} flexDirection="column">
         <Show when={!visibleQuests().length}><box paddingY={1} flexDirection="column" flexShrink={0}>
           <text fg={context.theme.text.base}>{completed() ? "No completed quests yet" : snapshot().slate.items.length ? "All quests complete" : "No quests today"}</text>
           <Show when={!completed()}><text fg={context.theme.text.muted}>New quests at the next reset.</text></Show>
@@ -246,7 +287,7 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string; d
           <text flexShrink={0} fg={q.status === "assessed_complete" ? context.theme.text.feedback.success.base : context.theme.text.action.primary.base}>{questStatus(q, records())} →</text>
         </box>}</For>
       </box>}</Show>
-      <Show when={view().detail}>{q => <box flexDirection="column" flexShrink={0}>
+      <Show when={view().detail}>{q => <box flexDirection="column" flexShrink={0} width={usableWidth()}>
         <text flexShrink={0} fg={context.theme.text.base} attributes={TextAttributes.BOLD}>{questCopy(q()).title}</text>
         <text flexShrink={0} fg={context.theme.text.base}>{questCopy(q()).goal}</text>
         <Show when={q().status === "assessed_complete"} fallback={<>
@@ -289,7 +330,7 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string; d
       <text fg={context.theme.text.action.secondary.base} onMouseUp={() => select("refresh")}>r Refresh</text>
       <text fg={context.theme.text.action.secondary.base} onMouseUp={coding}>Esc Coding</text>
     </box>}>
-      <select ref={actions} height={Math.min(4, options().length)} flexShrink={0} backgroundColor={context.theme.background.base} focusedBackgroundColor={context.theme.background.base} focusedTextColor={context.theme.text.action.secondary.base} textColor={context.theme.text.action.secondary.base} selectedTextColor={context.theme.text.formfield.focused} selectedBackgroundColor={context.theme.background.formfield.focused} showDescription={false} showScrollIndicator options={options()} focused={enabled()} onMouseUp={event => { if (enabled()) clickSelect(actions, event); }} onSelect={(_index, option) => select(option?.value)} />
+      <select ref={actions} height={Math.min(4, options().length)} flexShrink={0} backgroundColor={context.theme.background.base} focusedBackgroundColor={context.theme.background.base} focusedTextColor={context.theme.text.action.secondary.base} textColor={context.theme.text.action.secondary.base} selectedTextColor={context.theme.text.formfield.focused} selectedBackgroundColor={context.theme.background.formfield.focused} showDescription={false} showScrollIndicator options={options()} focused={enabled()} onMouseUp={event => { if (enabled()) clickSelect(actions, event); }} onChange={(_index, option) => memory.changed(option)} onSelect={(_index, option) => select(option?.value)} />
     </Show>
     <text flexShrink={0} fg={context.theme.text.muted}>↑↓ Enter select · Ctrl+U/D scroll · Esc back</text>
   </box>;
