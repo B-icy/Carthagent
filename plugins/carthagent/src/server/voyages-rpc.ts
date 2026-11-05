@@ -98,7 +98,7 @@ export function createVoyagesRpcHandlers(ctx: Port, options: { cloudClient?: Clo
   const directory = join(runtimePaths({ root: options.profileRoot }).state, 'carthagent', 'voyages');
   const journal = options.journal ?? fileJournal;
   async function access() {
-    const active = await ctx.integration.connection.active('experiential-labs');
+    const active = await ctx.integration.connection.active('carthagent-cloud');
     if (!active || active.type !== 'credential' || active.method !== 'oauth') throw new Failure('authentication_required', 401);
     let credential;
     try { credential = await ctx.integration.connection.resolve(active); } catch { throw new Failure('authentication_required', 401); }
@@ -109,7 +109,7 @@ export function createVoyagesRpcHandlers(ctx: Port, options: { cloudClient?: Clo
   type Access = Awaited<ReturnType<typeof access>>;
   async function current(a: Access, signal: AbortSignal) {
     signal.throwIfAborted();
-    const active = await ctx.integration.connection.active('experiential-labs');
+    const active = await ctx.integration.connection.active('carthagent-cloud');
     if (!active || active.type !== 'credential' || active.id !== a.id || active.method !== 'oauth') throw new Failure('account_changed', 401);
   }
   async function request(a: Access, path: string, signal: AbortSignal, method = 'GET', body?: unknown) {

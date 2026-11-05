@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { cycleProvider, filterModelsByProvider, modelMatchesQuery, modelSupportsThinking, providerForModel, providersFromModels } from '../lib/tui/models.mjs';
 
 const MODELS = [
-  { provider: 'experiential-labs', id: 'gpt-6-luna', full: 'experiential-labs/gpt-6-luna', name: 'GPT-6 Luna', reasoning: true },
+  { provider: 'carthagent-cloud', id: 'gpt-6-luna', full: 'carthagent-cloud/gpt-6-luna', name: 'GPT-6 Luna', reasoning: true },
   { provider: 'deepseek', id: 'deepseek-chat', full: 'deepseek/deepseek-chat' },
   { provider: 'deepseek', id: 'deepseek-reasoner', full: 'deepseek/deepseek-reasoner' },
   { provider: 'openrouter', id: 'anthropic/claude', full: 'openrouter/anthropic/claude' },
@@ -12,7 +12,7 @@ const MODELS = [
 ];
 
 test('providersFromModels returns sorted unique providers', () => {
-  assert.deepEqual(providersFromModels(MODELS), ['deepseek', 'experiential-labs', 'openrouter']);
+  assert.deepEqual(providersFromModels(MODELS), ['carthagent-cloud', 'deepseek', 'openrouter']);
   assert.deepEqual(providersFromModels([]), []);
   assert.deepEqual(providersFromModels(null), []);
 });

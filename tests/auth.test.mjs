@@ -64,7 +64,7 @@ test('authTypes reports advertised methods, subscription first', () => {
 
 test('authTypeLabel names the two login methods', () => {
   assert.equal(authTypeLabel('oauth'), 'subscription (OAuth)');
-  assert.equal(authTypeLabel('oauth', 'experiential-labs'), 'browser sign-in');
+  assert.equal(authTypeLabel('oauth', 'carthagent-cloud'), 'browser sign-in');
   assert.equal(authTypeLabel('api_key'), 'API key');
 });
 
@@ -85,14 +85,14 @@ test('loginProviderList keeps stable product ordering regardless of connected st
     [
       { id: 'zeta', name: 'Zeta', auth: { apiKey: {} } },
       { id: 'openrouter', name: 'OpenRouter', auth: { apiKey: {} } },
-      { id: 'experiential-labs', name: 'Carthagent Ship', auth: { oauth: {}, apiKey: {} } },
+      { id: 'carthagent-cloud', name: 'Carthagent Ship', auth: { oauth: {}, apiKey: {} } },
       { id: 'anthropic', name: 'Anthropic', auth: { apiKey: {} } },
       { id: 'alpha', name: 'Alpha', auth: { apiKey: {} } },
     ],
     { zeta: { configured: true }, openrouter: { configured: true } }
   );
   const rows = loginProviderList(runtime);
-  assert.deepEqual(rows.map(r => r.id), ['experiential-labs', 'anthropic', 'openrouter', 'alpha', 'zeta']);
+  assert.deepEqual(rows.map(r => r.id), ['carthagent-cloud', 'anthropic', 'openrouter', 'alpha', 'zeta']);
   assert.equal(rows[0].recommended, true);
   assert.deepEqual(rows[0].types, ['oauth', 'api_key']);
   assert.equal(rows[1].configured, false);
@@ -101,12 +101,12 @@ test('loginProviderList keeps stable product ordering regardless of connected st
 
 test('loginProviderFocus prefers the active provider without reordering rows', () => {
   const rows = [
-    { id: 'experiential-labs', recommended: true },
+    { id: 'carthagent-cloud', recommended: true },
     { id: 'anthropic', recommended: false },
   ];
   assert.equal(loginProviderFocus(rows), 0);
   assert.equal(loginProviderFocus(rows, 'anthropic'), 1);
-  assert.deepEqual(rows.map(row => row.id), ['experiential-labs', 'anthropic']);
+  assert.deepEqual(rows.map(row => row.id), ['carthagent-cloud', 'anthropic']);
 });
 
 test('loginProviderList tolerates a runtime that throws on auth status', () => {
@@ -165,17 +165,17 @@ test('loginAndRefresh exposes dynamic provider models immediately after login', 
     login: async (...args) => { calls.push(['login', ...args]); return { type: 'api_key', key: 'k' }; },
     refresh: async options => { calls.push(['refresh', options]); },
   };
-  const result = await loginAndRefresh(runtime, 'experiential-labs', 'api_key', { signal });
+  const result = await loginAndRefresh(runtime, 'carthagent-cloud', 'api_key', { signal });
   assert.equal(result.key, 'k');
   assert.equal(calls[0][0], 'login');
-  assert.deepEqual(calls[1][1], { providers: ['experiential-labs'], allowNetwork: true, signal });
+  assert.deepEqual(calls[1][1], { providers: ['carthagent-cloud'], allowNetwork: true, signal });
 });
 
 test('Cloud account helpers use the runtime OAuth credential for account and billing actions', async () => {
   const calls = [];
   const runtime = {
     isUsingOAuth: () => false,
-    checkAuth: async id => id === 'experiential-labs' ? { source: 'OAuth', type: 'oauth' } : null,
+    checkAuth: async id => id === 'carthagent-cloud' ? { source: 'OAuth', type: 'oauth' } : null,
     getAuth: async () => ({ auth: { apiKey: 'access-token' } }),
   };
   const fetchImpl = async (url, options) => {
@@ -206,12 +206,12 @@ test('loadAuthRuntime lazily imports vendored engine and discovers OAuth/API pro
   assert.ok(runtime && typeof runtime === 'object');
   const providers = loginProviderList(runtime);
   assert.ok(providers.length >= 41);
-  assert.equal(providers[0].id, 'experiential-labs');
+  assert.equal(providers[0].id, 'carthagent-cloud');
   assert.equal(providers[0].recommended, true);
   const oauthProviders = providers.filter(p => p.types.includes('oauth')).map(p => p.id).sort();
   assert.deepEqual(oauthProviders, [
     'anthropic',
-    'experiential-labs',
+    'carthagent-cloud',
     'github-copilot',
     'kimi-coding',
     'openai-codex',

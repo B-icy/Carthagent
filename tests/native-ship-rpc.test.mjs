@@ -9,7 +9,7 @@ const { createShipRpcHandlers } = await jiti.import('../plugins/carthagent/src/s
 
 function setup() {
   const calls = [];
-  const active = { id: 'ship-credential', type: 'credential', method: 'oauth', integrationID: 'experiential-labs' };
+  const active = { id: 'ship-credential', type: 'credential', method: 'oauth', integrationID: 'carthagent-cloud' };
   const ctx = { integration: {
     connection: {
       active: async (id) => { calls.push(['active', id]); return active; },

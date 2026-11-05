@@ -56,10 +56,10 @@ try {
   await verifyPlugin();
   const otherValue = { type: 'oauth', methodID: 'carthagent-device', access: 'fixture-account-b',
     refresh: 'fixture-refresh-b', expires: Date.now() + 3600000 };
-  const other = await fixture.client.credential.create({ integrationID: 'experiential-labs',
+  const other = await fixture.client.credential.create({ integrationID: 'carthagent-cloud',
     value: otherValue, activate: true }, fixture.request());
   switchAccount = () => fixture.client.credential.activate({ credentialID: other.id }, fixture.request());
-  const created = await fixture.client.credential.create({ integrationID: 'experiential-labs',
+  const created = await fixture.client.credential.create({ integrationID: 'carthagent-cloud',
     value: { type: 'oauth', methodID: 'carthagent-device', access: 'fixture-expired-access',
       refresh: 'fixture-expired-refresh', expires: 1 }, activate: true }, fixture.request());
   await Promise.all(Array.from({ length: 8 }, () => fixture.client.model.list({ location }, fixture.request(8000))));
@@ -90,7 +90,7 @@ try {
   const modelDeadline = Date.now() + 8000;
   while (true) {
     const models = (await fixture.client.model.list({ location }, fixture.request(8000))).data;
-    if (models.some(model => model.id === 'refresh-reentry-fixture' && model.providerID === 'experiential-labs')) break;
+    if (models.some(model => model.id === 'refresh-reentry-fixture' && model.providerID === 'carthagent-cloud')) break;
     assert.ok(Date.now() < modelDeadline, `Active B must publish the exact Ship model after restart: ${JSON.stringify(models.map(model => ({ id: model.id, providerID: model.providerID })))}`);
     await new Promise(resolve => setTimeout(resolve, 40));
   }

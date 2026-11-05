@@ -109,7 +109,7 @@ function eventPage(f, { selectedIndex = 4, interrupted = true } = {}) {
 }
 
 for (const event of [
-  { type: 'credential.switched', data: { integrationID: 'experiential-labs' } },
+  { type: 'credential.switched', data: { integrationID: 'carthagent-cloud' } },
   { type: 'credential.updated' }, { type: 'provider.updated' },
   { type: 'integration.updated' }, { type: 'server.connected' }, { type: 'server.disconnected' },
   { type: 'session.updated', changedLocation: true },

@@ -8,7 +8,7 @@ const { createJiti } = require('jiti');
 const jiti = createJiti(import.meta.url);
 const { runModelCommand } = await jiti.import('../plugins/carthagent/src/ui/model-command.ts');
 
-const ship = { providerID: 'experiential-labs', modelID: 'deepseek-v4.1-flash', id: 'deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash' };
+const ship = { providerID: 'carthagent-cloud', modelID: 'deepseek-v4.1-flash', id: 'deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash' };
 const other = { providerID: 'demo', modelID: 'alpha', id: 'alpha', name: 'Alpha' };
 
 function host(overrides = {}) {
@@ -21,7 +21,7 @@ function host(overrides = {}) {
       select: async (options) => { calls.selects.push(options.map((option) => option.title)); return options[0]?.value; },
       switchModel: async (sessionID, model) => { calls.switched.push({ sessionID, model }); },
       openNativePicker: (query) => { calls.native.push(query); },
-      providerName: (id) => (id === 'experiential-labs' ? 'Carthagent Ship' : id),
+      providerName: (id) => (id === 'carthagent-cloud' ? 'Carthagent Ship' : id),
       toast: (message, variant) => { calls.toasts.push({ message, variant }); },
       ...overrides,
     },
@@ -47,7 +47,7 @@ test('existing-session /model keeps filtering by argument and commits the pick t
   await runModelCommand(run.value, { sessionID: 'ses_existing', arg: 'deepseek' });
   assert.equal(run.calls.syncs, 1);
   assert.deepEqual(run.calls.selects, [['Carthagent Ship/deepseek-v4.1-flash']]);
-  assert.deepEqual(run.calls.switched, [{ sessionID: 'ses_existing', model: { providerID: 'experiential-labs', id: 'deepseek-v4.1-flash' } }]);
+  assert.deepEqual(run.calls.switched, [{ sessionID: 'ses_existing', model: { providerID: 'carthagent-cloud', id: 'deepseek-v4.1-flash' } }]);
   assert.deepEqual(run.calls.native, []);
   assert.deepEqual(run.calls.toasts, [{ message: 'Selected Carthagent Ship/deepseek-v4.1-flash.', variant: 'success' }]);
 });

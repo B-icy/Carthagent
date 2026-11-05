@@ -31,7 +31,7 @@ function setup({ disk = false } = {}) {
   const profileRoot = mkdtempSync(join(root, 'profile-')), data = new Map(), requests = [], writes = [];
   let account = 'credential-a', time = NOW;
   const ctx = { integration: { connection: {
-    active: async integration => { assert.equal(integration, 'experiential-labs'); return account ? { id: account, type: 'credential', method: 'oauth' } : undefined; },
+    active: async integration => { assert.equal(integration, 'carthagent-cloud'); return account ? { id: account, type: 'credential', method: 'oauth' } : undefined; },
     resolve: async () => ({ type: 'oauth', methodID: 'carthagent-device', access: 'never-persist-token' }),
   } } };
   const cloud = { request: async (path, input) => {

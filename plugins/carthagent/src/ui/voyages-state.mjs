@@ -1,3 +1,5 @@
+import { isCarthagentShipProviderId } from '../../../../lib/providers/names.mjs';
+
 class LocalVoyagesError extends Error {
   constructor(code) { super(code); this.code = code; }
 }
@@ -139,7 +141,7 @@ export function voyagesErrorCode(error) {
 export function voyagesEventAction(event, location) {
   if (event.location && (event.location.directory !== location.directory || event.location.workspaceID !== location.workspaceID)) return 'ignore';
   if (event.type === 'server.disconnected') return 'clear';
-  if (event.type === 'credential.switched' && event.data?.integrationID !== 'experiential-labs') return 'ignore';
+  if (event.type === 'credential.switched' && !isCarthagentShipProviderId(event.data?.integrationID)) return 'ignore';
   return ['server.connected', 'provider.updated', 'integration.updated', 'credential.updated', 'credential.switched'].includes(event.type) ? 'refresh' : 'ignore';
 }
 

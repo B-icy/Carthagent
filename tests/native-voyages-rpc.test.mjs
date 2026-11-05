@@ -31,7 +31,7 @@ function setup() {
   const ctx = {
     storage: { get: async k => structuredClone(data.get(k)), set: async (k, v) => { writes.push(structuredClone(v)); data.set(k, structuredClone(v)); } },
     integration: { connection: {
-      active: async integration => { assert.equal(integration, 'experiential-labs'); return id ? { id, type: 'credential', method: 'oauth' } : undefined; },
+      active: async integration => { assert.equal(integration, 'carthagent-cloud'); return id ? { id, type: 'credential', method: 'oauth' } : undefined; },
       resolve: async () => ({ type: 'oauth', methodID: 'carthagent-device', access: 'secret-fixture' }),
     } },
   };

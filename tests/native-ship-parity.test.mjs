@@ -264,7 +264,7 @@ test('Jev uses the native OAuth credential, runs once per capture identity, and 
     resolve: async () => ({ type: 'oauth', methodID: 'carthagent-device', access: 'native-fixture-credential' }),
   } }
   const cleanup = await registerDelivery(h.ctx, { workflow: 'strict' })
-  h.sessions.get('ses-a').model = { providerID: 'experiential-labs', id: 'ship-model' }
+  h.sessions.get('ses-a').model = { providerID: 'carthagent-cloud', id: 'ship-model' }
   await h.plan()
   await h.call('delivery_design', { action: 'validate' })
   const inspected = JSON.parse((await h.call('delivery_design', { action: 'inspect' })).content)

@@ -5,7 +5,7 @@ import { streamSimple as streamOpenAiCompletions } from '../vendor/agent/chunks/
 const model = {
   id: 'carthagent-code',
   name: 'Carthagent Code',
-  provider: 'experiential-labs',
+  provider: 'carthagent-cloud',
   api: 'openai-completions',
   baseUrl: 'https://cloud.test/v1',
   reasoning: false,
@@ -34,7 +34,7 @@ test('identity-only OpenAI models omit unknown limits and preserve unknown prici
   const identityOnlyModel = {
     id: 'carthagent-code',
     name: 'carthagent-code',
-    provider: 'experiential-labs',
+    provider: 'carthagent-cloud',
     api: 'openai-completions',
     baseUrl: 'https://cloud.test/v1',
   };

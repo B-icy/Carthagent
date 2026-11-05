@@ -819,7 +819,7 @@ test('native login defaults to Cloud on Enter and completes the host OAuth lifec
   const prompts = [];
   const service = { url: 'http://127.0.0.1:1', headers: {} };
   const integration = {
-    id: 'experiential-labs', name: 'Carthagent Ship',
+    id: 'carthagent-cloud', name: 'Carthagent Ship',
     methods: [{ id: 'carthagent-device', type: 'oauth', label: 'Sign in with Carthagent Ship' }],
   };
   const runtime = await createOpenCodeCliRuntime({ cwd: '/project', io: ioCapture().io, stdin: { isTTY: true }, stdout: { isTTY: true }, readlineFactory: () => ({ close() {}, question: async text => { prompts.push(text); return ''; } }), openBrowserImpl: async url => { opened.push(url); return true; }, native: {
@@ -839,7 +839,7 @@ test('native login defaults to Cloud on Enter and completes the host OAuth lifec
   assert.equal(await runtime.login(), 0);
   assert.match(prompts[0], /1\) Carthagent Cloud \(recommended\)/);
   assert.match(prompts[0], /Provider number \[1\]:/);
-  assert.equal(calls[1][1].integrationID, 'experiential-labs');
+  assert.equal(calls[1][1].integrationID, 'carthagent-cloud');
   assert.deepEqual(opened, ['https://auth.example/device']);
   assert.deepEqual(calls.map(([name]) => name), ['list', 'connect', 'status']);
   assert.equal(calls[1][1].methodID, 'carthagent-device');
@@ -1334,7 +1334,7 @@ test('concrete native runtime uses OpenCode service/headless/model APIs and real
   const native = {
     runtime: {
       runtimeEnvironment: () => ({ CTG_FIXTURE: '1' }),
-      readRuntimeCredentials: async () => ({ 'experiential-labs': { access: 'fixture-access' } }),
+      readRuntimeCredentials: async () => ({ 'carthagent-cloud': { access: 'fixture-access' } }),
     },
     service: {
       ensureService: async options => { events.push(['service', options.pluginPath]); return service; },

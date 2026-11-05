@@ -17,7 +17,7 @@ import {
 } from '../lib/providers/experiential.mjs';
 
 test('Experiential provider uses the hosted gateway and canonical environment variable', () => {
-  assert.equal(EXPERIENTIAL_PROVIDER_ID, 'experiential-labs');
+  assert.equal(EXPERIENTIAL_PROVIDER_ID, 'carthagent-cloud');
   assert.equal(EXPERIENTIAL_API_KEY_ENV, 'EXPLABS_API_KEY');
   assert.equal(experientialBaseUrl({}), 'https://api.experientiallabs.ai/v1');
   assert.equal(experientialBaseUrl({ EXP_GATEWAY_URL: ' https://preview.test/v1/ ' }), 'https://preview.test/v1');
@@ -91,7 +91,7 @@ test('Managed Cloud transport makes one attempt while direct Experiential preser
   const model = {
     id: 'gpt-5.6-luna',
     name: 'GPT-5.6 Luna',
-    provider: 'experiential-labs',
+    provider: 'carthagent-cloud',
     api: 'openai-completions',
     baseUrl: 'https://direct.test/v1',
   };
@@ -271,7 +271,7 @@ test('registerExperientialProvider registers one shared provider definition', ()
   const runtime = { registerProvider: (id, config) => calls.push({ id, config }) };
   assert.equal(registerExperientialProvider(runtime), runtime);
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].id, 'experiential-labs');
+  assert.equal(calls[0].id, 'carthagent-cloud');
   assert.equal(calls[0].config.name, 'Carthagent Cloud');
 });
 
@@ -286,12 +286,12 @@ test('ModelRuntime resolves EXPLABS_API_KEY without copying it into provider con
     const { ModelRuntime } = await import('../vendor/agent/index.js');
     const runtime = await ModelRuntime.create({ allowModelNetwork: false });
     registerExperientialProvider(runtime, { env: process.env });
-    assert.deepEqual(runtime.getProviderAuthStatus('experiential-labs'), {
+    assert.deepEqual(runtime.getProviderAuthStatus('carthagent-cloud'), {
       configured: true,
       source: 'environment',
       label: 'EXPLABS_API_KEY',
     });
-    assert.equal(runtime.getRegisteredProviderConfig('experiential-labs').apiKey, '$EXPLABS_API_KEY');
+    assert.equal(runtime.getRegisteredProviderConfig('carthagent-cloud').apiKey, '$EXPLABS_API_KEY');
   } finally {
     if (previous === undefined) delete process.env.EXPLABS_API_KEY; else process.env.EXPLABS_API_KEY = previous;
     if (previousCarthagentDir === undefined) delete process.env.CARTHAGENT_CODING_AGENT_DIR; else process.env.CARTHAGENT_CODING_AGENT_DIR = previousCarthagentDir;
