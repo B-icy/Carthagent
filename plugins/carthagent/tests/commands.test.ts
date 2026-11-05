@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { COMMANDS, commandErrorMessage, helpSelectionCommand, matchCommand, NATIVE_COMMAND_COLLISIONS, resolveCommand } from "../src/ui/commands.js";
+import { COMMANDS, commandErrorMessage, helpSelectionCommand, matchCommand, NATIVE_COMMAND_COLLISIONS, NATIVE_SESSION_COMMANDS, pluginSlashAvailable, resolveCommand } from "../src/ui/commands.js";
 import { readFile } from "node:fs/promises";
 import { parseThemeDocument } from "@opencode/theme/tui";
 import { cliConfigDirectory, cliConfigPath, readCliConfig, writeNativeTheme } from "../src/ui/host-state.js";
@@ -58,6 +58,16 @@ test("manifest prevents collisions with native OpenCode slash commands", () => {
   for (const name of NATIVE_COMMAND_COLLISIONS) assert.equal(COMMANDS.some((item) => item.name === name || item.aliases?.includes(name)), false, name);
   assert.equal(NATIVE_COMMAND_COLLISIONS.includes("help" as typeof NATIVE_COMMAND_COLLISIONS[number]), false);
   assert.deepEqual(COMMANDS.filter((item) => ["model", "compact", "abort", "resume"].includes(item.name)).map((item) => item.name).sort(), ["abort", "compact", "model", "resume"]);
+});
+
+test("/clear has one slash entry: native in sessions, plugin fallback elsewhere", () => {
+  assert.deepEqual([...NATIVE_SESSION_COMMANDS], ["clear"]);
+  assert.equal(pluginSlashAvailable("clear", { type: "session" }), false);
+  for (const type of ["home", "plugin", "projects"]) assert.equal(pluginSlashAvailable("clear", { type }), true, type);
+  // Commands whose plugin semantics differ from the native entry stay registered.
+  for (const name of ["autocompact", "stats", "resume", "thinking", "help"]) assert.equal(pluginSlashAvailable(name, { type: "session" }), true, name);
+  // /help list selections still reach the plugin dispatcher, which hands off to the native action.
+  assert.equal(helpSelectionCommand("clear")?.id, "clear");
 });
 
 test("theme provisioning installs the startup default through its launcher-facing export", async () => {

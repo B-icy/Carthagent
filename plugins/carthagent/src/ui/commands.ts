@@ -86,3 +86,13 @@ export function commandErrorMessage(error: unknown): string {
 // Host-owned commands take priority. These slash names are verified against
 // the V2.0.32 keybind command inventory and are intentionally not shadowed.
 export const NATIVE_COMMAND_COLLISIONS = ["themes", "settings"] as const;
+
+// The session route registers its own slash entry for these with identical
+// semantics (the plugin handler only forwards to it), so the plugin entry is
+// withheld there to avoid a duplicate suggestion. Outside a session the plugin
+// entry remains so the command still explains that it needs an open session.
+export const NATIVE_SESSION_COMMANDS = ["clear"] as const;
+
+export function pluginSlashAvailable(name: string, route: { readonly type: string }) {
+  return !(route.type === "session" && NATIVE_SESSION_COMMANDS.includes(name as typeof NATIVE_SESSION_COMMANDS[number]));
+}

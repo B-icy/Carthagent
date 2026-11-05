@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 import { nativeLoginProvider, nativeProviderName } from "../../../lib/opencode/provider-policy.mjs";
 import { framePrompt } from "../../../lib/tui/framing.mjs";
 import { carthagentConfigPath, loadCarthagentConfig, resolveReviewMode, reviewKickoff, saveCarthagentConfig } from "../../../lib/review.mjs";
-import { COMMANDS, NATIVE_COMMAND_COLLISIONS, commandErrorMessage, helpSelectionCommand } from "./ui/commands.js";
+import { COMMANDS, NATIVE_COMMAND_COLLISIONS, commandErrorMessage, helpSelectionCommand, pluginSlashAvailable } from "./ui/commands.js";
 import { Workspace, rpcEventOptions, sessionControls, workspaceClient, shipClient, archiveClient, cloudAccountText, cloudUsageText, archiveItemText } from "./ui/client.js";
 import { independentReviewText } from "./ui/workspace-live.js";
 import { findNativeResumeSession } from "./ui/resume-session.mjs";
@@ -79,29 +79,33 @@ export default Plugin.define({
       const expected = (sessionID ? context.data.session.get(sessionID)?.location : undefined) ?? context.location ?? context.data.location.default();
       if (event.location?.directory === expected.directory) context.data.project.invalidate();
     }, rpcEventOptions(context, lifecycle.signal)));
-    context.keymap.layer(() => ({
-      mode: "global",
-      priority: 20,
-      commands: [
-        ...COMMANDS.filter((item) => !NATIVE_COMMAND_COLLISIONS.includes(item.name as typeof NATIVE_COMMAND_COLLISIONS[number]))
-        .map((item) => ({
-          id: `carthagent.${item.id}`,
-          title: `/${item.name}${item.args ? ` ${item.args}` : ""}`,
-          description: item.description,
-          group: "Carthagent",
-          palette: true as const,
-          slash: { name: item.name, ...(item.aliases ? { aliases: item.aliases } : {}), ...(item.args || item.submitSlash ? { arguments: true as const } : {}) },
-          run: (input?: string) => {
-            const report = (error: unknown) => context.ui.toast.show({ message: commandErrorMessage(error), variant: "error" });
-            if (item.id === "restart" || item.id === "abort") {
-              void dispatch(item.id, input ?? "").catch(report);
-              return false;
-            }
-            return dispatch(item.id, input ?? "").then(() => undefined).catch(report);
-          },
-        })),
-      ],
-    }));
+    context.keymap.layer(() => {
+      // Reading the route type here re-registers the layer when it changes.
+      const route = { type: context.ui.router.current().type };
+      return {
+        mode: "global",
+        priority: 20,
+        commands: [
+          ...COMMANDS.filter((item) => !NATIVE_COMMAND_COLLISIONS.includes(item.name as typeof NATIVE_COMMAND_COLLISIONS[number]) && pluginSlashAvailable(item.name, route))
+          .map((item) => ({
+            id: `carthagent.${item.id}`,
+            title: `/${item.name}${item.args ? ` ${item.args}` : ""}`,
+            description: item.description,
+            group: "Carthagent",
+            palette: true as const,
+            slash: { name: item.name, ...(item.aliases ? { aliases: item.aliases } : {}), ...(item.args || item.submitSlash ? { arguments: true as const } : {}) },
+            run: (input?: string) => {
+              const report = (error: unknown) => context.ui.toast.show({ message: commandErrorMessage(error), variant: "error" });
+              if (item.id === "restart" || item.id === "abort") {
+                void dispatch(item.id, input ?? "").catch(report);
+                return false;
+              }
+              return dispatch(item.id, input ?? "").then(() => undefined).catch(report);
+            },
+          })),
+        ],
+      };
+    });
 
     async function dispatch(id: string, input: string) {
       const route = context.ui.router.current();
