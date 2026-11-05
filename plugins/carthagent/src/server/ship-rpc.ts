@@ -14,7 +14,7 @@ export function createShipRpcHandlers(ctx: ShipContext, options: {
 } = {}) {
   const cloud = options.cloudClient ?? new CloudClient({ baseUrl: options.baseUrl ?? cloudControlUrl() });
   async function access() {
-    const active = await ctx.integration.connection.active('experiential-labs');
+    const active = await ctx.integration.connection.active('carthagent-cloud');
     if (!active || active.type !== 'credential' || active.method !== 'oauth') throw new Error('An active Carthagent Cloud OAuth connection is required.');
     const credential = await ctx.integration.connection.resolve(active);
     if (credential?.type !== 'oauth' || credential.methodID !== 'carthagent-device' || !credential.access) {

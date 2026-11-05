@@ -28,7 +28,7 @@ test('provider shares actual legacy auth.json coordination lease and rejects old
   db = new DatabaseSync(vaultFile);
   db.exec('CREATE TABLE credential (id TEXT PRIMARY KEY, integration_id TEXT, value TEXT)');
   const credential = { type: 'oauth', methodID: 'carthagent-device', access: 'fixture-a', refresh: 'fixture-old', expires: 1 };
-  db.prepare('INSERT INTO credential VALUES (?, ?, ?)').run('A', 'experiential-labs', JSON.stringify(credential));
+  db.prepare('INSERT INTO credential VALUES (?, ?, ?)').run('A', 'carthagent-cloud', JSON.stringify(credential));
   const digest = createHash('sha256').update(`${credential.methodID}\0${credential.refresh}`).digest('hex').slice(0, 32);
   const lock = `${coordinationFile}.ctg-refresh-${digest}.lock`;
   // This is exactly the legacy helper's path, acquired by its unchanged lock
@@ -71,7 +71,7 @@ test('expired native resolution refreshes once without reentering resolve and pr
   db = new DatabaseSync(credentialFile);
   db.exec('CREATE TABLE credential (id TEXT PRIMARY KEY, integration_id TEXT, value TEXT)');
   const expired = { type: 'oauth', methodID: 'carthagent-device', access: 'expired', refresh: 'old-refresh', expires: 1 };
-  db.prepare('INSERT INTO credential VALUES (?, ?, ?)').run('cred_fixture', 'experiential-labs', JSON.stringify(expired));
+  db.prepare('INSERT INTO credential VALUES (?, ?, ?)').run('cred_fixture', 'carthagent-cloud', JSON.stringify(expired));
   const connection = { type: 'credential', id: 'cred_fixture', method: 'oauth', label: 'fixture' };
   const fake = fakeContext();
   let resolves = 0;
@@ -86,7 +86,7 @@ test('expired native resolution refreshes once without reentering resolve and pr
     } });
   t.after(cleanup);
   const method = fake.integrationTransforms[0][0];
-  fake.ctx.integration.connection.active = async id => id === 'experiential-labs' ? connection : undefined;
+  fake.ctx.integration.connection.active = async id => id === 'carthagent-cloud' ? connection : undefined;
   fake.ctx.integration.connection.resolve = async () => {
     resolves++;
     assert.ok(resolves <= 2, 'refresh reread must not call resolve recursively');
@@ -104,7 +104,7 @@ test('expired native resolution refreshes once without reentering resolve and pr
   assert.equal(JSON.parse(db.prepare('SELECT value FROM credential').get().value).refresh, 'rotated-refresh');
   assert.equal(fake.storage.size, 0, 'plugin storage must not contain credentials');
   db.prepare('UPDATE credential SET value = ?').run('{"type":"oauth","refresh":"secret-invalid"}');
-  await assert.rejects(readNativeOAuthCredential({ credentialFile, credentialID: connection.id, integrationID: 'experiential-labs', methodID: 'carthagent-device' }), error => {
+  await assert.rejects(readNativeOAuthCredential({ credentialFile, credentialID: connection.id, integrationID: 'carthagent-cloud', methodID: 'carthagent-device' }), error => {
     assert.doesNotMatch(error.message, /secret-invalid/);
     return /Unsupported native credential/.test(error.message);
   });
@@ -121,7 +121,7 @@ test('refresh pins original A despite active B before lock and during receipt wa
   db.exec('CREATE TABLE credential (id TEXT PRIMARY KEY, integration_id TEXT, value TEXT)');
   const a = { type: 'oauth', methodID: 'carthagent-device', access: 'a', refresh: 'refresh-a', expires: 1 };
   const b = { ...a, access: 'b', refresh: 'refresh-b' };
-  const insert = (id, value) => db.prepare('INSERT INTO credential VALUES (?, ?, ?)').run(id, 'experiential-labs', JSON.stringify(value));
+  const insert = (id, value) => db.prepare('INSERT INTO credential VALUES (?, ?, ?)').run(id, 'carthagent-cloud', JSON.stringify(value));
   insert('A', a); insert('B', b);
   const fake = fakeContext();
   const cleanup = await registerProviders(fake.ctx, { credentialFile, env: {}, fetchImpl: async () => Response.json({ accessToken: 'new-a', refreshToken: 'new-refresh-a', expiresIn: 3600 }) });
@@ -137,14 +137,14 @@ test('refresh pins original A despite active B before lock and during receipt wa
   const pending = `${credentialFile}.ctg-refresh-${digest}.lock.pending`;
   await rm(pending);
   db.prepare('UPDATE credential SET value = ? WHERE id = ?').run(JSON.stringify(a), 'A');
-  const capture = await readNativeOAuthCredential({ credentialFile, integrationID: 'experiential-labs', methodID: a.methodID, refreshToken: a.refresh });
+  const capture = await readNativeOAuthCredential({ credentialFile, integrationID: 'carthagent-cloud', methodID: a.methodID, refreshToken: a.refresh });
   assert.equal(capture, 'A');
   await writeFile(pending, JSON.stringify({ pid: process.pid, owner: 'fixture', from: digest, stage: 'complete', createdAt: Date.now(), credentialID: capture }));
   let reads = 0;
   const waited = await refreshNativeCredential({ credential: a, credentialFile, credentialID: capture, timeout: 500,
     reread: async () => {
       if (++reads === 3) db.prepare('UPDATE credential SET value = ? WHERE id = ?').run(JSON.stringify(result), 'A');
-      return readNativeOAuthCredential({ credentialFile, credentialID: capture, integrationID: 'experiential-labs', methodID: a.methodID });
+      return readNativeOAuthCredential({ credentialFile, credentialID: capture, integrationID: 'carthagent-cloud', methodID: a.methodID });
     }, refresh: () => { throw Error('must not rotate twice'); } });
   assert.equal(waited.access, 'new-a');
   assert.ok(reads >= 3);
@@ -159,7 +159,7 @@ test('refresh pins original A despite active B before lock and during receipt wa
   await assert.rejects(method.refresh(a), /no longer stored/);
 });
 
-function fakeContext({ integrations = ['experiential-labs', 'anthropic', 'openai-codex'], connections = {}, failAt, disposeFailure, sessions = {} } = {}) {
+function fakeContext({ integrations = ['carthagent-cloud', 'anthropic', 'openai-codex'], connections = {}, failAt, disposeFailure, sessions = {} } = {}) {
   const hooks = [];
   const events = [];
   const providerTransforms = [];
@@ -305,7 +305,7 @@ test('native SQLite vault rereads after cross-process lease acquisition and rota
   const profile = vault;
   db = new DatabaseSync(vault);
   db.exec('PRAGMA journal_mode=WAL; CREATE TABLE credential (id TEXT PRIMARY KEY, integration_id TEXT, value TEXT)');
-  db.prepare('INSERT INTO credential VALUES (?, ?, ?)').run('cred_fixture', 'experiential-labs', JSON.stringify({ type: 'oauth', methodID: 'carthagent-device', refresh: 'issued-old-token', access: 'old-access', expires: 1 }));
+  db.prepare('INSERT INTO credential VALUES (?, ?, ?)').run('cred_fixture', 'carthagent-cloud', JSON.stringify({ type: 'oauth', methodID: 'carthagent-device', refresh: 'issued-old-token', access: 'old-access', expires: 1 }));
   const moduleUrl = new URL('../lib/opencode/credentials.mjs', import.meta.url).href;
   const worker = join(directory, 'worker.mjs');
   await writeFile(worker, `
@@ -319,7 +319,7 @@ test('native SQLite vault rereads after cross-process lease acquisition and rota
       credential: { type: 'oauth', methodID: 'carthagent-device', refresh: 'issued-old-token', access: 'old-access' },
       credentialFile: profile,
       credentialID: 'cred_fixture',
-      reread: () => readNativeOAuthCredential({ credentialFile: vault, credentialID: 'cred_fixture', integrationID: 'experiential-labs', methodID: 'carthagent-device' }),
+      reread: () => readNativeOAuthCredential({ credentialFile: vault, credentialID: 'cred_fixture', integrationID: 'carthagent-cloud', methodID: 'carthagent-device' }),
       refresh: async current => {
         if (current.refresh !== 'issued-old-token') throw new Error('unexpected stale vault read');
         await writeFile(rotating, name, { flag: 'wx' });
@@ -370,7 +370,7 @@ test('native SQLite vault rereads after cross-process lease acquisition and rota
   for (const resultFile of resultFiles) {
     assert.deepEqual(JSON.parse(await readFile(resultFile, 'utf8')), { refresh: 'rotated-token', access: 'new-access' });
   }
-  const persisted = await readNativeOAuthCredential({ credentialFile: vault, credentialID: 'cred_fixture', integrationID: 'experiential-labs', methodID: 'carthagent-device' });
+  const persisted = await readNativeOAuthCredential({ credentialFile: vault, credentialID: 'cred_fixture', integrationID: 'carthagent-cloud', methodID: 'carthagent-device' });
   assert.equal(persisted.refresh, 'rotated-token');
   assert.equal(persisted.access, 'new-access');
   const lockFiles = await (await import('node:fs/promises')).readdir(directory);
@@ -531,11 +531,11 @@ test('CTG device-auth generations cancel polling, expire, and clean up on unload
 
 test('legacy credential migration reads Ship OAuth and BYOK without writing Pi store', async () => {
   const source = JSON.stringify({
-    'experiential-labs': { type: 'oauth', access: 'a', refresh: 'r', expires: 123 },
+    'carthagent-cloud': { type: 'oauth', access: 'a', refresh: 'r', expires: 123 },
   });
   assert.deepEqual(await readLegacyCarthagentCredential({ agentDir: '/unused', readFileImpl: async () => source }),
     { type: 'oauth', access: 'a', refresh: 'r', expires: 123 });
-  assert.equal(credentialStorageKey('experiential-labs'), 'ctg.credentials/experiential-labs');
+  assert.equal(credentialStorageKey('carthagent-cloud'), 'ctg.credentials/carthagent-cloud');
   assert.equal(nativeCredentialFile({ XDG_DATA_HOME: '/profile/data' }), join('/profile/data', 'opencode', 'auth.json'));
   assert.equal(nativeCredentialFile({}, 'darwin', '/home/test'), join('/home/test', 'Library', 'Application Support', 'opencode', 'auth.json'));
   assert.throws(() => credentialStorageKey('../auth'), /Invalid/);
@@ -545,7 +545,7 @@ test('native sign-in starts fresh device authorization after opt-in legacy migra
   const directory = await mkdtemp(join(os.tmpdir(), 'ctg-signin-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const legacyFile = join(directory, 'auth.json');
-  const source = JSON.stringify({ 'experiential-labs': { type: 'oauth', access: 'legacy-access', refresh: 'legacy-refresh', expires: 123 } });
+  const source = JSON.stringify({ 'carthagent-cloud': { type: 'oauth', access: 'legacy-access', refresh: 'legacy-refresh', expires: 123 } });
   await writeFile(legacyFile, source, { mode: 0o600 });
   const connections = {};
   const fake = fakeContext({ connections });
@@ -576,7 +576,7 @@ test('native sign-in starts fresh device authorization after opt-in legacy migra
 
   // Model the native host committing callback results to its active connection.
   // The plugin must not create a second credential store or modify legacy auth.
-  connections['experiential-labs'] = { connection: { id: 'native-ship', credential: await imported.callback } };
+  connections['carthagent-cloud'] = { connection: { id: 'native-ship', credential: await imported.callback } };
   for (const expected of [1, 2]) {
     const authorization = await method.authorize({});
     assert.equal(authorization.mode, 'auto');
@@ -586,8 +586,8 @@ test('native sign-in starts fresh device authorization after opt-in legacy migra
     const credential = await authorization.callback;
     assert.deepEqual(credential, { type: 'oauth', methodID: 'carthagent-device',
       access: `access-device-${expected}`, refresh: `refresh-device-${expected}`, expires: 3_601_000 });
-    connections['experiential-labs'].connection.credential = credential;
-    assert.deepEqual(await fake.ctx.integration.connection.resolve(await fake.ctx.integration.connection.active('experiential-labs')), credential);
+    connections['carthagent-cloud'].connection.credential = credential;
+    assert.deepEqual(await fake.ctx.integration.connection.resolve(await fake.ctx.integration.connection.active('carthagent-cloud')), credential);
   }
   assert.deepEqual(browserUrls, ['https://verify.test/1', 'https://verify.test/2']);
   assert.equal(requests.filter(request => request.url.endsWith('/v1/device/authorizations')).length, 2);
@@ -599,11 +599,11 @@ test('native sign-in starts fresh device authorization after opt-in legacy migra
 test('provider registration uses native provider transforms and cleanup; refresh discovers subscriptions through injected APIs', async () => {
   const token = `x.${Buffer.from(JSON.stringify({ sub: 'acct', sid: 'sid', scope: 'gateway:invoke' })).toString('base64url')}.x`;
   const connections = {
-    'experiential-labs': { connection: { id: 'ship', credential: { type: 'oauth', access: token, refresh: 'refresh', expires: Date.now() + 100000 } } },
+    'carthagent-cloud': { connection: { id: 'ship', credential: { type: 'oauth', access: token, refresh: 'refresh', expires: Date.now() + 100000 } } },
     anthropic: { connection: { id: 'claude', credential: { type: 'oauth', access: 'claude-token' } } },
     'openai-codex': { connection: { id: 'codex', credential: { type: 'oauth', access: 'codex-token' } } },
   };
-  const fake = fakeContext({ integrations: ['experiential-labs', 'anthropic', 'openai-codex'], connections, sessions: {
+  const fake = fakeContext({ integrations: ['carthagent-cloud', 'anthropic', 'openai-codex'], connections, sessions: {
     ses_headless_run: { id: 'ses_headless_run', location: { directory: '/project' }, metadata: { 'carthagent.runMode': 'print' } },
   } });
   const fetchCalls = [];
@@ -621,16 +621,16 @@ test('provider registration uses native provider transforms and cleanup; refresh
     openBrowser: () => false, requestSecret: 'test-secret',
   });
   assert.equal(typeof cleanup, 'function');
-  assert.deepEqual(fake.integrationTransforms[0].map(item => item.integrationID), ['experiential-labs', 'experiential-labs']);
+  assert.deepEqual(fake.integrationTransforms[0].map(item => item.integrationID), ['carthagent-cloud', 'carthagent-cloud']);
   assert.equal(fake.integrationTransforms[0][0].method.id, 'carthagent-device');
   assert.equal(fake.integrationTransforms[0][0].method.form, undefined, 'fresh sign-in has no migration question');
   assert.equal(fake.integrationTransforms[0][1].method.type, 'env');
   assert.equal(fake.providerTransforms.find(item => item.info?.id === providerConstants.SHIP_PROVIDER_ID).info.package,
     '@opencode/ai/providers/openai-compatible');
-  assert.ok(fake.hooks.some(item => item.name === 'http.request' && item.options.providerID === 'experiential-labs'));
+  assert.ok(fake.hooks.some(item => item.name === 'http.request' && item.options.providerID === 'carthagent-cloud'));
   assert.ok(fake.hooks.some(item => item.name === 'http.response'));
   const hooksByName = Object.fromEntries(fake.hooks.map(item => [item.name, item]));
-  const nativeSession = { sessionID: 'ses_non_uuid_123', kind: 'primary', model: { providerID: 'experiential-labs' } };
+  const nativeSession = { sessionID: 'ses_non_uuid_123', kind: 'primary', model: { providerID: 'carthagent-cloud' } };
   const modelRequest = { ...nativeSession, headers: {} };
   await hooksByName['model.request'].callback(modelRequest);
   const nextModelRequest = { ...nativeSession, headers: {} };

@@ -115,7 +115,7 @@ test('native account commands fail closed instead of consuming legacy engine cre
   const cwd = fixture(t);
   const agent = join(cwd, 'legacy-agent');
   mkdirSync(agent);
-  writeFileSync(join(agent, 'auth.json'), JSON.stringify({ 'experiential-labs': { type: 'api_key', key: 'legacy-fixture-credential' } }));
+  writeFileSync(join(agent, 'auth.json'), JSON.stringify({ 'carthagent-cloud': { type: 'api_key', key: 'legacy-fixture-credential' } }));
   const env = { ...process.env, CTG_OPENCODE_BIN: join(cwd, 'missing-native-runtime'), CARTHAGENT_CODING_AGENT_DIR: agent, PI_CODING_AGENT_DIR: agent };
   for (const args of [['account'], ['billing'], ['logout-cloud']]) {
     const result = spawnSync(process.execPath, [cli, ...args], { cwd, env, encoding: 'utf8' });
@@ -170,7 +170,7 @@ test('native model listing cannot silently fall back to legacy cached model meta
   const cwd = fixture(t);
   const agent = join(cwd, 'legacy-agent');
   mkdirSync(agent);
-  writeFileSync(join(agent, 'models-store.json'), JSON.stringify({ 'experiential-labs': { models: [{ id: 'legacy-only-model' }], checkedAt: 1 } }));
+  writeFileSync(join(agent, 'models-store.json'), JSON.stringify({ 'carthagent-cloud': { models: [{ id: 'legacy-only-model' }], checkedAt: 1 } }));
   const result = spawnSync(process.execPath, [cli, '--list-models'], { cwd, encoding: 'utf8', env: {
     ...process.env, CTG_OPENCODE_BIN: join(cwd, 'missing-native-runtime'), CARTHAGENT_CODING_AGENT_DIR: agent, PI_CODING_AGENT_DIR: agent,
   } });

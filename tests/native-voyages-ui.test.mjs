@@ -185,7 +185,7 @@ test('native event mapping respects location and integration scope', () => {
     assert.equal(voyagesEventAction({ type, location: { directory: '/other' }, data: {} }, location), 'ignore');
     assert.equal(voyagesEventAction({ type, location: { ...location, workspaceID: 'w2' }, data: {} }, location), 'ignore');
   }
-  assert.equal(voyagesEventAction({ type: 'credential.switched', data: { integrationID: 'experiential-labs', credentialID: null } }, location), 'refresh');
+  assert.equal(voyagesEventAction({ type: 'credential.switched', data: { integrationID: 'carthagent-cloud', credentialID: null } }, location), 'refresh');
   assert.equal(voyagesEventAction({ type: 'credential.switched', data: { integrationID: 'anthropic' } }, location), 'ignore');
   assert.equal(voyagesEventAction({ type: 'session.updated', data: {} }, location), 'ignore');
   assert.equal(voyagesEventAction({ type: 'server.disconnected' }, location), 'clear');
@@ -201,7 +201,7 @@ test('credential event immediately clears old profile/dialog and freshly loads s
   let signal;
   api.snapshot = (abortSignal) => { signal = abortSignal; return nextAccount.promise; };
   let closed = 0;
-  const reloading = handleVoyagesEvent(controller, { type: 'credential.switched', data: { integrationID: 'experiential-labs', credentialID: 'new' } }, { directory: '/selected' }, () => { closed++; });
+  const reloading = handleVoyagesEvent(controller, { type: 'credential.switched', data: { integrationID: 'carthagent-cloud', credentialID: 'new' } }, { directory: '/selected' }, () => { closed++; });
   assert.equal(view().snapshot, undefined);
   assert.equal(closed, 1);
   assert.ok(signal instanceof AbortSignal);

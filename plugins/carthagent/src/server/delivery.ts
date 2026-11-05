@@ -22,6 +22,7 @@ import { probeDiagnostics } from "../../../../lib/probe-diagnostics.mjs"
 import { configuredAdvisor, inspectAdvice } from "../../../../lib/planning-advice.mjs"
 import { createShipJev } from "../../../../lib/ship-jev.mjs"
 import { cloudGatewayUrl } from "../../../../lib/providers/experiential.mjs"
+import { isCarthagentShipProviderId } from "../../../../lib/providers/names.mjs"
 import { isShipAgent } from "./ship-agents.ts"
 import { originalTask, shipGuidance } from "./ship-guidance.ts"
 import { archiveDeliveryExchanges, localToolName, normalizeDesignReview, shellProtection } from "./ship-context.mjs"
@@ -202,12 +203,12 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
         else throw Error("Unknown delivery_design action")
         let advice
         if (input.action === "inspect") {
-          const ship = (session.model ?? data.model)?.providerID === "experiential-labs"
+          const ship = isCarthagentShipProviderId((session.model ?? data.model)?.providerID)
           const enabled = opts.jev === undefined ? ship : opts.jev === true
           const createAdvisor = () => {
             if (opts.jevProvider === "ship" || (ship && !opts.jevProvider)) {
               return { classify: async (plan: unknown) => {
-                const active = await ctx.integration.connection.active("experiential-labs")
+                const active = await ctx.integration.connection.active("carthagent-cloud")
                 if (!active || active.type !== "credential" || active.method !== "oauth") throw Error("Ship OAuth connection required")
                 const credential = await ctx.integration.connection.resolve(active)
                 if (credential?.type !== "oauth" || credential.methodID !== "carthagent-device" || !credential.access) throw Error("Ship OAuth credential required")

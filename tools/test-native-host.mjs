@@ -223,10 +223,10 @@ try {
   assert.ok(nativePlugin, `Carthagent plugin must become visible: ${JSON.stringify(plugins.data)}`);
   assert.equal(nativePlugin.state.status, 'active');
   const providers = await client.provider.list({ location: { directory: cwd } }, request);
-  assert.ok(providers.data.some((provider) => provider.id === 'experiential-labs'),
+  assert.ok(providers.data.some((provider) => provider.id === 'carthagent-cloud'),
     'plugin setup must register the Ship provider with the real host');
   const integrations = await client.integration.list({ location: { directory: cwd } }, request);
-  const ship = integrations.data.find(({ id }) => id === 'experiential-labs');
+  const ship = integrations.data.find(({ id }) => id === 'carthagent-cloud');
   assert.ok(ship, 'the native provider catalog must supply a real Ship integration record');
   assert.ok(ship.methods.some(({ type, id }) => type === 'oauth' && id === 'carthagent-device'),
     'plugin integration transform must register the Ship device-OAuth method');
@@ -240,12 +240,12 @@ try {
   const serializedInventory = JSON.stringify({ providers: providers.data, models: models.data, integrations: integrations.data });
   assert.equal(serializedInventory.includes(providerKey), false, 'provider and integration inventories must not expose the environment secret');
   assert.equal(output.includes(providerKey), false, 'OpenCode/plugin logs must not expose the environment secret');
-  assert.ok(models.data.some(model => model.providerID === 'experiential-labs' && model.id === 'sentinel-model'),
+  assert.ok(models.data.some(model => model.providerID === 'carthagent-cloud' && model.id === 'sentinel-model'),
     'environment-backed Ship model must be available through native model inventory');
   const inferenceSession = await client.session.create({
     location: { directory: cwd },
     title: 'CTG BYOK auth fixture',
-    model: { id: 'sentinel-model', providerID: 'experiential-labs' },
+    model: { id: 'sentinel-model', providerID: 'carthagent-cloud' },
   }, request);
   await client.session.prompt({ sessionID: inferenceSession.id, text: 'Reply with ok.' }, request);
   const inferenceDeadline = Date.now() + 10_000;

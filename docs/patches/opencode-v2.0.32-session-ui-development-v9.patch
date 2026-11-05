@@ -2205,7 +2205,7 @@ index 183e8df3af..702d156b02 100644
  } from "../util/form"
  
  const INTEGRATION_PRIORITY: Record<string, number> = {
-+  "experiential-labs": -1,
++  "carthagent-cloud": -1,
    "opencode-go": 0,
    opencode: 1,
    openai: 2,
@@ -2213,7 +2213,7 @@ index 183e8df3af..702d156b02 100644
        const credentials = credentialConnections(integration)
        let category = "Services"
        if (integration.id in INTEGRATION_PRIORITY) category = "Popular"
-+      if (integration.id === "experiential-labs") category = "Recommended"
++      if (integration.id === "carthagent-cloud") category = "Recommended"
        if (integration.metadata?.source === "mcp") category = "MCP"
        const status = integration.connections[0]?.status
        return {
@@ -2221,7 +2221,7 @@ index 183e8df3af..702d156b02 100644
          value: integration.id,
 -        description: methods.length === 0 ? "Environment only" : undefined,
 -        footer: status ? "Sign in required →" : connectionSummary(integration) || undefined,
-+        description: methods.length === 0 ? "Environment only" : integration.id === "experiential-labs" ? "Sign in with Google or email" : undefined,
++        description: methods.length === 0 ? "Environment only" : integration.id === "carthagent-cloud" ? "Sign in with Google or email" : undefined,
 +        footer: status ? `Sign in required ${chromeGlyph("→")}` : connectionSummary(integration) || undefined,
          footerColor: status ? theme.text.feedback.warning.base : undefined,
          category,
@@ -8134,7 +8134,7 @@ index 71e7b64339..0dce51e47f 100644
 +      </box>
 +      <Show when={local.model.catalogReady && !local.model.current()}>
 +        <box paddingLeft={2} paddingRight={2} paddingBottom={1} flexShrink={0}>
-+          <text fg={theme.text.action.primary.base} onMouseUp={() => keymap.dispatch("provider.connect", "experiential-labs")}>
++          <text fg={theme.text.action.primary.base} onMouseUp={() => keymap.dispatch("provider.connect", "carthagent-cloud")}>
 +            Continue with Carthagent Cloud · /login
 +          </text>
 +          <text fg={theme.text.muted}>Google or email · starter credit when eligible · /connect for other providers</text>
@@ -10968,7 +10968,7 @@ index 0000000000..52b26faf85
 +        if (url.pathname === "/api/model") return json({ location, data: [] })
 +        if (url.pathname === "/api/integration") return json({ location, data: [
 +          { id: "openai", name: "Codex / OpenAI", connections: [], methods: [{ type: "key" }] },
-+          { id: "experiential-labs", name: "Carthagent Cloud", connections: [], methods: [{ type: "oauth", id: "carthagent-device", label: "Continue with Carthagent Cloud" }] },
++          { id: "carthagent-cloud", name: "Carthagent Cloud", connections: [], methods: [{ type: "oauth", id: "carthagent-device", label: "Continue with Carthagent Cloud" }] },
 +        ] })
 +        return undefined
 +      },

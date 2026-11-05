@@ -103,7 +103,7 @@ try {
   }
   const integrations = await client.integration.list({ location }, request);
   console.log(JSON.stringify({ supportedIntegrations: integrations.data.filter(item => /anthropic|openai|codex|chatgpt|xai|google|gemini|experiential/.test(item.id)).map(item => ({ id: item.id, name: item.name, methods: item.methods.map(method => ({ type: method.type, id: method.id, label: method.label })) })) }));
-  const ship = integrations.data.find(item => item.id === 'experiential-labs');
+  const ship = integrations.data.find(item => item.id === 'carthagent-cloud');
   assert.ok(ship, 'Ship must be connectable without a preexisting credential or EXPLABS_API_KEY');
   console.log(JSON.stringify({ integrationName: ship.name, methods: ship.methods.map(method => ({ type: method.type, id: method.id })) }));
   const started = await client.integration.oauth.connect({ integrationID: ship.id, methodID: 'carthagent-device', answer: {}, location }, request);
@@ -124,7 +124,7 @@ try {
   console.log(JSON.stringify({ modelRequests, models: models.map(model => ({ id: model.id, providerID: model.providerID, connected: model.connected, status: model.status })) }));
   assert.ok(models.some(model => model.id === 'ctg-ship-fixture'), 'Successful Ship OAuth must publish discovered models in the real native model inventory without EXPLABS_API_KEY');
   assert.equal(ship.name, 'Carthagent Cloud', 'The connect picker must show the Cloud name');
-  assert.deepEqual(integrations.data.map(item => item.id).sort(), ['anthropic', 'experiential-labs', 'google', 'openai', 'xai'], 'Login must contain only the curated major integrations');
+  assert.deepEqual(integrations.data.map(item => item.id).sort(), ['anthropic', 'carthagent-cloud', 'google', 'openai', 'xai'], 'Login must contain only the curated major integrations');
   const providers = (await client.provider.list({ location }, request)).data;
   assert.ok(!providers.some(provider => /^opencode(?:-|$)/.test(provider.id)), 'The upstream provider must not be available');
   const paths = runtimePaths({ root: temp });

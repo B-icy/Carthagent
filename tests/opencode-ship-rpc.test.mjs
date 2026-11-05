@@ -24,7 +24,7 @@ test('profile Ship RPC uses resolved native OAuth and loopback account, billing,
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
     const removed = [];
     const ctx = { integration: { connection: {
-      active: async id => { assert.equal(id, 'experiential-labs'); return { type: 'credential', method: 'oauth', id: 'cred-profile' }; },
+      active: async id => { assert.equal(id, 'carthagent-cloud'); return { type: 'credential', method: 'oauth', id: 'cred-profile' }; },
       resolve: async () => ({ type: 'oauth', methodID: 'carthagent-device', access: 'loopback-token' }),
     }, transform: async fn => fn({ remove: id => removed.push(id) }) } };
     const handlers = createHandlers(ctx, { baseUrl, cloudUrl: baseUrl, cloudClient: new CloudClient({ baseUrl }) });

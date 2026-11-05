@@ -214,19 +214,19 @@ test('provider mode reflects ship, byok, both, or no credentials', t => {
   const agentDir = tmp(t);
   assert.equal(providerMode({ agentDir, env: {} }), 'none');
   assert.equal(providerMode({ agentDir, env: { ANTHROPIC_API_KEY: 'k' } }), 'byok');
-  writeFileSync(join(agentDir, 'auth.json'), JSON.stringify({ 'experiential-labs': { type: 'oauth', access: 'a', refresh: 'r', expires: 1 } }));
+  writeFileSync(join(agentDir, 'auth.json'), JSON.stringify({ 'carthagent-cloud': { type: 'oauth', access: 'a', refresh: 'r', expires: 1 } }));
   assert.equal(providerMode({ agentDir, env: {} }), 'ship');
   assert.equal(providerMode({ agentDir, env: { OPENAI_API_KEY: 'k' } }), 'ship+byok');
   // A direct api_key under the Ship provider id is BYOK, not a Ship account.
-  writeFileSync(join(agentDir, 'auth.json'), JSON.stringify({ 'experiential-labs': { type: 'api_key', key: 'k' } }));
+  writeFileSync(join(agentDir, 'auth.json'), JSON.stringify({ 'carthagent-cloud': { type: 'api_key', key: 'k' } }));
   assert.equal(providerMode({ agentDir, env: {} }), 'byok');
   writeFileSync(join(agentDir, 'auth.json'), JSON.stringify({ anthropic: { type: 'api_key', key: 'k' } }));
   assert.equal(providerMode({ agentDir, env: {} }), 'byok');
   // A direct key in models.json — even under the Ship provider id — is BYOK.
   writeFileSync(join(agentDir, 'auth.json'), '{}');
-  writeFileSync(join(agentDir, 'models.json'), JSON.stringify({ providers: { 'experiential-labs': { apiKey: 'direct' } } }));
+  writeFileSync(join(agentDir, 'models.json'), JSON.stringify({ providers: { 'carthagent-cloud': { apiKey: 'direct' } } }));
   assert.equal(providerMode({ agentDir, env: {} }), 'byok');
-  writeFileSync(join(agentDir, 'auth.json'), JSON.stringify({ 'experiential-labs': { type: 'oauth', access: 'a' } }));
+  writeFileSync(join(agentDir, 'auth.json'), JSON.stringify({ 'carthagent-cloud': { type: 'oauth', access: 'a' } }));
   assert.equal(providerMode({ agentDir, env: {} }), 'ship+byok');
 });
 
