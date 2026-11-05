@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { COMMANDS, matchCommand, NATIVE_COMMAND_COLLISIONS, resolveCommand } from "../src/ui/commands.js";
+import { COMMANDS, commandErrorMessage, helpSelectionCommand, matchCommand, NATIVE_COMMAND_COLLISIONS, resolveCommand } from "../src/ui/commands.js";
 import { readFile } from "node:fs/promises";
 import { parseThemeDocument } from "@opencode/theme/tui";
 import { cliConfigDirectory, cliConfigPath, readCliConfig, writeNativeTheme } from "../src/ui/host-state.js";
@@ -27,6 +27,31 @@ test("Carthagent command manifest resolves visible CTG commands", () => {
   assert.equal(resolveCommand("/auth")?.id, "login");
   assert.match(resolveCommand("/voyages")!.description, /daily quests/);
   assert.match(resolveCommand("/quests")!.description, /separate explicit consent/);
+});
+
+test("command error reports read native RPC rejection objects instead of '[object Object]'", () => {
+  const signIn = /^Sign in to Carthagent Cloud .*\/login/;
+  // Native promise RPC rejects with plain { _tag, type, message, data } objects.
+  assert.match(commandErrorMessage({ _tag: "RpcError", type: "unauthenticated", message: "An active Carthagent Cloud OAuth connection is required.", data: {} }), signIn);
+  assert.match(commandErrorMessage({ _tag: "RpcInternalError", type: "rpc.internal", message: "An active Carthagent Cloud OAuth connection is required." }), signIn);
+  assert.match(commandErrorMessage(new Error("An active Carthagent Cloud OAuth connection is required.")), signIn);
+  assert.match(commandErrorMessage({ _tag: "UnauthorizedError", message: "Unauthorized" }), signIn);
+  // Non-auth and network failures keep their useful message.
+  assert.equal(commandErrorMessage({ _tag: "RpcError", type: "rpc.failed", message: "Cloud usage limit must be between 1 and 200." }), "Cloud usage limit must be between 1 and 200.");
+  assert.equal(commandErrorMessage(new Error("fetch failed: ECONNREFUSED")), "fetch failed: ECONNREFUSED");
+  assert.equal(commandErrorMessage("plain text"), "plain text");
+  for (const opaque of [{}, { message: "" }, { message: 42 }, null, undefined, 7]) {
+    const message = commandErrorMessage(opaque);
+    assert.doesNotMatch(message, /\[object Object\]/);
+    assert.ok(message.length > 0);
+  }
+});
+
+test("/help list selections dispatch the selected command once; cancel is inert", () => {
+  for (const command of COMMANDS) assert.equal(helpSelectionCommand(command.name)?.id, command.id, command.name);
+  assert.equal(helpSelectionCommand("ctg-help")?.id, "help");
+  assert.equal(helpSelectionCommand("cloud")?.id, "account");
+  for (const cancelled of [undefined, null, "", "themes", "settings", "theme dark", "/theme"]) assert.equal(helpSelectionCommand(cancelled), undefined, String(cancelled));
 });
 
 test("manifest prevents collisions with native OpenCode slash commands", () => {

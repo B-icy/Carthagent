@@ -90,6 +90,37 @@ test('network/auth failures clear protected state and never report success', asy
   assert.doesNotMatch(view().error, /secret/);
 });
 
+test('signed-out, expired and revoked sessions show sign-in guidance instead of raw codes', async () => {
+  const cases = {
+    authentication_required: /^Sign in to Carthagent Cloud to load Voyages\./,
+    reauthentication_required: /^Sign in to Carthagent Cloud to load Voyages\./,
+    invalid_token: /^Sign in to Carthagent Cloud to load Voyages\./,
+    insufficient_scope: /^Sign in to Carthagent Cloud to load Voyages\./,
+    expired_token: /^Your Carthagent Cloud sign-in expired\./,
+    revoked_token: /^Your Carthagent Cloud sign-in was revoked\./,
+  };
+  for (const [code, expected] of Object.entries(cases)) {
+    const { controller, view } = fixture({ snapshot: async () => { throw { type: 'voyagesError', message: 'private token', data: { code, status: 401, uncertain: false } }; } });
+    await controller.refresh();
+    assert.match(view().error, expected, code);
+    assert.match(view().error, /Sign in/, code);
+    assert.doesNotMatch(view().error, new RegExp(`^${code}|private`), code);
+    assert.equal(view().snapshot, undefined);
+    assert.equal(view().notice, '');
+  }
+  // A write rejected for auth still states nothing was assumed to succeed.
+  const { controller, view, writes } = fixture({ purchase: async () => { throw { type: 'voyagesError', data: { code: 'expired_token', status: 401, uncertain: false } }; } });
+  await controller.refresh();
+  await controller.purchase(item, async () => true);
+  assert.deepEqual(writes, []);
+  assert.match(view().error, /sign-in expired.*no success assumed/i);
+  assert.equal(view().notice, '');
+  // Non-auth failures keep their code and refresh guidance.
+  const other = fixture({ snapshot: async () => { throw { type: 'voyagesError', data: { code: 'voyages_unavailable', status: 503, uncertain: false } }; } });
+  await other.controller.refresh();
+  assert.match(other.view().error, /^voyages_unavailable\. Refresh required; no success assumed\./);
+});
+
 test('unaffordable authoritative quote explains insufficient coins without confirmation or debit', async () => {
   const { controller, view, writes } = fixture({ quote: async () => ({ quote: { id: 'q1', item: item.item, price: 40, expiresAt: new Date(20000).toISOString() } }) });
   await controller.refresh();

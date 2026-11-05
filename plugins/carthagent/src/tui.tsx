@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 import { nativeLoginProvider, nativeProviderName } from "../../../lib/opencode/provider-policy.mjs";
 import { framePrompt } from "../../../lib/tui/framing.mjs";
 import { carthagentConfigPath, loadCarthagentConfig, resolveReviewMode, reviewKickoff, saveCarthagentConfig } from "../../../lib/review.mjs";
-import { COMMANDS, NATIVE_COMMAND_COLLISIONS } from "./ui/commands.js";
+import { COMMANDS, NATIVE_COMMAND_COLLISIONS, commandErrorMessage, helpSelectionCommand } from "./ui/commands.js";
 import { Workspace, rpcEventOptions, sessionControls, workspaceClient, shipClient, archiveClient, cloudAccountText, cloudUsageText, archiveItemText } from "./ui/client.js";
 import { findNativeResumeSession } from "./ui/resume-session.mjs";
 import { cliConfigDirectory, cliConfigPath, readCliConfig, writeNativeTheme } from "./ui/host-state.js";
@@ -66,7 +66,7 @@ export default Plugin.define({
     cleanups.push(...subscribeNativeReviewEvents(
       context.data,
       reviewConsumer,
-      (error: unknown) => context.ui.toast.show({ message: error instanceof Error ? error.message : String(error), variant: "error" }),
+      (error: unknown) => context.ui.toast.show({ message: commandErrorMessage(error), variant: "error" }),
       async (sessionID: string, messageID: string, signal?: AbortSignal) => await context.client.session.message.get({ sessionID, messageID }, { signal }),
     ));
     const workspaceEvents = context.client.rpc(Workspace);
@@ -91,7 +91,7 @@ export default Plugin.define({
           palette: true as const,
           slash: { name: item.name, ...(item.aliases ? { aliases: item.aliases } : {}), ...(item.args || item.submitSlash ? { arguments: true as const } : {}) },
           run: (input?: string) => {
-            const report = (error: unknown) => context.ui.toast.show({ message: error instanceof Error ? error.message : String(error), variant: "error" });
+            const report = (error: unknown) => context.ui.toast.show({ message: commandErrorMessage(error), variant: "error" });
             if (item.id === "restart" || item.id === "abort") {
               void dispatch(item.id, input ?? "").catch(report);
               return false;
@@ -121,9 +121,11 @@ export default Plugin.define({
         case "login":
           context.keymap.dispatch("provider.connect", arg ? nativeLoginProvider(arg)?.id ?? arg : "experiential-labs");
           return;
-        case "help": case "ctg-help":
-          await context.ui.dialog.select({ title: "Carthagent commands · search to filter", options: COMMANDS.map(command => ({ title: `/${command.name}${command.args ? ` ${command.args}` : ""}`, description: command.description, value: command.name })) });
+        case "help": case "ctg-help": {
+          const selected = helpSelectionCommand(await context.ui.dialog.select({ title: "Carthagent commands · search to filter", options: COMMANDS.map(command => ({ title: `/${command.name}${command.args ? ` ${command.args}` : ""}`, description: command.description, value: command.name })) }));
+          if (selected) await dispatch(selected.id, "");
           return;
+        }
         case "resume": {
           const query = arg.toLowerCase();
           const pageSize = 100;
@@ -453,7 +455,7 @@ export default Plugin.define({
               await api.open({ sessionID: selected });
               context.ui.router.navigate({ type: "session", sessionID: selected });
             }
-          } catch (error) { toast(error instanceof Error ? error.message : String(error), "error"); }
+          } catch (error) { toast(commandErrorMessage(error), "error"); }
           return;
         }
         case "ctg-worktree":
@@ -466,7 +468,7 @@ export default Plugin.define({
           try {
             const result = id === "ctg-review" ? await api.review({ sessionID }) : await api.delivery({ sessionID });
             toast(result ? JSON.stringify(result) : "No CTG status is recorded for this session.", "info");
-          } catch (error) { toast(error instanceof Error ? error.message : String(error), "error"); }
+          } catch (error) { toast(commandErrorMessage(error), "error"); }
           return;
         }
       }
@@ -484,7 +486,7 @@ export default Plugin.define({
       try {
         const result = await api.createWorktree({ projectID, name });
         context.ui.toast.show({ message: `CTG worktree created at ${context.ui.format.path(result.directory)}`, variant: "success" });
-      } catch (error) { context.ui.toast.show({ message: error instanceof Error ? error.message : String(error), variant: "error" }); }
+      } catch (error) { context.ui.toast.show({ message: commandErrorMessage(error), variant: "error" }); }
     }
 
     async function copyWithHost(text: string) {
