@@ -26,11 +26,22 @@ certify it for publication.
   refresh preserves the selected static destination.
 - Newly opened sessions remain reachable through keyboard tab cycling while their
   layout write is pending. Closing a pending tab prevents late resurrection.
+- Dashboard startup reports a failed port bind instead of announcing readiness.
 
 ## Verification
 
-Final candidate, live acceptance, five-platform builds, and installed-package
-acceptance are pending. The [integration evidence](qa/beta8-integration-progress.md)
-records successful checks, failed attempts, historical unreproduced findings, and
-remaining navigation timing debt. Final release notes will reflect the completed
-gates and remaining beta limitations.
+Integration passed the full repository suite (1,175 passed, 5 skipped), both
+cross-platform CI runs, 91 plugin renderer tests, and the pristine Linux native
+suite (1,643 passed, 2 skipped). Actual-window checks covered Quick, any-mode
+quest selection/cancellation, compact pointer navigation, and authenticated
+service replacement with preserved Shop selection and preview. Read-only local
+and remote comparisons confirmed profile/session/inventory preservation.
+
+Release acceptance remains in progress. The first five-platform prebuild passed
+Linux x64/ARM64 and macOS ARM64, but failed Windows on a path-specific test
+fixture and Intel macOS on the previously unresolved Rename-click interaction.
+The fixture is corrected; Rename investigation and installed/default-resolver
+acceptance remain pending. The [integration evidence](qa/beta8-integration-progress.md)
+records these failures, historical unreproduced authentication findings, and
+navigation readiness timing debt. These notes will be finalized after the
+remaining release gates.
