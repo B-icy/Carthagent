@@ -430,6 +430,82 @@ index 96ba475e5b..1052350898 100644
  export type FileReadInput = {
    readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
    readonly path: string
+diff --git a/packages/client/src/solid/connection.ts b/packages/client/src/solid/connection.ts
+index 01e6b75b28..0bab948e51 100644
+--- a/packages/client/src/solid/connection.ts
++++ b/packages/client/src/solid/connection.ts
+@@ -163,15 +163,23 @@ export function createClientConnection(initialApi: OpenCodeClient, options: Clie
+       setConnection({ status: "reconnecting", attempt, error: message })
+ 
+       if (options.reconnect) {
+-        const next = await options.reconnect(controller.signal).catch((error) => {
+-          if (!controller.signal.aborted)
+-            options.log?.info?.("server resolution failed", { attempt, error: errorMessage(error) })
+-        })
+-        if (abort.signal.aborted || controller.signal.aborted || !started || generation !== active) return
+-        if (next) {
++        // A failed resolution invalidates the old endpoint: its port may now
++        // belong to another process. Only the resolver can authorize a retry.
++        while (true) {
++          const next = await options.reconnect(controller.signal).catch((error) => {
++            if (!controller.signal.aborted)
++              options.log?.info?.("server resolution failed", { attempt, error: errorMessage(error) })
++          })
++          if (abort.signal.aborted || controller.signal.aborted || !started || generation !== active) return
++          if (!next) {
++            await wait(reconnectDelay, controller.signal)
++            if (abort.signal.aborted || controller.signal.aborted || !started || generation !== active) return
++            continue
++          }
+           api = next
+-          if (attempt === 1) continue
++          break
+         }
++        if (attempt === 1) continue
+       }
+       // A deliberate resync already knows the old socket is gone; reconnect without backing off.
+       if (forced) {
+diff --git a/packages/client/test/solid-connection.test.ts b/packages/client/test/solid-connection.test.ts
+index 60219ed73e..1ef6c2796a 100644
+--- a/packages/client/test/solid-connection.test.ts
++++ b/packages/client/test/solid-connection.test.ts
+@@ -179,3 +179,36 @@ test("a reconnect does not ask the volatile event stream to replay", async () =>
+     ctx.dispose()
+   }
+ })
++
++test("failed endpoint validation never reconnects to the previous server", async () => {
++  const previous = server()
++  const replacement = server()
++  const gate = Promise.withResolvers<typeof previous.api>()
++  let attempts = 0
++  const ctx = createRoot((dispose) => ({
++    dispose,
++    connection: createClientConnection(previous.api, {
++      onEvent: () => {},
++      reconnect: async () => {
++        attempts++
++        if (attempts === 1) throw new Error("replacement identity did not validate")
++        return gate.promise
++      },
++    }),
++  }))
++  try {
++    await until(() => previous.streams.length === 1)
++    previous.streams[0].write(`data: ${JSON.stringify(connected)}\n\n`)
++    await until(() => ctx.connection.status() === "connected")
++    previous.streams[0].close()
++    await until(() => attempts === 2 || previous.streams.length > 1)
++    expect(previous.streams).toHaveLength(1)
++    gate.resolve(replacement.api)
++    await until(() => replacement.streams.length === 1)
++    replacement.streams[0].write(`data: ${JSON.stringify(connected)}\n\n`)
++    await until(() => ctx.connection.status() === "connected")
++  } finally {
++    ctx.dispose()
++    gate.resolve(replacement.api)
++  }
++})
 diff --git a/packages/core/src/codemode/tool.ts b/packages/core/src/codemode/tool.ts
 index ef0d5d635b..346cc6872c 100644
 --- a/packages/core/src/codemode/tool.ts

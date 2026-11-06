@@ -115,7 +115,7 @@ the successful run supplied Pillow 11.3.0 from a temporary directory (wheel SHA-
   server rename. Native mode strip, picker, and agent-event labels now map the
   persisted ID to Quick. Native label/session-ownership tests passed 14/14.
 - Current cumulative v17 digest:
-  `49d7cb9468b28351d79c571fea949914afaf8da5b242b3a95a192acb8cff5320`.
+  `36fb0a3f0ec9fe9df06be7b72a45f308bcd8e59f2b96565b470a267c2bb273c5`.
 - Repository lint/build and sequential tests after any-mode quests passed:
   1,167 passed, 5 skipped.
 - After merging latest main, lint/build and sequential tests passed again:
@@ -182,6 +182,18 @@ the successful run supplied Pillow 11.3.0 from a temporary directory (wheel SHA-
   also passed after regenerating the cumulative patch.
 
 ## Remaining acceptance
+
+- The tab-fix pristine run failed: 1,634 passed / 2 skipped / 5 failed, with
+  9 errors. Local logs showed requests for live acceptance-profile sessions and
+  Voyages pages reaching temporary test servers. The old disconnected acceptance
+  terminal was still running; it has now been closed. Raw logs remain private.
+- Investigation found that failed managed endpoint validation still fell through
+  to another event-stream connection on the old URL. A regression reproduced
+  this stale-endpoint retry deterministically. The loop now retries resolution
+  until a validated replacement is returned, rather than using the old endpoint.
+  This is a product repair; closing the stale terminal alone is not the fix.
+- Connection-suite verification passed 70 repeated tests / 150 assertions after
+  the failing-before regression. The pristine recipe now includes that suite.
 
 - Live-retest the repaired rail-highlight reset, then run scaled pointer
   navigation. Quests highlight and Shop preview now have successful same-account

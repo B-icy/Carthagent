@@ -24,6 +24,7 @@ done
 bun test --cwd packages/core test/session-compaction.test.ts test/shell-retention.test.ts
 bun test --cwd packages/server test/shell-provenance.test.ts test/fs.test.ts test/integration-startup.test.ts
 bun test --cwd packages/cli test/carthagent-reconnect.test.ts
+bun test --cwd packages/client test/solid-connection.test.ts
 bun test --cwd packages/theme test/theme.test.ts
 bun test --cwd packages/tui --timeout 60000
 node "$ROOT/tools/run-native-test-stress.mjs" 10 180000 bun test --cwd packages/tui --timeout 60000 test/navigation-rail.test.tsx
