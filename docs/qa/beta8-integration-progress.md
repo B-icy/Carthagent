@@ -1,5 +1,22 @@
 # Beta.8 integration evidence (in progress)
 
+## Merge and release-build update
+
+- Integration PR #257 merged at `6813d9175c8c9a325e90e521c37d5e56f2414811`
+  after both PR CI `42169229244` and push CI `42169223548` passed. Final parallel
+  Node suite: 1,175 passed / 5 skipped / zero failures.
+- Five-platform prebuild `42169160091` failed. Linux x64/ARM64 and macOS ARM64
+  completed successfully. Windows passed 1,632 TUI tests / 12 skipped but failed
+  the edited missing-folder fixture: its literal POSIX-path comparison missed
+  the drive-qualified path produced by Windows resolution. Normalizing both
+  fixture paths fixes that mismatch; 140 repeated local tests passed.
+- Intel macOS passed the full TUI suite but failed navigation stress repetition
+  5 at the Rename click after context-menu resize/reopen. This reproduces the
+  previously unresolved historical Rename interaction; investigation continues.
+  No successful assembled candidate or beta.8 release exists yet.
+- Combined-v11 currently differs from combined-v10 only in the portable missing-
+  folder fixture. Published beta.7/combined-v9 and prebuild v10 bytes are retained.
+
 This is development evidence, not release certification. The published beta.7
 tag, assets, combined-v9 patch, and release resolver pins remain immutable.
 
