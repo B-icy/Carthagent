@@ -1,7 +1,7 @@
-# Carthagent 1.1.0-beta.8 — draft
+# Carthagent 1.1.0-beta.8
 
-Release acceptance is in progress. These notes describe the candidate and do not
-certify it for publication.
+Quick mode, quests from any mode, and more reliable sign-in, reconnect, and
+navigation.
 
 ## Modes and quests
 
@@ -37,14 +37,15 @@ quest selection/cancellation, compact pointer navigation, and authenticated
 service replacement with preserved Shop selection and preview. Read-only local
 and remote comparisons confirmed profile/session/inventory preservation.
 
-Release acceptance remains in progress. Prebuilds uncovered a platform-specific
-folder fixture, test interaction races around layout and input focus, and a
-macOS Bash compatibility error. Corrections are included in the candidate;
-final five-platform prebuild and installed/default-resolver
-acceptance remain pending. The [integration evidence](qa/beta8-integration-progress.md)
-records these failures, historical unreproduced authentication findings, and
-navigation readiness timing debt. These notes will be finalized after the
-remaining release gates.
+The five-platform runtime prebuild passed on Windows x64, Linux x64/ARM64,
+and macOS x64/ARM64, with the Intel macOS coverage exclusion below. Artifact
+provenance, archive checksums, executable checksums, and runtime manifests were
+verified. Prebuild fixes include portable folder fixtures, settled-layout and
+input-focus test synchronization, and macOS Bash compatibility.
+
+The [integration evidence](qa/beta8-integration-progress.md) records earlier
+failures and remaining release acceptance gates. Publication requires final
+package CI and installed/default-resolver acceptance.
 
 ## Known beta limitations
 
@@ -57,3 +58,13 @@ remaining release gates.
 - Long navigation stress runs have encountered plugin-readiness timeouts.
 - Historical authentication findings AUTH-001 and AUTH-002 are not fully
   reproduced; the verified cold-start repair does not establish their causes.
+
+## Install or update
+
+```sh
+npm install -g carthagent@1.1.0-beta.8
+ctg
+```
+
+This prerelease uses npm's `next` channel. The stable `latest` channel stays on
+1.0.7.

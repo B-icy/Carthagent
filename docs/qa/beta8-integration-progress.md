@@ -2,6 +2,18 @@
 
 ## Merge and release-build update
 
+- Five-platform prebuild `42179740258` succeeded from source
+  `347aae8869456cacff073a434357790663141d4d`. Windows, Linux x64/ARM64,
+  macOS ARM64, and Intel macOS (with the recorded exclusion) passed their
+  required gates; candidate assembly succeeded. Combined-v13 SHA-256 is
+  `30e10b6c6711757c5109b14a644c2577cc80487cbad386b319615d9b69c516ee`.
+- Downloaded candidate provenance matches the exact run, source, version, and
+  workflow. All five archives were independently passed through the production
+  acquisition parser and strict runtime-tree validator; regenerated manifest
+  matches the candidate exactly. Package version, runtime pin, and manifest are
+  promoted together. Final package CI and installed draft acceptance remain
+  required before public release.
+
 - Prebuild `42176561070` passed Linux x64/ARM64 and macOS x64/ARM64 (with the
   documented Intel exclusion), but Windows failed the initial-loading dialog
   test. Its captured frame retained the search placeholder after simulated
