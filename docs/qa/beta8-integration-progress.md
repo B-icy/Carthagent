@@ -2,6 +2,13 @@
 
 ## Merge and release-build update
 
+- Follow-up traces from `42174966436` isolated the context-menu failure before
+  Rename: the test sampled row 6 while initial layout was changing; the session
+  settled at row 9, and only a release over the collapsed-group row was recorded.
+  Both Windows and Intel macOS showed this same stale-coordinate sequence.
+  Combined-v12 waits for visual idle before sampling the row and asserts the
+  visible session title at that coordinate. Platform retests are underway.
+
 - Second prebuild `42172444024` passed Linux x64/ARM64 and Intel macOS with
   the approved exclusion. Windows passed the corrected folder fixture/full TUI
   suite but reproduced the same context-menu test failure in stress repetition
