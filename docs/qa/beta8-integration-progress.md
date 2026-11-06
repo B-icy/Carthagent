@@ -2,6 +2,17 @@
 
 ## Merge and release-build update
 
+- Second prebuild `42172444024` passed Linux x64/ARM64 and Intel macOS with
+  the approved exclusion. Windows passed the corrected folder fixture/full TUI
+  suite but reproduced the same context-menu test failure in stress repetition
+  2. The Intel-only waiver does not cover Windows. ARM64 macOS stopped on Bash
+  3's empty-array/nounset behavior in the new filter; the recipe now uses a
+  nonempty match-all filter outside the waived platform.
+- The Intel trace run failed before the instrumented final Rename click and
+  produced no final-click trace. The failure is therefore in the broader
+  context-menu resize/reopen sequence, not yet isolated to Rename activation.
+  Follow-up diagnostics instrument opening the menu on both affected platforms.
+
 - The release owner explicitly accepted the Intel macOS limitation and requested
   beta.8 publication plus patch notes. Only the exact context-menu resize/reopen
   Rename regression is excluded on darwin-x64; all other platform gates remain

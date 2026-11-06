@@ -77,7 +77,7 @@ test('development runtime source and preparation recipe pin the actual Ship grap
 });
 
 test('the published runtime pin stays on its immutable release patch', () => {
-  const published = readFileSync(new URL('../docs/patches/opencode-v2.0.32-session-ui-combined-v9.patch', import.meta.url));
+  const published = readFileSync(new URL('../docs/patches/opencode-v2.0.32-session-ui-combined-v11.patch', import.meta.url));
   const digest = createHash('sha256').update(published).digest('hex');
   assert.equal(CTG_RUNTIME_PATCH_SHA256, digest);
 });
@@ -93,7 +93,8 @@ test('the candidate build recipe pins the reviewed sidebar patch', () => {
 test('beta8 release waiver excludes only the accepted Intel macOS Rename regression', () => {
   const build = readFileSync(new URL('../script/ctg/build-owned-runtime.sh', import.meta.url), 'utf8');
   assert.match(build, /if \[\[ "\$HOST_PLATFORM" == darwin && "\$HOST_ARCH" == x64 \]\]; then/);
-  const pattern = build.match(/tui_test_args\+=\(--test-name-pattern '([^']+)'\)/)?.[1];
+  assert.match(build, /tui_test_args=\(--test-name-pattern '\.'\)/);
+  const pattern = build.match(/tui_test_args=\(--test-name-pattern '(\^\(\?![^']+)'\)/)?.[1];
   assert.ok(pattern);
   const filter = new RegExp(pattern);
   assert.equal(filter.test('a session context menu closes when a resize hides or reflows the rail, and reopens on the right row'), false);

@@ -121,10 +121,10 @@ bun test --cwd packages/tui test/clear-session.test.tsx
 # Beta.8 release-owner waiver: Intel macOS has a reproduced intermittent Rename
 # click failure after context-menu resize/reopen. Keep all other checks required;
 # the exact excluded case remains required on every other supported platform.
-tui_test_args=()
+tui_test_args=(--test-name-pattern '.')
 if [[ "$HOST_PLATFORM" == darwin && "$HOST_ARCH" == x64 ]]; then
   echo "Accepted beta.8 limitation: Intel macOS context-menu Rename after resize/reopen"
-  tui_test_args+=(--test-name-pattern '^(?!a session context menu closes when a resize hides or reflows the rail, and reopens on the right row$)')
+  tui_test_args=(--test-name-pattern '^(?!a session context menu closes when a resize hides or reflows the rail, and reopens on the right row$)')
 fi
 bun test --cwd packages/tui --timeout 60000 "${tui_test_args[@]}"
 node tools/run-native-test-stress.mjs 10 180000 bun test --cwd packages/tui --timeout 30000 test/navigation-rail.test.tsx "${tui_test_args[@]}"
