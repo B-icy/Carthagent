@@ -144,6 +144,31 @@ test("server reconnect preserves the selected static rail destination without na
   } finally { f.app.renderer.destroy(); }
 });
 
+test("reconnect keeps Shop highlighted after opening it and delayed summary recovery", async () => {
+  const f = await fixture();
+  const gate = Promise.withResolvers<void>();
+  try {
+    await f.focus();
+    const list = f.list();
+    f.app.mockInput.pressArrow("down");
+    await f.app.renderOnce();
+    f.app.mockInput.pressEnter();
+    await f.app.renderOnce();
+    expect(f.mode()).toBe("base");
+    expect(list.getSelectedOption()?.value).toBe("equipment");
+    f.delay(gate.promise);
+    f.event("server.connected");
+    await f.app.renderOnce();
+    // Cold plugin activation emits these inventory refreshes after connecting.
+    f.event("integration.updated");
+    f.event("provider.updated");
+    gate.resolve();
+    await f.settle();
+    expect(list.getSelectedOption()?.value).toBe("equipment");
+    expect(f.routes).toHaveLength(1);
+  } finally { gate.resolve(); f.app.renderer.destroy(); }
+});
+
 test("compact mode uses the same mounted selection and keyboard behavior", async () => {
   const f = await fixture();
   try {

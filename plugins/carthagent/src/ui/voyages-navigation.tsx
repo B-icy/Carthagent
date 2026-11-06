@@ -69,9 +69,11 @@ export function VoyagesNavigation(props: NavigationInput) {
       binding = JSON.stringify(location());
       const action = changedLocation ? String(details.type) === "server.disconnected" ? "clear" : "refresh" : voyagesEventAction(details, location());
       if (action === "ignore") return;
-      // A connection refresh does not change these static destinations. Identity
-      // and location invalidations still reset selection and clear protected data.
-      if (changedLocation || details.type !== "server.connected") resetSelection();
+      // Cold activation also refreshes provider/integration inventory after the
+      // connection event. These static destinations survive that sequence;
+      // credential/location invalidation still resets the selection. Every
+      // refresh below clears protected summaries before loading them again.
+      if (changedLocation || !["server.connected", "provider.updated", "integration.updated"].includes(details.type)) resetSelection();
       if (action === "clear") controller.disconnect();
       else void controller.contextChanged();
     });

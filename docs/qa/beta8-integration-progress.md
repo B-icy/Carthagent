@@ -210,17 +210,39 @@ the successful run supplied Pillow 11.3.0 from a temporary directory (wheel SHA-
   revision incorrectly expected a transport-history entry during resolution;
   that assertion failed and was corrected to match the transport-only history.
   The corrected useEvent suite passed 80 repeated tests / 160 assertions;
-  development-patch integrity checks passed. A fresh pristine recipe is running.
+  development-patch integrity checks passed. The fresh pristine recipe passed:
+  1,643 TUI tests / 2 skipped / zero failures, ten navigation stress repetitions
+  (150 tests), ten seascape-render repetitions (30 tests), focused core/server/
+  CLI/client/theme gates, and the Linux x64 binary build. Final-binary native
+  probes and signed-in live acceptance are underway.
 - Cross-platform CI passed through `8f62ed51ad`; the test-contract follow-up and
   fresh pristine candidate are still pending.
 - A fresh read-only comparison before final-candidate live testing again found
   zero missing project, session, or message IDs in both original profiles:
   acceptance 7 / 3 / 61; normal 5 / 3 / 328 versus original 5 / 3 / 282.
   This verifies local record preservation, not stable remote account state.
+- Final Linux x64 candidate native host/model/product/quest/control/outcome/
+  runtime/review/report/task/delivery/slash probes passed. PTY initially rejected
+  the developer selector before running; rerunning with the manifest-pinned
+  artifact selector passed its seven command checks.
+- Real-window pointer testing on that binary confirmed Quick, any-mode session
+  selection and goal-entry cancellation, and the signed-in 35-coin wallet.
+  Process/URL/password replacement retained Cropped preview and wallet, but the
+  rail still reset Shop to Quests: this final-binary live test failed.
+- Capturing event types showed cold activation emits `integration.updated` and
+  `provider.updated` after `server.connected`. Reproducing that delayed sequence
+  failed the rail regression (26 passed / 1 failed). Static destinations now
+  survive these inventory refreshes; summaries still clear, and credential/
+  location invalidation still resets selection. Verification passed 270 repeated
+  renderer tests / 1,190 assertions and repository lint/typechecks. Full plugin
+  verification passed 91 tests / 1,634 assertions. The real-window replacement
+  retest then retained both Shop highlight and Cropped preview at 35 coins after
+  PID/URL/password changed, without Equip/Buy activation. Resizing the desktop
+  terminal and matching tmux to 100x25 also passed actual-pointer Quests and
+  second-quest detail navigation.
 
-- Live-retest the repaired rail-highlight reset, then run scaled pointer
-  navigation. Quests highlight and Shop preview now have successful same-account
-  live replacement retests.
+- Final-candidate rail-highlight recovery and scaled pointer navigation passed
+  as recorded above. Release-artifact/default-resolver acceptance remains pending.
 - Navigation stress passed 38 complete repetitions (570 tests), then repetition
   39 failed at plugin readiness and exceeded the external 90-second deadline.
   Logs show reconciliation taking 13.4 seconds. This does not reproduce the
