@@ -6,6 +6,8 @@ tag, assets, combined-v9 patch, and release resolver pins remain immutable.
 ## Integration
 
 - Main base: `2a975faef5b4296c07008b7a47ccdf30bdb769c9`.
+- Latest main through `3dc9818614` (#256, uncertain Cloud token-refresh recovery)
+  was merged locally before final integration checks. Draft integration PR: #257.
 - Audit branch imported through `2571cdb2ecdecc8705b779fdf55da175a2852ee2`.
 - Runtime base: `843a6c514e606b436a7fe713422ace0a93ad3d61`.
 - Development-v17 is cumulative: apply it directly to clean pinned upstream.
@@ -127,6 +129,12 @@ the successful run supplied Pillow 11.3.0 from a temporary directory (wheel SHA-
   Quick/change, Build/tests, and Plan/review composition through explicit Submit.
 - Cancel and account-change during evidence entry revoke unfinished drafts without
   uploading. Python rerun passed 28 tests; final repository lint passed.
+- Bundled-browser module execution, click, Unicode input, screenshot, and expected
+  broken-module failure passed with local browser libraries supplied. The first
+  run failed to launch because the host lacked libnspr4; that failure is retained.
+- Latest read-only preservation comparison again found zero missing IDs. The
+  acceptance profile remains 7 projects / 3 sessions / 61 messages; the concurrently
+  used normal profile remains 5 / 3 / 328 compared with the original 5 / 3 / 282.
 - Real-window pointer clicks opened Quests and a quest detail. The live picker
   offered non-Ship sessions, opened goal entry, and cancelled cleanly without a
   submission. Captures stay local. This used the preceding development binary;

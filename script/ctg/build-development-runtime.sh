@@ -20,6 +20,7 @@ bun install --frozen-lockfile
 for package in core server plugin client tui cli; do
   (cd "packages/$package" && bun x tsgo -b --singleThreaded)
 done
+(cd packages/core && bun x tsgo -b tsconfig.tests.json --singleThreaded)
 bun test --cwd packages/core test/session-compaction.test.ts test/shell-retention.test.ts
 bun test --cwd packages/server test/shell-provenance.test.ts test/fs.test.ts test/integration-startup.test.ts
 bun test --cwd packages/cli test/carthagent-reconnect.test.ts
