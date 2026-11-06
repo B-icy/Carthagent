@@ -17419,6 +17419,31 @@ index 96c7831485..76c93cdb1f 100644
 +  expect(sessionTabsFitVertically(75, SESSION_TABS_COMPACT_WIDTH)).toBe(true)
 +  expect(sessionTabsFitVertically(74, SESSION_TABS_COMPACT_WIDTH)).toBe(false)
  })
+diff --git a/packages/tui/test/ui/link.test.tsx b/packages/tui/test/ui/link.test.tsx
+index 0aded5faeb..8b2d3a033d 100644
+--- a/packages/tui/test/ui/link.test.tsx
++++ b/packages/tui/test/ui/link.test.tsx
+@@ -27,13 +27,19 @@ test("plain clicks on any row of a wrapped Markdown link resolve the full URL",
+   const app = await testRender(() => <Transcript />, { width: 32, height: 6, clock: new ManualClock() })
+ 
+   try {
+-    for (let attempt = 0; attempt < 50 && !app.captureCharFrame().replace(/\s/g, "").includes(url); attempt++) {
++    // Markdown parsing is asynchronous; a frame count is not a readiness signal
++    // under a full-suite CPU load. Keep all pointer assertions behind the same
++    // bounded rendered-content prerequisite, with an actionable timeout failure.
++    const deadline = Date.now() + 5_000
++    while (!app.captureCharFrame().replace(/\s/g, "").includes(url)) {
++      if (Date.now() >= deadline) throw new Error(`Markdown link did not render:\n${app.captureCharFrame()}`)
+       await app.renderOnce()
+       await Bun.sleep(10)
+     }
+     const rows = app.captureCharFrame().split("\n")
+     const head = rows.findIndex((row) => row.includes("https"))
+     const tail = rows.findIndex((row) => row.includes("brake+pad"))
++    expect(head).toBeGreaterThanOrEqual(0)
+     const x = rows[head]!.indexOf("https")
+     expect(tail).toBeGreaterThan(head)
+ 
 diff --git a/packages/tui/test/util/combining-input.test.ts b/packages/tui/test/util/combining-input.test.ts
 new file mode 100644
 index 0000000000..f3309c5c19

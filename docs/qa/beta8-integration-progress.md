@@ -115,9 +115,11 @@ the successful run supplied Pillow 11.3.0 from a temporary directory (wheel SHA-
   server rename. Native mode strip, picker, and agent-event labels now map the
   persisted ID to Quick. Native label/session-ownership tests passed 14/14.
 - Current cumulative v17 digest:
-  `4a9e7c079f0db638ed0ed778cc47a6070947d2353f55b83671b6c9ba28b7c2b1`.
+  `a6dbff8aacb3af81072f69ec85aedd6b1c8bd7c16b1edf3b9b8dcc16a2415117`.
 - Repository lint/build and sequential tests after any-mode quests passed:
   1,167 passed, 5 skipped.
+- After merging latest main, lint/build and sequential tests passed again:
+  1,174 passed, 5 skipped.
 - DailySource can explicitly offer an owned session when no Ship report exists.
   Its stable reference binds to the session and source fingerprint; its summary,
   checks, and findings start empty. No transcript is imported or result invented.
@@ -145,6 +147,12 @@ the successful run supplied Pillow 11.3.0 from a temporary directory (wheel SHA-
   Quick labels. The next candidate failed TUI typecheck on a test-only matcher
   overload in the reconnect regression. Identity assertions now use Object.is;
   TUI typecheck passes and a new pristine candidate run is in progress.
+- That candidate passed typechecks and focused core/server/CLI/theme gates, then
+  full TUI ended 1,641 passed / 2 skipped / 1 failed: the wrapped Markdown-link
+  test indexed a missing rendered row after its roughly 500 ms parser wait.
+  The isolated test passed. The fixture now waits on rendered content with a
+  bounded 5-second deadline and explicit prerequisite assertion; all pointer
+  behavior assertions remain. This is test-readiness repair, not a product fix.
 - Focused Rename stress passed 42 repetitions, then failed on repetition 43 at
   plugin readiness, before the Rename interaction. Reconciliation took 9.655 s
   and the page still displayed Loading workspace at the 10 s readiness boundary.
