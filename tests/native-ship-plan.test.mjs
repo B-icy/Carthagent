@@ -83,9 +83,9 @@ test('the published runtime pin stays on its immutable release patch', () => {
 });
 
 test('the candidate build recipe pins the reviewed sidebar patch', () => {
-  const published = readFileSync(new URL('../docs/patches/opencode-v2.0.32-session-ui-combined-v9.patch', import.meta.url));
+  const published = readFileSync(new URL('../docs/patches/opencode-v2.0.32-session-ui-combined-v10.patch', import.meta.url));
   const digest = createHash('sha256').update(published).digest('hex');
   const build = readFileSync(new URL('../script/ctg/build-owned-runtime.sh', import.meta.url), 'utf8');
   assert.ok(build.includes(`EXPECTED_PATCH="${digest}"`));
-  assert.ok(build.includes('docs/patches/opencode-v2.0.32-session-ui-combined-v9.patch'));
+  assert.ok(build.includes('docs/patches/opencode-v2.0.32-session-ui-combined-v10.patch'));
 });

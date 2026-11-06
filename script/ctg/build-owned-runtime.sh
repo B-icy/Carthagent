@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 EXPECTED_SOURCE="843a6c514e606b436a7fe713422ace0a93ad3d61"
 EXPECTED_LOCK="9d78379cd264584a495440a217b9d2ecab524c9a56f7f8b4b5bed3926daa330d"
-EXPECTED_PATCH="eda717ebe6b5d258b3c79153a23130b0f267491bc145cae8da183f2284a25e3e"
+EXPECTED_PATCH="dfadb7a4eb0a30160da5665f726e6a39b2dc280f926ef498f8bc17bf85af17d3"
 TARGET="${1:-opencode-linux-x64}"
 HOST_PLATFORM="$(node -p 'process.platform')"
 HOST_ARCH="$(node -p 'process.arch')"
@@ -34,7 +34,7 @@ if ! git diff --cached --quiet HEAD --; then
   exit 1
 fi
 expected_inputs=(
-  "docs/patches/opencode-v2.0.32-session-ui-combined-v9.patch"
+  "docs/patches/opencode-v2.0.32-session-ui-combined-v10.patch"
   "script/ctg/build-owned-runtime.sh"
   "tools/run-native-test-stress.mjs"
 )
@@ -87,7 +87,7 @@ if [[ "$(bun --version)" != "1.4.2" ]]; then
   exit 1
 fi
 
-patch_file="$ROOT/docs/patches/opencode-v2.0.32-session-ui-combined-v9.patch"
+patch_file="$ROOT/docs/patches/opencode-v2.0.32-session-ui-combined-v10.patch"
 actual_patch="$("${HASH_COMMAND[@]}" "$patch_file" | awk '{print $1}')"
 if [[ "$actual_patch" != "$EXPECTED_PATCH" ]]; then
   echo "Patch checksum mismatch: $actual_patch" >&2
@@ -101,18 +101,24 @@ echo "patch_sha256=$actual_patch"
 echo "license=$(grep -m1 '"license"' packages/cli/package.json | cut -d '"' -f4)"
 
 bun install --frozen-lockfile
+export GOMAXPROCS=2 GOMEMLIMIT=512MiB
 bun run --cwd packages/core typecheck
 bun run --cwd packages/server typecheck
 bun run --cwd packages/plugin typecheck
 bun run --cwd packages/client typecheck
 bun run --cwd packages/tui typecheck
+bun run --cwd packages/cli typecheck
 bun test --cwd packages/core test/session-compaction.test.ts
 bun test --cwd packages/core test/shell-retention.test.ts
 bun test --cwd packages/server test/shell-provenance.test.ts
 bun test --cwd packages/server test/fs.test.ts
+bun test --cwd packages/server test/integration-startup.test.ts
+bun test --cwd packages/cli test/carthagent-reconnect.test.ts
+bun test --cwd packages/client test/solid-connection.test.ts
 bun test --cwd packages/theme test/theme.test.ts
 bun test --cwd packages/tui test/plugin-source.test.ts
 bun test --cwd packages/tui test/clear-session.test.tsx
+bun test --cwd packages/tui --timeout 60000
 node tools/run-native-test-stress.mjs 10 180000 bun test --cwd packages/tui --timeout 30000 test/navigation-rail.test.tsx
 bun test --cwd packages/tui --timeout 30000 test/sidebar
 node tools/run-native-test-stress.mjs 10 180000 bun test --cwd packages/tui --timeout 30000 test/component/seascape-render.test.tsx
