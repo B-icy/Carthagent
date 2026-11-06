@@ -240,6 +240,13 @@ the successful run supplied Pillow 11.3.0 from a temporary directory (wheel SHA-
   PID/URL/password changed, without Equip/Buy activation. Resizing the desktop
   terminal and matching tmux to 100x25 also passed actual-pointer Quests and
   second-quest detail navigation.
+- Read-only authenticated snapshots across another verified service replacement
+  matched the non-secret account binding, complete remote profile, and catalog/
+  inventory exactly; wallet remained 35 coins. Snapshot bodies stayed private.
+- After the final rail repair, repository build and the complete sequential Node
+  suite passed again: 1,174 passed / 5 skipped / zero failures. The raw slash
+  probe report was moved outside the repository and is not part of published
+  evidence. Latest CI confirmation remains pending before merge.
 
 - Final-candidate rail-highlight recovery and scaled pointer navigation passed
   as recorded above. Release-artifact/default-resolver acceptance remains pending.
@@ -249,6 +256,7 @@ the successful run supplied Pillow 11.3.0 from a temporary directory (wheel SHA-
   historical Rename click failure; both readiness and Rename timing debt remain
   unresolved. The run overlapped other local gates/builds.
 - AUTH-002 remains unreproduced; AUTH-001 has no matched historical live reproducer.
-- Profile-preservation acceptance, pristine candidate recipe, native probes,
-  five-platform builds, and installed/default-resolver acceptance remain pending.
+- Local/remote preservation, the pristine Linux candidate, and native probes
+  passed as recorded above. Five-platform release builds and installed/default-
+  resolver acceptance remain pending.
 - No beta.8 release or npm publication is authorized by these test results alone.
