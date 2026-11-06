@@ -37,10 +37,10 @@ quest selection/cancellation, compact pointer navigation, and authenticated
 service replacement with preserved Shop selection and preview. Read-only local
 and remote comparisons confirmed profile/session/inventory preservation.
 
-Release acceptance remains in progress. The first five-platform prebuild passed
-Linux x64/ARM64 and macOS ARM64, but failed Windows on a path-specific test
-fixture and Intel macOS on the previously unresolved Rename-click interaction.
-The fixture is corrected; final prebuild and installed/default-resolver
+Release acceptance remains in progress. Prebuilds uncovered a platform-specific
+folder fixture, test interaction races around layout and input focus, and a
+macOS Bash compatibility error. Corrections are included in the candidate;
+final five-platform prebuild and installed/default-resolver
 acceptance remain pending. The [integration evidence](qa/beta8-integration-progress.md)
 records these failures, historical unreproduced authentication findings, and
 navigation readiness timing debt. These notes will be finalized after the

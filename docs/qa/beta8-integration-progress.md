@@ -2,6 +2,15 @@
 
 ## Merge and release-build update
 
+- Prebuild `42176561070` passed Linux x64/ARM64 and macOS x64/ARM64 (with the
+  documented Intel exclusion), but Windows failed the initial-loading dialog
+  test. Its captured frame retained the search placeholder after simulated
+  typing. The dialog schedules search focus on a timer; the test waited only
+  for the loading frame before typing. Combined-v13 waits for the focused input
+  and requires the typed query in the searching frame. All loading/empty-state
+  assertions remain. Local dialog stress passed 220 tests / 920 assertions
+  across ten repetitions. The cumulative patch applies cleanly to pinned upstream.
+
 - Follow-up traces from `42174966436` isolated the context-menu failure before
   Rename: the test sampled row 6 while initial layout was changing; the session
   settled at row 9, and only a release over the collapsed-group row was recorded.
