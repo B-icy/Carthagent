@@ -12228,6 +12228,60 @@ index e09621dc7b..e2ceb61639 100644
                  <Keymap.Provider>
                    <ToastProvider>
                      <RouteProvider>
+diff --git a/packages/tui/test/cli/tui/use-event.test.tsx b/packages/tui/test/cli/tui/use-event.test.tsx
+index 34c5fe6fd0..97bb3b0a0f 100644
+--- a/packages/tui/test/cli/tui/use-event.test.tsx
++++ b/packages/tui/test/cli/tui/use-event.test.tsx
+@@ -208,26 +208,42 @@ describe("useEvent", () => {
+     }
+   })
+ 
+-  test("keeps the current client when reconnection fails", async () => {
++  test("waits for a validated replacement when reconnection fails", async () => {
+     let calls = 0
++    const replacementEvents = createEventStream()
++    const replacementCalls = createFetch(undefined, replacementEvents)
++    const replacement = { api: createApi(replacementCalls.fetch) }
++    const gate = Promise.withResolvers<typeof replacement>()
+     const { app, events, client, seen } = await mount(async () => {
+       calls += 1
+-      throw new Error("no server")
++      if (calls === 1) throw new Error("no server")
++      return gate.promise
+     })
+ 
+     try {
+       await wait(() => client.connection.status() === "connected")
+       const original = client.api
+       events.disconnect()
+-      // Reconnection rejects; the loop retries against the last known transport,
+-      // which succeeds once the fixture accepts the reconnect.
+-      await wait(() => calls > 0 && client.connection.status() === "connected")
+-      events.emit(event(vcs("recovered"), { directory: "/tmp/recovered" }))
++      await wait(() => calls === 2)
++      expect(client.connection.status()).toBe("reconnecting")
++      expect(client.api).toBe(original)
++      // History records transport attempts; resolution alone must not open one.
++      expect(client.connection.internal.history().map((item) => item.data.status)).toEqual([
++        "connecting",
++        "connected",
++        "disconnected",
++      ])
++
++      gate.resolve(replacement)
++      await wait(() => client.connection.status() === "connected")
++      replacementEvents.emit(event(vcs("recovered"), { directory: "/tmp/recovered" }))
+       await wait(() => seen.some((item) => item.type === "vcs.branch.updated" && item.data.branch === "recovered"))
+ 
+-      expect(client.api).toBe(original)
++      expect(client.api).toBe(replacement.api)
++      expect(calls).toBe(2)
+     } finally {
+       app.renderer.destroy()
++      gate.resolve(replacement)
+     }
+   })
+ 
 diff --git a/packages/tui/test/cloud-onboarding.test.tsx b/packages/tui/test/cloud-onboarding.test.tsx
 new file mode 100644
 index 0000000000..ccebbd7703

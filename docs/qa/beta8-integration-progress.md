@@ -115,7 +115,7 @@ the successful run supplied Pillow 11.3.0 from a temporary directory (wheel SHA-
   server rename. Native mode strip, picker, and agent-event labels now map the
   persisted ID to Quick. Native label/session-ownership tests passed 14/14.
 - Current cumulative v17 digest:
-  `36fb0a3f0ec9fe9df06be7b72a45f308bcd8e59f2b96565b470a267c2bb273c5`.
+  `dfadb7a4eb0a30160da5665f726e6a39b2dc280f926ef498f8bc17bf85af17d3`.
 - Repository lint/build and sequential tests after any-mode quests passed:
   1,167 passed, 5 skipped.
 - After merging latest main, lint/build and sequential tests passed again:
@@ -194,6 +194,25 @@ the successful run supplied Pillow 11.3.0 from a temporary directory (wheel SHA-
   This is a product repair; closing the stale terminal alone is not the fix.
 - Connection-suite verification passed 70 repeated tests / 150 assertions after
   the failing-before regression. The pristine recipe now includes that suite.
+- The subsequent canonical native `bun run check` failed after 32 of 35 tasks:
+  the SDK compiler exited on SIGKILL without a TypeScript diagnostic. The host
+  also recorded an out-of-memory `tsgo` kill. A bounded rerun using
+  `GOMAXPROCS=2 GOMEMLIMIT=512MiB` also failed with SDK SIGKILL. Inspection found
+  Turbo's strict environment allowlist excluded those limits. Lint completed;
+  all typecheck tasks are now being rerun with `--concurrency=1 --env-mode=loose`
+  so the compiler limits reach child processes. The earlier successful canonical
+  check does not substitute for this latest repair's verification.
+- The validated-endpoint pristine run passed 1,642 TUI tests / 2 skipped and
+  failed one obsolete useEvent test that explicitly expected the removed stale
+  transport fallback. Stress/build did not run. The test now holds replacement
+  resolution pending, asserts reconnecting status without another transport
+  attempt, then verifies delivery through the validated replacement. Its first
+  revision incorrectly expected a transport-history entry during resolution;
+  that assertion failed and was corrected to match the transport-only history.
+  The corrected useEvent suite passed 80 repeated tests / 160 assertions;
+  development-patch integrity checks passed. A fresh pristine recipe is running.
+- Cross-platform CI passed through `8f62ed51ad`; the test-contract follow-up and
+  fresh pristine candidate are still pending.
 
 - Live-retest the repaired rail-highlight reset, then run scaled pointer
   navigation. Quests highlight and Shop preview now have successful same-account
