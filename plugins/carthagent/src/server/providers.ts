@@ -25,7 +25,7 @@ import {
 import { catalogModels } from '../../../../lib/providers/model-catalog.mjs';
 import { shipAgentDir } from '../../../../lib/ship-auth.mjs';
 import { createHash } from 'node:crypto';
-import { legacyOAuthForOpenCode, migrateLegacyShipCredentialIds, nativeCredentialFile, nativeCredentialDatabaseFile, readNativeOAuthCredential, refreshNativeCredential, refreshSingleFlight } from '../../../../lib/opencode/credentials.mjs';
+import { legacyOAuthForOpenCode, migrateLegacyShipCredentialIds, nativeCredentialFile, nativeCredentialDatabaseFile, pruneRefreshReceipts, readNativeOAuthCredential, refreshNativeCredential, refreshSingleFlight } from '../../../../lib/opencode/credentials.mjs';
 import { createDeviceAuthController } from './device-auth.ts';
 import { createSessionIdentity, isManagedShipCredential, sessionRunMode, shipTelemetryHeaders } from './telemetry.ts';
 import { nativeLoginProvider } from '../../../../lib/opencode/provider-policy.mjs';
@@ -238,6 +238,8 @@ export async function registerProviders(ctx: Context, options: ProviderRegistrat
   // Fold credentials stored under the pre-rename 'experiential-labs' provider
   // id into 'carthagent-cloud' so existing sign-ins keep working.
   await migrateLegacyShipCredentialIds({ credentialFile }).catch(() => 0);
+  // Awaited so the vault handle is closed before startup continues (Windows).
+  await pruneRefreshReceipts({ coordinationFile, vaultFile: credentialFile }).catch(() => 0);
   const requestIdentity = options.sessionIdentity;
   const identity = options.telemetryIdentity ?? createSessionIdentity();
   const requestSecret = options.requestSecret ?? `${ctx.location?.project?.id || ctx.location?.directory || 'ctg'}:request-v1`;
