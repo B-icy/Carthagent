@@ -247,6 +247,17 @@ the successful run supplied Pillow 11.3.0 from a temporary directory (wheel SHA-
   suite passed again: 1,174 passed / 5 skipped / zero failures. The raw slash
   probe report was moved outside the repository and is not part of published
   evidence. Latest CI confirmation remains pending before merge.
+- PR CI at `463a82de15` passed, but the parallel push run failed one Ubuntu/
+  Node 24 dashboard test with ECONNREFUSED. The fixture chose a random port.
+  Occupying the requested port deterministically reproduced the dashboard
+  announcing readiness despite Express reporting a listen error. Startup now
+  reports that error and exits nonzero; fixtures request port 0 and use the
+  actual bound endpoint. All ten dashboard tests and lint/typechecks passed;
+  the full parallel Node suite is running. The original CI failure is retained.
+- Separate release branch `release/beta8` selected a new combined-v10 patch with
+  exactly the verified development-v17 bytes; combined-v9 remains unchanged.
+  Sixteen release-input/workflow tests passed. Five-platform prebuild was
+  dispatched from `c326795683` for beta.8; no release assets are published yet.
 
 - Final-candidate rail-highlight recovery and scaled pointer navigation passed
   as recorded above. Release-artifact/default-resolver acceptance remains pending.
