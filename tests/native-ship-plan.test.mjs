@@ -89,3 +89,17 @@ test('the candidate build recipe pins the reviewed sidebar patch', () => {
   assert.ok(build.includes(`EXPECTED_PATCH="${digest}"`));
   assert.ok(build.includes('docs/patches/opencode-v2.0.32-session-ui-combined-v11.patch'));
 });
+
+test('beta8 release waiver excludes only the accepted Intel macOS Rename regression', () => {
+  const build = readFileSync(new URL('../script/ctg/build-owned-runtime.sh', import.meta.url), 'utf8');
+  assert.match(build, /if \[\[ "\$HOST_PLATFORM" == darwin && "\$HOST_ARCH" == x64 \]\]; then/);
+  const pattern = build.match(/tui_test_args\+=\(--test-name-pattern '([^']+)'\)/)?.[1];
+  assert.ok(pattern);
+  const filter = new RegExp(pattern);
+  assert.equal(filter.test('a session context menu closes when a resize hides or reflows the rail, and reopens on the right row'), false);
+  for (const title of ['a failed or pending folder keeps the friendly model name and still blocks start', 'real app mode switching retains the session, draft, Projects scroll and folder collapse without session mutations', 'another Rename regression']) {
+    assert.equal(filter.test(title), true);
+  }
+  assert.match(build, /bun test --cwd packages\/tui --timeout 60000 "\$\{tui_test_args\[@\]\}"/);
+  assert.match(build, /test\/navigation-rail\.test\.tsx "\$\{tui_test_args\[@\]\}"/);
+});

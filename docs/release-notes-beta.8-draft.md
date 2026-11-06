@@ -40,8 +40,18 @@ and remote comparisons confirmed profile/session/inventory preservation.
 Release acceptance remains in progress. The first five-platform prebuild passed
 Linux x64/ARM64 and macOS ARM64, but failed Windows on a path-specific test
 fixture and Intel macOS on the previously unresolved Rename-click interaction.
-The fixture is corrected; Rename investigation and installed/default-resolver
+The fixture is corrected; final prebuild and installed/default-resolver
 acceptance remain pending. The [integration evidence](qa/beta8-integration-progress.md)
 records these failures, historical unreproduced authentication findings, and
 navigation readiness timing debt. These notes will be finalized after the
 remaining release gates.
+
+## Known beta limitations
+
+- **Intel macOS:** clicking Rename in a session context menu can fail after
+  resizing and reopening the menu. The release owner accepted this issue for
+  beta.8; its exact regression is excluded from Intel macOS release gates and
+  remains required on other platforms. The issue is not claimed fixed.
+- Long navigation stress runs have encountered plugin-readiness timeouts.
+- Historical authentication findings AUTH-001 and AUTH-002 are not fully
+  reproduced; the verified cold-start repair does not establish their causes.

@@ -2,6 +2,16 @@
 
 ## Merge and release-build update
 
+- The release owner explicitly accepted the Intel macOS limitation and requested
+  beta.8 publication plus patch notes. Only the exact context-menu resize/reopen
+  Rename regression is excluded on darwin-x64; all other platform gates remain
+  required. This is a documented release waiver, not a passing test or repair.
+- Both unchanged and trace-instrumented local Rename tests passed 100 repetitions
+  each; neither clears the observed Intel macOS failure. The Windows diagnostic
+  setup failed on a CRLF-sensitive trace injection before tests ran; it is not a
+  product or fixture-verification result. The production prebuild will verify
+  the portable folder fixture without that diagnostic injection.
+
 - Integration PR #257 merged at `6813d9175c8c9a325e90e521c37d5e56f2414811`
   after both PR CI `42169229244` and push CI `42169223548` passed. Final parallel
   Node suite: 1,175 passed / 5 skipped / zero failures.
