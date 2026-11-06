@@ -1,5 +1,80 @@
 # Beta.8 integration evidence (in progress)
 
+## Merge and release-build update
+
+- Five-platform prebuild `42179740258` succeeded from source
+  `347aae8869456cacff073a434357790663141d4d`. Windows, Linux x64/ARM64,
+  macOS ARM64, and Intel macOS (with the recorded exclusion) passed their
+  required gates; candidate assembly succeeded. Combined-v13 SHA-256 is
+  `30e10b6c6711757c5109b14a644c2577cc80487cbad386b319615d9b69c516ee`.
+- Downloaded candidate provenance matches the exact run, source, version, and
+  workflow. All five archives were independently passed through the production
+  acquisition parser and strict runtime-tree validator; regenerated manifest
+  matches the candidate exactly. Package version, runtime pin, and manifest are
+  promoted together. Final package CI and installed draft acceptance remain
+  required before public release.
+
+- Prebuild `42176561070` passed Linux x64/ARM64 and macOS x64/ARM64 (with the
+  documented Intel exclusion), but Windows failed the initial-loading dialog
+  test. Its captured frame retained the search placeholder after simulated
+  typing. The dialog schedules search focus on a timer; the test waited only
+  for the loading frame before typing. Combined-v13 waits for the focused input
+  and requires the typed query in the searching frame. All loading/empty-state
+  assertions remain. Local dialog stress passed 220 tests / 920 assertions
+  across ten repetitions. The cumulative patch applies cleanly to pinned upstream.
+
+- Follow-up traces from `42174966436` isolated the context-menu failure before
+  Rename: the test sampled row 6 while initial layout was changing; the session
+  settled at row 9, and only a release over the collapsed-group row was recorded.
+  Both Windows and Intel macOS showed this same stale-coordinate sequence.
+  Combined-v12 waits for visual idle before sampling the row and asserts the
+  visible session title at that coordinate. Platform retests are underway.
+- Combined-v12 local navigation stress passed ten fresh-process repetitions:
+  150 tests / 820 assertions / zero failures, including menu resize/reopen and
+  Rename. Five-platform prebuild `42176561070` runs from
+  `308f1b6b1f539096a1ac0b8d4af817e2a19798a0`; its results remain pending.
+- Diagnostic run `42176263365` passed on both Windows and Intel macOS after
+  adding layout settling: ten folder-suite repetitions and thirty navigation-
+  suite repetitions per platform, including the previously failing menu test.
+  This separately verifies that case on Intel macOS; the release prebuild's
+  explicit exclusion remains disclosed and is not counted as a passing test.
+
+- Second prebuild `42172444024` passed Linux x64/ARM64 and Intel macOS with
+  the approved exclusion. Windows passed the corrected folder fixture/full TUI
+  suite but reproduced the same context-menu test failure in stress repetition
+  2. The Intel-only waiver does not cover Windows. ARM64 macOS stopped on Bash
+  3's empty-array/nounset behavior in the new filter; the recipe now uses a
+  nonempty match-all filter outside the waived platform.
+- The Intel trace run failed before the instrumented final Rename click and
+  produced no final-click trace. The failure is therefore in the broader
+  context-menu resize/reopen sequence, not yet isolated to Rename activation.
+  Follow-up diagnostics instrument opening the menu on both affected platforms.
+
+- The release owner explicitly accepted the Intel macOS limitation and requested
+  beta.8 publication plus patch notes. Only the exact context-menu resize/reopen
+  Rename regression is excluded on darwin-x64; all other platform gates remain
+  required. This is a documented release waiver, not a passing test or repair.
+- Both unchanged and trace-instrumented local Rename tests passed 100 repetitions
+  each; neither clears the observed Intel macOS failure. The Windows diagnostic
+  setup failed on a CRLF-sensitive trace injection before tests ran; it is not a
+  product or fixture-verification result. The production prebuild will verify
+  the portable folder fixture without that diagnostic injection.
+
+- Integration PR #257 merged at `6813d9175c8c9a325e90e521c37d5e56f2414811`
+  after both PR CI `42169229244` and push CI `42169223548` passed. Final parallel
+  Node suite: 1,175 passed / 5 skipped / zero failures.
+- Five-platform prebuild `42169160091` failed. Linux x64/ARM64 and macOS ARM64
+  completed successfully. Windows passed 1,632 TUI tests / 12 skipped but failed
+  the edited missing-folder fixture: its literal POSIX-path comparison missed
+  the drive-qualified path produced by Windows resolution. Normalizing both
+  fixture paths fixes that mismatch; 140 repeated local tests passed.
+- Intel macOS passed the full TUI suite but failed navigation stress repetition
+  5 at the Rename click after context-menu resize/reopen. This reproduces the
+  previously unresolved historical Rename interaction; investigation continues.
+  No successful assembled candidate or beta.8 release exists yet.
+- Combined-v11 currently differs from combined-v10 only in the portable missing-
+  folder fixture. Published beta.7/combined-v9 and prebuild v10 bytes are retained.
+
 This is development evidence, not release certification. The published beta.7
 tag, assets, combined-v9 patch, and release resolver pins remain immutable.
 
