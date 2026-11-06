@@ -24,7 +24,7 @@ const failureMessage = code => ({
   daily_submission_limit: 'Today’s submission limit was reached. Try a new quest tomorrow.',
   rate_limited: 'Too many requests. Wait a moment, then check status.',
   daily_grading_unavailable: 'Assessment is temporarily unavailable. Try again later.',
-  daily_source_unavailable: 'No recorded Ship delivery in this session. Complete the work in Ship mode, then choose it here.',
+  daily_source_unavailable: 'No selected work in this session. Complete work in any mode, then choose it and add evidence here.',
   invalid_daily_evidence: 'This work cannot be submitted yet. Check the selected summary and results.',
   storage_failed: 'Could not save submission recovery. Check available disk space, then retry.',
   daily_account_changed: 'Your account changed. Choose work again for the current account.',
@@ -215,6 +215,13 @@ export function createDailyQuestsState({ api, changed = (_state) => {}, timeoutS
       if (state.busy) revoke();
       if (state.draft) drafts.delete(state.draft.questId);
       clearDraft(); state.error = ''; emit();
+    },
+    /** Re-offer a draft saved before an event reload, only for the same verified account and a still-open quest. */
+    adopt(saved) {
+      if (disposed || state.busy || !saved?.draft || saved.draft.accountKey !== state.snapshot?.accountKey) return false;
+      if (!state.snapshot.slate.items.some(q => q.id === saved.draft.questId && q.status === 'open')) return false;
+      drafts.set(saved.draft.questId, copy(saved));
+      return true;
     },
     overview() {
       if (disposed || state.busy) return;

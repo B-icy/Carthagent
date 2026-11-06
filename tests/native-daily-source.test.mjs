@@ -346,6 +346,27 @@ test('foreign sessions, mismatched IDs, forged task worktrees and arbitrary path
   await rejected(f.read(), 'not_owned');
 });
 
+test('any-mode session evidence is opt-in, revision-bound, empty of claims and ineligible for verified rewards', async t => {
+  const f = fixture(t);
+  rmSync(join(f.root, '.harness', 'active.json'));
+  const input = { sessionID: f.sessionID, allowSession: true };
+  const first = await f.handlers.report(input, call);
+  assert.equal(first.source.origin, 'session');
+  assert.equal(first.source.revision, f.current);
+  assert.match(first.source.runId, /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-a[a-f0-9]{3}-[a-f0-9]{12}$/);
+  assert.equal(first.source.goal, ''); assert.equal(first.source.change, '');
+  assert.deepEqual(first.source.checks, []); assert.deepEqual(first.source.findings, []);
+  assert.deepEqual(await f.handlers.report(input, call), first);
+  assert.deepEqual(await f.read(), { source: null });
+  await assert.rejects(verifiedRewardSource(f.ctx, f.sessionID, call.signal));
+  writeFileSync(join(f.root, 'src.js'), 'export const value = 3;\n');
+  const second = await f.handlers.report(input, call);
+  assert.notEqual(second.source.revision, first.source.revision);
+  assert.notEqual(second.source.runId, first.source.runId);
+  f.session.projectID = 'foreign-project';
+  await rejected(f.handlers.report(input, call), 'not_owned');
+});
+
 test('native ancestor aliases use canonical root/location/session identity, including an absent active report', async t => {
   const f = fixture(t);
   const alias = join(f.base, 'temporary-alias');

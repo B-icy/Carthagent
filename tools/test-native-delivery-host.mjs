@@ -307,13 +307,13 @@ export default { id: 'carthagent', async setup(context) {
   if (scenario === 'standard') {
     const agents = (await client.agent.list({ location: { directory: cwd } }, request)).data;
     assert.ok(agents.some(agent => agent.id === 'ship' && agent.name === 'Ship' && agent.mode === 'primary'));
-    assert.ok(agents.some(agent => agent.id === 'lite' && agent.name === 'Lite' && agent.mode === 'primary'));
+    assert.ok(agents.some(agent => agent.id === 'lite' && agent.name === 'Quick' && agent.mode === 'primary'));
     const modeSession = await client.session.create({ location: { directory: cwd }, title: 'Native mode parity', agent: 'lite' }, request);
     await client.session.switchModel({ sessionID: modeSession.id, model: { providerID: 'fixture', id: 'fixture' } }, request);
     const first = observed.length;
     await client.session.prompt({ sessionID: modeSession.id, text: 'MIXED_DISABLED native mode parity: execute directly.' }, request);
     await client.session.wait({ sessionID: modeSession.id }, { signal: AbortSignal.timeout(45_000) });
-    assert.equal(observed.slice(first).some(call => JSON.stringify(call.messages).includes('Standard delivery:')), false, 'Lite has no delivery guidance');
+    assert.equal(observed.slice(first).some(call => JSON.stringify(call.messages).includes('Standard delivery:')), false, 'Quick has no delivery guidance');
     const liteHistory = await client.message.list({ sessionID: modeSession.id }, request);
     assert.match(JSON.stringify(liteHistory.data), /DISABLED_SESSION_SHELL_OK/);
     await client.session.switchAgent({ sessionID: modeSession.id, agent: 'ship' }, request);

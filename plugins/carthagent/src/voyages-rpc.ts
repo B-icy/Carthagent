@@ -11,7 +11,8 @@ export type VoyagesProfile = {
 export type VoyagesItem = { item: string; name: string; slot: VoyagesSlot; itemKey: string; price: number | null; requiresPurchase: boolean; available: boolean; eligible: boolean; reason: string | null };
 export type VoyagesQuote = { id: string; item: string; price: number; expiresAt: string };
 export type VoyagesPending = { quoteId: string; item: string; price: number };
-export type VoyagesSnapshot = { profile: VoyagesProfile; items: VoyagesItem[]; pending?: VoyagesPending };
+/** accountKey is the server's non-secret SHA-256 of [Cloud base URL, active connection ID]; it identifies the credential binding, not a person. */
+export type VoyagesSnapshot = { accountKey: string; profile: VoyagesProfile; items: VoyagesItem[]; pending?: VoyagesPending };
 
 const text = { type: 'string', minLength: 1, maxLength: 128 } as const;
 // Native Effect JSON-schema conversion does not support arbitrary patterns.
@@ -39,6 +40,7 @@ const item = {
 } as const;
 const pending = { type: 'object', properties: { quoteId: text, item: text, price: integer }, required: ['quoteId', 'item', 'price'], additionalProperties: false } as const;
 const quote = { type: 'object', properties: { id: text, item: text, price: integer, expiresAt: { type: 'string', format: 'date-time' } }, required: ['id', 'item', 'price', 'expiresAt'], additionalProperties: false } as const;
+const accountKey = { type: 'string', minLength: 64, maxLength: 64 } as const;
 const errors = { voyagesError: { type: 'object', properties: { code: text, status: { type: 'integer', minimum: 0, maximum: 599 }, uncertain: { type: 'boolean' } }, required: ['code', 'status', 'uncertain'], additionalProperties: false } } as const;
 const empty = { type: 'object', additionalProperties: false } as const;
 const selection = { type: 'object', properties: { slot, item: key }, required: ['slot', 'item'], additionalProperties: false } as const;
@@ -53,7 +55,7 @@ export const Voyages = Rpc.define({
   methods: {
     previewReward: { errors, input: { type: 'object', properties: { sessionID: text }, required: ['sessionID'], additionalProperties: false }, output: rewardPreview },
     claimReward: { errors, input: { type: 'object', properties: { sessionID: text, runId: text, snapshot: text }, required: ['sessionID', 'runId', 'snapshot'], additionalProperties: false }, output: { type: 'object', properties: { reward, replayed: { type: 'boolean' } }, required: ['reward', 'replayed'], additionalProperties: false } },
-    snapshot: { errors, input: empty, output: { type: 'object', properties: { profile, items: { type: 'array', maxItems: 10000, items: item }, pending }, required: ['profile', 'items'], additionalProperties: false } },
+    snapshot: { errors, input: empty, output: { type: 'object', properties: { accountKey, profile, items: { type: 'array', maxItems: 10000, items: item }, pending }, required: ['accountKey', 'profile', 'items'], additionalProperties: false } },
     customize: { errors, input: { type: 'object', properties: { version, name, shipName, skin, hair, pattern }, required: ['version'], additionalProperties: false }, output: profileResult },
     equip: { errors, input: { ...selection, properties: { ...selection.properties, version }, required: ['version', 'slot', 'item'] }, output: profileResult },
     quote: { errors, input: selection, output: { type: 'object', properties: { quote }, required: ['quote'], additionalProperties: false } },

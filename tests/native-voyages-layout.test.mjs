@@ -23,6 +23,7 @@ test('Voyages keeps profile progress, artwork and status in the scroll viewport 
   assert.match(choices, /name: "pageup", action: "move-up-fast"/);
   assert.match(choices, /name: "pagedown", action: "move-down-fast"/);
   assert.match(choices, /options=\{options\(\)\}/);
-  assert.match(choices, /focused=\{!view\(\).busy && context.keymap.mode.current\(\) === "base"\}/);
+  assert.match(choices, /focused=\{enabled\(\)\}/);
+  assert.match(source, /const enabled = \(\) => !view\(\).busy && !reconciling\(\) && context.keymap.mode.current\(\) === "base";/);
   assert.match(choices, /onSelect=\{\(_index, option\) => select\(option\?\.value\)\}/);
 });

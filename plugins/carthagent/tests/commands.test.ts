@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { COMMANDS, matchCommand, NATIVE_COMMAND_COLLISIONS, resolveCommand } from "../src/ui/commands.js";
+import { COMMANDS, commandErrorMessage, helpSelectionCommand, matchCommand, NATIVE_COMMAND_COLLISIONS, NATIVE_SESSION_COMMANDS, pluginSlashAvailable, resolveCommand } from "../src/ui/commands.js";
 import { readFile } from "node:fs/promises";
 import { parseThemeDocument } from "@opencode/theme/tui";
 import { cliConfigDirectory, cliConfigPath, readCliConfig, writeNativeTheme } from "../src/ui/host-state.js";
@@ -29,10 +29,45 @@ test("Carthagent command manifest resolves visible CTG commands", () => {
   assert.match(resolveCommand("/quests")!.description, /separate explicit consent/);
 });
 
+test("command error reports read native RPC rejection objects instead of '[object Object]'", () => {
+  const signIn = /^Sign in to Carthagent Cloud .*\/login/;
+  // Native promise RPC rejects with plain { _tag, type, message, data } objects.
+  assert.match(commandErrorMessage({ _tag: "RpcError", type: "unauthenticated", message: "An active Carthagent Cloud OAuth connection is required.", data: {} }), signIn);
+  assert.match(commandErrorMessage({ _tag: "RpcInternalError", type: "rpc.internal", message: "An active Carthagent Cloud OAuth connection is required." }), signIn);
+  assert.match(commandErrorMessage(new Error("An active Carthagent Cloud OAuth connection is required.")), signIn);
+  assert.match(commandErrorMessage({ _tag: "UnauthorizedError", message: "Unauthorized" }), signIn);
+  // Non-auth and network failures keep their useful message.
+  assert.equal(commandErrorMessage({ _tag: "RpcError", type: "rpc.failed", message: "Cloud usage limit must be between 1 and 200." }), "Cloud usage limit must be between 1 and 200.");
+  assert.equal(commandErrorMessage(new Error("fetch failed: ECONNREFUSED")), "fetch failed: ECONNREFUSED");
+  assert.equal(commandErrorMessage("plain text"), "plain text");
+  for (const opaque of [{}, { message: "" }, { message: 42 }, null, undefined, 7]) {
+    const message = commandErrorMessage(opaque);
+    assert.doesNotMatch(message, /\[object Object\]/);
+    assert.ok(message.length > 0);
+  }
+});
+
+test("/help list selections dispatch the selected command once; cancel is inert", () => {
+  for (const command of COMMANDS) assert.equal(helpSelectionCommand(command.name)?.id, command.id, command.name);
+  assert.equal(helpSelectionCommand("ctg-help")?.id, "help");
+  assert.equal(helpSelectionCommand("cloud")?.id, "account");
+  for (const cancelled of [undefined, null, "", "themes", "settings", "theme dark", "/theme"]) assert.equal(helpSelectionCommand(cancelled), undefined, String(cancelled));
+});
+
 test("manifest prevents collisions with native OpenCode slash commands", () => {
   for (const name of NATIVE_COMMAND_COLLISIONS) assert.equal(COMMANDS.some((item) => item.name === name || item.aliases?.includes(name)), false, name);
   assert.equal(NATIVE_COMMAND_COLLISIONS.includes("help" as typeof NATIVE_COMMAND_COLLISIONS[number]), false);
   assert.deepEqual(COMMANDS.filter((item) => ["model", "compact", "abort", "resume"].includes(item.name)).map((item) => item.name).sort(), ["abort", "compact", "model", "resume"]);
+});
+
+test("/clear has one slash entry: native in sessions, plugin fallback elsewhere", () => {
+  assert.deepEqual([...NATIVE_SESSION_COMMANDS], ["clear"]);
+  assert.equal(pluginSlashAvailable("clear", { type: "session" }), false);
+  for (const type of ["home", "plugin", "projects"]) assert.equal(pluginSlashAvailable("clear", { type }), true, type);
+  // Commands whose plugin semantics differ from the native entry stay registered.
+  for (const name of ["autocompact", "stats", "resume", "thinking", "help"]) assert.equal(pluginSlashAvailable(name, { type: "session" }), true, name);
+  // /help list selections still reach the plugin dispatcher, which hands off to the native action.
+  assert.equal(helpSelectionCommand("clear")?.id, "clear");
 });
 
 test("theme provisioning installs the startup default through its launcher-facing export", async () => {

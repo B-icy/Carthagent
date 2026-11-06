@@ -1,11 +1,11 @@
 /** @jsxImportSource @opentui/solid */
-import { Show, createSignal, onCleanup, onMount } from "solid-js";
+import { Show, createEffect, createSignal, on, onCleanup, onMount } from "solid-js";
 import { TextAttributes, type ScrollBoxRenderable, type SelectRenderable } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/solid";
-import { clickSelect } from "./select-mouse.js";
+import { clickSelect, createSelectMemory, wheelSelect } from "./select-mouse.js";
 import { usePlugin } from "@opencode/plugin/tui";
 import { voyagesClient, type VoyagesSnapshot, type VoyagesProfile, type VoyagesItem, type VoyagesQuote } from "./client.js";
-import { canEquip, createVoyagesState, handleVoyagesEvent, voyagesCatalogLabel } from "./voyages-state.mjs";
+import { canEquip, createVoyagesState, handleVoyagesEvent, voyagesCatalogLabel, voyagesEventAction } from "./voyages-state.mjs";
 import { voyagesAppearance, voyagesSlots, type VoyagesSlot } from "../voyages-rpc.js";
 import { VoyagesPreview } from "./voyages-preview.js";
 
@@ -22,11 +22,14 @@ export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "
   const labels: Record<VoyagesSlot, string> = { hairStyle: "Hairstyles", hat: "Hats", shirt: "Tops", bottoms: "Bottoms", shoes: "Shoes", pet: "Companions", hull: "Hulls", sail: "Sails", setting: "Harbours" };
   const location = () => (props.sessionID ? context.data.session.get(props.sessionID)?.location : undefined) ?? context.location ?? context.data.location.default();
   const [view, setView] = createSignal<ViewState>({ busy: false, error: "", notice: "" });
+  const [reconciling, setReconciling] = createSignal(false);
+  const enabled = () => !view().busy && !reconciling() && context.keymap.mode.current() === "base";
   const controller = createVoyagesState({ api: voyagesClient(context, location), changed: (next: ViewState) => setView(next) });
   const back = () => context.ui.router.navigate(props.sessionID ? { type: "session", sessionID: props.sessionID } : { type: "home" });
+  const memory = createSelectMemory(() => list);
   const goBack = () => {
-    if (previewItem()) { setPreviewItem(undefined); return; }
-    if (category()) { setCategory(undefined); return; }
+    if (previewItem()) { memory.reset(); setPreviewItem(undefined); return; }
+    if (category()) { memory.reset(); setCategory(undefined); return; }
     back();
   };
   let summary: ScrollBoxRenderable | undefined;
@@ -35,7 +38,7 @@ export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "
     commands: [
       { bind: "ctrl+u", title: "Scroll Voyages profile up", run: () => { summary?.scrollBy(-1); } },
       { bind: "ctrl+d", title: "Scroll Voyages profile down", run: () => { summary?.scrollBy(1); } },
-      { bind: "escape", title: "Back", enabled: () => !view().busy && context.keymap.mode.current() === "base", run: goBack },
+      { bind: "escape", title: "Back", enabled, run: goBack },
     ],
   }));
   let activeDialog: symbol | undefined;
@@ -107,9 +110,9 @@ export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "
     ];
   };
   const select = (value?: string) => {
-    if (!value || view().busy || context.keymap.mode.current() !== "base") return;
+    if (!value || !enabled()) return;
     if (value === "back") { goBack(); return; }
-    if (value.startsWith("category:")) { setCategory(value.slice(9) as VoyagesSlot); list?.setSelectedIndex(0); return; }
+    if (value.startsWith("category:")) { memory.reset(); setCategory(value.slice(9) as VoyagesSlot); return; }
     if (value === "equip-preview" || value === "buy-preview") { const item = previewItem(); if (item) void chooseItem(item); return; }
     if (value === "signin") {
       controller.invalidate();
@@ -123,8 +126,14 @@ export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "
     if (value === "customize") { void customize(); return; }
     if (value === "retry") { void retry(); return; }
     const item = view().snapshot?.items.find((entry) => `item:${entry.item}` === value);
-    if (item) { setPreviewItem(item); list?.setSelectedIndex(0); summary?.scrollTo(0); }
+    if (item) { memory.reset(); setPreviewItem(item); summary?.scrollTo(0); }
   };
+  // Catalog item IDs are shared by every account, so a position is only returned to when the reloaded
+  // snapshot carries the same server credential binding (accountKey) as the one it was taken from.
+  type Reopen = { accountKey: string; category?: VoyagesSlot; item?: string };
+  let reopen: Reopen | undefined;
+  let reconcile = 0;
+  const clearPosition = () => { setPreviewItem(undefined); setCategory(undefined); setAppearance({}); };
   onMount(() => {
     let binding = JSON.stringify(location());
     const stop = context.data.listen(({ details }) => {
@@ -132,20 +141,48 @@ export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "
       const changedLocation = binding !== JSON.stringify(location());
       if (changedLocation) {
         binding = JSON.stringify(location());
+        reconcile++; reopen = undefined; setReconciling(false);
         controller.invalidate();
-        setPreviewItem(undefined); setAppearance({});
+        clearPosition(); memory.reset();
         closeOwnDialog();
         if (type !== "server.disconnected") void controller.refresh();
-      } else void handleVoyagesEvent(controller, details, location(), () => { setPreviewItem(undefined); setAppearance({}); closeOwnDialog(); });
+        return;
+      }
+      if (voyagesEventAction(details, location()) === "ignore") return;
+      const before = view().snapshot;
+      // An explicit credential switch always discards the position; other reloads may return to it once verified.
+      const saved = type === "credential.switched" ? undefined : reopen ?? (before ? { accountKey: before.accountKey, category: category(), item: previewItem()?.item } : undefined);
+      const token = ++reconcile;
+      clearPosition();
+      const refreshing = handleVoyagesEvent(controller, details, location(), closeOwnDialog);
+      // Keep only the account-bound position while offline; the protected view is already cleared.
+      reopen = refreshing || type === "server.disconnected" ? saved : undefined;
+      setReconciling(!!refreshing);
+      if (!refreshing) { memory.reset(); return; }
+      void Promise.resolve(refreshing).then(() => {
+        if (token !== reconcile) return;
+        const next = view().snapshot;
+        if (!saved || !next?.accountKey || next.accountKey !== saved.accountKey) { memory.reset(); return; }
+        if (saved.category) setCategory(saved.category);
+        const item = saved.item ? next.items.find(entry => entry.item === saved.item) : undefined;
+        if (item) setPreviewItem(item);
+      }).finally(() => {
+        if (token !== reconcile) return;
+        reopen = undefined;
+        setReconciling(false);
+        memory.sync();
+      });
     });
     void controller.refresh();
     onCleanup(() => { stop(); controller.dispose(); closeOwnDialog(); });
   });
+  // While a reload is in flight the list is inert and shows a transient shape; restore once it settles.
+  createEffect(on(options, () => { if (!view().busy && !reconciling()) memory.sync(); }, { defer: true }));
   return <box flexDirection="column" flexGrow={1} minHeight={0} paddingX={2} paddingY={1} overflow="hidden" backgroundColor={context.theme.background.base}>
     <text flexShrink={0} fg={context.theme.text.base} attributes={TextAttributes.BOLD}>{previewItem()?.name ?? (props.section === "equipment" ? category() ? labels[category()!] : "Shop" : "Character")}</text>
     {/* Split the remaining height: wrapped profile rows scroll instead of shrinking over one another. */}
     <scrollbox ref={summary} flexBasis={0} flexGrow={1} minHeight={1} overflow="hidden" contentOptions={{ flexDirection: "column" }}>
-      <Show when={view().busy}><text flexShrink={0} fg={context.theme.text.muted}>Loading…</text></Show>
+      <Show when={view().busy || reconciling()}><text flexShrink={0} fg={context.theme.text.muted}>Loading…</text></Show>
       <Show when={view().error}><text flexShrink={0} fg={context.theme.text.feedback.error.base}>{view().error}</text></Show>
       <Show when={view().notice}><text flexShrink={0} fg={context.theme.text.feedback.success.base}>{view().notice}</text></Show>
       <Show when={view().snapshot} fallback={<text flexShrink={0} fg={context.theme.text.muted}>Sign in to see your captain, ship and wallet.</text>}>{(snapshot) => <box flexDirection="column" flexShrink={0}>
@@ -162,7 +199,7 @@ export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "
         <Show when={snapshot().pending}><text flexShrink={0} fg={context.theme.text.feedback.warning.base}>Purchase pending / outcome unknown. Resolve the saved purchase explicitly; new purchases are blocked.</text></Show>
       </box>}</Show>
     </scrollbox>
-    <select height={5} flexShrink={0} backgroundColor={context.theme.background.base} focusedBackgroundColor={context.theme.background.base} focusedTextColor={context.theme.text.action.secondary.base} textColor={context.theme.text.action.secondary.base} selectedTextColor={context.theme.text.formfield.focused} selectedBackgroundColor={context.theme.background.formfield.focused} showDescription={false} ref={(node) => { list = node; }} onMouseUp={(event) => clickSelect(list, event)} showScrollIndicator keyBindings={[{ name: "pageup", action: "move-up-fast" }, { name: "pagedown", action: "move-down-fast" }]} options={options()} focused={!view().busy && context.keymap.mode.current() === "base"} onSelect={(_index, option) => select(option?.value)} />
+    <select height={5} flexShrink={0} backgroundColor={context.theme.background.base} focusedBackgroundColor={context.theme.background.base} focusedTextColor={context.theme.text.action.secondary.base} textColor={context.theme.text.action.secondary.base} selectedTextColor={context.theme.text.formfield.focused} selectedBackgroundColor={context.theme.background.formfield.focused} showDescription={false} ref={(node) => { list = node; }} onMouseUp={(event) => clickSelect(list, event)} onMouseScroll={(event) => wheelSelect(list, event, enabled())} onChange={(_index, option) => memory.changed(option)} showScrollIndicator keyBindings={[{ name: "pageup", action: "move-up-fast" }, { name: "pagedown", action: "move-down-fast" }]} options={options()} focused={enabled()} onSelect={(_index, option) => select(option?.value)} />
     <text flexShrink={0} fg={context.theme.text.muted}>↑↓ Enter select · Ctrl+U/D scroll · Esc back</text>
   </box>;
 }

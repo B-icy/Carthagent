@@ -79,13 +79,14 @@ function host(t, { agent = SHIP_AGENT_ID, files = { 'app.ts': 'export const app 
 
 const systemText = event => event.system.map(part => part.text).join('\n')
 
-test('Ship and Lite are native primary agents and Ship is the default mode', async () => {
+test('Ship and Quick are native primary agents and Ship is the default mode', async () => {
   const agents = new Map(); let defaultID
   const editor = { update: (id, fn) => { const item = agents.get(id) ?? { id, permissions: [] }; agents.set(id, item); fn(item) }, default: id => { defaultID = id } }
   const dispose = await registerShipAgents({ agent: { transform: async callback => { callback(editor); return { dispose: async () => {} } } } })
   assert.equal(defaultID, SHIP_AGENT_ID)
   assert.equal(agents.get(SHIP_AGENT_ID).mode, 'primary')
   assert.equal(agents.get(LITE_AGENT_ID).mode, 'primary')
+  assert.equal(agents.get(LITE_AGENT_ID).name, 'Quick')
   assert.equal(agents.get(SHIP_AGENT_ID).system, undefined, 'Ship keeps the native base prompt; delivery guidance arrives per request')
   assert.doesNotMatch(JSON.stringify([...agents.values()]), /todowrite/)
   await dispose()

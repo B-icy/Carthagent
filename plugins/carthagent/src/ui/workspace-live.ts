@@ -44,9 +44,15 @@ export function deliveryReadiness(delivery: {
 
 export function renderDeliveryReadiness(delivery: Parameters<typeof deliveryReadiness>[0]) {
   const readiness = deliveryReadiness(delivery);
-  const sections = delivery?.truncation
-    ? Object.entries(delivery.truncation).map(([name, value]) => `${name}: ${value.returned} of ${value.total} returned`)
+  const entries = delivery?.truncation ? Object.entries(delivery.truncation) : undefined;
+  const sections = entries
+    ? entries.map(([name, value]) => `${name}: ${value.returned} of ${value.total} returned`)
     : ["Coverage metadata unavailable: completeness cannot be confirmed"];
+  const sectionRows: Array<{ text: string; tone: "returned" | "truncated" | "unknown" }> = entries
+    ? entries.map(([name, value], index) => value.returned === value.total
+      ? { text: `Returned DTO section · ${sections[index]}`, tone: "returned" }
+      : { text: `Truncated DTO section · ${sections[index]}`, tone: "truncated" })
+    : [{ text: sections[0]!, tone: "unknown" }];
   const receipts = (delivery && "evidence" in delivery && Array.isArray(delivery.evidence) ? delivery.evidence : [])
     .map((item) => `Receipt ${item.id}: ${item.status}`);
   const gate = delivery?.gate === "open" || delivery?.gate === "locked" ? delivery.gate : "unknown";
@@ -56,6 +62,30 @@ export function renderDeliveryReadiness(delivery: Parameters<typeof deliveryRead
     coverageLabel: readiness.coverage === "unknown" ? "Coverage: unknown" : `Coverage: ${readiness.coverage}`,
     coverage: readiness.coverage,
     sections,
+    sectionRows,
     receipts,
   };
+}
+
+export function workspaceReturnRoute(sessionID: string | undefined) {
+  return sessionID ? { type: "session" as const, sessionID } : { type: "home" as const };
+}
+
+/**
+ * The workspace review RPC reports only the independent .harness/reviews receipt.
+ * A Ship delivery_review record is model-authored self-review and must never be shown as that receipt.
+ */
+export function independentReviewText(review: { status?: string; summary?: string; error?: string } | undefined) {
+  if (review?.error) return `Independent review status unavailable: ${review.error}`;
+  const summary = review?.summary ? ` · ${review.summary}` : "";
+  const status = review?.status;
+  switch (status) {
+    case "approved": return `Independent review approved${summary}`;
+    case "changes-requested": return `Independent review requested changes${summary}`;
+    case "stale": return `Independent review receipt stale${summary || " · Review source changed since this receipt"}`;
+    case "invalid": return `Independent review receipt invalid${summary}`;
+    case "unreviewed": return `No independent code-review receipt${summary}. Any delivery self-review is model-authored and not an independent review.`;
+    case undefined: return "Independent review status unavailable";
+    default: return `Independent review status: ${status}${summary}`;
+  }
 }

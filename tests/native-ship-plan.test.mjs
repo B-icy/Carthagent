@@ -10,7 +10,7 @@ import ts from 'typescript';
 import { parseOpenCodeArgs } from '../lib/opencode/cli.mjs';
 import { normalizeSessionOptions } from '../lib/opencode/session-options.mjs';
 
-const patch = readFileSync(new URL('../docs/patches/opencode-v2.0.32-session-ui-development-v9.patch', import.meta.url), 'utf8');
+const patch = readFileSync(new URL('../docs/patches/opencode-v2.0.32-session-ui-development-v17.patch', import.meta.url), 'utf8');
 const path = 'packages/tui/src/routes/session/plan-items.ts';
 const section = patch.split(`diff --git a/${path} b/${path}\n`)[1]?.split('\ndiff --git ')[0];
 assert.ok(section, 'the plan graph parser is part of the reproducible runtime patch');
@@ -72,7 +72,7 @@ test('development runtime source and preparation recipe pin the actual Ship grap
   assert.equal(CTG_DEVELOPMENT_RUNTIME_PATCH_SHA256, digest);
   const prepare = readFileSync(new URL('../script/ctg/prepare-development-runtime.sh', import.meta.url), 'utf8');
   assert.ok(prepare.includes(`EXPECTED_PATCH="${digest}"`));
-  assert.ok(prepare.includes('docs/patches/opencode-v2.0.32-session-ui-development-v9.patch'));
+  assert.ok(prepare.includes('docs/patches/opencode-v2.0.32-session-ui-development-v17.patch'));
   assert.doesNotMatch(prepare, /bun (install|run|build)|gh release|npm publish/);
 });
 
