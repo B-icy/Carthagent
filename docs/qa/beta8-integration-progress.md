@@ -240,6 +240,24 @@ the successful run supplied Pillow 11.3.0 from a temporary directory (wheel SHA-
   PID/URL/password changed, without Equip/Buy activation. Resizing the desktop
   terminal and matching tmux to 100x25 also passed actual-pointer Quests and
   second-quest detail navigation.
+- Read-only authenticated snapshots across another verified service replacement
+  matched the non-secret account binding, complete remote profile, and catalog/
+  inventory exactly; wallet remained 35 coins. Snapshot bodies stayed private.
+- After the final rail repair, repository build and the complete sequential Node
+  suite passed again: 1,174 passed / 5 skipped / zero failures. The raw slash
+  probe report was moved outside the repository and is not part of published
+  evidence. Latest CI confirmation remains pending before merge.
+- PR CI at `463a82de15` passed, but the parallel push run failed one Ubuntu/
+  Node 24 dashboard test with ECONNREFUSED. The fixture chose a random port.
+  Occupying the requested port deterministically reproduced the dashboard
+  announcing readiness despite Express reporting a listen error. Startup now
+  reports that error and exits nonzero; fixtures request port 0 and use the
+  actual bound endpoint. All ten dashboard tests and lint/typechecks passed;
+  the full parallel Node suite is running. The original CI failure is retained.
+- Separate release branch `release/beta8` selected a new combined-v10 patch with
+  exactly the verified development-v17 bytes; combined-v9 remains unchanged.
+  Sixteen release-input/workflow tests passed. Five-platform prebuild was
+  dispatched from `c326795683` for beta.8; no release assets are published yet.
 
 - Final-candidate rail-highlight recovery and scaled pointer navigation passed
   as recorded above. Release-artifact/default-resolver acceptance remains pending.
@@ -249,6 +267,7 @@ the successful run supplied Pillow 11.3.0 from a temporary directory (wheel SHA-
   historical Rename click failure; both readiness and Rename timing debt remain
   unresolved. The run overlapped other local gates/builds.
 - AUTH-002 remains unreproduced; AUTH-001 has no matched historical live reproducer.
-- Profile-preservation acceptance, pristine candidate recipe, native probes,
-  five-platform builds, and installed/default-resolver acceptance remain pending.
+- Local/remote preservation, the pristine Linux candidate, and native probes
+  passed as recorded above. Five-platform release builds and installed/default-
+  resolver acceptance remain pending.
 - No beta.8 release or npm publication is authorized by these test results alone.
