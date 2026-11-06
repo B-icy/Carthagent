@@ -1,0 +1,851 @@
+{
+  "baseline": {
+    "tag": "v1.1.0-beta.7",
+    "commit": "dcfc4e04aac066b70f4f7f241a0d3c6136f071c1"
+  },
+  "repairHead": "46b594eb61922098e2dbf0e2402d3db0c2148d5a",
+  "findings": [
+    {
+      "id": "D01",
+      "title": "Signed-out `/account` `/usage` `/billing` toast `[object Object]`; raw `authentication_required` in Shop/Character",
+      "disposition": "fixed",
+      "summary": "fixed and retested Original IDs: FL-001, FL-004.",
+      "commits": [
+        "9cb7968"
+      ],
+      "validation": "plugins/carthagent/tests/commands.test.ts; tests/native-voyages-ui.test.mjs; recorded real UI retest.",
+      "limitations": []
+    },
+    {
+      "id": "D02",
+      "title": "Plugin `/help` list selection does nothing",
+      "disposition": "fixed",
+      "summary": "fixed and retested Original IDs: KB-010.",
+      "commits": [
+        "9cb7968"
+      ],
+      "validation": "plugins/carthagent/tests/commands.test.ts; recorded real UI retest.",
+      "limitations": []
+    },
+    {
+      "id": "D03",
+      "title": "Workspace/report views have no Escape or Back",
+      "disposition": "fixed",
+      "summary": "fixed and retested Original IDs: FL-002, KB-012.",
+      "commits": [
+        "d7d6ce2"
+      ],
+      "validation": "tests/workspace-report-navigation.test.mjs; recorded real UI retest and historical v15 INT-15.",
+      "limitations": []
+    },
+    {
+      "id": "D04",
+      "title": "Evidence view overlap, no scroll at short heights",
+      "disposition": "fixed",
+      "summary": "fixed and retested Original IDs: LAY-011.",
+      "commits": [
+        "d7d6ce2"
+      ],
+      "validation": "tests/workspace-report-navigation.test.mjs; recorded real UI retest.",
+      "limitations": []
+    },
+    {
+      "id": "D05",
+      "title": "Hardcoded \"Incomplete DTO section\" on complete sections",
+      "disposition": "fixed",
+      "summary": "fixed and retested Original IDs: WF-001.",
+      "commits": [
+        "d7d6ce2"
+      ],
+      "validation": "tests/workspace-report-navigation.test.mjs; recorded real UI retest.",
+      "limitations": []
+    },
+    {
+      "id": "D06",
+      "title": "\"unreviewed\" despite recorded Ship self-review",
+      "disposition": "fixed",
+      "summary": "fixed (wording) and retested; review systems not merged Original IDs: WF-003.",
+      "commits": [
+        "d7d6ce2"
+      ],
+      "validation": "tests/workspace-report-navigation.test.mjs; recorded real UI retest.",
+      "limitations": []
+    },
+    {
+      "id": "D07",
+      "title": "Voyages rail click activates the row above",
+      "disposition": "fixed",
+      "summary": "fixed; deterministic regression; live pre-fix did not reproduce in 8 attempts (timing dependent), post-fix clicks open the clicked row Original IDs: FL-003, MO-VOY-rail-unfocused-shop.",
+      "commits": [
+        "525dd33"
+      ],
+      "validation": "plugins/carthagent/tests/voyages-navigation.test.tsx; recorded real UI retest and historical v15 INT-12.",
+      "limitations": [
+        "Pre-fix live issue did not reproduce in eight attempts; timing-dependent regression failed deterministically."
+      ]
+    },
+    {
+      "id": "D08",
+      "title": "Shop/Character five-row lists ignore wheel",
+      "disposition": "fixed",
+      "summary": "fixed and retested Original IDs: MO-007.",
+      "commits": [
+        "525dd33"
+      ],
+      "validation": "plugins/carthagent/tests/voyages-page.test.tsx; recorded real UI retest and historical v15 INT-13.",
+      "limitations": []
+    },
+    {
+      "id": "D09",
+      "title": "Quest details under scrollbar at narrow widths",
+      "disposition": "fixed",
+      "summary": "fixed and retested Original IDs: LAY-010.",
+      "commits": [
+        "525dd33"
+      ],
+      "validation": "plugins/carthagent/tests/daily-quests-page.test.tsx; recorded real UI retest.",
+      "limitations": []
+    },
+    {
+      "id": "D10",
+      "title": "Selection/preview reset on background refresh",
+      "disposition": "fixed",
+      "summary": "fixed; identity-safe follow-up fa46e41 (scrutiny round 1 blockers PRF-001/PRF-002). Voyages same-account restore retested live across a real reconnect; quest overview restore proven by renderer regression only (live reload hit a transient load error); changed-account path internal tests only Original IDs: VOY-001.",
+      "commits": [
+        "525dd33",
+        "fa46e41"
+      ],
+      "validation": "plugins/carthagent/tests/daily-quests-page.test.tsx; voyages-page.test.tsx; tests/native-voyages-rpc.test.mjs; recorded real UI retest.",
+      "limitations": [
+        "Two forced 55-second live quest reload attempts failed with a load error; manual Refresh recovered the first quest. Successful live quest restoration not demonstrated; cause unresolved.",
+        "Changed/unknown account paths are covered by internal tests only; account switching was not authorized."
+      ]
+    },
+    {
+      "id": "D11",
+      "title": "Quest detail defaults to Submit after auto-select/Details/reset",
+      "disposition": "fixed",
+      "summary": "fixed and retested (Details default; Submit never activated) Original IDs: VOY-002.",
+      "commits": [
+        "525dd33"
+      ],
+      "validation": "plugins/carthagent/tests/daily-quests-page.test.tsx; recorded real UI retest.",
+      "limitations": []
+    },
+    {
+      "id": "D12",
+      "title": "Cloud sign-in cue disappears after folder switch",
+      "disposition": "fixed",
+      "summary": "fixed in native dev v10 and retested on isolated candidate Original IDs: FL-011.",
+      "commits": [
+        "94adcf8"
+      ],
+      "validation": "packages/tui test/sidebar/folder-switch-onboarding.test.tsx (in development-v10+ patch); recorded real UI retest.",
+      "limitations": [
+        "Requires development-v16 runtime; not in the published beta.7 runtime."
+      ]
+    },
+    {
+      "id": "D13",
+      "title": "Picker docs overpromise single Enter and open/apply/cancel Settings",
+      "disposition": "fixed",
+      "summary": "documentation fixed and checked live Original IDs: FL-005, KB-003.",
+      "commits": [
+        "cc88645"
+      ],
+      "validation": "none (docs only); recorded real UI retest.",
+      "limitations": []
+    },
+    {
+      "id": "D14",
+      "title": "Mouse workflow gaps: no send, inert model badge, no sidebar restore, no palette/Settings/Help entry",
+      "disposition": "fixed",
+      "summary": "fixed in native dev v11 and retested; authenticated live Send turn on v15; narrow usage-bearing footer entry fixed in v16 and retested live on the authenticated profile at 60x20 Original IDs: MO-001, MO-004, MO-009.",
+      "commits": [
+        "9036882",
+        "a7b18c1"
+      ],
+      "validation": "packages/tui test/mouse-workflow-routes.test.tsx; test/feature-plugins/prompt-footer.test.tsx (narrow usage case); recorded real UI retest and historical v15 INT-03, INT-04, INT-06, INT-07.",
+      "limitations": [
+        "Requires development-v16 runtime; not in the published beta.7 runtime."
+      ]
+    },
+    {
+      "id": "D15",
+      "title": "Divider hit zone 2-3 cells left of border",
+      "disposition": "fixed",
+      "summary": "fixed in native dev v11 and retested Original IDs: MO-003.",
+      "commits": [
+        "9036882"
+      ],
+      "validation": "packages/tui test/mouse-workflow-routes.test.tsx; recorded real UI retest.",
+      "limitations": [
+        "Requires development-v16 runtime; not in the published beta.7 runtime."
+      ]
+    },
+    {
+      "id": "D16",
+      "title": "Stale New-folder error after Escape; raw model IDs after folder error",
+      "disposition": "fixed",
+      "summary": "fixed in native dev v10 and retested Original IDs: KB-006, KB-007.",
+      "commits": [
+        "94adcf8"
+      ],
+      "validation": "dialog-folder-browser.test.tsx; new-session-preflight.test.tsx; recorded real UI retest.",
+      "limitations": [
+        "Requires development-v16 runtime; not in the published beta.7 runtime."
+      ]
+    },
+    {
+      "id": "D17",
+      "title": "Folder field left-truncates with no indication",
+      "disposition": "fixed",
+      "summary": "fixed in native dev v10 and retested Original IDs: LAY-002.",
+      "commits": [
+        "94adcf8"
+      ],
+      "validation": "new-session-preflight.test.tsx; util/locale.test.ts; recorded real UI retest.",
+      "limitations": [
+        "Requires development-v16 runtime; not in the published beta.7 runtime."
+      ]
+    },
+    {
+      "id": "D18",
+      "title": "`/clear` listed twice",
+      "disposition": "fixed",
+      "summary": "fixed (plugin) and retested Original IDs: PER-007.",
+      "commits": [
+        "cc88645"
+      ],
+      "validation": "plugins/carthagent/tests/commands.test.ts; recorded real UI retest.",
+      "limitations": []
+    },
+    {
+      "id": "D19",
+      "title": "Unsent new-session tab unreachable after Alt+Down/Up",
+      "disposition": "fixed",
+      "summary": "fixed in native dev v12 and retested; close-last-real-tab draft location fixed in v16 and retested in an isolated offline profile (before on v15, after on v16) Original IDs: KB-008, PER-001.",
+      "commits": [
+        "5798e18",
+        "a7b18c1"
+      ],
+      "validation": "test/sidebar/draft-tab-reachability.test.tsx (incl. close-last-real-tab with send destination); recorded real UI retest.",
+      "limitations": [
+        "Requires development-v16 runtime; not in the published beta.7 runtime."
+      ]
+    },
+    {
+      "id": "D20",
+      "title": "Permissions under \"Session\" heading but global",
+      "disposition": "fixed",
+      "summary": "label/help wording fixed in native dev v12; policy unchanged Original IDs: PER-006.",
+      "commits": [
+        "5798e18"
+      ],
+      "validation": "test/config-v2.test.tsx; recorded real UI retest.",
+      "limitations": [
+        "Requires development-v16 runtime; not in the published beta.7 runtime."
+      ]
+    },
+    {
+      "id": "D21",
+      "title": "Dialog selection lost after resize (LAY-005)",
+      "disposition": "fixed",
+      "summary": "LAY-005 fixed in native dev v13 and retested; LAY-004 reclassified harness-attributed (unscaled pointer) after scaled recheck on original beta, no product change Original IDs: LAY-004, LAY-005.",
+      "commits": [
+        "90d4282"
+      ],
+      "validation": "test/cli/tui/dialog-select.test.tsx; recorded real UI retest and historical v15 INT-11.",
+      "limitations": [
+        "Requires development-v16 runtime; not in the published beta.7 runtime.",
+        "LAY-004 wheel finding was harness-attributed, not a product fix."
+      ]
+    },
+    {
+      "id": "D22",
+      "title": "Context menu stays open detached after resize",
+      "disposition": "fixed",
+      "summary": "fixed in native dev v14 and retested Original IDs: LAY-008.",
+      "commits": [
+        "60f5223"
+      ],
+      "validation": "test/navigation-rail.test.tsx (context menu closes\u2026); recorded real UI retest and historical v15 INT-08.",
+      "limitations": [
+        "Requires development-v16 runtime; not in the published beta.7 runtime.",
+        "Mission-added navigation-rail Rename/frame-wait timing debt remains unresolved."
+      ]
+    },
+    {
+      "id": "D23",
+      "title": "Typed combining marks dropped (paste kept)",
+      "disposition": "fixed",
+      "summary": "fixed in native dev v15 (JS layer workaround for OpenTUI EditBuffer) and retested Original IDs: LAY-001.",
+      "commits": [
+        "105c25a"
+      ],
+      "validation": "test/util/combining-input.test.ts; recorded real UI retest and historical v15 INT-10.",
+      "limitations": [
+        "Requires development-v16 runtime; not in the published beta.7 runtime."
+      ]
+    },
+    {
+      "id": "D24",
+      "title": "Workspace Filter ignored pointer and Tab",
+      "disposition": "fixed",
+      "summary": "fixed and retested Original IDs: GAP-001.",
+      "commits": [
+        "d7d6ce2"
+      ],
+      "validation": "tests/workspace-report-navigation.test.mjs; recorded real UI retest.",
+      "limitations": []
+    },
+    {
+      "id": "WRBN-NEW-01",
+      "title": "Workspace action rows did not activate on pointer release",
+      "disposition": "fixed",
+      "summary": "fixed and retested (found during D03 repair; present in beta.7) Original IDs: WRBN-NEW-01.",
+      "commits": [
+        "c492bbf"
+      ],
+      "validation": "tests/workspace-pointer-actions.test.mjs; recorded real UI retest and historical v15 INT-15.",
+      "limitations": []
+    },
+    {
+      "id": "PRF-001",
+      "title": "Account-bound refresh identity",
+      "disposition": "fixed",
+      "summary": "Restore a preview only after the same verified account binding returns.",
+      "commits": [
+        "fa46e41"
+      ],
+      "validation": "Deterministic page/RPC cases and live same-account Voyages reconnect.",
+      "limitations": [
+        "See D10 live/account-switch limits."
+      ]
+    },
+    {
+      "id": "PRF-002",
+      "title": "Quest overview highlight restoration",
+      "disposition": "fixed",
+      "summary": "Preserve the overview quest ID through reorder; invalidate removed, changed or unknown bindings.",
+      "commits": [
+        "fa46e41"
+      ],
+      "validation": "Deterministic renderer/RPC cases only; live quest restoration failed.",
+      "limitations": [
+        "See D10 live/account-switch limits."
+      ]
+    },
+    {
+      "id": "SCR-NMWR-01",
+      "title": "Narrow usage-bearing footer commands entry",
+      "disposition": "fixed",
+      "summary": "Keep pointer commands entry at 60 columns with usage; preserve full hint at wide geometry.",
+      "commits": [
+        "a7b18c1"
+      ],
+      "validation": "Pre-fix regression failed; v16 authenticated 60x20 pointer palette/settings and keyboard retests passed.",
+      "limitations": [
+        "Native fixes require v16."
+      ]
+    },
+    {
+      "id": "SCR-NSS-01",
+      "title": "Last real tab closes onto parked draft",
+      "disposition": "fixed",
+      "summary": "Reopen draft in its folder/model and avoid disposed composer consuming text; no draft still opens plain Home.",
+      "commits": [
+        "a7b18c1"
+      ],
+      "validation": "Pre-fix regression failed; v15/v16 offline before/after and exactly-one-session send destination checks passed.",
+      "limitations": [
+        "Native fixes require v16."
+      ]
+    },
+    {
+      "id": "LAY-004",
+      "title": "Clipped dialog wheel evidence correction",
+      "disposition": "harness-attributed",
+      "summary": "Unscaled pointer helper assumed fixed 1440x1000 extent. Scaled original-beta recheck scrolled model/settings both directions at 60x20, 90x30 and 158x24; no product change.",
+      "commits": [],
+      "validation": "Scaled original-beta recheck; LAY-005 remains independently real and fixed.",
+      "limitations": []
+    },
+    {
+      "id": "AUTH-001",
+      "title": "open, historical",
+      "disposition": "unresolved",
+      "summary": "Startup method-registration race seen once; no deterministic native reproducer established; no fresh auth requests authorized for a reproduction",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Later successful auth/restarts do not explain or repair the historical failure; fresh auth requires approval."
+      ]
+    },
+    {
+      "id": "AUTH-002",
+      "title": "not reproduced, historical",
+      "disposition": "unresolved",
+      "summary": "One approved device sign-in left the terminal signed out with no error; cause unknown; later successes do not explain or repair it",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Later successful auth/restarts do not explain or repair the historical failure; fresh auth requires approval."
+      ]
+    },
+    {
+      "id": "FL-006",
+      "title": "Cloud sign-in entry",
+      "disposition": "suggestion",
+      "summary": "Consider explicit sign-in choices or confirmation instead of starting real device auth on one click.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "FL-007 / MO-002",
+      "title": "Hint affordances and keyboard-only actions",
+      "disposition": "suggestion",
+      "summary": "Clarify inert labels and unavailable Start. D14 repairs commands/model/Send/sidebar entry, not all hints. Favorite, worktree refresh/new/delete, directory scope and Right-to-complete remain keyboard-only.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "FL-008",
+      "title": "Console cancellation",
+      "disposition": "suggestion",
+      "summary": "Clarify Escape unfocus versus closing and reduce repeated toggles.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "FL-009",
+      "title": "Open docs feedback",
+      "disposition": "suggestion",
+      "summary": "Show a URL or failure feedback when no browser opens.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "FL-010 / KB-004",
+      "title": "Settings activation semantics",
+      "disposition": "suggestion",
+      "summary": "Consider explicit chooser/confirmation UX. Enter cycles the focused value immediately; Escape closes. D13 documentation is fixed, not a runtime redesign; no approval bypass was proven.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "FL-012",
+      "title": "Narrow onboarding",
+      "disposition": "suggestion",
+      "summary": "Improve Cloud cue and connect-hint clipping at 90x30.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "KB-001",
+      "title": "Navigation pane focus",
+      "disposition": "suggestion",
+      "summary": "Clarify pane selection versus keyboard focus and expose the focus shortcut.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "KB-002",
+      "title": "Control-A consistency",
+      "disposition": "suggestion",
+      "summary": "Explain composer line-start versus Sessions search scope toggle.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "KB-005",
+      "title": "Folder shortcuts",
+      "disposition": "suggestion",
+      "summary": "Expose New folder and location shortcuts.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "KB-009",
+      "title": "Shop Escape route",
+      "disposition": "suggestion",
+      "summary": "Consider consistent back navigation; current explicit route returns to Coding.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "KB-011",
+      "title": "Sidebar naming",
+      "disposition": "suggestion",
+      "summary": "Distinguish the two panels called sidebar.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "LAY-003",
+      "title": "Dialog backdrop fragments",
+      "disposition": "suggestion",
+      "summary": "Consider padding/masking for backdrop words adjacent to short dialogs.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "LAY-006",
+      "title": "Truncated row labels",
+      "disposition": "suggestion",
+      "summary": "Consider ellipses for right-edge truncation.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "LAY-007",
+      "title": "Model loading empty state",
+      "disposition": "suggestion",
+      "summary": "Distinguish loading from transient no-models state.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "LAY-009",
+      "title": "Compact rail labels",
+      "disposition": "suggestion",
+      "summary": "Clarify compact Character/Captain naming and split Friends label.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "PER-002 / WF-010",
+      "title": "Unsent model/mode persistence",
+      "disposition": "suggestion",
+      "summary": "Committed selections survive restart; only unsent overrides are lost. Optional persistence enhancement, not durable corruption.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "PER-003",
+      "title": "Exit with unsent draft",
+      "disposition": "suggestion",
+      "summary": "Drafts are process-local; consider an exit warning. D19/v16 do not add disk persistence.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "PER-004",
+      "title": "Existing export error",
+      "disposition": "suggestion",
+      "summary": "Replace raw EEXIST wording; no overwrite was observed.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "PER-005",
+      "title": "Session search scope",
+      "disposition": "suggestion",
+      "summary": "Make current-folder scope clearer in resume and rail search.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "PER-008",
+      "title": "Unknown command feedback",
+      "disposition": "suggestion",
+      "summary": "Explain unknown slash commands instead of silent no-op.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "WF-002",
+      "title": "Permissions expectation",
+      "disposition": "suggestion",
+      "summary": "Prompt displays only policy-generated asks; ordinary calls may be allowed. D20 fixes scope/help wording only; no proven bypass or policy change.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "WF-004",
+      "title": "Transient JSON toast",
+      "disposition": "suggestion",
+      "summary": "Replace transient raw preview/review JSON with readable durable feedback.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "WF-005",
+      "title": "Collapsed tool failures",
+      "disposition": "suggestion",
+      "summary": "Expose error count in collapsed tool summaries.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "WF-006",
+      "title": "Per-agent model memory",
+      "disposition": "suggestion",
+      "summary": "Explain intentional model memory/recent-model fallback when switching mode.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "WF-007",
+      "title": "Plan enforcement evidence",
+      "disposition": "suggestion",
+      "summary": "Only model refusal was observed; enforcement path remains unproven.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "WF-008",
+      "title": "Failure-heavy Ship transcript",
+      "disposition": "suggestion",
+      "summary": "Investigate only with a reproducible case; one model-dependent run does not isolate a product bug.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "WF-009",
+      "title": "Permission/question dialog coverage",
+      "disposition": "suggestion",
+      "summary": "No live dialog was reachable; Allow/Reject remain untested.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "VOY-003 / ACC-001 / GAP-002",
+      "title": "Consequential confirm defaults",
+      "disposition": "suggestion",
+      "summary": "Consider Cancel focus for Equip, billing/logout and customization Save. No final confirm/save was activated.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "VOY-004",
+      "title": "Locked free item wording",
+      "disposition": "suggestion",
+      "summary": "Show unlock reason in the list, not only in preview.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "ACC-002",
+      "title": "Account privacy",
+      "disposition": "suggestion",
+      "summary": "Consider optional masking of account identity for screen sharing; no identity values are included here.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "ACC-003",
+      "title": "Usage navigation",
+      "disposition": "suggestion",
+      "summary": "Clarify static Usage view or offer discoverable navigation beyond Escape.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "MO-006",
+      "title": "Copy feedback",
+      "disposition": "suggestion",
+      "summary": "Provide completion feedback; no clipboard failure proven because no clipboard reader was available.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "MO-008",
+      "title": "Slash pointer completion",
+      "disposition": "suggestion",
+      "summary": "Click completes rather than executes by design; D14 Send resolves the pointer workflow. Optional affordance polish.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "GAP-003",
+      "title": "Workspace Refresh feedback",
+      "disposition": "suggestion",
+      "summary": "Consider loading/updated feedback. Original unchanged-data observation was qualified; WRBN-NEW-01 fixes activation, not a promised feedback redesign.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "CDD-S1",
+      "title": "Duplicate command names",
+      "disposition": "suggestion",
+      "summary": "Consider deduplicating plugin/native autocompact, stats, resume and thinking. Only clear was deduplicated in D18.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "CDD-S2",
+      "title": "Palette help alias search",
+      "disposition": "suggestion",
+      "summary": "Make palette search discover ctg-help alias; descriptive handoff ID only, original report supplied no canonical ID.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Report-only; no redesign authorized."
+      ]
+    },
+    {
+      "id": "MO-005",
+      "title": "Intermittent blank-rail context menu miss",
+      "disposition": "unresolved",
+      "summary": "One of four early clicks missed after a drag; cause not isolated. Later D22/integrated INT-07 re-observation had no miss, not proof of a specific fix.",
+      "commits": [],
+      "validation": "Later live re-observation passed; historical low-confidence issue not reproduced.",
+      "limitations": []
+    },
+    {
+      "id": "NATIVE-TIMING",
+      "title": "Native test timing debt",
+      "disposition": "unresolved",
+      "summary": "Navigation-rail Rename/frame wait: v15 recipe attempts 1 and 2 failed; attempt 3 passed. v14 baseline failed 1/50; isolated v15 failed 1/30. v16 first-attempt pass does not retire debt.",
+      "commits": [],
+      "validation": "Recorded stress runs; live context-menu UI passed.",
+      "limitations": [
+        "Session-panel timeout once under load; passed alone, three full-file reruns and full suite. Command-selection also exceeds default 5s on baseline under load; use 30s/60s without weakening expectations."
+      ]
+    },
+    {
+      "id": "OPENTUI-ZORDER",
+      "title": "Conditional sibling paint ordering",
+      "disposition": "unresolved",
+      "summary": "D15 stable wrapper fixes its local overlap; other overlays were not audited. Investigate only if reproduced.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Generic risk, no additional demonstrated regression."
+      ]
+    },
+    {
+      "id": "HARNESS",
+      "title": "Other original harness records",
+      "disposition": "harness-attributed",
+      "summary": "FL-H01/H02/H03, MO-H01, KB-H01, LAY-H01, PER-H01, WF-H01, VOY-H01 and GAP-H01 cover geometry, timing, clipboard and operator issues, not product bugs. FL-H03 resolved with pointer2; PER-H01 stale-evidence gap closed by later WF-STALE-A/B.",
+      "commits": [],
+      "validation": "Historical audit observation; no implementation or fresh retest claimed.",
+      "limitations": [
+        "Reduced-output pointer evidence from unscaled helpers is unreliable unless rechecked with scaled driver."
+      ]
+    }
+  ],
+  "coverage": {
+    "auditRows": 732,
+    "passed": 576,
+    "defectObserved": 103,
+    "blocked": 21,
+    "excluded": 32
+  },
+  "limitations": [
+    "Linux ARM64 only; software sway/foot/private tmux, virtual pointer and wtype keyboard; no other-platform/terminal/physical-input certification.",
+    "PNG dimensions, OCR, ANSI and pane text support objective findings; no direct image perception or pixel-perfect aesthetic certification.",
+    "Clipboard, IME/dead keys, live permission/question dialog and 111 off-screen Voyages items were not individually validated.",
+    "Purchases, quotes, claims, quest submission, equip, customization saves, logout and new sign-in were excluded from bounded repair retests; publication was excluded from the audit and is separately authorized only for this handoff branch.",
+    "Raw artifact/profile/runtime/mission trees are not portable and must not be published.",
+    "Native candidate is unsigned, local and not bit-for-bit release-reproducible; release pins and combined-v9 unchanged.",
+    "Historical auth failures, D10 live quest reload failures, test timing debt and unscaled pointer corrections remain explicit."
+  ]
+}
