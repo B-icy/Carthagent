@@ -37,7 +37,6 @@ jobs:
         working-directory: native
         run: bun test --cwd packages/tui --timeout 60000 test/sidebar/new-session-preflight.test.tsx --rerun-each 10
       - name: Trace navigation stress
-        if: runner.os == 'macOS'
         shell: bash
         working-directory: native
         run: bun test --cwd packages/tui --timeout 60000 test/navigation-rail.test.tsx --rerun-each 30
