@@ -48,10 +48,12 @@ remaining release gates.
 
 ## Known beta limitations
 
-- **Intel macOS:** clicking Rename in a session context menu can fail after
-  resizing and reopening the menu. The release owner accepted this issue for
-  beta.8; its exact regression is excluded from Intel macOS release gates and
-  remains required on other platforms. The issue is not claimed fixed.
+- **Intel macOS coverage:** the release owner accepted exclusion of the
+  context-menu resize/reopen Rename regression from this platform's release
+  gates. Follow-up traces isolated a test click made before layout settled;
+  the corrected test passed a separate 30-repeat navigation diagnostic on both
+  Intel macOS and Windows and remains required on other platforms. Intel macOS
+  diagnostic coverage is recorded separately from the release-gate exclusion.
 - Long navigation stress runs have encountered plugin-readiness timeouts.
 - Historical authentication findings AUTH-001 and AUTH-002 are not fully
   reproduced; the verified cold-start repair does not establish their causes.

@@ -8,6 +8,15 @@
   Both Windows and Intel macOS showed this same stale-coordinate sequence.
   Combined-v12 waits for visual idle before sampling the row and asserts the
   visible session title at that coordinate. Platform retests are underway.
+- Combined-v12 local navigation stress passed ten fresh-process repetitions:
+  150 tests / 820 assertions / zero failures, including menu resize/reopen and
+  Rename. Five-platform prebuild `42176561070` runs from
+  `308f1b6b1f539096a1ac0b8d4af817e2a19798a0`; its results remain pending.
+- Diagnostic run `42176263365` passed on both Windows and Intel macOS after
+  adding layout settling: ten folder-suite repetitions and thirty navigation-
+  suite repetitions per platform, including the previously failing menu test.
+  This separately verifies that case on Intel macOS; the release prebuild's
+  explicit exclusion remains disclosed and is not counted as a passing test.
 
 - Second prebuild `42172444024` passed Linux x64/ARM64 and Intel macOS with
   the approved exclusion. Windows passed the corrected folder fixture/full TUI
