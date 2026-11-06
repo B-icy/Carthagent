@@ -7574,7 +7574,7 @@ index 856f9961e7..0e2f737d2d 100644
  
  export type SessionTabHistory = {
 diff --git a/packages/tui/src/context/session-tabs.tsx b/packages/tui/src/context/session-tabs.tsx
-index 87f1069edd..9e1d798cbb 100644
+index 87f1069edd..15299018b5 100644
 --- a/packages/tui/src/context/session-tabs.tsx
 +++ b/packages/tui/src/context/session-tabs.tsx
 @@ -14,7 +14,11 @@ import { useStorage } from "./storage"
@@ -7627,7 +7627,16 @@ index 87f1069edd..9e1d798cbb 100644
      const enabled = () => config.tabs.enabled
      const [focused, setFocused] = createSignal<boolean>()
      // Keyed reconcile keeps tab object identity across reorders, so strip rows move instead of
-@@ -88,6 +100,7 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
+@@ -77,6 +89,8 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
+       key: "sessionID",
+     })
+     const fallback = empty()
++    const [pendingTabs, setPendingTabs] = createSignal<{ scope: string; tab: SessionTab }[]>([])
++    const scopeKey = () => (config.tabs.scope === "cwd" ? paths.cwd : "")
+     const [promptPulses, setPromptPulses] = createSignal<Record<string, number>>({})
+     let history: SessionTabHistory = { entries: [], index: -1 }
+     // User-closed tabs eligible for reopening; in-memory like history, deleted sessions pruned.
+@@ -88,6 +102,7 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
      // registration becomes a no-op; navigating to the session again clears
      // the mark.
      const cancelledTabs = new Set<string>()
@@ -7635,7 +7644,32 @@ index 87f1069edd..9e1d798cbb 100644
      const scrollAnchors = new Map<string, ScrollAnchor>()
      const [expandedGroups, setExpandedGroups] = createStore<Record<string, Record<string, boolean> | undefined>>({})
  
-@@ -131,8 +144,13 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
+@@ -108,12 +123,23 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
+ 
+     function update(mutation: (draft: TabsState) => void) {
+       const scope = config.tabs.scope
+-      void updateStore((draft) => mutation(scope === "cwd" ? (draft.cwd[paths.cwd] ??= empty()) : draft.global)).catch(
++      return updateStore((draft) => mutation(scope === "cwd" ? (draft.cwd[paths.cwd] ??= empty()) : draft.global)).catch(
+         // Failed writes lose only tab layout, but silence would hide tabs resetting every launch.
+         (error) => console.error("Failed to persist session tabs", error),
+       )
+     }
+ 
++    function register(tab: SessionTab) {
++      // Disk locking must not make a tab the user has already opened unreachable.
++      if (pendingTabs().some((entry) => entry.scope === scopeKey() && entry.tab.sessionID === tab.sessionID)) return
++      const pending = { scope: scopeKey(), tab }
++      setPendingTabs((entries) => [...entries, pending])
++      void update((draft) => {
++        if (cancelledTabs.has(tab.sessionID)) return
++        draft.tabs = openSessionTab(draft.tabs, tab)
++      }).finally(() => setPendingTabs((entries) => entries.filter((entry) => entry !== pending)))
++    }
++
+     const root = (sessionID: string) => data.session.root(sessionID)
+     const title = (sessionID: string, persisted?: string, fallback?: string) => {
+       const session = data.session.get(sessionID)
+@@ -131,8 +157,13 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
      const normalize = (value: TabsState) => ({
        tabs: value.tabs.reduce<SessionTab[]>((tabs, tab) => {
          const sessionID = root(tab.sessionID)
@@ -7650,7 +7684,7 @@ index 87f1069edd..9e1d798cbb 100644
        unread: {},
      })
      const current = () => (route.data.type === "session" ? root(route.data.sessionID) : undefined)
-@@ -149,6 +167,24 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
+@@ -149,6 +180,24 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
        const sessionID = current()
        return sessionID !== undefined && !state().tabs.some((tab) => tab.sessionID === sessionID)
      }, false)
@@ -7675,7 +7709,23 @@ index 87f1069edd..9e1d798cbb 100644
      const status = (sessionID: string) => {
        const session = root(sessionID)
        const members = family(session)
-@@ -245,6 +281,7 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
+@@ -190,14 +239,7 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
+           history = recordSessionTabHistory(history, sessionID)
+           if (state().tabs.some((tab) => tab.sessionID === sessionID)) return
+           const fallback = newTab() ? NEW_SESSION_TAB_TITLE : undefined
+-          update((draft) => {
+-            if (cancelledTabs.has(sessionID)) return
+-            const tab = {
+-              sessionID,
+-              title: title(sessionID, draft.tabs.find((tab) => tab.sessionID === sessionID)?.title, fallback),
+-            }
+-            draft.tabs = openSessionTab(draft.tabs, tab)
+-          })
++          register({ sessionID, title: title(sessionID, undefined, fallback) })
+         },
+       ),
+     )
+@@ -245,6 +287,7 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
        update((draft) => {
          const next = normalize(draft)
          draft.tabs = next.tabs
@@ -7683,7 +7733,15 @@ index 87f1069edd..9e1d798cbb 100644
          draft.unread = next.unread
        })
      })
-@@ -346,7 +383,11 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
+@@ -325,6 +368,7 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
+     function remove(sessionID: string, navigate: boolean) {
+       const target = root(sessionID)
+       cancelledTabs.add(target)
++      setPendingTabs((entries) => entries.filter((entry) => entry.tab.sessionID !== target))
+       family(target).forEach((id) => {
+         scrollAnchors.delete(id)
+         setExpandedGroups(id, undefined)
+@@ -346,7 +390,11 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
          delete next[target]
          return next
        })
@@ -7696,7 +7754,7 @@ index 87f1069edd..9e1d798cbb 100644
      }
  
      return {
-@@ -366,6 +407,14 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
+@@ -366,6 +414,14 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
        newTab() {
          return newTab()
        },
@@ -7711,7 +7769,7 @@ index 87f1069edd..9e1d798cbb 100644
        current,
        status,
        scrollAnchor(sessionID: string) {
-@@ -384,6 +433,96 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
+@@ -384,6 +440,96 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
            return
          scrollAnchors.set(sessionID, anchor)
        },
@@ -7808,7 +7866,7 @@ index 87f1069edd..9e1d798cbb 100644
        groupExpanded(sessionID: string, groupID: string) {
          return expandedGroups[sessionID]?.[groupID]
        },
-@@ -421,6 +560,7 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
+@@ -421,6 +567,7 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
          if (!enabled()) return
          const target = sessionID ? root(sessionID) : current()
          if (!target) {
@@ -7816,16 +7874,21 @@ index 87f1069edd..9e1d798cbb 100644
            const previous = moveSessionTabHistory(history, state().tabs, undefined, -1)
            history = previous.history
            const session = previous.sessionID ?? state().tabs.at(-1)?.sessionID
-@@ -454,6 +594,9 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
+@@ -454,7 +601,13 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
        },
        cycle(direction: 1 | -1) {
          if (!enabled()) return
+-        const tab = cycleSessionTab(state().tabs, current(), direction)
++        const tabs = pendingTabs()
++          .filter((entry) => entry.scope === scopeKey())
++          .reduce((tabs, entry) => openSessionTab(tabs, entry.tab), state().tabs)
 +        // The parked draft sits after the last tab, where the strip and rail draw it.
-+        const index = state().tabs.findIndex((tab) => tab.sessionID === current())
-+        if (draftParked() && index !== -1 && index === (direction === 1 ? state().tabs.length - 1 : 0)) return openDraft()
-         const tab = cycleSessionTab(state().tabs, current(), direction)
++        const index = tabs.findIndex((tab) => tab.sessionID === current())
++        if (draftParked() && index !== -1 && index === (direction === 1 ? tabs.length - 1 : 0)) return openDraft()
++        const tab = cycleSessionTab(tabs, current(), direction)
          if (tab) route.navigate({ type: "session", sessionID: tab.sessionID })
        },
+       cycleUnread(direction: 1 | -1) {
 diff --git a/packages/tui/src/context/theme.tsx b/packages/tui/src/context/theme.tsx
 index ed568e695c..0d45a741e3 100644
 --- a/packages/tui/src/context/theme.tsx
@@ -12765,10 +12828,10 @@ index a744c2966e..dbae37c530 100644
    test("labels tabs by ordinal", () => {
      expect(Array.from({ length: 12 }, (_, index) => sessionTabNumberLabel(index))).toEqual([
 diff --git a/packages/tui/test/context/session-tabs.test.tsx b/packages/tui/test/context/session-tabs.test.tsx
-index c2be516391..b9408c54ec 100644
+index c2be516391..52874a677d 100644
 --- a/packages/tui/test/context/session-tabs.test.tsx
 +++ b/packages/tui/test/context/session-tabs.test.tsx
-@@ -13,6 +13,7 @@ import { TuiAppProvider } from "../../src/context/runtime"
+@@ -13,9 +13,11 @@ import { TuiAppProvider } from "../../src/context/runtime"
  import { SessionTabsProvider, useSessionTabs } from "../../src/context/session-tabs"
  import { NEW_SESSION_TAB_TITLE } from "../../src/context/session-tabs-model"
  import { StorageProvider, useStorage } from "../../src/context/storage"
@@ -12776,7 +12839,11 @@ index c2be516391..b9408c54ec 100644
  import { createApi, createEventStream, createFetch, directory, json } from "../fixture/tui-client"
  import { TestTuiContexts } from "../fixture/tui-environment"
  import { tmpdir } from "../fixture/fixture"
-@@ -135,7 +136,7 @@ async function renderSessionTabs(
++import { Flock } from "@opencode/util/flock"
+ import { createTuiResolvedConfig } from "../fixture/tui-runtime"
+ 
+ async function wait(fn: () => boolean | Promise<boolean>, timeout = 2_000, label = "condition") {
+@@ -135,7 +137,7 @@ async function renderSessionTabs(
    let storage!: ReturnType<typeof useStorage>
    let config!: ReturnType<typeof useConfig>
    let configuration = {
@@ -12785,7 +12852,7 @@ index c2be516391..b9408c54ec 100644
      experimental: options?.experimental,
      session: { new_location: options?.newLocation ?? "launch" },
    }
-@@ -171,9 +172,11 @@ async function renderSessionTabs(
+@@ -171,9 +173,11 @@ async function renderSessionTabs(
                <ClientProvider api={createApi(calls.fetch)}>
                  <DataProvider directory={options?.launchDirectory ?? directory}>
                    <LocationProvider>
@@ -12800,7 +12867,40 @@ index c2be516391..b9408c54ec 100644
                    </LocationProvider>
                  </DataProvider>
                </ClientProvider>
-@@ -353,7 +356,7 @@ test("lists closed tabs newest first and reopens a selected entry", async () =>
+@@ -229,6 +233,32 @@ function admitted(sessionID: string, inboxID: string): OpenCodeEvent {
+   }
+ }
+ 
++test("a newly opened tab remains reachable while its layout write is pending", async () => {
++  const setup = await renderSessionTabs("first")
++  await setup.flush()
++  const lease = await Flock.acquire(path.join(setup.state, "test", "tui", "tabs.json"), {
++    dir: path.join(setup.state, "test", "locks"),
++  })
++  try {
++    setup.route.navigate({ type: "session", sessionID: "second" })
++    setup.tabs.cycle(1)
++    expect(setup.route.data).toMatchObject({ type: "session", sessionID: "first" })
++    setup.tabs.cycle(1)
++    expect(setup.route.data).toMatchObject({ type: "session", sessionID: "second" })
++    setup.tabs.close("second")
++    setup.tabs.cycle(1)
++    expect(setup.route.data).toMatchObject({ type: "session", sessionID: "first" })
++  } finally {
++    await lease.release()
++    try {
++      await setup.flush()
++      expect(setup.tabs.tabs().map((tab) => tab.sessionID)).toEqual(["first"])
++    } finally {
++      await setup.destroy()
++    }
++  }
++})
++
+ test("loads persisted tab metadata concurrently on connect", async () => {
+   let release!: () => void
+   const sessionGate = new Promise<void>((resolve) => (release = resolve))
+@@ -353,7 +383,7 @@ test("lists closed tabs newest first and reopens a selected entry", async () =>
    }
  })
  
@@ -12809,7 +12909,7 @@ index c2be516391..b9408c54ec 100644
    const setup = await renderSessionTabs("first")
  
    try {
-@@ -364,7 +367,7 @@ test("stores session tabs for the current working directory by default", async (
+@@ -364,7 +394,7 @@ test("stores session tabs for the current working directory by default", async (
        return stored.cwd[directory]?.tabs.some((tab: { sessionID: string }) => tab.sessionID === "first")
      })
      const stored = await Bun.file(file).json()

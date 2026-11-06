@@ -115,7 +115,7 @@ the successful run supplied Pillow 11.3.0 from a temporary directory (wheel SHA-
   server rename. Native mode strip, picker, and agent-event labels now map the
   persisted ID to Quick. Native label/session-ownership tests passed 14/14.
 - Current cumulative v17 digest:
-  `a6dbff8aacb3af81072f69ec85aedd6b1c8bd7c16b1edf3b9b8dcc16a2415117`.
+  `49d7cb9468b28351d79c571fea949914afaf8da5b242b3a95a192acb8cff5320`.
 - Repository lint/build and sequential tests after any-mode quests passed:
   1,167 passed, 5 skipped.
 - After merging latest main, lint/build and sequential tests passed again:
@@ -158,6 +158,28 @@ the successful run supplied Pillow 11.3.0 from a temporary directory (wheel SHA-
   and the page still displayed Loading workspace at the 10 s readiness boundary.
   Another worktree's concurrent `npm run quality` was consuming substantial CPU.
   This is a failed run, not proof of either a Rename regression or its resolution.
+
+## Pending-tab navigation repair
+
+- The next pristine candidate ended at 1,641 passed / 2 skipped / 1 failed:
+  the parked-draft first-send test could not cycle back to its newly created tab.
+  Build and stress stages did not run. The original focused file then passed
+  30/30 repeated tests, so an isolated pass did not establish resolution.
+- Holding the real tab-layout file lock reproduced the navigation failure:
+  after visiting a newly opened session, cycling away and back stayed on the
+  original session because the new tab's asynchronous registration was pending.
+- Pending route registrations now participate in tab cycling until their write
+  settles. Closing a pending tab removes it from that cycle and retains the
+  existing cancellation guard against a late write resurrecting it.
+- The deterministic lock regression failed before the repair. The focused
+  tab-context and draft-reachability suites passed 29 tests after the repair;
+  ten repetitions then passed 290 tests / 710 assertions, including closing a
+  pending tab without resurrection. A new pristine candidate run is underway.
+- Cross-platform CI for pushed commit `45f40658f6` completed successfully. It
+  does not cover this subsequent native repair or certify the candidate binary.
+- Native repository `bun run check` passed: lint completed with warnings and all
+  35 typecheck tasks succeeded (32 cached). Development-patch integrity checks
+  also passed after regenerating the cumulative patch.
 
 ## Remaining acceptance
 
