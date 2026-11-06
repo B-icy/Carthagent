@@ -199,9 +199,9 @@ the successful run supplied Pillow 11.3.0 from a temporary directory (wheel SHA-
   also recorded an out-of-memory `tsgo` kill. A bounded rerun using
   `GOMAXPROCS=2 GOMEMLIMIT=512MiB` also failed with SDK SIGKILL. Inspection found
   Turbo's strict environment allowlist excluded those limits. Lint completed;
-  all typecheck tasks are now being rerun with `--concurrency=1 --env-mode=loose`
-  so the compiler limits reach child processes. The earlier successful canonical
-  check does not substitute for this latest repair's verification.
+  the corrected rerun used `--concurrency=1 --env-mode=loose` and verified both
+  compiler limits reached child processes. All 35 typecheck tasks passed with
+  zero cache hits (13m09s). The earlier failed runs remain part of the evidence.
 - The validated-endpoint pristine run passed 1,642 TUI tests / 2 skipped and
   failed one obsolete useEvent test that explicitly expected the removed stale
   transport fallback. Stress/build did not run. The test now holds replacement
@@ -213,6 +213,10 @@ the successful run supplied Pillow 11.3.0 from a temporary directory (wheel SHA-
   development-patch integrity checks passed. A fresh pristine recipe is running.
 - Cross-platform CI passed through `8f62ed51ad`; the test-contract follow-up and
   fresh pristine candidate are still pending.
+- A fresh read-only comparison before final-candidate live testing again found
+  zero missing project, session, or message IDs in both original profiles:
+  acceptance 7 / 3 / 61; normal 5 / 3 / 328 versus original 5 / 3 / 282.
+  This verifies local record preservation, not stable remote account state.
 
 - Live-retest the repaired rail-highlight reset, then run scaled pointer
   navigation. Quests highlight and Shop preview now have successful same-account
