@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readLegacyCarthagentCredential, refreshSingleFlight, refreshNativeCredential, credentialStorageKey, nativeCredentialFile, nativeCredentialDatabaseFile, readNativeOAuthCredential } from '../lib/opencode/credentials.mjs';
+import { readLegacyCarthagentCredential, refreshSingleFlight, refreshNativeCredential, credentialStorageKey, nativeCredentialFile, nativeCredentialDatabaseFile, readNativeOAuthCredential, pruneRefreshReceipts, refreshRejected, REFRESH_RETRY_WINDOW_MS } from '../lib/opencode/credentials.mjs';
+import { CloudClient } from '../lib/cloud/client.mjs';
 import { createSessionIdentity, managedRequestIdentity, sessionRunMode, shipTelemetryHeaders } from '../plugins/carthagent/src/server/telemetry.ts';
 import { registerProviders, providerConstants } from '../plugins/carthagent/src/server/providers.ts';
 import { createDeviceAuthController } from '../plugins/carthagent/src/server/device-auth.ts';
@@ -405,31 +406,190 @@ test('native refresh waits are bounded and never retry an uncertain rotation', a
   assert.doesNotMatch(receipt, /issued-old-token|old-access/);
 });
 
-test('native refresh fails closed when its owner crashes before vault persistence', async t => {
+test('native refresh fails closed when its owner crashed before vault persistence outside the grace window', async t => {
   const directory = await mkdtemp(join(os.tmpdir(), 'ctg-refresh-owner-crash-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const profile = join(directory, 'auth.json');
   const credential = { type: 'oauth', methodID: 'carthagent-device', refresh: 'issued-old-token', access: 'old-access' };
   const digest = createHash('sha256').update(`${credential.methodID}\0${credential.refresh}`).digest('hex').slice(0, 32);
   const pending = `${profile}.ctg-refresh-${digest}.lock.pending`;
-  await writeFile(pending, JSON.stringify({
-    pid: Number.MAX_SAFE_INTEGER,
-    owner: 'crashed-owner',
-    from: digest,
-    stage: 'refreshing',
-    createdAt: Date.now(),
-  }), { mode: 0o600 });
+  for (const attemptedAt of [undefined, Date.now() - REFRESH_RETRY_WINDOW_MS - 1]) {
+    await writeFile(pending, JSON.stringify({
+      pid: Number.MAX_SAFE_INTEGER,
+      owner: 'crashed-owner',
+      from: digest,
+      stage: 'refreshing',
+      createdAt: Date.now(),
+      attemptedAt,
+    }), { mode: 0o600 });
 
-  let refreshCalls = 0;
-  await assert.rejects(refreshNativeCredential({
-    credential,
-    credentialFile: profile,
-    processAliveImpl: () => false,
+    let refreshCalls = 0;
+    await assert.rejects(refreshNativeCredential({
+      credential,
+      credentialFile: profile,
+      processAliveImpl: () => false,
+      reread: async () => credential,
+      refresh: async () => { refreshCalls++; return credential; },
+    }), /did not confirm an earlier sign-in refresh.*\/login/);
+    assert.equal(refreshCalls, 0, 'do not replay a potentially consumed refresh token after the grace window');
+    assert.equal(await readFile(pending, 'utf8').then(Boolean), true, 'preserve the receipt for recovery diagnostics');
+  }
+});
+
+const refreshFixture = async (t, name) => {
+  const directory = await mkdtemp(join(os.tmpdir(), `ctg-refresh-${name}-`));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const profile = join(directory, 'auth.json');
+  const credential = { type: 'oauth', methodID: 'carthagent-device', refresh: 'issued-old-token', access: 'old-access' };
+  const rotated = { type: 'oauth', methodID: 'carthagent-device', refresh: 'rotated-token', access: 'new-access' };
+  const digest = createHash('sha256').update(`${credential.methodID}\0${credential.refresh}`).digest('hex').slice(0, 32);
+  return { directory, profile, credential, rotated, digest, pending: `${profile}.ctg-refresh-${digest}.lock.pending` };
+};
+const networkReset = () => Object.assign(new TypeError('The socket connection was closed unexpectedly.'), { code: 'ECONNRESET' });
+
+test('an uncertain refresh is retried with the same token inside the grace window', async t => {
+  const { profile, credential, rotated, pending } = await refreshFixture(t, 'retry');
+  const presented = [];
+  const sleeps = [];
+  const result = await refreshNativeCredential({
+    credential, credentialFile: profile,
     reread: async () => credential,
-    refresh: async () => { refreshCalls++; return credential; },
-  }), /ended before its vault write could be confirmed/);
-  assert.equal(refreshCalls, 0, 'do not replay a potentially consumed refresh token');
-  assert.equal(await readFile(pending, 'utf8').then(Boolean), true, 'preserve the receipt for recovery diagnostics');
+    sleep: async ms => { sleeps.push(ms); },
+    refresh: async current => { presented.push(current.refresh); if (presented.length < 3) throw networkReset(); return rotated; },
+  });
+  assert.deepEqual(result, rotated);
+  assert.deepEqual(presented, ['issued-old-token', 'issued-old-token', 'issued-old-token']);
+  assert.deepEqual(sleeps, [500, 2_000]);
+  const receipt = JSON.parse(await readFile(pending, 'utf8'));
+  assert.equal(receipt.stage, 'complete');
+  assert.doesNotMatch(JSON.stringify(receipt), /issued-old-token|rotated-token|access/);
+});
+
+test('a later call resumes a failed uncertain refresh inside the window, never extending it', async t => {
+  const { profile, credential, rotated, pending } = await refreshFixture(t, 'resume');
+  let clock = 1_000_000;
+  const now = () => clock;
+  let calls = 0;
+  await assert.rejects(refreshNativeCredential({
+    credential, credentialFile: profile, now, retryDelays: [],
+    reread: async () => credential,
+    refresh: async () => { calls++; throw networkReset(); },
+  }), /socket connection was closed/);
+  const failed = JSON.parse(await readFile(pending, 'utf8'));
+  assert.deepEqual([failed.stage, failed.attemptedAt], ['failed', 1_000_000]);
+  clock += 10_000;
+  const resumed = await refreshNativeCredential({
+    credential, credentialFile: profile, now, retryDelays: [],
+    reread: async () => credential,
+    refresh: async () => { calls++; return rotated; },
+  });
+  assert.deepEqual(resumed, rotated);
+  assert.equal(calls, 2);
+  assert.equal(JSON.parse(await readFile(pending, 'utf8')).attemptedAt, 1_000_000, 'retries keep the first attempt time');
+
+  // A failed receipt older than the window fails closed without presenting the token.
+  await writeFile(pending, JSON.stringify({ ...failed, owner: 'old', attemptedAt: clock - REFRESH_RETRY_WINDOW_MS }));
+  await assert.rejects(refreshNativeCredential({
+    credential, credentialFile: profile, now, retryDelays: [],
+    reread: async () => credential,
+    refresh: async () => { calls++; return rotated; },
+  }), /safe retry window has passed/);
+  assert.equal(calls, 2);
+});
+
+test('a crashed owner inside the window is resumed; a live owner is waited for, never raced', async t => {
+  const { profile, credential, rotated, digest, pending } = await refreshFixture(t, 'crash-resume');
+  const receipt = { pid: Number.MAX_SAFE_INTEGER, owner: 'crashed', from: digest, stage: 'refreshing', createdAt: Date.now(), attemptedAt: Date.now() };
+  await writeFile(pending, JSON.stringify(receipt));
+  let calls = 0;
+  const result = await refreshNativeCredential({ credential, credentialFile: profile, processAliveImpl: () => false,
+    reread: async () => credential, refresh: async () => { calls++; return rotated; } });
+  assert.deepEqual([result, calls], [rotated, 1]);
+  await writeFile(pending, JSON.stringify(receipt));
+  await assert.rejects(refreshNativeCredential({ credential, credentialFile: profile, timeout: 80, processAliveImpl: () => true,
+    reread: async () => credential, refresh: async () => { calls++; return rotated; } }), /Timed out waiting/);
+  assert.equal(calls, 1, 'a live owner may still be mid-request');
+});
+
+test('retries stop at the grace window even when more delays are configured', async t => {
+  const { profile, credential, pending } = await refreshFixture(t, 'window');
+  let clock = 0;
+  let calls = 0;
+  await assert.rejects(refreshNativeCredential({
+    credential, credentialFile: profile, now: () => clock, retryDelays: [20_000, 20_000, 20_000],
+    sleep: async ms => { clock += ms; },
+    reread: async () => credential,
+    refresh: async () => { calls++; throw networkReset(); },
+  }), /socket connection was closed/);
+  assert.equal(calls, 2, 'the third attempt would fall outside the window');
+  assert.equal(JSON.parse(await readFile(pending, 'utf8')).stage, 'failed');
+});
+
+test('a 4xx refresh answer proves no rotation: clears the receipt and asks for /login on 401', async t => {
+  const { profile, credential, rotated, pending } = await refreshFixture(t, 'rejected');
+  let calls = 0;
+  const rejected = status => Object.assign(new Error(status === 401 ? 'invalid_grant' : 'rate_limited'), { code: 'x', status });
+  await assert.rejects(refreshNativeCredential({
+    credential, credentialFile: profile,
+    reread: async () => credential,
+    refresh: async () => { calls++; throw rejected(401); },
+  }), error => /sign-in expired or was revoked.*\/login/.test(error.message) && error.cause?.status === 401);
+  assert.equal(calls, 1, 'a definitive rejection is never retried');
+  await assert.rejects(readFile(pending), { code: 'ENOENT' });
+  await assert.rejects(refreshNativeCredential({
+    credential, credentialFile: profile,
+    reread: async () => credential,
+    refresh: async () => { calls++; throw rejected(429); },
+  }), /rate_limited/);
+  await assert.rejects(readFile(pending), { code: 'ENOENT' });
+  const result = await refreshNativeCredential({ credential, credentialFile: profile, reread: async () => credential, refresh: async () => rotated });
+  assert.deepEqual(result, rotated, 'nothing blocks the next refresh');
+});
+
+test('refresh requests avoid pooled connections and expose HTTP status for classification', async () => {
+  const seen = [];
+  const client = new CloudClient({ baseUrl: 'https://cloud.test', fetchImpl: async (url, init) => {
+    seen.push(init);
+    return seen.length === 1 ? Response.json({ error: 'invalid_grant' }, { status: 401 }) : Response.json({ accessToken: 'a', refreshToken: 'r', expiresIn: 60 });
+  } });
+  await assert.rejects(client.refresh({ refreshToken: 'x' }), error => error.status === 401 && refreshRejected(error));
+  await client.refresh({ refreshToken: 'x' });
+  assert.equal(seen[0].keepalive, false);
+  assert.equal(refreshRejected(networkReset()), false);
+  assert.equal(refreshRejected({ status: 503 }), false);
+  const other = [];
+  await new CloudClient({ baseUrl: 'https://cloud.test', fetchImpl: async (url, init) => { other.push(init); return Response.json({}); } }).account({ accessToken: 't' });
+  assert.equal('keepalive' in other[0], false, 'other requests keep connection reuse');
+});
+
+test('stale refresh receipts are pruned; live, recent and unreadable-vault receipts are kept', async t => {
+  const directory = await mkdtemp(join(os.tmpdir(), 'ctg-refresh-prune-'));
+  let db;
+  t.after(async () => { try { db?.close(); } finally { await rm(directory, { recursive: true, force: true }); } });
+  const coordinationFile = join(directory, 'auth.json');
+  const vaultFile = join(directory, 'native.sqlite');
+  db = new DatabaseSync(vaultFile);
+  db.exec('CREATE TABLE credential (id TEXT PRIMARY KEY, integration_id TEXT, value TEXT)');
+  db.prepare('INSERT INTO credential VALUES (?, ?, ?)').run('A', 'carthagent-cloud', JSON.stringify({ type: 'oauth', methodID: 'carthagent-device', refresh: 'live-token', access: 'a', expires: 1 }));
+  db.close(); db = undefined;
+  const digestOf = token => createHash('sha256').update(`carthagent-device\0${token}`).digest('hex').slice(0, 32);
+  const file = token => `${coordinationFile}.ctg-refresh-${digestOf(token)}.lock.pending`;
+  const { utimes } = await import('node:fs/promises');
+  const old = new Date(Date.now() - 60 * 60 * 1000);
+  for (const token of ['live-token', 'rotated-away', 'recent-orphan']) await writeFile(file(token), '{}');
+  await writeFile(`${file('crashed')}.owner.failed.tmp`, '{}');
+  await writeFile(join(directory, 'unrelated.lock.pending'), '{}');
+  for (const name of [file('live-token'), file('rotated-away'), `${file('crashed')}.owner.failed.tmp`, join(directory, 'unrelated.lock.pending')]) await utimes(name, old, old);
+  assert.equal(await pruneRefreshReceipts({ coordinationFile, vaultFile }), 2);
+  const { readdir } = await import('node:fs/promises');
+  assert.deepEqual((await readdir(directory)).filter(entry => entry.endsWith('.pending')).sort(),
+    [file('live-token'), file('recent-orphan'), join(directory, 'unrelated.lock.pending')].map(name => name.slice(directory.length + 1)).sort());
+  // Without a readable vault, nothing short of the refresh lifetime is removed.
+  await utimes(file('recent-orphan'), old, old);
+  assert.equal(await pruneRefreshReceipts({ coordinationFile, vaultFile: join(directory, 'missing.sqlite') }), 0);
+  const ancient = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000);
+  await utimes(file('recent-orphan'), ancient, ancient);
+  assert.equal(await pruneRefreshReceipts({ coordinationFile, vaultFile: join(directory, 'missing.sqlite') }), 1);
 });
 
 test('native refresh accepts a vault rotation persisted just before its owner exits', async t => {
