@@ -35,4 +35,6 @@ const menuTrace = `    const mouseEvents: unknown[] = []
       throw error
     } finally { renderer.sendMouseEvent = send }`;
 if (!source.includes(menuOld)) throw new Error('Expected exact open-menu sequence');
-writeFileSync(file, source.replace(old, diagnostic).replace(menuOld, menuTrace));
+const settled = source.replace('  const openMenu = async (sessionID: string) => {', `  const openMenu = async (sessionID: string) => {
+    await setup.flush()`);
+writeFileSync(file, settled.replace(old, diagnostic).replace(menuOld, menuTrace));
