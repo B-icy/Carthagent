@@ -7,6 +7,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
 import { domCheck } from '../lib/browser.mjs';
+import { createServer } from 'node:net';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const serverPath = join(root, 'server.mjs');
@@ -15,26 +16,35 @@ const htmlPath = join(root, 'public', 'index.html');
 async function serverFixture(t, envOverrides = {}) {
   const cwd = mkdtempSync(join(tmpdir(), 'carthagent server '));
   writeFileSync(join(cwd, 'app.mjs'), 'console.log("ok")\n');
-  const port = 32000 + Math.floor(Math.random() * 10000);
   const token = 'test-token';
   const child = spawn(process.execPath, [serverPath], {
     cwd: root,
     // The passive release check doubles as the install ping; keep test
     // servers off the production control plane unless a test opts in.
-    env: { ...process.env, CARTHAGENT_WORKSPACE: cwd, CARTHAGENT_PORT: String(port), CARTHAGENT_SERVER_TOKEN: token, CARTHAGENT_NO_UPDATE_CHECK: '1', ...envOverrides },
+    env: { ...process.env, CARTHAGENT_WORKSPACE: cwd, CARTHAGENT_PORT: '0', CARTHAGENT_SERVER_TOKEN: token, CARTHAGENT_NO_UPDATE_CHECK: '1', ...envOverrides },
     stdio: ['ignore', 'pipe', 'pipe']
   });
   t.after(() => { child.kill('SIGTERM'); rmSync(cwd, { recursive: true, force: true }); });
-  await new Promise((resolveReady, reject) => {
+  const url = await new Promise((resolveReady, reject) => {
     const timer = setTimeout(() => reject(new Error('server startup timeout')), 5000);
+    let output = '';
     child.stdout.on('data', chunk => {
-      if (chunk.toString().includes('carthagent dashboard:')) { clearTimeout(timer); resolveReady(); }
+      output += chunk.toString();
+      const endpoint = output.match(/carthagent dashboard: (http:\/\/127\.0\.0\.1:\d+)\//);
+      if (endpoint) { clearTimeout(timer); resolveReady(endpoint[1]); }
     });
     child.on('error', error => { clearTimeout(timer); reject(error); });
     child.on('exit', code => { if (code) { clearTimeout(timer); reject(new Error(`server exited ${code}`)); } });
   });
-  return { cwd, token, url: `http://127.0.0.1:${port}` };
+  return { cwd, token, url };
 }
+
+test('dashboard rejects an occupied port without announcing readiness', async t => {
+  const blocker = createServer();
+  await new Promise(resolve => blocker.listen(0, '127.0.0.1', resolve));
+  t.after(() => blocker.close());
+  await assert.rejects(serverFixture(t, { CARTHAGENT_PORT: String(blocker.address().port) }), /server exited 1/);
+});
 
 const json = (token, body) => ({
   method: 'POST',

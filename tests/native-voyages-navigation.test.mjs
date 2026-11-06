@@ -164,5 +164,6 @@ test('native extension is optional; navigation cannot itself accept consent or p
   assert.match(pane, /showDescription=\{false\}/);
   assert.doesNotMatch(pane, /\.submit\(|\.retry\(|\.purchase\(|\.quote\(|\.customize\(|\.equip\(|dialog\.confirm|consent: true/);
   assert.match(daily, /controller.refresh\(\).then\(async \(\) => \{\s*if \(props.questID\) await openQuest\(props.questID\)/);
-  assert.match(voyages, /view\(\).busy \|\| context.keymap.mode.current\(\) !== "base"/);
+  assert.match(voyages, /const enabled = \(\) => !view\(\).busy && !reconciling\(\) && context.keymap.mode.current\(\) === "base";/);
+  assert.match(voyages, /if \(!value \|\| !enabled\(\)\) return;/);
 });

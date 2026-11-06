@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url"
 
 export const SHIP_AGENT_ID = "ship"
 export const LITE_AGENT_ID = "lite"
+// Keep the persisted ID compatible with existing sessions and mode colors/order.
 
 const SKILLS_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../skills")
 
@@ -34,7 +35,7 @@ export async function registerShipAgents(ctx: Pick<Context, "agent">) {
       item.permissions.push({ action: "question", resource: "*", effect: "allow" })
     })
     editor.update(LITE_AGENT_ID, item => {
-      item.name = "Lite" as unknown as typeof item.name
+      item.name = "Quick" as unknown as typeof item.name
       item.description = "Direct execution with existing skills and tools. No delivery harness."
       item.mode = "primary"
       item.color = "#b89ce0"

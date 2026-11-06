@@ -16,7 +16,7 @@ const slate = { slate: { day: "2026-10-30", endsAt: "2026-10-31T00:00:00Z", item
   { id: "quest-two", definition: { title: "Review a change" }, status: "assessed_complete" },
 ] }, records: [{ request: { evidence: "must not appear in navigation", consent: true } }] };
 
-async function fixture({ width = 30, height = 36, authenticated = true } = {}) {
+async function fixture({ width = 30, height = 36, authenticated = true, hint = false } = {}) {
   const [active, setActive] = createSignal(true);
   const [focused, setFocused] = createSignal(false);
   const [compact, setCompact] = createSignal(false);
@@ -48,7 +48,9 @@ async function fixture({ width = 30, height = 36, authenticated = true } = {}) {
     },
   } as unknown as Context;
   const app = await testRender(() => <PluginContextProvider value={context}>
-    <box width={width} height={height} visible={active()}>
+    <box width={width} height={height} visible={active()} flexDirection="column">
+      {/* The native rail inserts this focus hint above the pane when it takes focus, like the pinned host. */}
+      {hint && focused() ? <text height={1} flexShrink={0}> ↑↓ Enter · Esc back</text> : null}
       <VoyagesNavigation width={width} active={active()} compact={compact()} focused={focused()} sessionID={sessionID()} focus={() => { if (mode() !== "base") return; setFocused(true); setMode("navigation"); }} blur={() => { setFocused(false); if (mode() === "navigation") setMode("base"); }} />
     </box>
   </PluginContextProvider>, { width, height, kittyKeyboard: true });
@@ -126,6 +128,45 @@ test("Projects/Voyages toggles retain selection and do not route, submit or purc
     expect(f.routes).toHaveLength(0);
     expect(f.calls).toEqual(["profile", "daily", "profile", "daily"]);
   } finally { f.app.renderer.destroy(); }
+});
+
+test("server reconnect preserves the selected static rail destination without navigating", async () => {
+  const f = await fixture();
+  try {
+    await f.focus();
+    f.app.mockInput.pressArrow("down");
+    await f.app.renderOnce();
+    expect(f.list().getSelectedOption()?.value).toBe("equipment");
+    f.event("server.connected");
+    await f.settle();
+    expect(f.list().getSelectedOption()?.value).toBe("equipment");
+    expect(f.routes).toHaveLength(0);
+  } finally { f.app.renderer.destroy(); }
+});
+
+test("reconnect keeps Shop highlighted after opening it and delayed summary recovery", async () => {
+  const f = await fixture();
+  const gate = Promise.withResolvers<void>();
+  try {
+    await f.focus();
+    const list = f.list();
+    f.app.mockInput.pressArrow("down");
+    await f.app.renderOnce();
+    f.app.mockInput.pressEnter();
+    await f.app.renderOnce();
+    expect(f.mode()).toBe("base");
+    expect(list.getSelectedOption()?.value).toBe("equipment");
+    f.delay(gate.promise);
+    f.event("server.connected");
+    await f.app.renderOnce();
+    // Cold plugin activation emits these inventory refreshes after connecting.
+    f.event("integration.updated");
+    f.event("provider.updated");
+    gate.resolve();
+    await f.settle();
+    expect(list.getSelectedOption()?.value).toBe("equipment");
+    expect(f.routes).toHaveLength(1);
+  } finally { gate.resolve(); f.app.renderer.destroy(); }
 });
 
 test("compact mode uses the same mounted selection and keyboard behavior", async () => {
@@ -266,5 +307,55 @@ test.each(["coding-session", undefined])("return to coding explicitly navigates 
     await f.app.renderOnce();
     expect(f.selected).toEqual(["projects"]);
     expect(f.routes).toEqual([sessionID ? { type: "session", sessionID } : { type: "home" }]);
+  } finally { f.app.renderer.destroy(); }
+});
+
+const rowOf = (frame: string, label: string) => frame.split("\n").findIndex((line) => {
+  const text = line.replace(/[█▀▄]/g, "").trim().replace(/^▶ /, "");
+  return text.length >= 3 && (text === label || (text.endsWith("…") && label.startsWith(text.slice(0, -1))));
+});
+const pointerCases = [
+  { name: "unfocused full", width: 30, height: 36, compact: false, focused: false, scrolled: false },
+  { name: "focused full", width: 30, height: 36, compact: false, focused: true, scrolled: false },
+  { name: "unfocused compact", width: 11, height: 36, compact: true, focused: false, scrolled: false },
+  { name: "focused compact", width: 11, height: 36, compact: true, focused: true, scrolled: false },
+  { name: "unfocused scrolled", width: 30, height: 7, compact: false, focused: false, scrolled: true },
+  { name: "focused scrolled", width: 30, height: 7, compact: false, focused: true, scrolled: true },
+];
+for (const c of pointerCases) for (const [label, route] of [["Shop", { type: "plugin", name: "voyages", data: { sessionID: "coding-session", section: "equipment" } }], [c.compact ? "Captain" : "Character", { type: "plugin", name: "voyages", data: { sessionID: "coding-session", section: "profile" } }]] as const) {
+  test(`pointer activates the row under the press when the focus hint shifts the rail (${c.name}, ${label})`, async () => {
+    const f = await fixture({ width: c.width, height: c.height, hint: true });
+    try {
+      if (c.compact) { f.setCompact(true); await f.app.renderOnce(); }
+      if (c.focused) await f.focus();
+      if (c.scrolled) { f.scroll().scrollBy(2); await f.app.renderOnce(); expect(f.scroll().scrollTop).toBeGreaterThan(0); }
+      const frame = f.app.captureCharFrame();
+      const row = rowOf(frame, label);
+      if (row < 0) throw new Error(`${label} not drawn:\n${frame}`);
+      await f.app.mockMouse.pressDown(3, row);
+      await f.app.renderOnce();
+      expect(f.mode()).toBe("navigation");
+      expect(f.routes).toHaveLength(0);
+      await f.app.mockMouse.release(3, row);
+      await f.app.renderOnce();
+      expect(f.routes).toEqual([route]);
+    } finally { f.app.renderer.destroy(); }
+  });
+}
+
+test("a release without a matching press, or on another row, never activates a rail row", async () => {
+  const f = await fixture({ hint: true });
+  try {
+    await f.focus();
+    const shop = rowOf(f.app.captureCharFrame(), "Shop");
+    await f.app.mockMouse.release(3, shop);
+    await f.app.renderOnce();
+    expect(f.routes).toHaveLength(0);
+    await f.app.mockMouse.pressDown(3, shop);
+    await f.app.mockMouse.release(3, shop + 1);
+    await f.app.renderOnce();
+    expect(f.routes).toHaveLength(0);
+    for (const button of [1, 2] as const) { await f.app.mockMouse.click(3, shop, button); await f.app.renderOnce(); }
+    expect(f.routes).toHaveLength(0);
   } finally { f.app.renderer.destroy(); }
 });

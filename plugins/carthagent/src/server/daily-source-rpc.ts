@@ -174,7 +174,7 @@ export function createDailySourceRpcHandlers(ctx: SourceContext) {
   return {
     report: async (input: unknown, call: RpcCallContext<typeof DailySource.methods.report>) => {
       call.signal.throwIfAborted();
-      if (!record(input) || !safeID(input.sessionID) || Object.keys(input).some(key => key !== 'sessionID')) return call.error('dailySourceError', 'invalid_request', { code: 'invalid_request' });
+      if (!record(input) || !safeID(input.sessionID) || (input.allowSession !== undefined && typeof input.allowSession !== 'boolean') || Object.keys(input).some(key => key !== 'sessionID' && key !== 'allowSession')) return call.error('dailySourceError', 'invalid_request', { code: 'invalid_request' });
       try {
         const root = canonicalDirectory(ctx.location.project.canonical);
         const location = canonicalDirectory(ctx.location.directory);
@@ -196,7 +196,15 @@ export function createDailySourceRpcHandlers(ctx: SourceContext) {
         }
         noLinks(directory);
         call.signal.throwIfAborted();
-        return { source: sourceFor(directory, session.id) };
+        const source = sourceFor(directory, session.id);
+        if (source || !input.allowSession) return { source };
+        const revision = fingerprint(directory, ['.']);
+        const digest = createHash('sha256').update(JSON.stringify(['daily-session-v1', session.projectID, session.id, revision])).digest('hex');
+        const runId = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-4${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
+        // This binds user-entered claims to owned local work, without inventing
+        // check receipts, importing transcripts, or granting verified rewards.
+        return { source: { origin: 'session' as const, runId, revision, planRevision: 1, freshness: 'current' as const,
+          goal: '', change: '', checks: [], findings: [], truncated: false } };
       } catch (error) {
         if (call.signal.aborted) throw error;
         const code = error instanceof Error && error.message === 'not_owned' ? 'not_owned' : 'invalid_source';

@@ -65,6 +65,34 @@ export function resolveCommand(token: string, commands: readonly CarthagentComma
   return commands.find((item) => item.name === normalized || item.aliases?.includes(normalized));
 }
 
+/** Map a /help list value (a command name) to its command; anything else, including cancel, is inert. */
+export function helpSelectionCommand(value: unknown, commands: readonly CarthagentCommand[] = COMMANDS) {
+  if (typeof value !== "string" || !value) return undefined;
+  return commands.find((item) => item.name === value || item.aliases?.includes(value));
+}
+
+const SIGN_IN_REQUIRED = "Sign in to Carthagent Cloud to use this command. Run /login (Google or email), then try again.";
+const AUTH_FAILURE = /OAuth connection is required|not authenticated|unauthenticated|unauthorized/i;
+
+/** Native promise RPC rejects with plain { _tag, type, message, data } objects, not Error instances. */
+export function commandErrorMessage(error: unknown): string {
+  if (typeof error === "string") return error || "Command failed without details.";
+  const record = error && typeof error === "object" ? error as { _tag?: unknown; type?: unknown; message?: unknown } : undefined;
+  const message = typeof record?.message === "string" ? record.message : "";
+  if (record?.type === "unauthenticated" || record?._tag === "UnauthorizedError" || AUTH_FAILURE.test(message)) return SIGN_IN_REQUIRED;
+  return message || "Command failed without details.";
+}
+
 // Host-owned commands take priority. These slash names are verified against
 // the V2.0.32 keybind command inventory and are intentionally not shadowed.
 export const NATIVE_COMMAND_COLLISIONS = ["themes", "settings"] as const;
+
+// The session route registers its own slash entry for these with identical
+// semantics (the plugin handler only forwards to it), so the plugin entry is
+// withheld there to avoid a duplicate suggestion. Outside a session the plugin
+// entry remains so the command still explains that it needs an open session.
+export const NATIVE_SESSION_COMMANDS = ["clear"] as const;
+
+export function pluginSlashAvailable(name: string, route: { readonly type: string }) {
+  return !(route.type === "session" && NATIVE_SESSION_COMMANDS.includes(name as typeof NATIVE_SESSION_COMMANDS[number]));
+}

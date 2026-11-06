@@ -26,7 +26,7 @@ import { createReport, latestReport, saveReport } from './lib/reports.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const cwd = resolve(process.env.CARTHAGENT_WORKSPACE || process.cwd());
-const port = Number(process.env.CARTHAGENT_PORT) || 3000;
+const port = Number(process.env.CARTHAGENT_PORT ?? 3000);
 const token = process.env.CARTHAGENT_SERVER_TOKEN || randomBytes(24).toString('hex');
 const app = express();
 const enqueue = createSerialQueue();
@@ -335,7 +335,8 @@ app.use((req, res, next) => {
   next();
 });
 
-app.listen(port, '127.0.0.1', () => {
-  console.log(`carthagent dashboard: http://127.0.0.1:${port}/?token=${token}`);
+const server = app.listen(port, '127.0.0.1', error => {
+  if (error) { console.error(`Dashboard startup failed: ${error.message}`); process.exitCode = 1; return; }
+  console.log(`carthagent dashboard: http://127.0.0.1:${server.address().port}/?token=${token}`);
   console.log(`workspace: ${cwd}`);
 });

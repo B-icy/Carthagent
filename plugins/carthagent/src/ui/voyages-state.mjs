@@ -4,6 +4,16 @@ class LocalVoyagesError extends Error {
   constructor(code) { super(code); this.code = code; }
 }
 
+const SIGN_IN = 'Sign in to Carthagent Cloud to load Voyages. Choose Sign in, then Refresh; no success assumed.';
+const AUTH_GUIDANCE = {
+  authentication_required: SIGN_IN,
+  reauthentication_required: SIGN_IN,
+  invalid_token: SIGN_IN,
+  insufficient_scope: SIGN_IN,
+  expired_token: 'Your Carthagent Cloud sign-in expired. Choose Sign in to reconnect, then Refresh; no success assumed.',
+  revoked_token: 'Your Carthagent Cloud sign-in was revoked. Choose Sign in to reconnect, then Refresh; no success assumed.',
+};
+
 /** UI transaction lifetime. Credentials and durable purchase keys remain server-only. */
 export function createVoyagesState({ api, changed = (_state) => {}, now = Date.now, timeoutSignal = () => AbortSignal.timeout(15_000) }) {
   let generation = 0;
@@ -37,7 +47,7 @@ export function createVoyagesState({ api, changed = (_state) => {}, now = Date.n
         const code = voyagesErrorCode(error);
         state.error = code === 'insufficient_coins'
           ? 'insufficient_coins. Not enough coins for this item. No purchase was made; wallet refreshed.'
-          : `${code}. Refresh required; no success assumed. Sign in again if access expired or was revoked.`;
+          : AUTH_GUIDANCE[code] ?? `${code}. Refresh required; no success assumed. Sign in again if access expired or was revoked.`;
         emit();
         // Reconcile all failed writes, never replay them. Even if this succeeds,
         // retain the failure message rather than claiming a successful mutation.

@@ -4,11 +4,12 @@ import { createHash, randomUUID } from "node:crypto";
 import { TextAttributes, type ScrollBoxRenderable, type SelectRenderable } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/solid";
 import { usePlugin } from "@opencode/plugin/tui";
-import { clickSelect } from "./select-mouse.js";
+import { clickSelect, createSelectMemory } from "./select-mouse.js";
 import { dailyQuestsClient, dailySourceClient } from "./client.js";
 import type { DailyEvidence, DailyQuestDetail, DailySnapshot, DailyRecord } from "../daily-quests-rpc.js";
 import { createDailyQuestsState } from "./daily-quests-state.mjs";
 import { handleDailyQuestsEvent } from "./daily-quests-events.mjs";
+import { voyagesEventAction } from "./voyages-state.mjs";
 import { selectedQuestEvidence } from "./quest-evidence.mjs";
 import { assessmentFeedback, questConditions, questCopy, questReset, questStatus, submissionText } from "./quest-presentation.mjs";
 
@@ -44,7 +45,11 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string; d
   let summary: ScrollBoxRenderable | undefined;
   let actions: SelectRenderable | undefined;
   let activeDialog: symbol | undefined;
-  const enabled = () => !view().busy && context.keymap.mode.current() === "base";
+  const [reconciling, setReconciling] = createSignal(false);
+  const [usableWidth, setUsableWidth] = createSignal<number>();
+  const enabled = () => !view().busy && !reconciling() && context.keymap.mode.current() === "base";
+  // Submit is never a positional default: until the user picks a row, the list rests on non-sending Details.
+  const memory = createSelectMemory(() => actions, options => options[0]?.value === "submit" ? Math.max(0, options.findIndex(o => o.value === "details")) : 0);
   const ownDialog = async <T,>(show: () => Promise<T>): Promise<T> => {
     const token = Symbol(); activeDialog = token;
     try { return await show(); } finally { if (activeDialog === token) activeDialog = undefined; }
@@ -52,7 +57,7 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string; d
   const closeOwnDialog = () => { if (activeDialog) { activeDialog = undefined; context.ui.dialog.clear(); } };
   const confirm = (title: string, message: string, label: string) => ownDialog(() => context.ui.dialog.confirm({ title, message, label: { confirm: label, cancel: "Cancel" } }));
   const coding = () => context.ui.router.navigate(props.sessionID ? { type: "session", sessionID: props.sessionID } : { type: "home" });
-  const resetFocus = () => { actions?.setSelectedIndex(0); summary?.scrollTo(0); };
+  const resetFocus = () => { memory.reset(); memory.sync(); summary?.scrollTo(0); };
   const moveQuest = (delta: number) => {
     const items = visibleQuests();
     const index = Math.max(0, Math.min(items.length - 1, questIndex() + delta));
@@ -87,6 +92,33 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string; d
   const pending = () => records().find(r => r.request || r.submission?.status === "queued" || r.submission?.status === "grading");
   const selectedRecord = () => records().filter(r => r.questId === view().detail?.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
 
+  const enterCheck = async (revision: string, live: () => boolean): Promise<DailyEvidence['checks'][number] | undefined> => {
+    const prompt = (title: string) => ownDialog(() => context.ui.dialog.prompt({ title }));
+    const name = await prompt("Check command or test name");
+    if (!name?.trim() || !live()) return;
+    const before = await ownDialog(() => context.ui.dialog.select({ title: "Observed result before the change", options: [
+      { title: "Not run / no recorded failure", value: "not_run" as const }, { title: "Failed", value: "failed" as const },
+    ] }));
+    if (!before || !live()) return;
+    const after = await ownDialog(() => context.ui.dialog.select({ title: "Observed result on the selected revision", options: [
+      { title: "Not run", value: "not_run" as const }, { title: "Failed", value: "failed" as const }, { title: "Passed", value: "passed" as const },
+    ] }));
+    if (!after || !live()) return;
+    const result = await prompt("Selected check output / before-and-after evidence");
+    if (result === undefined || !live()) return;
+    return { name, before, after, revision, result };
+  };
+  const enterFinding = async (live: () => boolean): Promise<DailyEvidence['findings'][number] | undefined> => {
+    const prompt = (title: string) => ownDialog(() => context.ui.dialog.prompt({ title }));
+    const issue = await prompt("Review finding: specific issue");
+    if (!issue?.trim() || !live()) return;
+    const evidence = await prompt("Selected evidence for the finding and its fix");
+    if (evidence === undefined || !live()) return;
+    const resolution = await prompt("How the issue was resolved");
+    if (resolution === undefined || !live()) return;
+    return { issue, evidence, resolution };
+  };
+
   const chooseWork = async (automatic = false) => {
     await controller.compose(async (quest: DailyQuestDetail, live: () => boolean, signal: AbortSignal) => {
       // The UI cache contains visited sessions, not the complete durable inventory.
@@ -109,22 +141,24 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string; d
       if (!automatic) {
         for (let i = 0; i < sessions.length && live(); i += 4) {
           await Promise.all(sessions.slice(i, i + 4).map(async s => {
-            try { const result = await sourceApi.report({ sessionID: s.id }, AbortSignal.any([signal, AbortSignal.timeout(15_000)])); if (result.source) sources.set(s.id, result); }
+            try { const result = await sourceApi.report({ sessionID: s.id, allowSession: true }, AbortSignal.any([signal, AbortSignal.timeout(15_000)])); if (result.source) sources.set(s.id, result); }
             catch { unreadable++; }
           }));
         }
         if (!live()) return;
-        if (!sources.size) { setNotice(unreadable ? "Could not read recorded work from some sessions. Refresh and try choosing work again." : "No recorded Ship work in this folder yet. Finish a task in Ship mode, then return here."); return; }
+        if (!sources.size) { setNotice(unreadable ? "Could not read work from some sessions. Refresh and try choosing work again." : "No sessions in this folder yet. Complete work in any mode, then return here."); return; }
         if (unreadable) setNotice("Some sessions could not be read. Showing available recorded work; try again if yours is missing.");
       }
       const sessionID = automatic ? props.sessionID : await ownDialog(() => context.ui.dialog.select({
         title: "Choose completed work",
-        options: sessions.filter(s => sources.has(s.id)).map(s => ({ title: s.title || "Untitled session", value: s.id, description: sources.get(s.id)?.source?.freshness === "stale" ? "Checks need refreshing" : "Recorded Ship work" })),
+        options: sessions.filter(s => sources.has(s.id)).map(s => ({ title: s.title || "Untitled session", value: s.id, description: sources.get(s.id)?.source?.origin === "session" ? "Add selected evidence · any mode" : sources.get(s.id)?.source?.freshness === "stale" ? "Checks need refreshing" : "Recorded work" })),
       }));
       if (!sessionID || !live()) return;
-      const { source } = sources.get(sessionID) ?? await sourceApi.report({ sessionID }, AbortSignal.any([signal, AbortSignal.timeout(15_000)]));
+      const { source } = sources.get(sessionID) ?? await sourceApi.report({ sessionID, allowSession: true }, AbortSignal.any([signal, AbortSignal.timeout(15_000)]));
       if (!live()) return;
-      if (!source) { if (!automatic) setNotice("No recorded Ship delivery in that session. Finish the task in Ship mode, then choose it here."); return; }
+      if (!source) { if (!automatic) setNotice("No local work available for that session. Choose another session or refresh."); return; }
+      // Opening a quest must never trigger a modal chain or select empty claims.
+      if (source.origin === "session" && automatic) return;
       const session = sessions.find(s => s.id === sessionID) ?? context.data.session.get(sessionID);
       const project = reference("daily-project-v1", session?.projectID ?? location().directory);
       const selected: DailyEvidence = {
@@ -133,9 +167,25 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string; d
         checks: source.checks.map(({ id, before, after, revision, result }) => ({ name: id, before, after, revision, result })),
         findings: source.findings.map(({ issue, evidence, resolution }) => ({ issue, evidence, resolution })),
       };
+      if (source.origin === "session") {
+        const goal = await ownDialog(() => context.ui.dialog.prompt({ title: "Goal of the completed work" }));
+        if (!goal?.trim() || !live()) return;
+        const change = await ownDialog(() => context.ui.dialog.prompt({ title: "What changed and what outcome was achieved?" }));
+        if (!change?.trim() || !live()) return;
+        selected.goal = goal; selected.change = change;
+        if (quest.definition.kind === "review") {
+          const finding = await enterFinding(live);
+          if (!finding || !live()) return;
+          selected.findings.push(finding);
+        } else {
+          const check = await enterCheck(source.revision, live);
+          if (!check || !live()) return;
+          selected.checks.push(check);
+        }
+      }
       const bounded = selectedQuestEvidence(selected, quest.definition.kind);
-      setNotice([source.truncated || bounded.omitted ? "Some recorded evidence exceeded the size limit and was omitted. Review selected work in Details." : "", source.freshness === "stale" ? "This work has changed since verification. Run its checks again in Ship mode." : ""].filter(Boolean).join(" "));
-      return { id: randomUUID(), evidence: bounded.evidence, provenance: session?.title && session.title !== "New session" ? session.title : source.goal.slice(0, 100) || "Selected Ship session" };
+      setNotice([source.origin === "session" ? "User-entered evidence. Review in Details, then Submit when ready." : "", source.truncated || bounded.omitted ? "Some evidence exceeded the size limit and was omitted. Review selected work in Details." : "", source.freshness === "stale" ? "This work has changed since verification. Run its checks again before submitting." : ""].filter(Boolean).join(" "));
+      return { id: randomUUID(), evidence: bounded.evidence, provenance: session?.title && session.title !== "New session" ? session.title : selected.goal.slice(0, 100) || "Selected session" };
     });
     controller.preview();
     resetFocus();
@@ -158,6 +208,8 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string; d
     const selected = structuredClone(saved.evidence);
     const field = await ownDialog(() => context.ui.dialog.select({ title: "Edit selected work", options: [
       { title: "Edit goal", value: "goal" }, { title: "Edit change summary", value: "change" },
+      ...(selected.checks.length < 12 ? [{ title: "Add check evidence", value: "add-check" }] : []),
+      ...(selected.findings.length < 5 ? [{ title: "Add review finding", value: "add-finding" }] : []),
       ...selected.checks.map((c, i) => ({ title: `Remove check: ${c.name}`, value: `check:${i}` })),
       ...selected.findings.map((f, i) => ({ title: `Remove finding: ${f.issue}`, value: `finding:${i}` })),
     ] }));
@@ -166,6 +218,14 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string; d
       const text = await ownDialog(() => context.ui.dialog.prompt({ title: field === "goal" ? "Goal" : "Change summary", value: selected[field] }));
       if (text === undefined || !live()) return;
       selected[field] = text;
+    } else if (field === "add-check") {
+      const check = await enterCheck(selected.revision, live);
+      if (!check || !live()) return;
+      selected.checks.push(check);
+    } else if (field === "add-finding") {
+      const finding = await enterFinding(live);
+      if (!finding || !live()) return;
+      selected.findings.push(finding);
     } else {
       const [kind, index] = field.split(":");
       if (kind === "check") selected.checks.splice(Number(index), 1); else selected.findings.splice(Number(index), 1);
@@ -205,12 +265,54 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string; d
     if (value.startsWith("retry:")) void controller.retry(id, () => confirm("Retry saved submission?", "Check whether the server received it, then resend the same saved work only if absent.", "Retry"));
     if (value.startsWith("forget:")) void controller.forget(id, () => confirm("Erase saved evidence?", "Keep the submission ID for status checks. The saved work cannot be resent afterward. This does not cancel an accepted assessment.", "Erase"));
   };
+  type Reopen = { accountKey: string; questId?: string; overviewId?: string; draft?: { draft: NonNullable<View["draft"]>; preview: View["preview"]; phase: string }; details: boolean; dialog: boolean };
+  let reopen: Reopen | undefined;
+  let reconcile = 0;
   onMount(() => {
     let binding = JSON.stringify(location());
     const stop = context.data.listen(({ details: event }) => {
       const next = JSON.stringify(location()), changedLocation = binding !== next; binding = next;
-      void handleDailyQuestsEvent({ controller, event, location: location(), changedLocation, actions,
-        interrupted: !!(view().draft || activeDialog), clearReplay: () => setDetails(false), closeDialog: closeOwnDialog, notice: setNotice });
+      if (!changedLocation && voyagesEventAction(event, location()) === "ignore") return;
+      const before = view();
+      const saved: Reopen | undefined = changedLocation || event.type === "credential.switched" ? undefined : reopen ?? (before.snapshot ? {
+        accountKey: before.snapshot.accountKey, questId: before.detail?.id, details: details(), dialog: !!activeDialog,
+        overviewId: before.detail ? undefined : visibleQuests()[questIndex()]?.id,
+        draft: before.draft ? { draft: before.draft, preview: before.preview, phase: before.phase } : undefined,
+      } : undefined);
+      let refreshing: Promise<unknown> | undefined;
+      memory.quiet(() => {
+        refreshing = handleDailyQuestsEvent({ controller, event, location: location(), changedLocation, actions,
+          interrupted: !!(view().draft || activeDialog), clearReplay: () => setDetails(false), closeDialog: closeOwnDialog, notice: setNotice });
+      });
+      // A background reload never restores a highlighted Submit.
+      memory.forget(value => value === "submit");
+      // The old identity is already gone. Keep activation off until the reload has been compared with it, so a
+      // late Enter or click cannot land on whatever row the transient overview shows.
+      const token = ++reconcile;
+      // Disconnect clears the visible account immediately, but retain a position to compare on reconnect.
+      // Evidence/consent remains canceled; never carry its draft through an offline interval.
+      reopen = refreshing ? saved : String(event.type) === "server.disconnected" && saved ? { ...saved, draft: undefined } : undefined;
+      setReconciling(!!refreshing);
+      if (!refreshing) return;
+      void refreshing.then(async () => {
+        if (token !== reconcile || !saved || !view().snapshot?.accountKey || view().snapshot?.accountKey !== saved.accountKey) return;
+        // The board only regains its highlight; the quest is not opened, so no action list is restored.
+        if (!saved.questId) {
+          const index = visibleQuests().findIndex(q => q.id === saved.overviewId);
+          if (index >= 0) { setQuestIndex(index); summary?.scrollChildIntoView(`daily-quest-${saved.overviewId}`); }
+          return;
+        }
+        if (saved.draft) controller.adopt(saved.draft);
+        await controller.select(saved.questId);
+        if (token !== reconcile || view().detail?.id !== saved.questId) return;
+        if (saved.details) setDetails(true);
+        if (saved.draft && !saved.dialog && view().draft?.id === saved.draft.draft.id) setNotice("");
+      }).finally(() => {
+        if (token !== reconcile) return;
+        reopen = undefined;
+        setReconciling(false);
+        memory.sync();
+      });
     });
     void controller.refresh().then(async () => {
       if (props.questID) await openQuest(props.questID);
@@ -225,17 +327,20 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string; d
     }, 5000);
     onCleanup(() => { clearInterval(timer); stop(); controller.dispose(); closeOwnDialog(); });
   });
+  // While a reload is in flight the list is inert and shows a transient shape; restore once it settles.
+  createEffect(on(options, () => { if (!view().busy && !reconciling()) memory.sync(); }, { defer: true }));
   return <box flexDirection="column" flexGrow={1} minHeight={0} paddingX={2} paddingY={1} overflow="hidden" backgroundColor={context.theme.background.base}>
     <box flexDirection="row" flexShrink={0} paddingBottom={compact() ? 0 : 1}>
       <text flexShrink={0} fg={context.theme.text.base} attributes={TextAttributes.BOLD}>{details() ? "Quest details" : completed() && !view().detail ? "Completed quests" : "Quests"}</text>
       <box flexGrow={1} />
       <Show when={view().snapshot}><text fg={context.theme.text.muted}>{questReset(view().snapshot!.slate.endsAt, clock())}</text></Show>
     </box>
-    <scrollbox ref={summary} flexBasis={0} flexGrow={1} minHeight={1} overflow="hidden" contentOptions={{ flexDirection: "column" }}>
-      <Show when={view().busy}><text flexShrink={0} fg={context.theme.text.muted}>Loading…</text></Show>
-      <Show when={view().error}><text flexShrink={0} fg={context.theme.text.feedback.error.base}>{view().error}</text></Show>
-      <Show when={notice()}><text flexShrink={0} fg={context.theme.text.feedback.warning.base}>{notice()}</text></Show>
-      <Show when={!view().detail && view().snapshot}>{(snapshot) => <box flexShrink={0} flexDirection="column">
+    {/* Wrapped text measures against the content box, which ignores the scrollbar column; bound it to the viewport. */}
+    <scrollbox ref={summary} flexBasis={0} flexGrow={1} minHeight={1} overflow="hidden" contentOptions={{ flexDirection: "column" }} viewportOptions={{ onSizeChange: () => setUsableWidth(summary?.viewport.width) }}>
+      <Show when={view().busy || reconciling()}><text flexShrink={0} width={usableWidth()} fg={context.theme.text.muted}>Loading…</text></Show>
+      <Show when={view().error}><text flexShrink={0} width={usableWidth()} fg={context.theme.text.feedback.error.base}>{view().error}</text></Show>
+      <Show when={notice()}><text flexShrink={0} width={usableWidth()} fg={context.theme.text.feedback.warning.base}>{notice()}</text></Show>
+      <Show when={!view().detail && view().snapshot}>{(snapshot) => <box flexShrink={0} width={usableWidth()} flexDirection="column">
         <Show when={!visibleQuests().length}><box paddingY={1} flexDirection="column" flexShrink={0}>
           <text fg={context.theme.text.base}>{completed() ? "No completed quests yet" : snapshot().slate.items.length ? "All quests complete" : "No quests today"}</text>
           <Show when={!completed()}><text fg={context.theme.text.muted}>New quests at the next reset.</text></Show>
@@ -246,7 +351,7 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string; d
           <text flexShrink={0} fg={q.status === "assessed_complete" ? context.theme.text.feedback.success.base : context.theme.text.action.primary.base}>{questStatus(q, records())} →</text>
         </box>}</For>
       </box>}</Show>
-      <Show when={view().detail}>{q => <box flexDirection="column" flexShrink={0}>
+      <Show when={view().detail}>{q => <box flexDirection="column" flexShrink={0} width={usableWidth()}>
         <text flexShrink={0} fg={context.theme.text.base} attributes={TextAttributes.BOLD}>{questCopy(q()).title}</text>
         <text flexShrink={0} fg={context.theme.text.base}>{questCopy(q()).goal}</text>
         <Show when={q().status === "assessed_complete"} fallback={<>
@@ -256,7 +361,7 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string; d
           </box></Show>
           <box flexDirection="column" flexShrink={0} marginTop={1} paddingX={2} paddingY={compact() ? 0 : 1} backgroundColor={context.theme.background.raised.base}>
           <text flexShrink={0} fg={context.theme.text.muted}>{view().preview || !q().latestSubmission ? "Selected work" : "Submitted work"}</text>
-          <text flexShrink={0} fg={context.theme.text.base}>{view().draft?.provenance ?? (q().latestSubmission ? "Submission received. See assessment below." : "Choose a completed Ship session")}</text>
+           <text flexShrink={0} fg={context.theme.text.base}>{view().draft?.provenance ?? (q().latestSubmission ? "Submission received. See assessment below." : "Choose completed work from any mode")}</text>
           </box>
         </>}><box flexDirection="column" flexShrink={0} marginTop={1} padding={2} backgroundColor={context.theme.background.raised.base}>
           <text flexShrink={0} fg={context.theme.text.feedback.success.base} attributes={TextAttributes.BOLD}>✓ Quest complete</text>
@@ -289,7 +394,7 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string; d
       <text fg={context.theme.text.action.secondary.base} onMouseUp={() => select("refresh")}>r Refresh</text>
       <text fg={context.theme.text.action.secondary.base} onMouseUp={coding}>Esc Coding</text>
     </box>}>
-      <select ref={actions} height={Math.min(4, options().length)} flexShrink={0} backgroundColor={context.theme.background.base} focusedBackgroundColor={context.theme.background.base} focusedTextColor={context.theme.text.action.secondary.base} textColor={context.theme.text.action.secondary.base} selectedTextColor={context.theme.text.formfield.focused} selectedBackgroundColor={context.theme.background.formfield.focused} showDescription={false} showScrollIndicator options={options()} focused={enabled()} onMouseUp={event => { if (enabled()) clickSelect(actions, event); }} onSelect={(_index, option) => select(option?.value)} />
+      <select ref={actions} height={Math.min(4, options().length)} flexShrink={0} backgroundColor={context.theme.background.base} focusedBackgroundColor={context.theme.background.base} focusedTextColor={context.theme.text.action.secondary.base} textColor={context.theme.text.action.secondary.base} selectedTextColor={context.theme.text.formfield.focused} selectedBackgroundColor={context.theme.background.formfield.focused} showDescription={false} showScrollIndicator options={options()} focused={enabled()} onMouseUp={event => { if (enabled()) clickSelect(actions, event); }} onChange={(_index, option) => memory.changed(option)} onSelect={(_index, option) => select(option?.value)} />
     </Show>
     <text flexShrink={0} fg={context.theme.text.muted}>↑↓ Enter select · Ctrl+U/D scroll · Esc back</text>
   </box>;

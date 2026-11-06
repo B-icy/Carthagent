@@ -12,6 +12,18 @@ try {
   await host.active();
   const rpc = async (rpcID, method, input) => (await client.rpc.call({ rpcID, method, input, location }, request())).output;
   const session = await client.session.create({ location, model, title: 'Product entrypoint probe' }, request());
+  const agents = await client.agent.list({ location }, request());
+  assert.equal(agents.data.find(agent => agent.id === 'lite')?.name, 'Quick');
+  for (const agent of ['lite', 'plan', 'build']) {
+    const work = await client.session.create({ location, model, agent, title: `Any-mode quest ${agent}` }, request());
+    const { source } = await rpc('carthagent.daily-source', 'report', { sessionID: work.id, allowSession: true });
+    assert.equal(source.origin, 'session');
+    assert.match(source.revision, /^[a-f0-9]{64}$/);
+    assert.deepEqual(source.checks, []);
+    assert.deepEqual(source.findings, []);
+    assert.equal(source.goal, '');
+    assert.deepEqual(await rpc('carthagent.daily-source', 'report', { sessionID: work.id }), { source: null });
+  }
   const health = await rpc('carthagent', 'health', {});
   assert.equal(health.directory, host.cwd);
   assert.equal(health.hostVersion, identity.runtimeVersion);
@@ -79,7 +91,7 @@ try {
   } finally { clearTimeout(timer); }
   console.log(JSON.stringify({ host: identity.runtimeVersion, compatibilityVersion: identity.compatibilityVersion,
     ...(identity.binarySha256 ? { binarySha256: identity.binarySha256 } : {}),
-    entrypoint: 'passed', workspace: 'passed', archive: 'passed', controls: 'passed', eventInvalidation: 'passed', reconnectSnapshot: 'passed', reconnectEvents: 'passed' }));
+    entrypoint: 'passed', anyModeQuests: 'passed', quickLabel: 'passed', workspace: 'passed', archive: 'passed', controls: 'passed', eventInvalidation: 'passed', reconnectSnapshot: 'passed', reconnectEvents: 'passed' }));
 } catch (error) {
   console.error(host.output);
   throw error;

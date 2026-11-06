@@ -2,6 +2,8 @@ import { Rpc } from '@opencode/plugin/rpc';
 
 /** Potentially sensitive, local-only selection material. Nothing is selected for upload. */
 export interface DailySourceReport {
+  /** Session drafts contain no recorded claims; the user supplies selected evidence. */
+  origin?: 'session';
   runId: string;
   revision: string;
   planRevision: number;
@@ -31,6 +33,7 @@ const finding = {
 } as const;
 const report = {
   type: 'object', properties: {
+    origin: { type: 'string', enum: ['session'] },
     runId: id, revision: fingerprint, planRevision: { type: 'integer', minimum: 1, maximum: Number.MAX_SAFE_INTEGER },
     freshness: { type: 'string', enum: ['current', 'stale'] }, goal, change: { type: 'string', maxLength: 3072 },
     checks: { type: 'array', items: check, maxItems: 12 }, findings: { type: 'array', items: finding, maxItems: 5 },
@@ -43,7 +46,7 @@ export const DailySource = Rpc.define({
   id: 'carthagent.daily-source',
   methods: {
     report: {
-      input: { type: 'object', properties: { sessionID: id }, required: ['sessionID'], additionalProperties: false },
+      input: { type: 'object', properties: { sessionID: id, allowSession: { type: 'boolean' } }, required: ['sessionID'], additionalProperties: false },
       output: { type: 'object', properties: { source: { anyOf: [report, { type: 'null' }] } }, required: ['source'], additionalProperties: false },
       errors: { dailySourceError: { type: 'object', properties: { code: id }, required: ['code'], additionalProperties: false } },
     },

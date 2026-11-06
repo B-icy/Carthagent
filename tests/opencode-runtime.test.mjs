@@ -26,7 +26,7 @@ function pendingUntilAbort(signal) {
 test('CTG runtime paths and env are isolated from host OpenCode roots', () => {
   const root = path.join(os.tmpdir(), 'ctg-test-profile');
   const paths = runtimePaths({ root });
-  const env = runtimeEnvironment({ root, env: { ANTHROPIC_API_KEY: 'test', CTG_RUNTIME_GITHUB_TOKEN: 'fake-runtime-token' } });
+  const env = runtimeEnvironment({ root, env: { ANTHROPIC_API_KEY: 'test', CTG_RUNTIME_GITHUB_TOKEN: 'fake-runtime-token', CTG_TUI_SERVICE_FILE: '/other/profile/service.json' } });
   assert.equal(env.XDG_CONFIG_HOME, paths.config);
   assert.equal(env.XDG_DATA_HOME, paths.data);
   assert.equal(env.XDG_STATE_HOME, paths.state);
@@ -41,6 +41,7 @@ test('CTG runtime paths and env are isolated from host OpenCode roots', () => {
   assert.equal(env.OPENCODE_DB, path.join(paths.data, 'opencode.db'));
   assert.equal(env.ANTHROPIC_API_KEY, 'test');
   assert.equal(env.CTG_RUNTIME_GITHUB_TOKEN, undefined);
+  assert.equal(env.CTG_TUI_SERVICE_FILE, undefined);
   assert.equal(env.OPENCODE_CUSTOM_CONFIG, undefined);
   assert.notEqual(paths.serviceFile, path.join(os.homedir(), '.local/state/opencode/service.json'));
 });
@@ -472,12 +473,14 @@ test('native TUI attaches to the ensured authenticated service', () => {
     url: 'http://127.0.0.1:4567',
     info: { password: 'ctg-test-password' },
     binary: '/ctg/opencode',
-    paths: { root: '/ctg/profile' },
+    paths: { root: '/ctg/profile', serviceFile: '/ctg/profile/state/opencode/service.json' },
+    runtimeIdentity: { kind: 'ctg-owned' },
   };
   launchTui(service, '/work', { sessionID: 'ses_123', theme: 'nebula', glyphs: 'ascii', env: { CTG_RUNTIME_GITHUB_TOKEN: 'fake-token', ctg_runtime_github_token: 'fake-lowercase-token' }, spawnImpl: (...args) => (captured = args) });
   assert.deepEqual(captured[0], '/ctg/opencode');
   assert.deepEqual(captured[1], ['--server', 'http://127.0.0.1:4567', '/work', '--session', 'ses_123']);
   assert.equal(captured[2].env.OPENCODE_PASSWORD, 'ctg-test-password');
+  assert.equal(captured[2].env.CTG_TUI_SERVICE_FILE, '/ctg/profile/state/opencode/service.json');
   assert.deepEqual(JSON.parse(captured[2].env.OPENCODE_CLI_CONFIG_CONTENT).theme, { name: 'nebula', mode: 'system' });
   assert.equal(captured[2].env.OPENCODE_CONFIG_CONTENT, undefined);
   assert.equal(captured[2].env.CTG_RUNTIME_GITHUB_TOKEN, undefined);
