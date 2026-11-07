@@ -15134,10 +15134,10 @@ index 0000000000..8dcef33871
 +})
 diff --git a/packages/tui/test/sidebar/draft-tab-reachability.test.tsx b/packages/tui/test/sidebar/draft-tab-reachability.test.tsx
 new file mode 100644
-index 0000000000..456d4275f6
+index 0000000000..6079ce077e
 --- /dev/null
 +++ b/packages/tui/test/sidebar/draft-tab-reachability.test.tsx
-@@ -0,0 +1,223 @@
+@@ -0,0 +1,225 @@
 +import { InputRenderable } from "@opentui/core"
 +import { expect, test } from "bun:test"
 +import { mkdir } from "node:fs/promises"
@@ -15235,9 +15235,11 @@ index 0000000000..456d4275f6
 +  await until(() => frame().includes("Original transcript line") && frame().includes("Alpha Model"), "existing", frame, 8000)
 +
 +  setup.mockInput.pressKey("F6")
++  await until(() => frame().includes("No subfolders here"), "initial browser", frame)
++  setup.mockInput.pressKey("s", { ctrl: true })
 +  await until(() => frame().includes("Ready."), "setup", frame)
 +  setup.mockInput.pressKey("p", { ctrl: true })
-+  await until(() => frame().includes("Choose folder for new session"), "folder picker", frame)
++  await until(() => frame().includes("New session — choose folder"), "folder picker", frame)
 +  await until(() => setup.renderer.currentFocusedRenderable instanceof InputRenderable, "filter focus", frame)
 +  setup.mockInput.pressTab()
 +  ;(setup.renderer.currentFocusedRenderable as InputRenderable).value = chosen
@@ -16035,10 +16037,10 @@ index 0000000000..796e40e14e
 +})
 diff --git a/packages/tui/test/sidebar/folder-switch-onboarding.test.tsx b/packages/tui/test/sidebar/folder-switch-onboarding.test.tsx
 new file mode 100644
-index 0000000000..001964a468
+index 0000000000..ead639ae1d
 --- /dev/null
 +++ b/packages/tui/test/sidebar/folder-switch-onboarding.test.tsx
-@@ -0,0 +1,59 @@
+@@ -0,0 +1,60 @@
 +import { InputRenderable } from "@opentui/core"
 +import { test } from "bun:test"
 +import { mkdir } from "node:fs/promises"
@@ -16085,7 +16087,7 @@ index 0000000000..001964a468
 +
 +  for (const folder of folders) {
 +    setup.mockInput.pressKey("F8")
-+    await until(() => frame().includes("Browse folders"), "folder browser", frame)
++    await until(() => frame().includes("New session — choose folder"), "folder browser", frame)
 +    await until(() => setup.renderer.currentFocusedRenderable instanceof InputRenderable, "filter focus", frame)
 +    setup.mockInput.pressTab()
 +    await until(() => (setup.renderer.currentFocusedRenderable as InputRenderable).placeholder?.startsWith("/path") === true, "path focus", frame)
@@ -16093,9 +16095,10 @@ index 0000000000..001964a468
 +    setup.mockInput.pressEnter()
 +    await until(() => frame().includes("No subfolders here") && frame().includes(path.basename(folder)), "listing", frame)
 +    setup.mockInput.pressKey("s", { ctrl: true })
-+    await until(() => !frame().includes("Browse folders"), "browser closed", frame)
++    await until(() => !frame().includes("New session — choose folder"), "browser closed", frame)
 +    await until(() => modelRequests.includes(folder), `model catalog for ${path.basename(folder)}`, frame)
 +    await until(() => frame().includes("Continue with Carthagent Cloud"), `cue after ${path.basename(folder)}`, frame)
++    setup.mockInput.pressEscape()
 +  }
 +})
 diff --git a/packages/tui/test/sidebar/new-session-flow.test.tsx b/packages/tui/test/sidebar/new-session-flow.test.tsx
