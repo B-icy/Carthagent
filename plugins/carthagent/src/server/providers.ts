@@ -36,6 +36,17 @@ const DISCOVERY_TIMEOUT = 10_000;
 const PROFILE_CAP = 200;
 const CACHE_KEY = 'ctg.models/subscriptions/';
 const RUN_MODE = new Set(['interactive', 'print', 'rpc']);
+// Cloudflare abandons an origin that sends no headers within 100 seconds, so a
+// managed request still waiting at 120 seconds has stalled on the way there.
+const MANAGED_HEADER_TIMEOUT = 120_000;
+const MANAGED_RETRY_DELAY = 1_000;
+const MANAGED_REPLAY_WINDOW = 15_000;
+const MANAGED_DUPLICATE_MESSAGE = 'The connection dropped after Carthagent Cloud received this request, so it was not sent again to avoid a double charge. Send your message again to continue. (idempotency_key_reused)';
+
+/** A transport failure with no HTTP status never received response headers. */
+function droppedBeforeResponse(error: { type?: string; status?: number; response?: unknown } | undefined) {
+  return error?.type === 'provider.transport' && error.status === undefined && error.response === undefined;
+}
 
 function signalWithTimeout(signal: AbortSignal | undefined, timeout: number) {
   const timeoutSignal = AbortSignal.timeout(timeout);
@@ -276,6 +287,7 @@ export async function registerProviders(ctx: Context, options: ProviderRegistrat
   const baseURL = experientialBaseUrl(env);
   let shipModels: Model.Info[] = [];
   let shipConnection: ConnectionInfo | undefined;
+  let shipManaged = false;
   const subscriptions: Record<string, Model.Info[]> = { [ANTHROPIC_PROVIDER_ID]: [], [OPENAI_CODEX_PROVIDER_ID]: [] };
   const subscriptionConnections: Partial<Record<string, ConnectionInfo>> = {};
   const providerRegistration = await ctx.provider.transform(editor => {
@@ -284,7 +296,8 @@ export async function registerProviders(ctx: Context, options: ProviderRegistrat
     }
     editor.add({ info: providerInfo(EXPERIENTIAL_PROVIDER_ID, EXPERIENTIAL_PROVIDER_NAME,
       '@opencode/ai/providers/openai-compatible', SHIP_INTEGRATION_ID,
-      { baseURL, apiKey: `$${EXPERIENTIAL_API_KEY_ENV}` }), models: shipModels, sourceConnection: shipConnection });
+      { baseURL, apiKey: `$${EXPERIENTIAL_API_KEY_ENV}`, ...(shipManaged ? { headerTimeout: MANAGED_HEADER_TIMEOUT } : {}) }),
+      models: shipModels, sourceConnection: shipConnection });
     // Subscription IDs already exist in the native catalog. Overlay only the
     // definitions and retain catalog cost/capability metadata.
     for (const [providerID, baseURL] of [
@@ -322,6 +335,17 @@ export async function registerProviders(ctx: Context, options: ProviderRegistrat
     return mode;
   };
 
+  // Managed requests sent without response headers yet, the one request ID a
+  // session retry may reuse, and IDs that were already retried once.
+  const unanswered = new Map<string, { id: string; kind: string }>();
+  const replays = new Map<string, { id: string; kind: string; at: number }>();
+  const retried = new Map<string, true>();
+  const remember = <T>(map: Map<string, T>, key: string, value: T) => {
+    map.delete(key);
+    if (map.size >= 1000) map.delete(map.keys().next().value as string);
+    map.set(key, value);
+  };
+
   const providerHook = await ctx.session.hook('http.request', async event => {
     if (event.model.providerID !== EXPERIENTIAL_PROVIDER_ID) return;
     let credential;
@@ -342,13 +366,20 @@ export async function registerProviders(ctx: Context, options: ProviderRegistrat
     headers.set('Idempotency-Key', telemetry['x-carthagent-request-id']);
     headers.set('X-Client-Request-Id', telemetry['x-carthagent-request-id']);
     event.request = new Request(event.request, { headers });
+    // Only agent-loop requests go through the session retry decision.
+    if (event.kind === 'primary') remember(unanswered, String(event.sessionID), { id: telemetry['x-carthagent-request-id'], kind: event.kind });
   }, { providerID: EXPERIENTIAL_PROVIDER_ID });
   registrations.push(providerHook);
 
   const routeHook = await ctx.session.hook('model.request', async event => {
     if (event.model.providerID !== EXPERIENTIAL_PROVIDER_ID) return;
-    event.headers['x-carthagent-request-id'] = requestIdentity
-      ? requestIdentity(event)
+    if (event.kind === 'primary') unanswered.delete(String(event.sessionID));
+    const pending = replays.get(String(event.sessionID));
+    if (pending?.kind === event.kind) replays.delete(String(event.sessionID));
+    // A retry that did not start promptly (the user stopped it) is not reused.
+    const replay = pending?.kind === event.kind && now() - pending.at < MANAGED_REPLAY_WINDOW ? pending : undefined;
+    event.headers['x-carthagent-request-id'] = replay ? replay.id
+      : requestIdentity ? requestIdentity(event)
       : identity.request(event.sessionID, event.kind);
     const active = await ctx.integration.connection.active(SHIP_INTEGRATION_ID).catch(() => undefined);
     if (!active) return;
@@ -357,20 +388,40 @@ export async function registerProviders(ctx: Context, options: ProviderRegistrat
   }, { providerID: EXPERIENTIAL_PROVIDER_ID });
   registrations.push(routeHook);
 
-  const noUnsafeRetry = await ctx.session.hook('retry', async event => {
+  const managedRetry = await ctx.session.hook('retry', async event => {
     if (event.model.providerID !== EXPERIENTIAL_PROVIDER_ID) return;
     const active = await ctx.integration.connection.active(SHIP_INTEGRATION_ID).catch(() => undefined);
     const credential = active ? await ctx.integration.connection.resolve(active).catch(() => undefined) : undefined;
     if (!isManagedShipCredential(credential)) return;
-    // Gateway idempotency currently reserves before dispatch and cannot replay
-    // an existing operation, so retries must not duplicate managed usage.
-    event.decision = { retry: false };
+    // The gateway cannot replay an admitted operation, so only a request that
+    // never got response headers is sent once more, under the same
+    // Idempotency-Key. If the gateway did admit it, the repeat is rejected as
+    // idempotency_key_reused instead of being charged twice.
+    const key = String(event.sessionID);
+    const dropped = unanswered.get(key);
+    unanswered.delete(key);
+    if (!dropped || retried.has(dropped.id) || !droppedBeforeResponse(event.error)) {
+      event.decision = { retry: false };
+      return;
+    }
+    remember(retried, dropped.id, true);
+    remember(replays, key, { ...dropped, at: now() });
+    event.decision = { retry: true, delay: MANAGED_RETRY_DELAY };
   }, { providerID: EXPERIENTIAL_PROVIDER_ID });
-  registrations.push(noUnsafeRetry);
+  registrations.push(managedRetry);
 
   const recoveryHook = await ctx.session.hook('http.response', async event => {
-    if (event.model.providerID !== EXPERIENTIAL_PROVIDER_ID || event.response.ok) return;
+    if (event.model.providerID !== EXPERIENTIAL_PROVIDER_ID) return;
+    const requestID = event.request.headers.get('Idempotency-Key');
+    if (requestID && unanswered.get(String(event.sessionID))?.id === requestID) unanswered.delete(String(event.sessionID));
+    if (event.response.ok) return;
     const body = await event.response.clone().text().catch(() => '');
+    if (requestID && retried.has(requestID) && /\bidempotency_key_reused\b/.test(body)) {
+      event.response = new Response(JSON.stringify({ error: {
+        message: MANAGED_DUPLICATE_MESSAGE, type: 'invalid_request_error', code: 'idempotency_key_reused',
+      } }), { status: event.response.status, headers: { 'content-type': 'application/json' } });
+      return;
+    }
     const recovery = cloudManagedUsageRecovery(body);
     if (recovery) options.onRecovery?.(recovery, { sessionID: event.sessionID, kind: event.kind });
   }, { providerID: EXPERIENTIAL_PROVIDER_ID });
@@ -381,6 +432,7 @@ export async function registerProviders(ctx: Context, options: ProviderRegistrat
     const inventory = await loadShipModels({ ctx, fetchImpl, env, baseURL, signal });
     if (inventory?.models) {
       shipConnection = inventory.connection;
+      shipManaged = inventory.managed;
       // The host indexes immutable model arrays by identity.
       shipModels = inventory.models.map(model => asModelInfo(EXPERIENTIAL_PROVIDER_ID, model,
         inventory.managed ? cloudGatewayUrl(env) : baseURL));

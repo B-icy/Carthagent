@@ -817,11 +817,106 @@ test('provider registration uses native provider transforms and cleanup; refresh
   await hooksByName['http.request'].callback(retryRequestEvent);
   assert.equal(retryRequestEvent.request.headers.get('Idempotency-Key'), hookedRequestEvent.request.headers.get('Idempotency-Key'),
     'transport retry identity must remain stable');
-  const retryEvent = { ...nativeSession, attempt: 1, decision: { retry: true, delay: 0 }, error: {} };
+  const retryEvent = { ...nativeSession, attempt: 1, decision: { retry: true, delay: 0 }, error: { type: 'provider.rate-limit', message: 'slow down', status: 429 } };
   await hooksByName.retry.callback(retryEvent);
   assert.deepEqual(retryEvent.decision, { retry: false });
   await new Promise(resolve => setTimeout(resolve, 30));
   assert.ok(fetchCalls.some(([url]) => url.includes('/models')));
   await cleanup();
   assert.ok(fake.events.includes('subscribed'));
+});
+
+test('managed requests retry once with the same idempotency key only when dropped before a response', async () => {
+  const token = `x.${Buffer.from(JSON.stringify({ sub: 'acct', sid: 'sid', scope: 'gateway:invoke' })).toString('base64url')}.x`;
+  const connections = { 'carthagent-cloud': { connection: { id: 'ship', credential: { type: 'oauth', access: token, refresh: 'refresh', expires: Date.now() + 100000 } } } };
+  const fake = fakeContext({ integrations: ['carthagent-cloud'], connections });
+  let transform;
+  const original = fake.ctx.provider.transform;
+  fake.ctx.provider.transform = async callback => { transform = callback; return original(callback); };
+  const providers = [];
+  fake.ctx.provider.reload = async () => {
+    transform({ list: () => [], remove() {}, add(record) { providers.push(record.info); }, get: () => undefined, models: { set() {} } });
+  };
+  let clock = 1_000;
+  const fetchImpl = async url => {
+    if (String(url).endsWith('/models')) return new Response(JSON.stringify({ data: [{ id: 'gpt-6-luna' }] }), { status: 200 });
+    throw new Error(`unexpected URL ${url}`);
+  };
+  const cleanup = await registerProviders(fake.ctx, { env: { CARTHAGENT_CODING_AGENT_DIR: '/missing' }, fetchImpl, now: () => clock, openBrowser: () => false, requestSecret: 'test-secret' });
+  const hooks = Object.fromEntries(fake.hooks.map(item => [item.name, item.callback]));
+  const session = { sessionID: 'ses_drop', kind: 'primary', model: { providerID: 'carthagent-cloud' } };
+  const dropped = { type: 'provider.transport', message: 'ECONNRESET: The socket connection was closed unexpectedly.' };
+
+  const send = async (kind = 'primary') => {
+    const modelRequest = { ...session, kind, headers: {} };
+    await hooks['model.request'](modelRequest);
+    const event = { ...session, kind, request: new Request('https://api.carthagent.xyz/v1/chat/completions', {
+      method: 'POST', headers: modelRequest.headers, body: '{"model":"gpt-6-luna","messages":[]}' }) };
+    await hooks['http.request'](event);
+    return event.request;
+  };
+  const retry = async (error, sessionID = session.sessionID) => {
+    const event = { ...session, sessionID, attempt: 2, error, decision: { retry: true, delay: 5_000 } };
+    await hooks.retry(event);
+    return event.decision;
+  };
+  const respond = async (request, response) => {
+    const event = { ...session, request, response };
+    await hooks['http.response'](event);
+    return event.response;
+  };
+
+  const first = await send();
+  assert.deepEqual(await retry(dropped), { retry: true, delay: 1_000 }, 'a drop before any response is retried once');
+  const second = await send();
+  assert.equal(second.headers.get('Idempotency-Key'), first.headers.get('Idempotency-Key'), 'the retry reuses the idempotency key');
+  assert.equal(second.headers.get('X-Client-Request-Id'), first.headers.get('X-Client-Request-Id'));
+  assert.deepEqual(await retry(dropped), { retry: false }, 'the same request is never retried twice');
+
+  const reused = await respond(second, new Response(JSON.stringify({ error: { message: 'idempotency_key_reused', code: 'idempotency_key_reused' } }), { status: 400 }));
+  const body = await reused.json();
+  assert.equal(body.error.code, 'idempotency_key_reused');
+  assert.match(body.error.message, /not sent again to avoid a double charge/);
+
+  const fresh = await send();
+  assert.notEqual(fresh.headers.get('Idempotency-Key'), first.headers.get('Idempotency-Key'), 'the next turn gets a new key');
+  await respond(fresh, new Response('data: {}\n\n', { status: 200 }));
+  assert.deepEqual(await retry({ ...dropped, message: 'Connection lost while reading the response', status: 200 }), { retry: false },
+    'a drop after the response started is not retried');
+
+  await send();
+  assert.deepEqual(await retry({ type: 'provider.internal', message: 'upstream failed', status: 502, response: { body: '{}' } }), { retry: false },
+    'HTTP errors are never retried');
+  assert.deepEqual(await retry(dropped, 'ses_other'), { retry: false }, 'a session with no request in flight is not retried');
+
+  const titled = await send('title');
+  assert.deepEqual(await retry(dropped), { retry: false }, 'auxiliary requests do not arm the agent-loop retry');
+  assert.ok(titled.headers.get('Idempotency-Key'));
+
+  const stale = await send();
+  assert.deepEqual(await retry(dropped), { retry: true, delay: 1_000 });
+  clock += 60_000;
+  const late = await send();
+  assert.notEqual(late.headers.get('Idempotency-Key'), stale.headers.get('Idempotency-Key'), 'a retry that never started does not leak its key into a later turn');
+
+  await new Promise(resolve => setTimeout(resolve, 30));
+  const managed = providers.findLast(info => info.id === 'carthagent-cloud');
+  assert.equal(managed?.settings.headerTimeout, 120_000, 'stalled managed uploads time out before response headers');
+  await cleanup();
+});
+
+test('direct Experiential keys keep native retries and timeouts', async () => {
+  const connections = { 'carthagent-cloud': { connection: { id: 'ship', credential: { type: 'key', key: 'sk-direct' } } } };
+  const fake = fakeContext({ integrations: ['carthagent-cloud'], connections });
+  const cleanup = await registerProviders(fake.ctx, {
+    env: { CARTHAGENT_CODING_AGENT_DIR: '/missing' }, openBrowser: () => false,
+    fetchImpl: async () => new Response(JSON.stringify({ data: [] }), { status: 200 }),
+  });
+  const hook = fake.hooks.find(item => item.name === 'retry').callback;
+  const event = { sessionID: 'ses_direct', model: { providerID: 'carthagent-cloud' }, attempt: 2,
+    error: { type: 'provider.transport', message: 'ECONNRESET' }, decision: { retry: true, delay: 5_000 } };
+  await hook(event);
+  assert.deepEqual(event.decision, { retry: true, delay: 5_000 });
+  assert.equal(fake.providerTransforms.find(item => item.info?.id === 'carthagent-cloud').info.settings.headerTimeout, undefined);
+  await cleanup();
 });
