@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url"
 
 export const SHIP_AGENT_ID = "ship"
 export const LITE_AGENT_ID = "lite"
+export const DELIVERY_TOOL_PERMISSION = "carthagent_delivery"
 // Keep the persisted ID compatible with existing sessions and mode colors/order.
 
 const SKILLS_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../skills")
@@ -42,6 +43,13 @@ export async function registerShipAgents(ctx: Pick<Context, "agent">) {
       item.system = "You are a direct execution agent. Use the skills and tools already available and work the task directly. No extra planning ceremony, no harness phases — just do the work well and concisely."
       item.permissions.push({ action: "question", resource: "*", effect: "allow" })
     })
+    // Tool snapshots and Code Mode catalogs are built before the session context hook.
+    // Deny discovery at the agent permission boundary, not only in the later hook.
+    for (const agent of [LITE_AGENT_ID, "plan", "build"]) {
+      editor.update(agent, item => {
+        item.permissions.push({ action: DELIVERY_TOOL_PERMISSION, resource: "*", effect: "deny" })
+      })
+    }
     editor.default(SHIP_AGENT_ID)
   })
   return async () => { await registration.dispose() }

@@ -92,6 +92,10 @@ export default { id: 'carthagent', async setup(context) {
     } else if (JSON.stringify(latestUser).includes('MIXED_DISABLED')) {
       if (tools.includes('shell') && toolResults === 0) toolCall(response, { name: 'shell', arguments: { command: "printf disabled-session > mixed-disabled.txt" } });
       else assistantText(response, 'DISABLED_SESSION_SHELL_OK');
+    } else if (JSON.stringify(latestUser).includes('MODE_CATALOG_PROBE')) {
+      const since = messages.findLastIndex(message => message.role === 'user' && JSON.stringify(message).includes('MODE_CATALOG_PROBE'));
+      if (!messages.slice(since + 1).some(message => message.role === 'tool')) toolCall(response, { name: 'execute', arguments: { code: 'return search({ query: "delivery plan status", namespace: "carthagent", limit: 20 })' } });
+      else assistantText(response, 'MODE_CATALOG_PROBE_DONE');
     } else if (JSON.stringify(latestUser).includes('MODE_SHIP_PARITY')) {
       assistantText(response, 'MODE_SHIP_GUIDANCE_OK');
     } else if (scenario === 'budget' && toolResults >= 6) {
@@ -316,13 +320,28 @@ export default { id: 'carthagent', async setup(context) {
     assert.equal(observed.slice(first).some(call => JSON.stringify(call.messages).includes('Standard delivery:')), false, 'Quick has no delivery guidance');
     const liteHistory = await client.message.list({ sessionID: modeSession.id }, request);
     assert.match(JSON.stringify(liteHistory.data), /DISABLED_SESSION_SHELL_OK/);
+    const probeCatalog = async (label, shouldContain) => {
+      const begin = observed.length;
+      await client.session.prompt({ sessionID: modeSession.id, text: `MODE_CATALOG_PROBE ${label}` }, request);
+      await client.session.wait({ sessionID: modeSession.id }, { signal: AbortSignal.timeout(45_000) });
+      const requests = observed.slice(begin);
+      assert.ok(requests.length >= 2, `${label}: search must run`);
+      const messages = requests.at(-1).messages;
+      const start = messages.findLastIndex(message => message.role === 'user' && JSON.stringify(message).includes('MODE_CATALOG_PROBE'));
+      const results = messages.slice(start + 1).filter(message => message.role === 'tool');
+      assert.ok(results.length, `${label}: real search result is present`);
+      assert.equal(JSON.stringify(results).includes('delivery_plan'), shouldContain, `${label}: Code Mode search visibility`);
+    };
+    await probeCatalog('fresh Quick', false);
     await client.session.switchAgent({ sessionID: modeSession.id, agent: 'ship' }, request);
+    await probeCatalog('Ship', true);
     const second = observed.length;
     await client.session.prompt({ sessionID: modeSession.id, text: 'MODE_SHIP_PARITY inspect the workspace.' }, request);
     await client.session.wait({ sessionID: modeSession.id }, { signal: AbortSignal.timeout(45_000) });
     assert.ok(observed.slice(second).some(call => JSON.stringify(call.messages).includes('Standard delivery:')), 'switching to Ship enables the harness on the next request');
     await client.session.switchAgent({ sessionID: modeSession.id, agent: 'lite' }, request);
     assert.equal((await client.session.get({ sessionID: modeSession.id }, request)).agent, 'lite');
+    await probeCatalog('Quick after Ship', false);
     const beforeCommands = fixture.calls;
     await client.session.command({ sessionID: modeSession.id, name: 'delivery-budget-status', text: '' }, request);
     await client.session.command({ sessionID: modeSession.id, name: 'delivery-budget-reset', text: '' }, request);
