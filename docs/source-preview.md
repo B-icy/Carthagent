@@ -61,14 +61,17 @@ script/ctg/source-preview.sh --source DIR --profile DIR --bun PATH [--workspace 
 ## Use
 
 - **Folder card** (top of Projects): current folder, abbreviated path (click
-  for the full path), Browse, New session and the model action. Narrow layouts
-  show compact `⌕` search, `▤` Browse and `◇` model controls.
-- **Browse** (`/browse`, palette “Browse folders”): Filter and Path inputs
+  for the full path), and one **New session** action. This opens the folder-browser
+  UI formerly labelled Browse; the separate setup button and wide-rail draft
+  action are removed. Narrow layouts retain compact `⌕`, `▤` and `◇` controls.
+- **New session folder browser** (`/browse`, palette “New session — browse folders”): Filter and Path inputs
   (Tab switches), Up/Down select, Enter opens, Alt+Left/Right/Up for
   Back/Forward/Up, Alt+H for Home, Ctrl+S confirms, Escape cancels.
-- **New session** (`Ctrl+X N`, `/new`, palette “New session” or “New session
-  in folder…”, folder card, compact `+`, folder right-click menu): choose the
-  folder, then the model. Global entries start at the folder a plain new
+- **Shared new-session flow** (`Ctrl+X N`, `/new`, `/browse`, palette “New session” or
+  “New session in folder…”, sidebar, compact `+`, folder right-click menu): every
+  entry opens the same folder browser. **Use this folder** advances to model/start
+  confirmation; Escape from the initial browser cancels the flow. Project-menu
+  entries begin at that project's folder. Global entries start at the folder a plain new
   session would use; project entries start at that project's folder. Nothing
   is created until the first message is sent; cancelling leaves the current
   session, draft and model unchanged. The new session keeps the agent you were
@@ -76,7 +79,12 @@ script/ctg/source-preview.sh --source DIR --profile DIR --bun PATH [--workspace 
   If the chosen agent or model is not available at the folder when you send,
   the send is blocked with your text kept and no session created; pick another
   agent (`Shift+Tab`) or model (`/model`, `Ctrl+X M`) and send again. There is
-  no automatic fallback to another model. `/model` also works before a session
+  no automatic fallback to another model. When the folder has no models, setup
+  explains the next step and replaces Start with **Connect provider** (`Ctrl+K`);
+  the empty Model footer action is hidden. Connection uses the selected folder,
+  and successful connection returns to setup at that folder without repeating
+  folder selection. No credentials or session are created by opening setup.
+  `/model` also works before a session
   exists. The model step inside setup has no integration shortcut; connect
   integrations from the standalone model picker (`Ctrl+X M`).
 - **Exit**: `/exit` or palette “Exit the app”. The private server exits with
