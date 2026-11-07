@@ -6,7 +6,7 @@ import { createServer } from 'node:http'
 import { once } from 'node:events'
 import { join } from 'node:path'
 import { registerDelivery } from '../plugins/carthagent/src/server/delivery.ts'
-import { registerShipAgents, SHIP_AGENT_ID, LITE_AGENT_ID } from '../plugins/carthagent/src/server/ship-agents.ts'
+import { DELIVERY_TOOL_PERMISSION, registerShipAgents, SHIP_AGENT_ID, LITE_AGENT_ID } from '../plugins/carthagent/src/server/ship-agents.ts'
 import { fixtureDesign, fixtureReview } from './helpers/tested-design.mjs'
 import { archiveDeliveryExchanges } from '../plugins/carthagent/src/server/ship-context.mjs'
 
@@ -87,6 +87,10 @@ test('Ship and Quick are native primary agents and Ship is the default mode', as
   assert.equal(agents.get(SHIP_AGENT_ID).mode, 'primary')
   assert.equal(agents.get(LITE_AGENT_ID).mode, 'primary')
   assert.equal(agents.get(LITE_AGENT_ID).name, 'Quick')
+  for (const id of [LITE_AGENT_ID, 'plan', 'build']) {
+    assert.deepEqual(agents.get(id).permissions.at(-1), { action: DELIVERY_TOOL_PERMISSION, resource: '*', effect: 'deny' })
+  }
+  assert.ok(!agents.get(SHIP_AGENT_ID).permissions.some(rule => rule.action === DELIVERY_TOOL_PERMISSION))
   assert.equal(agents.get(SHIP_AGENT_ID).system, undefined, 'Ship keeps the native base prompt; delivery guidance arrives per request')
   assert.doesNotMatch(JSON.stringify([...agents.values()]), /todowrite/)
   await dispose()
@@ -106,6 +110,7 @@ test('the harness is scoped to Ship: Lite, Plan and Build get no guidance, locks
     const h = host(t, { agent })
     const cleanup = await registerDelivery(h.ctx, { workflow: 'standard' })
     const event = await h.context()
+    for (const [name, tool] of h.tools) assert.equal(tool.options.permission, DELIVERY_TOOL_PERMISSION, `${name}: catalog permission`)
     assert.equal(systemText(event), '', `${agent}: no delivery system guidance`)
     assert.ok(event.tools.edit, `${agent}: implementation tools stay available`)
     assert.equal(event.tools.carthagent_delivery_plan, undefined, `${agent}: delivery tools hidden`)
@@ -122,8 +127,13 @@ test('switching away from Ship mid-session stops enforcement; switching back res
   const cleanup = await registerDelivery(h.ctx, { workflow: 'standard' })
   await assert.rejects(h.before('edit', { path: 'app.ts' }), /delivery_plan/)
   h.sessions.get('ses-a').agent = LITE_AGENT_ID
+  const quick = await h.context()
+  assert.equal(systemText(quick), '')
+  assert.equal(quick.tools.carthagent_delivery_plan, undefined)
+  await assert.rejects(h.call('delivery_status', {}), /Ship/)
   await h.before('edit', { path: 'app.ts' })
   h.sessions.get('ses-a').agent = SHIP_AGENT_ID
+  assert.ok((await h.context()).tools.carthagent_delivery_plan)
   await assert.rejects(h.before('edit', { path: 'app.ts' }), /delivery_plan/)
   await cleanup()
 })

@@ -23,7 +23,7 @@ import { configuredAdvisor, inspectAdvice } from "../../../../lib/planning-advic
 import { createShipJev } from "../../../../lib/ship-jev.mjs"
 import { cloudGatewayUrl } from "../../../../lib/providers/experiential.mjs"
 import { isCarthagentShipProviderId } from "../../../../lib/providers/names.mjs"
-import { isShipAgent } from "./ship-agents.ts"
+import { DELIVERY_TOOL_PERMISSION, isShipAgent } from "./ship-agents.ts"
 import { originalTask, shipGuidance } from "./ship-guidance.ts"
 import { archiveDeliveryExchanges, localToolName, normalizeDesignReview, shellProtection } from "./ship-context.mjs"
 
@@ -163,7 +163,7 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
         return { ...result, metadata: { deliveryPlan: planSnapshot(data.state) } }
       }
       catch (error) { throw new NativeToolError({ message: error instanceof Error ? error.message : String(error) }) }
-    }, options: { namespace: "carthagent", codemode: true, ...(name === "delivery_plan" ? { pinned: true } : {}) },
+    }, options: { namespace: "carthagent", permission: DELIVERY_TOOL_PERMISSION, codemode: true, ...(name === "delivery_plan" ? { pinned: true } : {}) },
   })
 
   registrations.push(await ctx.tool.transform(editor => {
