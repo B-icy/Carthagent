@@ -1,4 +1,3 @@
-// Shared Voyages artwork, synchronized from carthagent-backend/assets/voyages-art.js.
 export const escapeXML = value => String(value).replace(/[<>&"']/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' })[c]);
 const rect = (x, y, w, h, fill) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill}"/>`;
 const path = (d, fill) => `<path d="${d}" fill="${fill}"/>`;
@@ -6,37 +5,68 @@ export const HAIRSTYLES = {
   cropped: { name: 'Cropped', price: 0 }, long: { name: 'Long', price: 0 },
   curls: { name: 'Curls', price: 0 }, shaved: { name: 'Shaved', price: 0 },
   braids: { name: 'Ringed braids', price: 0 }, topknot: { name: 'Tied topknot', price: 0 },
-  waves: { name: 'Wind-swept', price: 40 }, locs: { name: 'Gold-cuffed locs', price: 60 },
+  pigtails: { name: 'Ribbon pigtails', price: 0 },
+  spacebuns: { name: 'Twin star buns', price: 35 },
+  waves: { name: 'Wind-swept', price: 40 },
+  bob: { name: 'Pearl-clip bob', price: 45 },
+  updo: { name: 'Blossom chignon', price: 55 },
+  locs: { name: 'Gold-cuffed locs', price: 60 },
+  ringlets: { name: 'Rosebud ringlets', price: 65 },
+  hime: { name: 'Silk-bow hime cut', price: 80 },
 };
 export const HATS = {
   none: { name: 'No hat', price: 0 }, beanie: { name: 'Beanie', price: 40 },
-  bandana: { name: 'Bandana', price: 70 }, straw: { name: 'Woven reed cone', price: 90 },
-  tassel: { name: 'Crimson tassel cap', price: 120 }, tricorne: { name: 'Tricorne', price: 160 },
-  wreath: { name: 'Gilded laurel', price: 220 }, winged: { name: 'Winged iron helm', price: 280 },
+  bow: { name: 'Velvet ribbon bow', price: 45 },
+  beret: { name: 'Strawberry beret', price: 65 },
+  bandana: { name: 'Bandana', price: 70 },
+  flowercrown: { name: 'Blossom garland', price: 85 },
+  straw: { name: 'Woven reed cone', price: 90 },
+  sunhat: { name: 'Ribboned sunbonnet', price: 110 },
+  tassel: { name: 'Crimson tassel cap', price: 120 },
+  cathood: { name: 'Plush kitty ears', price: 145 },
+  tricorne: { name: 'Tricorne', price: 160 },
+  wreath: { name: 'Gilded laurel', price: 220 },
+  tiara: { name: 'Pearl & rose tiara', price: 260 },
+  winged: { name: 'Winged iron helm', price: 280 },
   plumed: { name: 'Plumed velvet brim', price: 360 }, crested: { name: 'Horsehair crest', price: 460 },
   crown: { name: 'Sunburst crown', price: 620 },
 };
 export const SHIRTS = {
   none: { name: 'No shirt', price: 0 }, linen: { name: 'Linen shirt', price: 60 },
-  striped: { name: 'Striped tee', price: 90 }, tunic: { name: 'Bordered tunic', price: 110 },
-  peacoat: { name: 'Wool pea coat', price: 150 }, jacket: { name: 'Deck jacket', price: 180 },
+  blouse: { name: 'Puff-sleeve blouse', price: 65 },
+  striped: { name: 'Striped tee', price: 90 },
+  cardigan: { name: 'Heart-knit cardigan', price: 95 },
+  tunic: { name: 'Bordered tunic', price: 110 },
+  corset: { name: 'Ribbon-laced bodice', price: 135 },
+  peacoat: { name: 'Wool pea coat', price: 150 },
+  sailor: { name: 'Blossom sailor top', price: 165 },
+  jacket: { name: 'Deck jacket', price: 180 },
+  shawl: { name: 'Lace-trimmed shawl', price: 215 },
   pelisse: { name: 'Wolf-pelt mantle', price: 240 }, surcoat: { name: 'Crested silk surcoat', price: 300 },
-  captain: { name: 'Captain’s coat', price: 320 }, drape: { name: 'Brooched drape', price: 380 },
+  captain: { name: 'Captain’s coat', price: 320 },
+  ballgown: { name: 'Starlight corset top', price: 340 },
+  drape: { name: 'Brooched drape', price: 380 },
   cuirass: { name: 'Caped bronze cuirass', price: 480 }, astrolabe: { name: 'Astrolabe cloak', price: 600 },
 };
 export const BOTTOMS = {
   underwear: { name: 'Underwear', price: 0 },
   patched: { name: 'Patched castaway shorts', price: 25 },
   shorts: { name: 'Shorts', price: 40 },
+  miniskirt: { name: 'Pleated rose skirt', price: 45 },
   rolled: { name: 'Rolled deck-cuffs', price: 55 },
   kilt: { name: 'Pleated kilt', price: 70 },
+  pinafore: { name: 'Ruffled apron skirt', price: 75 },
   trousers: { name: 'Trousers', price: 80 },
   sash: { name: 'Sashed billow trousers', price: 105 },
+  tiered: { name: 'Tiered blossom skirt', price: 115 },
   breeches: { name: 'Buckled breeches', price: 130 },
+  tulle: { name: 'Starlit tulle tutu', price: 150 },
   leggings: { name: 'Cross-bound leather', price: 160 },
   pleats: { name: 'Wide indigo pleats', price: 190 },
+  sarong: { name: 'Pearl-draped sarong', price: 210 },
   apron: { name: 'Forged-chain kilt', price: 235 },
   brocade: { name: 'Gilded silk brocade', price: 280 },
+  gala: { name: 'Velvet bustle skirt', price: 310 },
   tassets: { name: 'Fluted plate tassets', price: 350 },
   astral: { name: 'Star-hemmed vestments', price: 440 },
 };
@@ -44,24 +74,36 @@ export const SHOES = {
   barefoot: { name: 'Barefoot', price: 0 },
   wraps: { name: 'Rope ankle-wraps', price: 20 },
   sandals: { name: 'Sandals', price: 30 },
+  maryjanes: { name: 'Bow Mary Janes', price: 35 },
   slippers: { name: 'Curled-toe slippers', price: 45 },
+  ballet: { name: 'Ribbon ballet flats', price: 50 },
   clogs: { name: 'Lacquered clogs', price: 60 },
   canvas: { name: 'Laced deck shoes', price: 70 },
   boots: { name: 'Boots', price: 80 },
+  heels: { name: 'Ruby buckle heels', price: 85 },
   buskins: { name: 'Laced leather buskins', price: 95 },
   furboots: { name: 'Fur-cuffed boots', price: 110 },
+  laceboots: { name: 'Lace-cuff ankle boots', price: 125 },
   cuffed: { name: 'Fold-over thigh boots', price: 140 },
   buckled: { name: 'Buckled sea boots', price: 170 },
   spurs: { name: 'Spurred riding boots', price: 210 },
+  glass: { name: 'Crystal-bow slippers', price: 230 },
   greaves: { name: 'Bronze greaves', price: 250 },
   sabatons: { name: 'Winged gold sabatons', price: 340 },
 };
 export const PETS = {
-  none: { name: 'No pet', price: 0 }, turtle: { name: 'Sea tortoise', price: 100 },
+  none: { name: 'No pet', price: 0 },
+  bunny: { name: 'Bow-eared bunny', price: 90 },
+  turtle: { name: 'Sea tortoise', price: 100 },
+  duckling: { name: 'Bonnet duckling', price: 110 },
   cat: { name: 'Cat', price: 120 }, dog: { name: 'Dog', price: 140 },
+  kitten: { name: 'Teacup white kitten', price: 150 },
   parrot: { name: 'Parrot', price: 180 }, raven: { name: 'Night raven', price: 210 },
+  fawn: { name: 'Blossom fawn', price: 230 },
   owl: { name: 'Spotted owl', price: 260 }, monkey: { name: 'Waistcoat monkey', price: 310 },
-  fox: { name: 'Twin-tail fox', price: 400 }, calf: { name: 'Saddled elephant calf', price: 540 },
+  fox: { name: 'Twin-tail fox', price: 400 },
+  unicorn: { name: 'Star-maned pony', price: 460 },
+  calf: { name: 'Saddled elephant calf', price: 540 },
 };
 export const SKINS = { warm: '#d99c75', light: '#efc49f', deep: '#8f5949', tan: '#bb805a' };
 export const HAIR = { dark: '#392638', silver: '#ded2cc', copper: '#a85c40' };
@@ -96,9 +138,11 @@ export const SAILS = {
   bone: { name: 'Linen', color: '#eee0c4', shade: '#c5b09d', price: 120 },
   chevron: { name: 'Chevron-striped', color: '#eee0c4', shade: '#a85c40', price: 135 },
   indigo: { name: 'Bordered indigo', color: '#5b6ea6', shade: '#394570', price: 150 },
+  blossom: { name: 'Sakura petal', color: '#f5c6d6', shade: '#de8aa5', price: 165 },
   rose: { name: 'Rose', color: '#bf7892', shade: '#884c70', price: 180 },
   diamond: { name: 'Harlequin lozenge', color: '#52877f', shade: '#2d4f4b', price: 200 },
   emerald: { name: 'Gilded jade', color: '#538a84', shade: '#31515d', price: 220 },
+  heart: { name: 'Ribboned heart', color: '#eee0c4', shade: '#de8aa5', price: 240 },
   crescent: { name: 'Silver crescent', color: '#313856', shade: '#1d2238', price: 260 },
   totem: { name: 'Dawn talisman', color: '#705486', shade: '#432d57', price: 320 },
   kraken: { name: 'Coiled kraken', color: '#2d5754', shade: '#1b3636', price: 360 },
@@ -144,24 +188,34 @@ export function characterArt(config = {}) {
   let art = '';
   if (shirt === 'cuirass') art += path('M3 19H25V32H22V33H6V32H3Z', '#883b55') + rect(4, 20, 20, 11, '#ad536e');
   if (shirt === 'astrolabe') art += path('M2 19H26V33H22V34H6V33H2Z', dark) + rect(3, 20, 22, 12, '#432d57') + rect(4, 31, 20, 1, gold);
+  if (shirt === 'ballgown') art += path('M3 19H25V31H22V33H6V31H3Z', '#de8aa5') + rect(4, 20, 20, 10, '#f5c6d6') + rect(5, 30, 18, 1, gold);
   if (style === 'long') art += rect(6, 8, 17, 14, hair);
   if (style === 'braids') art += rect(6, 10, 3, 12, hair) + rect(20, 10, 3, 12, hair) + rect(6, 20, 3, 1, gold) + rect(20, 20, 3, 1, gold);
   if (style === 'locs') art += rect(6, 9, 17, 12, hair);
+  if (style === 'pigtails') art += path('M3 8H7V21H4V18H3ZM22 8H26V18H25V21H22Z', hair) + rect(4, 19, 3, 2, '#f5c6d6') + rect(22, 19, 3, 2, '#f5c6d6');
+  if (style === 'ringlets') art += path('M4 9H8V22H5V20H4V17H5V14H4ZM21 9H25V14H24V17H25V20H24V22H21Z', hair) + rect(5, 20, 2, 1, gold) + rect(22, 20, 2, 1, gold);
+  if (style === 'hime') art += rect(5, 8, 19, 15, hair) + rect(6, 22, 17, 2, hair);
   art += rect(7, 30, 5, 5, skin) + rect(16, 30, 5, 5, skin) + rect(5, 34, 7, 2, skin) + rect(16, 34, 8, 2, skin);
   art += path('M8 17H20V20H23V29H5V20H8Z', skin);
   art += rect(4, 20, 3, 10, skin) + rect(21, 20, 3, 10, skin);
   art += rect(8, 28, 12, 4, '#eee0c4') + rect(8, 28, 12, 1, '#a385c7') + rect(13, 30, 2, 2, '#c5b09d');
   if (bottoms === 'patched') art += path('M7 28H21V32H19V33H16V31H12V33H9V32H7Z', '#8a623e') + rect(7, 28, 14, 1, '#c49765') + rect(13, 28, 3, 2, gold) + rect(8, 29, 4, 3, '#eee0c4') + rect(8, 29, 1, 1, dark) + rect(11, 29, 1, 1, dark) + rect(8, 31, 1, 1, dark) + rect(11, 31, 1, 1, dark) + rect(17, 30, 3, 2, '#6b7d7a');
   if (bottoms === 'shorts') art += rect(7, 28, 14, 4, '#705486') + rect(13, 30, 2, 2, '#432d57');
+  if (bottoms === 'miniskirt') art += path('M6 28H22V32H5V30H6Z', '#de8aa5') + rect(7, 28, 14, 1, '#ad536e') + rect(8, 29, 2, 3, '#ad536e') + rect(13, 29, 2, 3, '#ad536e') + rect(18, 29, 2, 3, '#ad536e') + rect(5, 32, 18, 1, '#f6f0e7') + rect(12, 28, 4, 2, '#f5c6d6') + rect(13, 28, 2, 1, gold);
   if (bottoms === 'rolled') art += rect(7, 28, 14, 5, '#3e628a') + rect(12, 30, 4, 4, dark) + rect(7, 28, 14, 1, '#68444a') + rect(13, 28, 2, 1, gold) + rect(6, 32, 6, 2, '#eee0c4') + rect(16, 32, 6, 2, '#eee0c4') + rect(7, 32, 4, 1, '#c5b09d') + rect(17, 32, 4, 1, '#c5b09d');
   if (bottoms === 'kilt') art += rect(7, 28, 14, 5, '#eee0c4') + rect(9, 29, 1, 4, '#c5b09d') + rect(18, 29, 1, 4, '#c5b09d') + rect(7, 28, 14, 1, gold) + rect(12, 28, 4, 6, '#ad536e') + rect(13, 29, 2, 4, gold);
+  if (bottoms === 'pinafore') art += path('M5 28H23V33H5Z', '#ad536e') + rect(6, 29, 2, 4, '#883b55') + rect(19, 29, 2, 4, '#883b55') + path('M9 28H19V32H17V33H11V32H9Z', '#f6f0e7') + rect(7, 28, 14, 1, '#f5c6d6') + rect(12, 28, 4, 2, '#de8aa5') + rect(13, 28, 2, 1, gold);
   if (bottoms === 'trousers') art += rect(7, 28, 14, 7, '#4e4a69') + rect(12, 30, 4, 5, dark);
   if (bottoms === 'sash') art += path('M6 28H22V33H20V34H16V31H12V34H8V33H6Z', '#7a2e46') + rect(8, 29, 3, 4, '#ad536e') + rect(17, 29, 3, 4, '#ad536e') + rect(7, 33, 5, 1, gold) + rect(16, 33, 5, 1, gold) + rect(7, 28, 14, 2, gold) + rect(18, 29, 2, 4, '#f5dca9');
+  if (bottoms === 'tiered') art += rect(6, 28, 16, 2, '#f5c6d6') + rect(5, 30, 18, 2, '#de8aa5') + rect(4, 32, 20, 2, '#ad536e') + rect(6, 28, 16, 1, gold) + rect(5, 30, 18, 1, '#f6f0e7') + rect(4, 32, 20, 1, gold);
   if (bottoms === 'breeches') art += rect(7, 28, 14, 5, '#523b69') + rect(12, 30, 4, 5, dark) + rect(7, 33, 5, 2, '#eee0c4') + rect(16, 33, 5, 2, '#eee0c4') + rect(7, 32, 5, 1, gold) + rect(16, 32, 5, 1, gold);
+  if (bottoms === 'tulle') art += path('M4 28H24V31H25V33H3V31H4Z', '#f5c6d6') + rect(5, 29, 18, 2, '#a385c7') + rect(6, 28, 16, 1, gold) + rect(7, 30, 2, 1, '#f6f0e7') + rect(13, 31, 2, 1, '#f6f0e7') + rect(19, 30, 2, 1, '#f6f0e7') + rect(9, 32, 1, 1, gold) + rect(18, 32, 1, 1, gold);
   if (bottoms === 'leggings') art += rect(7, 28, 14, 7, '#9e674f') + rect(12, 30, 4, 5, dark) + rect(7, 28, 14, 1, '#4d3549') + rect(12, 28, 4, 2, gold) + rect(7, 30, 5, 1, '#4d3549') + rect(16, 30, 5, 1, '#4d3549') + rect(7, 32, 5, 1, '#4d3549') + rect(16, 32, 5, 1, '#4d3549') + rect(9, 29, 1, 5, '#c49765') + rect(18, 29, 1, 5, '#c49765');
   if (bottoms === 'pleats') art += path('M6 28H22V34H15V31H13V34H6Z', '#31515d') + rect(8, 29, 2, 5, '#52877f') + rect(18, 29, 2, 5, '#52877f') + rect(11, 29, 1, 5, dark) + rect(16, 29, 1, 5, dark);
+  if (bottoms === 'sarong') art += path('M6 28H22V34H16V32H11V34H6Z', '#de8aa5') + path('M7 29H18V31H14V33H7Z', '#ad536e') + rect(6, 28, 16, 1, gold) + rect(8, 29, 2, 1, '#f6f0e7') + rect(11, 30, 2, 1, '#f6f0e7') + rect(14, 29, 2, 1, '#f6f0e7') + rect(17, 28, 3, 5, '#f5c6d6') + rect(18, 28, 1, 4, gold);
   if (bottoms === 'apron') art += rect(6, 28, 16, 6, '#5e5368') + rect(7, 29, 14, 4, '#8e8296') + rect(8, 30, 2, 1, '#c0b3ca') + rect(18, 30, 2, 1, '#c0b3ca') + rect(8, 32, 2, 1, '#c0b3ca') + rect(18, 32, 2, 1, '#c0b3ca') + rect(6, 28, 16, 1, gold) + rect(11, 28, 6, 7, '#ad536e') + rect(12, 29, 4, 5, gold) + rect(13, 30, 2, 3, '#883b55');
   if (bottoms === 'brocade') art += rect(7, 28, 14, 7, '#883b55') + rect(12, 30, 4, 5, dark) + rect(7, 28, 2, 7, gold) + rect(19, 28, 2, 7, gold) + rect(9, 28, 10, 2, '#ad536e') + rect(12, 28, 4, 2, '#f5dca9');
+  if (bottoms === 'gala') art += path('M4 28H24V34H4Z', '#883b55') + path('M5 29H12V33H5ZM16 29H23V33H16Z', '#de8aa5') + rect(11, 29, 6, 5, '#f5c6d6') + rect(12, 30, 4, 4, '#f6f0e7') + rect(5, 28, 18, 1, gold) + rect(4, 33, 7, 1, gold) + rect(17, 33, 7, 1, gold) + rect(12, 28, 4, 2, gold);
   if (bottoms === 'tassets') art += rect(7, 28, 14, 7, '#682d47') + rect(12, 30, 4, 5, dark) + path('M5 28H12V34H6V32H5ZM16 28H23V32H22V34H16Z', '#c49765') + rect(6, 29, 5, 1, gold) + rect(17, 29, 5, 1, gold) + rect(6, 31, 5, 1, gold) + rect(17, 31, 5, 1, gold) + rect(7, 33, 4, 1, '#f5dca9') + rect(17, 33, 4, 1, '#f5dca9') + rect(12, 28, 4, 4, gold) + rect(13, 29, 2, 2, '#f5dca9');
   if (bottoms === 'astral') art += path('M5 28H23V35H15V31H13V35H5Z', '#2b2347') + rect(6, 29, 5, 5, '#432d57') + rect(17, 29, 5, 5, '#432d57') + rect(5, 28, 18, 1, gold) + rect(5, 34, 7, 1, gold) + rect(16, 34, 7, 1, gold) + rect(12, 28, 4, 6, gold) + rect(13, 29, 2, 4, '#538a84') + rect(8, 30, 1, 1, '#f5dca9') + rect(10, 32, 1, 1, '#f5dca9') + rect(19, 30, 1, 1, '#f5dca9') + rect(17, 32, 1, 1, '#f5dca9');
   if (shirt !== 'none') {
@@ -172,14 +226,26 @@ export function characterArt(config = {}) {
       if (shirt === 'striped') art += rect(7, 22, 14, 2, '#49364f') + rect(7, 26, 14, 2, '#49364f');
       if (shirt === 'jacket' || shirt === 'captain') art += rect(12, 20, 4, 9, '#eee0c4') + rect(7, 28, 14, 2, gold) + rect(17, 23, 1, 1, gold) + rect(17, 26, 1, 1, gold);
       if (shirt === 'captain') art += rect(5, 20, 5, 2, gold) + rect(18, 20, 5, 2, gold) + rect(4, 24, 3, 2, gold) + rect(21, 24, 3, 2, gold);
+    } else if (shirt === 'blouse') {
+      art += path('M7 19H21V29H7Z', '#f6f0e7') + path('M3 19H8V24H3ZM20 19H25V24H20Z', '#f5c6d6') + rect(10, 18, 8, 2, skin) + rect(7, 20, 14, 1, '#f5c6d6') + rect(12, 20, 4, 2, '#de8aa5') + rect(13, 22, 2, 2, '#ad536e') + rect(7, 27, 14, 2, '#de8aa5') + rect(4, 23, 3, 1, '#de8aa5') + rect(21, 23, 3, 1, '#de8aa5');
+    } else if (shirt === 'cardigan') {
+      art += path('M7 18H21V20H24V27H21V29H7V27H4V20H7Z', '#de8aa5') + rect(11, 19, 6, 10, '#f6f0e7') + rect(11, 18, 6, 2, skin) + rect(8, 22, 2, 2, '#ad536e') + rect(18, 22, 2, 2, '#ad536e') + rect(8, 26, 2, 2, '#f5c6d6') + rect(18, 26, 2, 2, '#f5c6d6') + rect(13, 22, 2, 1, gold) + rect(13, 25, 2, 1, gold);
     } else if (shirt === 'tunic') {
       art += rect(7, 18, 14, 11, '#eee0c4') + rect(11, 18, 6, 2, skin) + rect(7, 18, 3, 3, '#705486') + rect(18, 18, 3, 3, '#705486') + rect(7, 25, 14, 2, '#705486') + rect(7, 27, 14, 1, gold) + rect(16, 25, 2, 4, '#ad536e');
+    } else if (shirt === 'corset') {
+      art += path('M4 19H24V23H4Z', '#f6f0e7') + rect(9, 18, 10, 2, skin) + rect(7, 20, 14, 9, '#883b55') + rect(8, 20, 3, 8, '#ad536e') + rect(17, 20, 3, 8, '#ad536e') + rect(11, 20, 6, 8, '#f5c6d6') + rect(11, 21, 6, 1, gold) + rect(11, 23, 6, 1, gold) + rect(11, 25, 6, 1, gold) + rect(7, 28, 14, 1, gold);
     } else if (shirt === 'peacoat') {
       art += path('M7 18H21V20H24V26H21V29H7V26H4V20H7Z', '#382d55') + rect(8, 17, 3, 4, '#4e4a69') + rect(17, 17, 3, 4, '#4e4a69') + rect(12, 18, 4, 3, '#eee0c4') + rect(11, 22, 1, 1, gold) + rect(16, 22, 1, 1, gold) + rect(11, 25, 1, 1, gold) + rect(16, 25, 1, 1, gold) + rect(7, 28, 14, 1, dark);
+    } else if (shirt === 'sailor') {
+      art += path('M7 18H21V20H24V25H21V29H7V25H4V20H7Z', '#f6f0e7') + path('M7 18H11V22H17V18H21V23H7Z', '#de8aa5') + rect(8, 19, 12, 1, '#f6f0e7') + rect(11, 18, 6, 2, skin) + path('M11 22H17V25H15V27H13V25H11Z', '#ad536e') + rect(13, 22, 2, 2, '#f5c6d6') + rect(4, 24, 3, 1, '#de8aa5') + rect(21, 24, 3, 1, '#de8aa5') + rect(7, 28, 14, 1, '#de8aa5');
+    } else if (shirt === 'shawl') {
+      art += path('M7 18H21V29H7Z', '#f5c6d6') + path('M4 18H24V24H21V26H17V27H11V26H7V24H4Z', '#a385c7') + rect(5, 23, 18, 1, '#f6f0e7') + rect(8, 25, 12, 1, '#f6f0e7') + rect(11, 18, 6, 2, skin) + rect(12, 20, 4, 3, '#f6f0e7') + rect(13, 21, 2, 1, gold);
     } else if (shirt === 'pelisse') {
       art += path('M7 18H21V20H24V26H21V29H7V26H4V20H7Z', '#52877f') + path('M4 17H24V19H25V22H21V23H7V22H3V19H4Z', '#c5b09d') + rect(5, 18, 18, 2, '#eee0c4') + rect(7, 20, 4, 2, '#68444a') + rect(17, 20, 4, 2, '#68444a') + rect(7, 26, 14, 2, '#68444a') + rect(12, 26, 4, 2, gold) + rect(16, 19, 3, 3, gold) + rect(17, 20, 1, 1, '#68444a');
     } else if (shirt === 'surcoat') {
       art += path('M7 18H21V20H24V27H21V29H7V27H4V20H7Z', '#35203f') + rect(7, 18, 5, 11, '#ad536e') + rect(16, 18, 5, 11, '#ad536e') + rect(11, 18, 6, 2, skin) + path('M10 18H12V22H16V18H18V24H10Z', '#eee0c4') + rect(7, 26, 14, 2, gold) + rect(8, 21, 2, 2, gold) + rect(18, 21, 2, 2, gold) + rect(4, 25, 3, 2, '#ad536e') + rect(21, 25, 3, 2, '#ad536e');
+    } else if (shirt === 'ballgown') {
+      art += path('M3 20H8V24H3ZM20 20H25V24H20Z', '#f6f0e7') + rect(8, 18, 12, 3, skin) + path('M7 20H21V29H7Z', '#ad536e') + rect(9, 20, 10, 8, '#de8aa5') + path('M11 20H17V27H15V29H13V27H11Z', '#f5c6d6') + rect(7, 20, 14, 1, gold) + rect(12, 21, 4, 2, gold) + rect(13, 21, 2, 1, '#f6f0e7') + rect(7, 28, 14, 1, gold);
     } else if (shirt === 'drape') {
       art += path('M7 18H21V20H24V24H21V29H7V24H4V20H7Z', '#eee0c4') + rect(11, 18, 6, 2, skin) + path('M6 18H12V20H15V22H18V24H21V29H15V26H12V24H9V22H6Z', '#705486') + path('M6 19H11V21H14V23H17V25H21V26H16V24H13V22H10V20H6Z', gold) + rect(8, 18, 3, 3, '#f5dca9') + rect(9, 19, 1, 1, '#ad536e') + rect(8, 24, 1, 5, '#c5b09d') + rect(11, 25, 1, 4, '#c5b09d');
     } else if (shirt === 'cuirass') {
@@ -190,15 +256,20 @@ export function characterArt(config = {}) {
   }
   if (shoes === 'wraps') art += rect(7, 31, 5, 3, '#eee0c4') + rect(16, 31, 5, 3, '#eee0c4') + rect(7, 32, 5, 1, '#c49765') + rect(16, 32, 5, 1, '#c49765') + rect(7, 34, 5, 2, '#eee0c4') + rect(16, 34, 5, 2, '#eee0c4');
   if (shoes === 'sandals') art += rect(5, 34, 7, 2, '#9e674f') + rect(16, 34, 8, 2, '#9e674f') + rect(8, 33, 2, 1, gold) + rect(19, 33, 2, 1, gold);
+  if (shoes === 'maryjanes') art += rect(7, 32, 5, 2, '#f6f0e7') + rect(16, 32, 5, 2, '#f6f0e7') + rect(5, 34, 7, 2, '#432d57') + rect(16, 34, 8, 2, '#432d57') + rect(7, 33, 5, 1, '#432d57') + rect(16, 33, 5, 1, '#432d57') + rect(6, 33, 2, 1, '#f5c6d6') + rect(20, 33, 2, 1, '#f5c6d6');
   if (shoes === 'slippers') art += path('M4 32H6V34H12V36H5V34H4ZM16 34H22V32H24V34H23V36H16Z', '#ad536e') + rect(4, 32, 2, 1, gold) + rect(22, 32, 2, 1, gold) + rect(5, 35, 7, 1, gold) + rect(16, 35, 7, 1, gold);
+  if (shoes === 'ballet') art += rect(7, 31, 5, 1, '#f5c6d6') + rect(16, 31, 5, 1, '#f5c6d6') + rect(8, 32, 3, 1, '#de8aa5') + rect(17, 32, 3, 1, '#de8aa5') + rect(7, 33, 5, 1, '#f5c6d6') + rect(16, 33, 5, 1, '#f5c6d6') + rect(5, 34, 7, 2, '#de8aa5') + rect(16, 34, 8, 2, '#de8aa5') + rect(6, 34, 3, 1, '#f6f0e7') + rect(19, 34, 3, 1, '#f6f0e7');
   if (shoes === 'clogs') art += rect(5, 33, 7, 2, '#eee0c4') + rect(16, 33, 8, 2, '#eee0c4') + rect(6, 34, 2, 1, '#ad536e') + rect(21, 34, 2, 1, '#ad536e') + rect(5, 35, 7, 1, '#9e674f') + rect(16, 35, 8, 1, '#9e674f') + rect(6, 35, 1, 1, dark) + rect(10, 35, 1, 1, dark) + rect(17, 35, 1, 1, dark) + rect(21, 35, 1, 1, dark);
   if (shoes === 'canvas') art += rect(5, 33, 7, 2, '#394570') + rect(16, 33, 8, 2, '#394570') + rect(7, 33, 3, 1, '#f6f0e7') + rect(18, 33, 3, 1, '#f6f0e7') + rect(5, 35, 7, 1, '#eee0c4') + rect(16, 35, 8, 1, '#eee0c4');
   if (shoes === 'boots') art += rect(7, 32, 5, 3, '#68444a') + rect(16, 32, 5, 3, '#68444a') + rect(5, 34, 7, 2, dark) + rect(16, 34, 8, 2, dark);
+  if (shoes === 'heels') art += path('M5 34H10V33H12V36H10V35H8V36H5ZM16 33H18V34H24V36H21V35H19V36H16Z', '#ad536e') + rect(5, 35, 4, 1, '#883b55') + rect(20, 35, 4, 1, '#883b55') + rect(7, 33, 2, 1, gold) + rect(19, 33, 2, 1, gold);
   if (shoes === 'buskins') art += rect(7, 30, 5, 5, '#9e674f') + rect(16, 30, 5, 5, '#9e674f') + rect(7, 30, 5, 1, gold) + rect(16, 30, 5, 1, gold) + rect(8, 31, 3, 1, '#4d3549') + rect(17, 31, 3, 1, '#4d3549') + rect(8, 33, 3, 1, '#4d3549') + rect(17, 33, 3, 1, '#4d3549') + rect(6, 35, 6, 1, '#4d3549') + rect(16, 35, 7, 1, '#4d3549');
   if (shoes === 'furboots') art += rect(6, 31, 6, 2, '#eee0c4') + rect(16, 31, 6, 2, '#eee0c4') + rect(7, 33, 5, 2, '#9e674f') + rect(16, 33, 5, 2, '#9e674f') + rect(8, 33, 2, 2, '#68444a') + rect(18, 33, 2, 2, '#68444a') + rect(5, 34, 7, 2, '#68444a') + rect(16, 34, 8, 2, '#68444a');
+  if (shoes === 'laceboots') art += rect(6, 30, 6, 2, '#f6f0e7') + rect(16, 30, 6, 2, '#f6f0e7') + rect(7, 32, 5, 3, '#de8aa5') + rect(16, 32, 5, 3, '#de8aa5') + rect(5, 34, 7, 2, '#ad536e') + rect(16, 34, 8, 2, '#ad536e') + rect(8, 32, 2, 2, '#f6f0e7') + rect(18, 32, 2, 2, '#f6f0e7') + rect(9, 31, 1, 1, gold) + rect(18, 31, 1, 1, gold);
   if (shoes === 'cuffed') art += path('M6 30H12V32H11V35H6ZM16 30H22V35H17V32H16Z', '#a86b51') + rect(7, 32, 5, 3, '#59372b') + rect(16, 32, 5, 3, '#59372b') + rect(5, 34, 7, 2, dark) + rect(16, 34, 8, 2, dark) + rect(6, 30, 6, 1, gold) + rect(16, 30, 6, 1, gold);
   if (shoes === 'buckled') art += rect(6, 31, 6, 2, '#432d57') + rect(16, 31, 6, 2, '#432d57') + rect(7, 32, 5, 3, dark) + rect(16, 32, 5, 3, dark) + rect(5, 34, 7, 2, dark) + rect(16, 34, 8, 2, dark) + rect(7, 33, 3, 1, gold) + rect(18, 33, 3, 1, gold);
   if (shoes === 'spurs') art += rect(7, 30, 5, 2, '#883b55') + rect(16, 30, 5, 2, '#883b55') + rect(7, 31, 5, 4, '#291d36') + rect(16, 31, 5, 4, '#291d36') + rect(5, 34, 7, 2, '#291d36') + rect(16, 34, 8, 2, '#291d36') + rect(7, 33, 5, 1, gold) + rect(16, 33, 5, 1, gold) + rect(12, 34, 2, 1, gold) + rect(14, 34, 2, 1, gold) + rect(13, 33, 2, 2, '#f5dca9');
+  if (shoes === 'glass') art += path('M4 33H7V34H12V36H5V35H4ZM16 34H21V33H24V35H23V36H16Z', '#b5dff5') + rect(5, 34, 6, 1, '#f6f0e7') + rect(17, 34, 6, 1, '#f6f0e7') + rect(6, 32, 3, 2, '#f5c6d6') + rect(19, 32, 3, 2, '#f5c6d6') + rect(7, 33, 1, 1, gold) + rect(20, 33, 1, 1, gold);
   if (shoes === 'greaves') art += rect(7, 30, 5, 5, '#c49765') + rect(16, 30, 5, 5, '#c49765') + rect(8, 30, 3, 4, gold) + rect(17, 30, 3, 4, gold) + rect(9, 30, 1, 2, '#f5dca9') + rect(18, 30, 1, 2, '#f5dca9') + rect(5, 34, 7, 2, '#ad536e') + rect(16, 34, 8, 2, '#ad536e') + rect(5, 35, 7, 1, '#c49765') + rect(16, 35, 8, 1, '#c49765');
   if (shoes === 'sabatons') art += path('M4 30H7V33H5V31H4ZM21 30H24V31H23V33H21Z', '#f6f0e7') + rect(7, 30, 5, 5, gold) + rect(16, 30, 5, 5, gold) + rect(8, 30, 3, 4, '#f5dca9') + rect(17, 30, 3, 4, '#f5dca9') + rect(7, 32, 5, 1, '#c49765') + rect(16, 32, 5, 1, '#c49765') + rect(4, 34, 8, 2, gold) + rect(16, 34, 9, 2, gold) + rect(5, 35, 7, 1, '#ad536e') + rect(16, 35, 8, 1, '#ad536e');
   art += path('M10 7H18V8H21V17H19V19H10V17H8V9H10Z', skin) + rect(7, 12, 2, 3, skin) + rect(20, 12, 2, 3, skin);
@@ -207,15 +278,27 @@ export function characterArt(config = {}) {
   if (style === 'curls') art += path('M8 5H12V6H17V5H21V8H23V12H20V10H17V9H13V10H10V13H7V9H6V7H8Z', hair);
   if (style === 'braids') art += path('M8 6H20V8H21V11H19V9H10V11H8V6Z', hair) + rect(14, 6, 1, 2, dark);
   if (style === 'topknot') art += rect(12, 3, 5, 3, hair) + rect(13, 6, 3, 1, '#eee0c4') + path('M9 7H20V10H19V8H10V11H8V8H9Z', hair);
+  if (style === 'pigtails') art += path('M8 6H20V9H18V10H11V9H8Z', hair) + rect(5, 5, 4, 4, hair) + rect(20, 5, 4, 4, hair) + rect(6, 7, 3, 2, '#de8aa5') + rect(20, 7, 3, 2, '#de8aa5') + rect(7, 8, 1, 1, '#f6f0e7') + rect(21, 8, 1, 1, '#f6f0e7');
+  if (style === 'spacebuns') art += path('M5 2H10V7H5ZM19 2H24V7H19Z', hair) + path('M8 6H21V10H19V9H10V10H8Z', hair) + rect(8, 10, 2, 6, hair) + rect(19, 10, 2, 6, hair) + rect(7, 4, 2, 2, gold) + rect(20, 4, 2, 2, gold) + rect(6, 6, 4, 1, '#f5c6d6') + rect(19, 6, 4, 1, '#f5c6d6');
   if (style === 'waves') art += path('M7 5H19V6H22V9H24V12H20V10H18V9H10V12H8V7H7Z', hair);
+  if (style === 'bob') art += path('M7 5H21V8H22V17H19V10H10V17H6V8H7Z', hair) + rect(9, 7, 10, 3, hair) + rect(18, 9, 3, 1, '#f6f0e7') + rect(19, 8, 1, 1, gold);
+  if (style === 'updo') art += path('M10 1H19V6H10Z', hair) + path('M8 6H21V10H19V9H10V10H8Z', hair) + rect(8, 10, 1, 6, hair) + rect(20, 10, 1, 6, hair) + rect(10, 5, 9, 1, gold) + rect(11, 3, 2, 2, '#f5c6d6') + rect(16, 3, 2, 2, '#f6f0e7') + rect(14, 2, 2, 2, gold);
   if (style === 'locs') art += path('M8 5H20V7H22V15H20V9H16V10H13V9H10V15H7V7H8Z', hair) + rect(7, 16, 2, 5, hair) + rect(20, 16, 2, 5, hair) + rect(7, 18, 2, 1, gold) + rect(20, 18, 2, 1, gold);
+  if (style === 'ringlets') art += path('M7 5H21V9H19V8H15V9H13V8H10V9H7Z', hair) + rect(6, 7, 3, 10, hair) + rect(20, 7, 3, 10, hair) + rect(7, 6, 2, 2, '#f5c6d6') + rect(20, 6, 2, 2, '#f5c6d6') + rect(8, 7, 1, 1, '#ad536e') + rect(20, 7, 1, 1, '#ad536e');
+  if (style === 'hime') art += path('M8 5H21V10H8Z', hair) + rect(7, 8, 3, 9, hair) + rect(19, 8, 3, 9, hair) + path('M9 2H13V5H9ZM16 2H20V5H16Z', '#f5c6d6') + rect(13, 3, 3, 2, '#ad536e') + rect(8, 15, 2, 1, '#f5c6d6') + rect(19, 15, 2, 1, '#f5c6d6');
   art += rect(11, 12, 2, 2, dark) + rect(17, 12, 2, 2, dark) + rect(14, 16, 3, 1, dark);
   if (hat === 'beanie') art += path('M10 3H18V4H21V8H8V5H10Z', '#705486') + rect(7, 8, 15, 3, '#a385c7');
+  if (hat === 'bow') art += path('M4 2H12V5H17V2H25V9H19V7H10V9H4Z', '#de8aa5') + path('M5 3H11V7H5ZM18 3H24V7H18Z', '#f5c6d6') + rect(12, 4, 5, 4, '#ad536e') + rect(13, 5, 3, 2, gold) + path('M10 8H13V12H9V10H10ZM16 8H19V10H20V12H16Z', '#ad536e');
+  if (hat === 'beret') art += path('M6 4H19V5H23V9H7V6H6Z', '#de8aa5') + rect(8, 8, 13, 2, '#ad536e') + path('M13 1H16V3H18V4H12V3H13Z', '#538a84') + rect(10, 5, 1, 1, '#f6f0e7') + rect(15, 6, 1, 1, '#f6f0e7') + rect(19, 6, 1, 1, '#f6f0e7');
   if (hat === 'bandana') art += rect(8, 6, 13, 4, '#ad536e') + rect(5, 8, 3, 3, '#ad536e') + rect(4, 11, 3, 4, '#ad536e') + rect(11, 7, 2, 1, '#eee0c4');
+  if (hat === 'flowercrown') art += rect(6, 7, 17, 2, '#538a84') + rect(7, 6, 3, 3, '#f5c6d6') + rect(11, 5, 3, 3, '#f6f0e7') + rect(15, 6, 3, 3, '#de8aa5') + rect(19, 6, 3, 3, '#f5c6d6') + rect(8, 7, 1, 1, gold) + rect(12, 6, 1, 1, gold) + rect(16, 7, 1, 1, '#f6f0e7') + rect(20, 7, 1, 1, gold) + rect(5, 9, 2, 5, '#f5c6d6') + rect(22, 9, 2, 5, '#f5c6d6');
   if (hat === 'straw') art += path('M1 9H4V7H8V5H12V3H17V5H21V7H25V9H28V11H1Z', gold) + rect(4, 9, 21, 1, '#c49765') + rect(8, 6, 13, 1, '#c49765') + rect(12, 4, 5, 1, '#f5dca9') + rect(9, 11, 1, 4, '#ad536e') + rect(19, 11, 1, 4, '#ad536e');
+  if (hat === 'sunhat') art += path('M1 8H6V4H22V8H28V11H1Z', '#f5dca9') + rect(6, 7, 16, 2, '#de8aa5') + rect(2, 9, 25, 1, '#e6c480') + path('M18 6H24V11H21V14H18Z', '#f5c6d6') + rect(19, 7, 2, 2, '#ad536e') + rect(8, 6, 2, 2, '#f6f0e7');
   if (hat === 'tassel') art += path('M9 2H19V3H20V9H8V3H9Z', '#ad536e') + rect(8, 8, 12, 2, '#883b55') + rect(13, 1, 3, 1, gold) + rect(19, 3, 2, 1, gold) + rect(20, 4, 2, 6, dark) + rect(20, 9, 2, 1, gold);
+  if (hat === 'cathood') art += path('M6 2H10V5H19V2H23V9H22V14H20V8H9V14H7V9H6Z', '#f6f0e7') + rect(7, 4, 2, 3, '#f5c6d6') + rect(20, 4, 2, 3, '#f5c6d6') + rect(9, 7, 11, 2, '#de8aa5') + rect(13, 7, 3, 3, gold) + rect(14, 8, 1, 1, dark);
   if (hat === 'tricorne') art += path('M2 8V5H6V2H11V4H17V2H22V5H26V9H2Z', '#432d57') + rect(2, 8, 24, 2, gold) + rect(12, 4, 4, 3, gold);
   if (hat === 'wreath') art += rect(7, 7, 3, 3, '#c49765') + rect(9, 6, 3, 3, gold) + rect(12, 7, 2, 2, '#f5dca9') + rect(15, 7, 2, 2, '#f5dca9') + rect(17, 6, 3, 3, gold) + rect(19, 7, 3, 3, '#c49765') + rect(13, 6, 3, 2, gold) + rect(5, 8, 2, 2, '#ad536e') + rect(4, 10, 2, 3, '#ad536e');
+  if (hat === 'tiara') art += path('M7 7H9V5H11V6H13V2H16V6H18V5H20V7H22V9H7Z', '#f6f0e7') + rect(7, 8, 15, 1, gold) + rect(13, 4, 3, 3, '#de8aa5') + rect(14, 5, 1, 1, '#ad536e') + rect(9, 6, 2, 2, '#f5c6d6') + rect(18, 6, 2, 2, '#f5c6d6') + rect(14, 1, 1, 2, gold);
   if (hat === 'winged') art += path('M8 4H20V6H22V10H7V6H8Z', '#8e8296') + rect(13, 3, 3, 7, '#c49765') + rect(7, 9, 15, 2, '#c49765') + rect(14, 10, 2, 4, '#8e8296') + rect(8, 10, 2, 4, '#5e5368') + rect(19, 10, 2, 4, '#5e5368') + path('M3 4H5V6H7V9H4V7H3Z', '#eee0c4') + path('M24 4H26V7H25V9H22V6H24Z', '#eee0c4') + rect(6, 7, 2, 2, gold) + rect(21, 7, 2, 2, gold);
   if (hat === 'plumed') art += path('M2 8H7V4H19V7H27V10H2Z', '#432d57') + rect(2, 9, 25, 1, gold) + rect(12, 6, 4, 3, gold) + rect(13, 7, 2, 1, dark) + path('M4 2H14V4H10V6H3V4H4Z', '#f5dca9') + rect(1, 3, 4, 3, '#bf7892') + rect(6, 1, 6, 2, '#eee0c4');
   if (hat === 'crested') art += path('M6 0H21V2H23V6H20V4H8V6H5V2H6Z', '#ad536e') + rect(8, 1, 12, 1, '#eee0c4') + rect(10, 4, 9, 2, gold) + path('M8 5H20V7H22V11H7V7H8Z', gold) + rect(7, 9, 15, 1, '#c49765') + rect(8, 11, 2, 6, '#c49765') + rect(19, 11, 2, 6, '#c49765') + rect(14, 10, 2, 3, gold);
@@ -224,14 +307,19 @@ export function characterArt(config = {}) {
 }
 export function petArt(pet = 'none') {
   const dark = '#291d36', gold = '#e6c480';
+  if (pet === 'bunny') return path('M5 1H8V7H11V1H14V8H16V14H15V21H4V14H3V8H5Z', '#f6f0e7') + rect(6, 2, 1, 4, '#f5c6d6') + rect(12, 2, 1, 4, '#f5c6d6') + rect(10, 6, 5, 2, '#de8aa5') + rect(12, 6, 1, 2, '#ad536e') + rect(6, 10, 2, 2, dark) + rect(12, 10, 2, 2, dark) + rect(9, 12, 2, 1, '#de8aa5') + rect(5, 12, 1, 1, '#f5c6d6') + rect(14, 12, 1, 1, '#f5c6d6') + rect(16, 16, 3, 3, '#f6f0e7');
   if (pet === 'turtle') return path('M5 9H14V11H16V17H3V11H5Z', '#31515d') + rect(5, 11, 9, 5, '#538a84') + rect(6, 12, 3, 2, gold) + rect(10, 12, 3, 2, gold) + rect(2, 17, 15, 2, '#c49765') + path('M15 11H20V16H15Z', '#538a84') + rect(17, 12, 2, 2, dark) + rect(4, 19, 3, 3, '#538a84') + rect(12, 19, 3, 3, '#538a84') + rect(1, 16, 2, 2, '#538a84');
+  if (pet === 'duckling') return path('M6 4H14V6H16V11H18V17H15V20H5V16H3V11H6Z', '#ffd88a') + path('M5 3H15V6H5Z', '#f5c6d6') + rect(9, 2, 3, 2, '#de8aa5') + rect(10, 3, 1, 1, '#f6f0e7') + rect(11, 7, 2, 2, dark) + rect(15, 8, 4, 2, '#f09c56') + rect(7, 12, 6, 4, gold) + rect(7, 20, 2, 2, '#f09c56') + rect(12, 20, 2, 2, '#f09c56');
   if (pet === 'cat') return path('M3 7V2H6V4H12V2H15V13H13V19H16V21H3V19H5V14H3Z', '#c49765') + rect(5, 8, 2, 2, dark) + rect(11, 8, 2, 2, dark) + rect(7, 12, 4, 1, '#eee0c4') + path('M13 16H17V11H20V18H16V20H13Z', '#c49765');
   if (pet === 'dog') return rect(4, 6, 12, 10, '#eee0c4') + rect(2, 6, 4, 7, '#9e674f') + rect(14, 6, 4, 7, '#9e674f') + rect(6, 15, 9, 6, '#c5b09d') + rect(6, 9, 2, 2, dark) + rect(12, 9, 2, 2, dark) + rect(9, 12, 3, 2, dark) + rect(4, 20, 13, 2, '#eee0c4');
+  if (pet === 'kitten') return path('M4 2H7V4H13V2H16V12H4Z', '#f6f0e7') + rect(5, 3, 1, 2, '#f5c6d6') + rect(14, 3, 1, 2, '#f5c6d6') + rect(6, 7, 2, 2, dark) + rect(12, 7, 2, 2, dark) + rect(9, 9, 2, 1, '#de8aa5') + rect(5, 11, 10, 2, '#de8aa5') + rect(9, 11, 2, 2, gold) + path('M2 13H18V19H15V22H5V19H2Z', '#f5c6d6') + rect(3, 13, 14, 2, gold) + path('M18 14H21V18H18Z', gold) + rect(7, 16, 6, 3, '#ad536e');
   if (pet === 'parrot') return path('M6 3H14V5H16V13H13V20H11V24H8V20H5V11H3V7H6Z', '#538a84') + rect(12, 6, 2, 2, dark) + rect(14, 9, 5, 3, '#e6c480') + rect(6, 12, 4, 7, '#ad536e') + rect(6, 22, 8, 2, '#e6c480');
   if (pet === 'raven') return path('M7 3H14V5H16V11H14V17H11V22H6V18H4V9H7Z', dark) + rect(6, 9, 6, 7, '#432d57') + rect(7, 10, 4, 2, '#705486') + path('M14 5H20V8H14Z', '#c49765') + rect(11, 5, 2, 2, '#f5dca9') + rect(7, 8, 7, 1, gold) + rect(7, 21, 7, 2, gold);
+  if (pet === 'fawn') return path('M3 3H6V6H12V3H15V6H13V12H17V18H15V22H13V18H7V22H5V14H4V6H3Z', '#d99c75') + rect(5, 5, 8, 2, '#538a84') + rect(6, 4, 2, 2, '#f5c6d6') + rect(10, 4, 2, 2, '#f6f0e7') + rect(6, 8, 2, 2, dark) + rect(10, 8, 2, 2, dark) + rect(8, 10, 2, 1, dark) + rect(6, 12, 6, 2, '#de8aa5') + rect(8, 12, 2, 2, gold) + rect(9, 14, 2, 1, '#f6f0e7') + rect(13, 14, 2, 1, '#f6f0e7') + rect(11, 16, 2, 1, '#f6f0e7');
   if (pet === 'owl') return path('M4 2H7V4H13V2H16V6H18V17H15V21H5V17H3V6H4Z', '#9e674f') + rect(5, 6, 4, 4, '#f5dca9') + rect(11, 6, 4, 4, '#f5dca9') + rect(6, 7, 2, 2, dark) + rect(12, 7, 2, 2, dark) + rect(9, 9, 2, 2, gold) + rect(6, 12, 8, 7, '#eee0c4') + rect(7, 13, 2, 1, '#68444a') + rect(11, 13, 2, 1, '#68444a') + rect(9, 15, 2, 1, '#68444a') + rect(2, 20, 16, 2, '#538a84') + rect(7, 20, 6, 2, gold);
   if (pet === 'monkey') return rect(6, 4, 9, 7, '#68444a') + rect(4, 6, 2, 3, '#d99c75') + rect(15, 6, 2, 3, '#d99c75') + rect(7, 6, 7, 5, '#d99c75') + rect(8, 7, 2, 2, dark) + rect(12, 7, 2, 2, dark) + rect(8, 1, 5, 3, '#ad536e') + rect(13, 2, 2, 2, gold) + rect(6, 11, 9, 7, '#ad536e') + rect(9, 11, 3, 6, '#eee0c4') + rect(7, 12, 1, 4, gold) + rect(13, 12, 1, 4, gold) + rect(6, 18, 3, 4, '#68444a') + rect(12, 18, 3, 4, '#68444a') + path('M15 16H19V11H21V18H15Z', '#68444a');
   if (pet === 'fox') return path('M4 2H7V5H11V2H14V7H16V11H3V7H4Z', '#a85c40') + rect(4, 3, 2, 2, '#eee0c4') + rect(12, 3, 2, 2, '#eee0c4') + rect(5, 9, 8, 3, '#eee0c4') + rect(6, 7, 2, 2, dark) + rect(11, 7, 2, 2, dark) + rect(8, 10, 2, 1, dark) + rect(5, 12, 9, 9, '#a85c40') + rect(5, 12, 9, 2, '#ad536e') + rect(8, 13, 3, 2, '#f5dca9') + rect(7, 15, 5, 6, '#eee0c4') + path('M14 14H17V9H21V15H19V20H14Z', '#a85c40') + rect(17, 9, 4, 3, '#eee0c4') + rect(19, 14, 2, 3, '#eee0c4');
+  if (pet === 'unicorn') return path('M4 5H12V11H17V18H15V22H12V18H8V22H5V18H4Z', '#f6f0e7') + path('M7 0H9V3H10V5H6V3H7Z', gold) + path('M2 5H5V13H2Z', '#f5c6d6') + rect(3, 8, 2, 4, '#a385c7') + path('M17 11H21V17H18V15H17Z', '#f5c6d6') + rect(18, 13, 2, 3, '#a385c7') + rect(8, 7, 2, 2, dark) + rect(10, 9, 2, 1, '#f5c6d6') + rect(10, 12, 5, 4, '#f5c6d6') + rect(11, 13, 3, 2, gold);
   if (pet === 'calf') return path('M3 6H12V9H18V18H16V22H13V18H8V22H5V18H3Z', '#7c7287') + rect(6, 8, 5, 6, '#5e5368') + rect(4, 9, 2, 2, dark) + path('M1 4H4V7H3V13H1Z', '#7c7287') + rect(1, 12, 4, 2, '#eee0c4') + rect(10, 9, 6, 6, '#ad536e') + rect(11, 10, 4, 4, '#705486') + rect(10, 14, 6, 1, gold) + rect(5, 6, 3, 2, gold);
   return '';
 }
@@ -257,6 +345,12 @@ function sailEmblem(sailKey, hull) {
   }
   if (sailKey === 'chevron') {
     return path('M44 20H52V25H60V30H76V25H84V20H92V26H84V31H76V36H60V31H52V26H44Z', '#a85c40') + path('M44 31H52V36H60V41H76V36H84V31H92V37H84V42H76V47H60V42H52V37H44Z', '#c85a53') + path('M52 26H60V31H76V26H84V30H76V35H60V30H52Z', '#e6c480');
+  }
+  if (sailKey === 'blossom') {
+    return path('M64 19H72V25H78V33H72V39H75V45H68V40H61V45H64V39H58V33H64V25Z', '#ad536e') + path('M65 21H71V26H76V32H71V37H65V32H60V26H65Z', '#f6f0e7') + rect(66, 28, 4, 4, '#e6c480') + rect(50, 22, 3, 3, '#f6f0e7') + rect(83, 24, 3, 3, '#f6f0e7') + rect(53, 41, 3, 3, '#f6f0e7') + rect(80, 40, 3, 3, '#f6f0e7');
+  }
+  if (sailKey === 'heart') {
+    return path('M56 22H65V26H71V22H80V32H75V38H71V43H65V38H61V32H56Z', '#ad536e') + path('M59 24H64V27H72V24H77V31H73V36H69V40H67V36H63V31H59Z', '#f5c6d6') + path('M46 28H56V32H50V35H46ZM80 28H90V35H86V32H80Z', '#e6c480') + rect(66, 28, 4, 4, '#f6f0e7');
   }
   if (sailKey === 'diamond') {
     return path('M64 18H72V23H78V29H84V36H78V42H72V47H64V42H58V36H52V29H58V23H64Z', '#e6c480') + path('M65 22H71V27H76V35H71V40H65V35H60V27H65Z', '#705486') + rect(65, 28, 6, 6, '#f5dca9');
@@ -880,4 +974,44 @@ export function editorPreviewSVG(category, config, label) {
     case 'setting': return sceneSVG(config, label);
     default: throw new RangeError(`Unknown preview category: ${category}`);
   }
+}
+export function icon(name) {
+  const paths = {
+    harbour: 'M7 0h2v2h2v2H9v7h3V9h4v4h-2v2h-3v1H5v-1H2v-2H0V9h4v2h3V4H5V2h2V0z',
+    character: 'M5 0h6v2h2v5h-2v2h3v2h2v5h-5v-4H5v4H0v-5h2V9h3V7H3V2h2V0zm0 3v3h6V3H5z',
+    ship: 'M7 0h2v11h7v2h-2v2H2v-2H0v-2h7V0zM5 2h1v7H0V7h2V5h2V3h1V2zm5-1h3v2h2v6h-5V1z',
+    setting: 'M1 1h14v14H1V1zm2 2v8h2V8h3v3h2V9h3V3H3zm7 1h2v2h-2V4zM3 13h10v-1H3v1z',
+    hair: 'M4 1h8v2h2v10h-3V9h1V6h-2V4H6v2H4v3h1v4H2V3h2V1zM6 8h1v2H6V8zm3 0h1v2H9V8zM5 14h6v2H5v-2z',
+    hat: 'M5 2h6v2h2v6h3v3H0v-3h3V4h2V2zm0 6v2h6V8H5z',
+    shirt: 'M4 1h3v2h2V1h3v2h2v2h2v5h-4v5H4v-5H0V5h2V3h2V1zm2 4v2h4V5H6z',
+    bottoms: 'M3 1h10v14H9V9H7v6H3V1zm2 2v2h6V3H5z',
+    shoes: 'M2 3h4v7h2v2H0V6h2V3zm8 0h4v7h2v2H8V6h2V3zM0 14h16v2H0v-2z',
+    pet: 'M3 0h3v4H3V0zm7 0h3v4h-3V0zM0 4h3v4H0V4zm13 0h3v4h-3V4zM6 6h4v2h2v2h2v4h-2v2H4v-2H2v-4h2V8h2V6z',
+    stripes: 'M1 1h3v14H1V1zm5 0h4v14H6V1zm6 0h3v14h-3V1z',
+    plain: 'M1 1h14v14H1V1zm2 2v10h10V3H3z',
+    arrowRight: 'M8 1h2v2h2v2h2v2h2v2h-2v2h-2v2h-2v2H8v-4h2V9H0V7h10V5H8V1z',
+    arrowLeft: 'M6 1h2v4H6v2h10v2H6v2h2v4H6v-2H4v-2H2V9H0V7h2V5h2V3h2V1z',
+    arrowUpRight: 'M4 1h11v11h-2V5h-2v2H9v2H7v2H5v2H3v2H1v-3h2v-2h2V8h2V6h2V4H4V1z',
+    download: 'M6 0h4v7h3v2h-2v2H9v2H7v-2H5V9H3V7h3V0zM0 12h3v2h10v-2h3v4H0v-4z',
+    close: 'M1 1h3v2h2v2h4V3h2V1h3v3h-2v2h-2v4h2v2h2v3h-3v-2h-2v-2H6v2H4v2H1v-3h2v-2h2V6H3V4H1V1z',
+    reset: 'M4 0h8v2h2v3h2v7h-2v2H4v-2H2v-2h3v2h8V6h-2V3H5v3h3v2H0V0h2v3h2V0z',
+    lock: 'M4 0h8v2h2v5h2v9H0V7h2V2h2V0zm1 3v4h6V3H5zm2 7v3h2v-3H7z',
+    compass: 'M7 0h2v3h3v2h2v6h-2v2H9v3H7v-3H4v-2H2V5h2V3h3V0zm-1 5v6h4V5H6zm1 1h2v4H7V6z',
+    code: 'M4 3h2v2H4v2H2v2h2v2h2v2H4v-2H2V9H0V7h2V5h2V3zm8 0h-2v2h2v2h2v2h-2v2h-2v2h2v-2h2V9h2V7h-2V5h-2V3zM8 2h2L8 14H6L8 2z',
+    tests: 'M3 0h10v2h-2v4l4 6v3H1v-3l4-6V2H3V0zm4 2v5l-2 3h6L9 7V2H7zm-3 10v1h8v-1H4z',
+    review: 'M1 1h14v10H9l-4 4v-4H1V1zm2 2v6h4v2l2-2h4V3H3zm2 2h6v2H5V5z',
+    crew: 'M2 1h4v4H2V1zm8 0h4v4h-4V1zM1 6h6v5H5v4H2v-4H0V7h1V6zm8 0h6v1h1v4h-2v4h-3v-4H9V6z',
+    edit: 'M11 0h3v2h2v3h-2v2h-2V5h-2V3h1V0zM8 4h2v2h2v2h-2v2H8v2H6v2H2v-4h2V8h2V6h2V4zM1 15h14v1H1v-1z',
+    flag: 'M3 0h2v16H3V0zm3 1h8v6H6V1z',
+    coin: 'M4 1h8v2h2v2h1v6h-1v2h-2v2H4v-2H2v-2H1V5h1V3h2V1zm2 3v8h4v-2H8V9h2V7H8V6h2V4H6z',
+    check: 'M13 3h3v3h-2v2h-2v2h-2v2H8v2H5v-2H3v-2H1V7h3v2h2v2h1V9h2V7h2V5h2V3z',
+  };
+  if (!paths[name]) throw new RangeError(`Unknown pixel icon: ${name}`);
+  return `<svg class="pixel-icon" viewBox="0 0 16 16" aria-hidden="true" shape-rendering="crispEdges"><path d="${paths[name]}" fill="currentColor"/></svg>`;
+}
+
+export function characterCardSVG({ name, shipName, config, level, fontData }) {
+  const font = fontData ? `<defs><style>@font-face{font-family:VoyagesPixel;src:url('${escapeXML(fontData)}') format('woff2');font-weight:400 700}</style></defs>` : '';
+  const scene = sceneSVG(config).replace('<svg ', '<svg x="0" y="0" width="640" height="384" ');
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="560" viewBox="0 0 640 560">${font}<rect width="640" height="560" fill="#21162b"/>${scene}<g font-family="VoyagesPixel, monospace"><text x="30" y="425" fill="#f6f0e7" font-size="${name.length > 16 ? 24 : 28}" font-weight="600">${escapeXML(name)}</text><text x="610" y="425" text-anchor="end" fill="#e6c480" font-size="16">Lv. ${level}</text><text x="30" y="456" fill="#c0b3ca" font-size="${shipName.length > 22 ? 14 : 17}">At the helm of ${escapeXML(shipName)}</text><text x="30" y="515" fill="#c0b3ca" font-size="12">Carthagent Voyages · carthagent.xyz/voyages/</text></g></svg>`;
 }
