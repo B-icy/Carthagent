@@ -116,8 +116,9 @@ function mapCompatibility(compat: Record<string, unknown>): NonNullable<Model.In
   return Object.fromEntries(keys.flatMap(key => key in compat ? [[key, compat[key]]] : [])) as NonNullable<Model.Info['compatibility']>;
 }
 
-function oauthMethod({ env, fetchImpl, sleep, now, openBrowserImpl, agentDir, startDeviceFlow, credentialFile, coordinationFile }: {
+function oauthMethod({ env, fetchImpl, sleep, now, openBrowserImpl, agentDir, startDeviceFlow, credentialFile, coordinationFile, legacyImportAvailable }: {
   env: NodeJS.ProcessEnv;
+  legacyImportAvailable: boolean;
   fetchImpl: typeof fetch;
   sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
   now: () => number;
@@ -132,12 +133,14 @@ function oauthMethod({ env, fetchImpl, sleep, now, openBrowserImpl, agentDir, st
     integrationID: IntegrationSchema.ID.make(SHIP_INTEGRATION_ID),
     method: {
       id: OAUTH_METHOD, type: 'oauth' as const, label: 'Continue with Carthagent Cloud',
-      form: [{ type: 'boolean' as const, key: 'importLegacy', title: 'Import an existing stable Carthagent Cloud sign-in?', default: false }] satisfies Form.Fields,
+      // Offer one-way import only when a usable stable/Pi sign-in exists, so
+      // fresh users keep a single browser sign-in flow.
+      ...(legacyImportAvailable ? { form: [{ type: 'boolean' as const, key: 'importLegacy', title: 'Import an existing stable Carthagent Cloud sign-in?', default: false }] satisfies Form.Fields } : {}),
     },
     authorize: async (answer: Form.Answer) => {
       // The legacy file intentionally survives migration. Never let its presence
       // short-circuit an explicit sign-in or recovery from revoked/old scopes.
-      const legacy = answer.importLegacy === true ? await legacyOAuthForOpenCode({ agentDir }) : undefined;
+      const legacy = legacyImportAvailable && answer.importLegacy === true ? await legacyOAuthForOpenCode({ agentDir }) : undefined;
       if (legacy) {
         return {
           mode: 'auto' as const,
@@ -249,6 +252,7 @@ export async function registerProviders(ctx: Context, options: ProviderRegistrat
   // Fold credentials stored under the pre-rename 'experiential-labs' provider
   // id into 'carthagent-cloud' so existing sign-ins keep working.
   await migrateLegacyShipCredentialIds({ credentialFile }).catch(() => 0);
+  const legacyImportAvailable = Boolean(await legacyOAuthForOpenCode({ agentDir }).catch(() => undefined));
   // Awaited so the vault handle is closed before startup continues (Windows).
   await pruneRefreshReceipts({ coordinationFile, vaultFile: credentialFile }).catch(() => 0);
   const requestIdentity = options.sessionIdentity;
@@ -272,6 +276,7 @@ export async function registerProviders(ctx: Context, options: ProviderRegistrat
     env, fetchImpl, sleep, now, openBrowserImpl, agentDir, startDeviceFlow: deviceAuth.start,
     credentialFile,
     coordinationFile,
+    legacyImportAvailable,
     });
     for (const integration of editor.list()) {
       const supported = nativeLoginProvider(integration.id);

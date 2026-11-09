@@ -701,6 +701,19 @@ test('legacy credential migration reads Ship OAuth and BYOK without writing Pi s
   assert.throws(() => credentialStorageKey('../auth'), /Invalid/);
 });
 
+test('fresh native sign-in hides legacy import when no stable credential exists', async t => {
+  const directory = await mkdtemp(join(os.tmpdir(), 'ctg-fresh-signin-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const fake = fakeContext({});
+  const cleanup = await registerProviders(fake.ctx, {
+    env: { CARTHAGENT_CLOUD_URL: 'https://cloud.test' }, agentDir: directory,
+    fetchImpl: async () => { throw new Error('registration must not call the network'); },
+  });
+  t.after(cleanup);
+  const method = fake.integrationTransforms[0][0];
+  assert.equal(method.method.form, undefined, 'fresh users get the single browser sign-in flow');
+});
+
 test('native sign-in starts fresh device authorization after opt-in legacy migration and on reconnect', async t => {
   const directory = await mkdtemp(join(os.tmpdir(), 'ctg-signin-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -783,7 +796,7 @@ test('provider registration uses native provider transforms and cleanup; refresh
   assert.equal(typeof cleanup, 'function');
   assert.deepEqual(fake.integrationTransforms[0].map(item => item.integrationID), ['carthagent-cloud', 'carthagent-cloud']);
   assert.equal(fake.integrationTransforms[0][0].method.id, 'carthagent-device');
-  assert.equal(fake.integrationTransforms[0][0].method.form[0].default, false, 'legacy import requires explicit consent; fresh browser sign-in remains the default');
+  assert.equal(fake.integrationTransforms[0][0].method.form, undefined, 'without a stable credential, fresh browser sign-in has no import prompt');
   assert.equal(fake.integrationTransforms[0][1].method.type, 'env');
   assert.equal(fake.providerTransforms.find(item => item.info?.id === providerConstants.SHIP_PROVIDER_ID).info.package,
     '@opencode/ai/providers/openai-compatible');
