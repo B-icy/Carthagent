@@ -491,10 +491,11 @@ export async function registerProviders(ctx: Context, options: ProviderRegistrat
   // normally includes Cloud models, avoiding a cold-start 'Model unavailable'
   // race for headless runs; a slow Cloud never blocks startup indefinitely.
   const initialRefresh = refresh(controller.signal).catch(() => {});
+  let discoveryTimer: ReturnType<typeof setTimeout> | undefined;
   await Promise.race([initialRefresh, new Promise<void>(resolve => {
-    const timer = setTimeout(resolve, options.initialDiscoveryWaitMs ?? INITIAL_DISCOVERY_WAIT);
-    (timer as { unref?: () => void }).unref?.();
+    discoveryTimer = setTimeout(resolve, options.initialDiscoveryWaitMs ?? INITIAL_DISCOVERY_WAIT);
   })]);
+  clearTimeout(discoveryTimer);
   const onConnection = async (event: { type: string }) => {
     if (event.type === 'integration.updated' || event.type === 'credential.updated' || event.type === 'credential.switched') {
       void refresh(controller.signal).catch(() => {});
