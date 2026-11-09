@@ -181,8 +181,8 @@ function captureVersion(binary, spawnImpl, env) {
     const stderrBuffer = { value: stderr };
     const timer = setTimeout(() => {
       child.kill?.('SIGKILL');
-      finish(reject)(new Error('Native test runtime --version timed out after 5 seconds'));
-    }, 5000);
+      finish(reject)(new Error('Native test runtime --version timed out after 30 seconds'));
+    }, 30_000);
     child.stdout?.setEncoding?.('utf8');
     child.stderr?.setEncoding?.('utf8');
     child.stdout?.on('data', chunk => onOutput(stdoutBuffer, chunk));
