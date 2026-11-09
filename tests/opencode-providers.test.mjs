@@ -713,7 +713,7 @@ test('native sign-in starts fresh device authorization after opt-in legacy migra
   const browserUrls = [];
   let generation = 0;
   const cleanup = await registerProviders(fake.ctx, {
-    env: { CARTHAGENT_CLOUD_URL: 'https://cloud.test', CARTHAGENT_ADVANCED_AUTH: '1' }, agentDir: directory, now: () => 1000,
+    env: { CARTHAGENT_CLOUD_URL: 'https://cloud.test' }, agentDir: directory, now: () => 1000,
     openBrowser: url => { browserUrls.push(url); return false; },
     fetchImpl: async (url, init) => {
       requests.push({ url: String(url), body: JSON.parse(init.body) });
@@ -783,7 +783,7 @@ test('provider registration uses native provider transforms and cleanup; refresh
   assert.equal(typeof cleanup, 'function');
   assert.deepEqual(fake.integrationTransforms[0].map(item => item.integrationID), ['carthagent-cloud', 'carthagent-cloud']);
   assert.equal(fake.integrationTransforms[0][0].method.id, 'carthagent-device');
-  assert.equal(fake.integrationTransforms[0][0].method.form, undefined, 'fresh sign-in has no migration question');
+  assert.equal(fake.integrationTransforms[0][0].method.form[0].default, false, 'legacy import requires explicit consent; fresh browser sign-in remains the default');
   assert.equal(fake.integrationTransforms[0][1].method.type, 'env');
   assert.equal(fake.providerTransforms.find(item => item.info?.id === providerConstants.SHIP_PROVIDER_ID).info.package,
     '@opencode/ai/providers/openai-compatible');

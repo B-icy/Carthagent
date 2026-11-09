@@ -18,7 +18,15 @@ and beta limitations.
   the CTG profile under `~/.carthagent/opencode/`. `CTG_OPENCODE_HOME` can
   override that profile root. The old CLI's Carthagent data is separate too.
   Project/worktree delivery reports and native task metadata live in their
-  respective workspaces; task state is recorded in `.harness/`.
+  respective workspaces; task state is recorded in `.harness/`. Generated delivery
+  artifacts are excluded through local Git metadata (`info/exclude`), not by
+  modifying the project's committed `.gitignore`. Non-Git workspaces retain the
+  same evidence layout.
+- To reuse a stable Cloud sign-in, run `ctg login`, choose Carthagent Cloud,
+  and explicitly accept **Import an existing stable Carthagent Cloud sign-in?**.
+  The legacy credential file is read without modification; the native host owns
+  the imported credential. Decline to start fresh browser sign-in (the default).
+  If an imported credential has been revoked, reconnect with fresh browser sign-in.
 - Existing Pi sessions are **read-only archives**, not native sessions. There
   is no transcript continuation, conversion, or import. Keep the old
   installation and source data until you have independently confirmed the
@@ -110,7 +118,11 @@ node bin/ctg.mjs status --json
 JSONL consumers should use the terminal outcome and exit status, not the
 presence of assistant text alone: successful completion requires the completed
 assistant turn and a successful native terminal outcome. Failed, interrupted,
-and unresolved turns are not success. `-p` text is not a live tool-event stream.
+and unresolved turns are not success. `-p` text is not a live tool-event stream; an admission notice is written to
+stderr while stdout remains assistant text. JSONL tool starts/results are emitted
+live after prompt admission, filtered to that session and deduplicated during
+final reconciliation. Terminal outcomes are emitted only after execution is
+reconciled.
 
 ## Release installation and update
 
