@@ -24,6 +24,11 @@ test('Cloud client resolves the control-plane URL and formats integer nano-USD',
   assert.equal(formatNanoUsd(1_230_000_000), '$1.23');
   assert.equal(formatNanoUsd(-10_000_000), '-$0.01');
   assert.equal(formatNanoUsd(1.5), 'unavailable');
+  // Walkthrough case: $0.0215 spent of $1 leaves $0.9785. Must match carthagent.xyz/account.
+  assert.equal(formatNanoUsd(978_500_000), '$0.97');
+  assert.equal(formatNanoUsd(21_500_000, { spend: true }), '$0.03');
+  assert.equal(formatNanoUsd(1_999_999_999), '$1.99');
+  assert.equal(formatNanoUsd(1_990_000_001, { spend: true }), '$2.00');
 });
 
 test('Cloud device flow reports the code, tolerates pending, and returns rotating credentials', async () => {
@@ -108,7 +113,7 @@ test('OAuth and account formatters keep token expiration and account UX determin
     { createdAt: '2027-01-01T12:00:00.000Z', alias: 'gpt-6-luna', inputTokens: 1200, outputTokens: 34, status: 'completed' },
     { createdAt: '2027-01-01T11:00:00.000Z', alias: 'deepseek-v4-flash', inputTokens: 800, outputTokens: 6, status: 'failed' },
   ] };
-  assert.match(formatCloudUsage(usage), /𐤀\s+SHIP · USAGE/);
+  assert.match(formatCloudUsage(usage), /𐤀\s+CLOUD · USAGE/);
   assert.match(formatCloudUsage(usage), /last 5\s+gpt-6-luna · 1\.2k in \/ 34 out/);
   assert.match(formatCloudUsage(usage), /deepseek-v4-flash · 800 in \/ 6 out · failed/);
   assert.match(formatCloudUsage(usage, { account: { managedUsage: { planName: 'Pro', periodEnd: 1_800_000_000,
@@ -117,7 +122,7 @@ test('OAuth and account formatters keep token expiration and account UX determin
     /PRO · USAGE[\s\S]*monthly\s+40%[\s\S]*renews Jan 15[\s\S]*daily\s+0%/);
   assert.match(formatCloudUsage(usage, { byok: true }), /external provider — not counted here/);
   assert.match(formatCloudUsage({ data: [] }), /no settled requests yet/);
-  assert.match(formatCloudAccount({ accountId: 'acct', balance: { availableNanoUsd: 1_000_000_000 }, subscription: { status: 'none' }, sessions: [] }, { usage }), /SHIP · USAGE/);
+  assert.match(formatCloudAccount({ accountId: 'acct', balance: { availableNanoUsd: 1_000_000_000 }, subscription: { status: 'none' }, sessions: [] }, { usage }), /CLOUD · USAGE/);
 });
 
 test('managed usage recovery distinguishes daily, monthly, subscription, and credit paths', () => {

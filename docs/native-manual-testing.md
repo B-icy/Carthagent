@@ -28,7 +28,7 @@ npm ci
 
 The clone-local line-ending setting preserves hash-pinned patch bytes on Windows;
 it does not change global Git configuration. Node 24.21 and Git were used here;
-the package minimum is Node 22.19.0. Node 24 may print an engine warning for
+the package minimum is Node 22.22.2 (or 24.15+). Node 24 may print an engine warning for
 `@opentui/core`'s Node >=26.4 declaration. This candidate's renderer runs in the
 bundled Bun-based executable, not Node; local Node 24 results are recorded
 separately from that warning. Python 3 is needed only for automated POSIX PTY

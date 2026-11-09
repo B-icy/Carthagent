@@ -11,7 +11,7 @@ Carthagent (`ctg`) is an AI coding agent for your terminal. Before it writes cod
 ```sh
 curl -fsSL https://carthagent.xyz/install | sh      # macOS / Linux
 irm https://carthagent.xyz/install.ps1 | iex        # Windows PowerShell
-npm install -g carthagent                           # Node.js 22.19+
+npm install -g carthagent                           # Node.js 22.22.2+, 24.15+ or 26+
 ```
 
 Then connect a model provider and start in your project:

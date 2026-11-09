@@ -20,6 +20,7 @@ import { provisionNativeThemes } from "./ui/theme-provision.mjs";
 import { setSessionAutoCompaction } from "./ui/session-preferences.mjs";
 import { runModelCommand } from "./ui/model-command.js";
 import { createNativeReviewConsumer, nativeReviewMode, sendNativeReviewKickoff, subscribeNativeReviewEvents } from "./ui/native-review.mjs";
+import { createDeliveryRewardNotice } from "./ui/delivery-reward-notice.mjs";
 
 const THEMES = ["carthage", "tokyonight", "nebula", "ember", "forest", "mono", "obsidian", "midnight", "solarized-dark", "nord", "contrast-dark", "okabe-dark", "paper", "daylight", "solarized-light", "contrast-light", "okabe-light", "solarized", "okabe", "contrast", "system"];
 const OPENCODE_BUILTIN_THEMES = new Set(["opencode", "tokyonight"]);
@@ -30,7 +31,7 @@ export default Plugin.define({
     const questDrafts = new Map<string, Map<string, unknown>>();
     const unregister = context.ui.router.register({ name: "carthagent", render: ({ data }) => <WorkspacePage view={String(data?.view ?? "workspace")} refreshKey={String(data?.refresh ?? "")} sessionID={typeof data?.sessionID === "string" ? data.sessionID : undefined} returnSessionID={typeof data?.returnSessionID === "string" ? data.returnSessionID : undefined} /> });
     const cleanups = [unregister];
-    cleanups.push(context.ui.router.register({ name: "voyages", render: ({ data }) => <VoyagesPage sessionID={typeof data?.sessionID === "string" ? data.sessionID : undefined} section={data?.section === "profile" || data?.section === "equipment" ? data.section : undefined} /> }));
+    cleanups.push(context.ui.router.register({ name: "voyages", render: ({ data }) => <VoyagesPage sessionID={typeof data?.sessionID === "string" ? data.sessionID : undefined} section={data?.section === "profile" || data?.section === "equipment" ? data.section : undefined} claim={data?.claim === true} /> }));
     cleanups.push(context.ui.router.register({ name: "daily-quests", render: ({ data }) => <DailyQuestsPage drafts={questDrafts} sessionID={typeof data?.sessionID === "string" ? data.sessionID : undefined} questID={typeof data?.questID === "string" ? data.questID : undefined} /> }));
     const clearQuestDrafts = () => { for (const drafts of questDrafts.values()) drafts.clear(); };
     cleanups.push(clearQuestDrafts, context.data.listen(({ details }) => {
@@ -70,6 +71,12 @@ export default Plugin.define({
       (error: unknown) => context.ui.toast.show({ message: commandErrorMessage(error), variant: "error" }),
       async (sessionID: string, messageID: string, signal?: AbortSignal) => await context.client.session.message.get({ sessionID, messageID }, { signal }),
     ));
+    const rewardNotice = createDeliveryRewardNotice({
+      signal: lifecycle.signal,
+      delivery: async (sessionID: string, signal?: AbortSignal) => await workspaceClient(context, context.data.session.get(sessionID)?.location).delivery({ sessionID }, signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000)),
+      notify: (message: string) => context.ui.toast.show({ message, variant: "success" }),
+    });
+    cleanups.push(context.data.on("session.execution.succeeded", (event) => { void rewardNotice.onSucceeded(event); }));
     const workspaceEvents = context.client.rpc(Workspace);
     cleanups.push(workspaceEvents.events.on("updated", (event) => {
       // Promise RPC exposes the server event envelope (including location)
@@ -118,6 +125,12 @@ export default Plugin.define({
       const sessionApi = sessionControls(context, location);
       switch (id) {
         case "voyages":
+          if (arg.toLowerCase() === "claim") {
+            if (!sessionID) { toast("No session is open. Run /voyages claim inside the ctg session that finished the delivery.", "warning"); return; }
+            context.ui.router.navigate({ type: "plugin", name: "voyages", data: { sessionID, section: "profile", claim: true } });
+            return;
+          }
+          if (arg) { toast("Usage: /voyages [claim].", "warning"); return; }
           context.ui.router.navigate({ type: "plugin", name: "daily-quests", data: { ...(sessionID ? { sessionID } : {}) } });
           return;
         case "quests":
