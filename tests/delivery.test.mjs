@@ -312,6 +312,22 @@ test('pre-verify reclassification is allowed only before evidence exists', () =>
   assert.throws(() => validateRevision({ plan: plan(), status: 'implementing', evidence: {} }, weakened), /remove acceptance/);
 });
 
+test('looksInformational recognizes scoped and read-only-constrained questions from real beta usage', () => {
+  for (const text of [
+    'In invest-with-friends, which file defines assertDateRange? Answer with just the path.',
+    'In invest-with-friends, what HTTP status does app/api/alpaca/timeseries/route.ts return for an invalid symbol? One sentence.',
+    'In invest-with-friends, read only lib/market-data-query.ts and report in one sentence what normalizeMarketSymbol rejects. Do not edit files or run shell commands.',
+    'Recommend the single best small improvement. Do not make changes.',
+    'For the api package: where is the retry configured?',
+  ]) assert.equal(looksInformational(text), true, text);
+  for (const text of [
+    'In invest-with-friends, add a test for normalizeMarketSymbol.',
+    'In the api package, fix the retry bug. Answer with a summary.',
+    'Do not edit the README; fix the failing route test.',
+    'Which file defines X? Then update it to use Y.',
+  ]) assert.equal(looksInformational(text), false, text);
+});
+
 test('looksInformational recognizes read-only asks but not build tasks', () => {
   for (const text of ['what does index.ts do?', 'explain the retry logic', 'how does auth work', 'review this diff', 'list the pending checks']) {
     assert.equal(looksInformational(text), true, text);

@@ -14,6 +14,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { looksInformational } from '../../../../lib/delivery.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '../../../..');
@@ -73,8 +74,7 @@ export function shouldFrame(text, { enabled = true, delivery = true } = {}) {
   const v = String(text).trim();
   if (!v) return false;
   if (v.startsWith('/') || v.startsWith('!')) return false;
-  // Questions/read-only asks are not delivery runs.
-  if (v.endsWith('?') && v.length < 300) return false;
-  if (/^(what|why|how|explain|show|list|describe|review|where|is|are|does|do|can)\b/i.test(v) && v.length < 300 && !/\b(build|create|implement|write|add|fix|make|generate)\b/i.test(v)) return false;
+  // Questions/read-only asks are not delivery runs (one shared classifier).
+  if (looksInformational(v)) return false;
   return existsSync(TEMPLATE_PATH);
 }
