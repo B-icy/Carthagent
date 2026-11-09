@@ -1450,4 +1450,102 @@ test('cold-start model inventory is polled until the requested model appears', a
   const last = await listModelsWhenReady(async () => { empty++; return { data: [] }; }, { want: () => false, attempts: 3, sleep: async () => {} });
   assert.deepEqual(last, { data: [] });
   assert.equal(empty, 3);
+
+test('unqualified --model infers its provider from connected models, preferring Carthagent Cloud', async () => {
+  const { inferModelProvider } = await import('../lib/opencode/cli-runtime.mjs');
+  const rows = [
+    { providerID: 'carthagent-cloud', id: 'glm-5.3-flash' },
+    { providerID: 'openrouter', id: 'glm-5.3-flash' },
+    { providerID: 'anthropic', id: 'claude-fixture' },
+    { providerID: 'openai', id: 'shared' }, { providerID: 'google', id: 'shared' },
+  ];
+  assert.deepEqual(inferModelProvider({ id: 'glm-5.3-flash' }, rows), { id: 'glm-5.3-flash', providerID: 'carthagent-cloud' });
+  assert.deepEqual(inferModelProvider({ id: 'Claude-Fixture', variant: 'high' }, rows), { id: 'Claude-Fixture', variant: 'high', providerID: 'anthropic' });
+  assert.deepEqual(inferModelProvider({ providerID: 'openai', id: 'x' }, []), { providerID: 'openai', id: 'x' }, 'explicit provider is untouched');
+  assert.throws(() => inferModelProvider({ id: 'shared' }, rows), /several connected providers \(openai, google\).*--provider/);
+  assert.throws(() => inferModelProvider({ id: 'missing' }, rows), /No connected provider offers model "missing".*--list-models/);
+  assert.throws(() => inferModelProvider({ id: 'glm-5.3-flash' }, []), /needs a connected provider.*ctg login/);
+});
+
+test('headless --model without --provider resolves the provider before creating the session', async t => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-infer-provider-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const sessions = [];
+  let lists = 0;
+  const runtime = await createOpenCodeCliRuntime({ cwd, io: ioCapture().io, stdout: { write() {} }, native: {
+    runtime: {}, service: { ensureService: async () => ({}) }, modelResolveDelayMs: 0,
+    clientFactory: async () => ({
+      // Cold start: Cloud models appear on the second inventory read.
+      model: { list: async () => (++lists === 1 ? { data: [] } : { data: [{ providerID: 'carthagent-cloud', id: 'glm-5.3-flash' }] }) },
+      session: { get: async () => ({ id: 's1', outcome: 'succeeded' }), context: async () => [] },
+    }),
+    headless: { runHeadless: async (_service, _cwd, _prompt, options) => {
+      sessions.push(options.session.model);
+      return { session: { id: 's1', outcome: 'succeeded' }, terminal: true, outcome: 'succeeded', messages: [{ type: 'assistant', finish: 'stop', content: [{ type: 'text', text: 'ok' }] }, { type: 'idle', outcome: 'succeeded' }] };
+    } },
+  } });
+  assert.equal(await runtime.run({ mode: 'headless', options: { model: 'glm-5.3-flash', thinking: 'low' }, prompt: 'hi' }), 0);
+  assert.deepEqual(sessions, [{ providerID: 'carthagent-cloud', id: 'glm-5.3-flash', variant: 'low' }]);
+  assert.equal(lists, 2);
+});
+
+test('command --help prints usage without running the command', async () => {
+  const runtime = new Proxy({}, { get: (_target, name) => () => { throw new Error(`help must not call ${String(name)}()`); } });
+  for (const [argv, pattern] of [
+    [['login', '--help'], /Usage: ctg login[\s\S]*your own provider for free/],
+    [['auth', '-h'], /Usage: ctg login/],
+    [['account', '--help'], /Usage: ctg account/],
+    [['cloud', '--help'], /Usage: ctg account/],
+    [['billing', '--help'], /portal\s+Manage an existing paid subscription/],
+    [['validate', '--help'], /Usage: ctg validate <plan.json>/],
+    [['status', '-h'], /Usage: ctg status/],
+    [['logout-cloud', '--help'], /Usage: ctg logout-cloud/],
+    [['help', 'review'], /Usage: ctg review/],
+  ]) {
+    const { output, io } = ioCapture();
+    assert.equal(await runOpenCodeCli({ argv, runtime, io, stdoutIsTTY: false }), 0, argv.join(' '));
+    assert.match(output.stdout.join('\n'), pattern, argv.join(' '));
+    assert.deepEqual(output.stderr, [], argv.join(' '));
+  }
+  // A literal prompt after `--` is still a prompt, not a help request.
+  let invocation;
+  assert.equal(await runOpenCodeCli({ argv: ['tui', '-p', '--', '--help'], stdoutIsTTY: false, io: ioCapture().io, runtime: { run: async request => { invocation = request; return 0; } } }), 0);
+  assert.equal(invocation.prompt, '--help');
+});
+
+test('validate and status explain missing files, invalid JSON and symlinked folders without stack traces', async t => {
+  const { mkdtempSync, rmSync, writeFileSync, symlinkSync, mkdirSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-domain-errors-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const { io, output } = ioCapture();
+  const runtime = await createOpenCodeCliRuntime({ cwd, io, native: { runtime: {}, service: {}, headless: {} } });
+  await assert.rejects(runtime.domain({ command: 'validate', args: ['missing.json'] }), /^Error: Plan file not found: missing\.json\. Usage: ctg validate/);
+  writeFileSync(join(cwd, 'bad.json'), '{');
+  await assert.rejects(runtime.domain({ command: 'validate', args: ['bad.json'] }), /not valid JSON/);
+  writeFileSync(join(cwd, 'empty.json'), '{}');
+  await assert.rejects(runtime.domain({ command: 'validate', args: ['empty.json'] }), /Acceptance contract is INVALID/);
+  mkdirSync(join(cwd, 'dir'));
+  await assert.rejects(runtime.domain({ command: 'validate', args: ['dir'] }), /is a directory/);
+  symlinkSync(join(cwd, 'dir'), join(cwd, 'link'));
+  assert.equal(await runtime.domain({ command: 'status', args: [] }), 0);
+  assert.match(output.stdout.join('\n'), /Fingerprint:\s+unavailable — this directory contains a symlink/);
+  assert.match(output.stdout.join('\n'), /Run ctg from a project directory/);
+  assert.equal(await runtime.domain({ command: 'status', args: ['--json'] }), 0);
+  const json = JSON.parse(output.stdout.at(-1));
+  assert.equal(json.currentFingerprint, null);
+  assert.match(json.fingerprintError, /symlink/);
+});
+
+test('billing portal without a paid subscription explains the next step', async () => {
+  const { io } = ioCapture();
+  const runtime = await createOpenCodeCliRuntime({ io, openBrowserImpl: async () => { throw new Error('must not open a browser'); }, native: {
+    runtime: {}, service: { ensureService: async () => ({}) }, headless: {}, rpcDefinitions: { Carthagent: {} },
+    clientFactory: async () => ({
+      rpc: () => ({ shipBilling: async () => { throw Object.assign(new Error('stripe_customer_not_found'), { type: 'rpc.failed' }); } }),
+    }),
+  } });
+  await assert.rejects(runtime.billing({ action: 'portal' }), /No paid Cloud subscription to manage yet.*ctg billing checkout/);
 });

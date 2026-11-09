@@ -386,3 +386,18 @@ test('failed and interrupted native reviewer outcomes are never accepted as verd
     await assert.rejects(startReview({ ctx, cwd: root, identity: outcome }), new RegExp(outcome));
   }
 });
+
+test('local review snapshot supports a repository without commits and tracks new content', t => {
+  const root = mkdtempSync(join(tmpdir(), 'ctg-review-unborn-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  execFileSync('git', ['init', '-q'], { cwd: root });
+  writeFileSync(join(root, 'hello.txt'), 'hi');
+  const first = localReviewSnapshot(root);
+  assert.equal(first.head, 'unborn');
+  assert.match(first.snapshot, /^[a-f0-9]{64}$/);
+  execFileSync('git', ['add', 'hello.txt'], { cwd: root });
+  writeFileSync(join(root, 'hello.txt'), 'hello');
+  const second = localReviewSnapshot(root);
+  assert.notEqual(second.snapshot, first.snapshot, 'snapshot follows staged and unstaged content');
+  assert.throws(() => execFileSync('git', ['rev-parse', '--verify', 'HEAD'], { cwd: root, stdio: 'pipe' }), 'no commit was created');
+});

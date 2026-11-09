@@ -336,3 +336,21 @@ test('per-request timeout is reported visibly, not silently dropped as an expire
   assert.equal(latest.busy, false);
   assert.equal(latest.notice, '');
 });
+
+test('ineligible or already-claimed rewards explain why instead of raw codes, and nothing is claimed', async () => {
+  for (const [code, pattern] of [
+    ['delivery_ineligible', /only a current verified Ship finish.*Nothing was sent/],
+    ['delivery_changed', /Files changed since this delivery was verified/],
+    ['reward_daily_limit', /3 per UTC day/],
+    ['snapshot_claimed', /already earned a reward/],
+  ]) {
+    let claims = 0;
+    const f = fixture({ previewReward: async () => { throw { type: 'voyagesError', data: { code, status: 409, uncertain: false } }; }, claimReward: async () => { claims++; } });
+    await f.controller.refresh();
+    await f.controller.claimReward('s1', async () => true);
+    assert.match(f.view().error, pattern, code);
+    assert.doesNotMatch(f.view().error, new RegExp(`^${code}\\.`), code);
+    assert.equal(claims, 0);
+  }
+});
+
