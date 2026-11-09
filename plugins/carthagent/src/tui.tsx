@@ -141,7 +141,7 @@ export default Plugin.define({
           context.keymap.dispatch("provider.connect", arg ? nativeLoginProvider(arg)?.id ?? arg : "carthagent-cloud");
           return;
         case "help": case "ctg-help": {
-          const selected = helpSelectionTarget(await context.ui.dialog.select({ title: "Carthagent commands · type to search", placeholder: "Search commands…", options: helpOptions() }));
+          const selected = helpSelectionTarget(await context.ui.dialog.select({ title: "Carthagent commands · search to filter", placeholder: "Search commands…", options: helpOptions() }));
           if (selected?.type === "host") context.keymap.dispatch(selected.id);
           else if (selected) await dispatch(selected.command.id, "");
           return;
