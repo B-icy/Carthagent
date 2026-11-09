@@ -240,3 +240,20 @@ test("an open Buy confirmation closes synchronously on reload and nothing is sen
     expect(f.writes).toEqual(["quote"]);
   } finally { f.app.renderer.destroy(); }
 });
+
+test("/voyages claim opens the reward preview and still waits for explicit confirmation", async () => {
+  const calls: string[] = [];
+  const preview = { runId: "run-1", snapshot: "snap", coins: 25, xp: 100, km: 1, dailyLimit: 3 };
+  const context = {
+    theme: resolveThemeDocument(parseThemeDocument(theme), "dark"), location: { directory: "/review" },
+    data: { session: { get: () => undefined }, location: { default: () => ({ directory: "/review" }) }, listen: () => () => {} },
+    client: { rpc: () => ({ snapshot: async () => ({ accountKey: "a".repeat(64), profile, items: [] }), previewReward: async (input: unknown) => { calls.push(`preview:${JSON.stringify(input)}`); return preview; }, claimReward: async () => { calls.push("claim"); return { reward: {}, replayed: false }; } }) },
+    keymap: { layer: () => {}, mode: { current: () => "base" } },
+    ui: { router: { navigate: () => {} }, dialog: { clear: () => {}, confirm: async (input: { message: string }) => { calls.push(`confirm:${input.message.split("\n")[0]}`); return false; } } },
+  } as unknown as Context;
+  const app = await testRender(() => <PluginContextProvider value={context}><VoyagesPage section="profile" sessionID="s1" claim /></PluginContextProvider>, { width: 110, height: 36 });
+  try {
+    for (let i = 0; i < 12; i++) { await Promise.resolve(); await app.renderOnce(); }
+    expect(calls).toEqual([`preview:${JSON.stringify({ sessionID: "s1" })}`, "confirm:+25 coins · +100 XP · +1 km"]);
+  } finally { app.renderer.destroy(); }
+});

@@ -174,7 +174,9 @@ jobs:
           fi
 
           version="${RELEASE_TAG#v}"
+          # Publish the real Node floor so the installer never accepts a runtime npm will warn about.
+          min_node="$(node -p "require('./package.json').engines.node.match(/\\d+\\.\\d+\\.\\d+/)[0]")"
           curl -fsS -X POST "${CARTHAGENT_CLOUD_URL}/v1/cli/releases" \
             -H "authorization: Bearer ${CARTHAGENT_CLI_RELEASE_TOKEN}" \
             -H 'content-type: application/json' \
-            -d "{\"version\":\"${version}\"}"
+            -d "{\"version\":\"${version}\",\"minNode\":\"${min_node}\"}"

@@ -31,7 +31,7 @@ test('Experiential provider uses the hosted gateway and canonical environment va
   assert.equal(config.authHeader, true);
   assert.equal(config.api, 'openai-completions');
   assert.equal(typeof config.streamSimple, 'function');
-  assert.equal(config.oauth.name, 'Carthagent Ship account');
+  assert.equal(config.oauth.name, 'Carthagent Cloud account');
 });
 
 test('Managed Cloud operations share one identity and disable transport retries until replay exists', async () => {

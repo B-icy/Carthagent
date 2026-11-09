@@ -8,7 +8,7 @@
 
 ## Install the current CLI
 
-Core CLI requires Node ≥ 22.19. Optional workflows may need Git and an
+Core CLI requires Node 22.22.2+, 24.15+ or 26+. Optional workflows may need Git and an
 authenticated `gh` for PR review, Python and scenario dependencies for game
 graders, and a browser download for real-browser checks. The browser helper
 downloads `chrome-headless-shell` on first use to `~/.carthagent/browser/`; no

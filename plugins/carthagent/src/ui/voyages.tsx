@@ -12,7 +12,7 @@ import { VoyagesPreview } from "./voyages-preview.js";
 type ViewState = { snapshot?: VoyagesSnapshot; busy: boolean; error: string; notice: string };
 
 /** All mutations go through the lifetime-guarded controller, including dialogs. */
-export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "equipment" }) {
+export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "equipment"; claim?: boolean }) {
   let list: SelectRenderable | undefined;
   const context = usePlugin();
   const dimensions = useTerminalDimensions();
@@ -173,7 +173,8 @@ export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "
         memory.sync();
       });
     });
-    void controller.refresh();
+    // /voyages claim opens the same confirmed preview → claim flow as the menu action.
+    void controller.refresh().then(() => { if (props.claim && props.sessionID && view().snapshot) select("reward"); });
     onCleanup(() => { stop(); controller.dispose(); closeOwnDialog(); });
   });
   // While a reload is in flight the list is inert and shows a transient shape; restore once it settles.
