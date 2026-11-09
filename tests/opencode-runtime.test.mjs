@@ -772,7 +772,15 @@ test('headless runner passes workspace environment and returns assistant content
       if (pathname.endsWith('/message')) return new Response(JSON.stringify({ data: [{ type: 'assistant', finish: 'stop', content: [{ type: 'text', text: 'fixture result' }] }] }));
       throw new Error(`Unexpected endpoint ${pathname}`);
     };
-    const result = await runHeadless({ url: 'http://127.0.0.1:3333', headers: {} }, '/workspace', 'say the fixture', { env: { FIXTURE_KEY: 'injected' } });
+    let admission;
+    const result = await runHeadless({ url: 'http://127.0.0.1:3333', headers: {} }, '/workspace', 'say the fixture', {
+      env: { FIXTURE_KEY: 'injected' },
+      onAccepted: value => {
+        assert.ok(!calls.some(call => call.pathname.endsWith('/wait')), 'admission is reported before waiting for completion');
+        admission = value;
+      },
+    });
+    assert.deepEqual(admission, { sessionID: 'ses_headless', accepted: { id: 'user_headless' } });
     assert.deepEqual(result.result, {
       status: 'stop',
       text: 'fixture result',

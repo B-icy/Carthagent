@@ -701,6 +701,49 @@ test('legacy credential migration reads Ship OAuth and BYOK without writing Pi s
   assert.throws(() => credentialStorageKey('../auth'), /Invalid/);
 });
 
+test('startup waits a bounded time for first Cloud discovery so cold headless runs see Cloud models', async () => {
+  const token = `x.${Buffer.from(JSON.stringify({ sub: 'acct', sid: 'sid', scope: 'gateway:invoke' })).toString('base64url')}.x`;
+  const connections = { 'carthagent-cloud': { connection: { id: 'ship', credential: { type: 'oauth', access: token, refresh: 'r', expires: Date.now() + 100000 } } } };
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const fetchImpl = async url => {
+    if (String(url).endsWith('/models')) { await gate; return Response.json({ data: [{ id: 'gpt-6-luna' }] }); }
+    throw new Error(`unexpected URL ${url}`);
+  };
+  // Discovery finishes before the wait bound: registration must not resolve first.
+  const fast = fakeContext({ integrations: ['carthagent-cloud'], connections });
+  let resolved = false;
+  const registration = registerProviders(fast.ctx, { env: { CARTHAGENT_CODING_AGENT_DIR: '/missing' }, fetchImpl,
+    openBrowser: () => false, initialDiscoveryWaitMs: 5_000 }).then(cleanup => { resolved = true; return cleanup; });
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(resolved, false, 'plugin activation waits for the in-flight first discovery');
+  release();
+  const cleanup = await registration;
+  await cleanup();
+
+  // A hung Cloud must not block startup past the bound.
+  const slow = fakeContext({ integrations: ['carthagent-cloud'], connections });
+  const started = Date.now();
+  const cleanupSlow = await registerProviders(slow.ctx, { env: { CARTHAGENT_CODING_AGENT_DIR: '/missing' },
+    fetchImpl: async (_url, init) => new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(init.signal.reason))),
+    openBrowser: () => false, initialDiscoveryWaitMs: 30 });
+  assert.ok(Date.now() - started < 2_000, 'startup is bounded when discovery hangs');
+  await cleanupSlow();
+});
+
+test('fresh native sign-in hides legacy import when no stable credential exists', async t => {
+  const directory = await mkdtemp(join(os.tmpdir(), 'ctg-fresh-signin-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const fake = fakeContext({});
+  const cleanup = await registerProviders(fake.ctx, {
+    env: { CARTHAGENT_CLOUD_URL: 'https://cloud.test' }, agentDir: directory,
+    fetchImpl: async () => { throw new Error('registration must not call the network'); },
+  });
+  t.after(cleanup);
+  const method = fake.integrationTransforms[0][0];
+  assert.equal(method.method.form, undefined, 'fresh users get the single browser sign-in flow');
+});
+
 test('native sign-in starts fresh device authorization after opt-in legacy migration and on reconnect', async t => {
   const directory = await mkdtemp(join(os.tmpdir(), 'ctg-signin-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -713,7 +756,7 @@ test('native sign-in starts fresh device authorization after opt-in legacy migra
   const browserUrls = [];
   let generation = 0;
   const cleanup = await registerProviders(fake.ctx, {
-    env: { CARTHAGENT_CLOUD_URL: 'https://cloud.test', CARTHAGENT_ADVANCED_AUTH: '1' }, agentDir: directory, now: () => 1000,
+    env: { CARTHAGENT_CLOUD_URL: 'https://cloud.test' }, agentDir: directory, now: () => 1000,
     openBrowser: url => { browserUrls.push(url); return false; },
     fetchImpl: async (url, init) => {
       requests.push({ url: String(url), body: JSON.parse(init.body) });
@@ -783,7 +826,7 @@ test('provider registration uses native provider transforms and cleanup; refresh
   assert.equal(typeof cleanup, 'function');
   assert.deepEqual(fake.integrationTransforms[0].map(item => item.integrationID), ['carthagent-cloud', 'carthagent-cloud']);
   assert.equal(fake.integrationTransforms[0][0].method.id, 'carthagent-device');
-  assert.equal(fake.integrationTransforms[0][0].method.form, undefined, 'fresh sign-in has no migration question');
+  assert.equal(fake.integrationTransforms[0][0].method.form, undefined, 'without a stable credential, fresh browser sign-in has no import prompt');
   assert.equal(fake.integrationTransforms[0][1].method.type, 'env');
   assert.equal(fake.providerTransforms.find(item => item.info?.id === providerConstants.SHIP_PROVIDER_ID).info.package,
     '@opencode/ai/providers/openai-compatible');

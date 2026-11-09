@@ -33,6 +33,7 @@ import { nativeLoginProvider } from '../../../../lib/opencode/provider-policy.mj
 const OAUTH_METHOD = 'carthagent-device';
 const SHIP_INTEGRATION_ID = EXPERIENTIAL_PROVIDER_ID;
 const DISCOVERY_TIMEOUT = 10_000;
+const INITIAL_DISCOVERY_WAIT = 5_000;
 const PROFILE_CAP = 200;
 const CACHE_KEY = 'ctg.models/subscriptions/';
 const RUN_MODE = new Set(['interactive', 'print', 'rpc']);
@@ -116,8 +117,9 @@ function mapCompatibility(compat: Record<string, unknown>): NonNullable<Model.In
   return Object.fromEntries(keys.flatMap(key => key in compat ? [[key, compat[key]]] : [])) as NonNullable<Model.Info['compatibility']>;
 }
 
-function oauthMethod({ env, fetchImpl, sleep, now, openBrowserImpl, agentDir, startDeviceFlow, credentialFile, coordinationFile }: {
+function oauthMethod({ env, fetchImpl, sleep, now, openBrowserImpl, agentDir, startDeviceFlow, credentialFile, coordinationFile, legacyImportAvailable }: {
   env: NodeJS.ProcessEnv;
+  legacyImportAvailable: boolean;
   fetchImpl: typeof fetch;
   sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
   now: () => number;
@@ -132,12 +134,14 @@ function oauthMethod({ env, fetchImpl, sleep, now, openBrowserImpl, agentDir, st
     integrationID: IntegrationSchema.ID.make(SHIP_INTEGRATION_ID),
     method: {
       id: OAUTH_METHOD, type: 'oauth' as const, label: 'Continue with Carthagent Cloud',
-      ...(env.CARTHAGENT_ADVANCED_AUTH === '1' ? { form: [{ type: 'boolean' as const, key: 'importLegacy', title: 'Import a legacy Cloud credential?', default: false }] satisfies Form.Fields } : {}),
+      // Offer one-way import only when a usable stable/Pi sign-in exists, so
+      // fresh users keep a single browser sign-in flow.
+      ...(legacyImportAvailable ? { form: [{ type: 'boolean' as const, key: 'importLegacy', title: 'Import an existing stable Carthagent Cloud sign-in?', default: false }] satisfies Form.Fields } : {}),
     },
     authorize: async (answer: Form.Answer) => {
       // The legacy file intentionally survives migration. Never let its presence
       // short-circuit an explicit sign-in or recovery from revoked/old scopes.
-      const legacy = env.CARTHAGENT_ADVANCED_AUTH === '1' && answer.importLegacy === true ? await legacyOAuthForOpenCode({ agentDir }) : undefined;
+      const legacy = legacyImportAvailable && answer.importLegacy === true ? await legacyOAuthForOpenCode({ agentDir }) : undefined;
       if (legacy) {
         return {
           mode: 'auto' as const,
@@ -220,6 +224,8 @@ async function loadShipModels({ ctx, fetchImpl, env, baseURL, signal }: {
  * idempotency identity to native HTTP requests. */
 interface ProviderRegistrationOptions {
   env?: NodeJS.ProcessEnv;
+  /** Upper bound on waiting for the first Cloud model discovery at startup. */
+  initialDiscoveryWaitMs?: number;
   fetchImpl?: typeof fetch;
   now?: () => number;
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
@@ -249,6 +255,7 @@ export async function registerProviders(ctx: Context, options: ProviderRegistrat
   // Fold credentials stored under the pre-rename 'experiential-labs' provider
   // id into 'carthagent-cloud' so existing sign-ins keep working.
   await migrateLegacyShipCredentialIds({ credentialFile }).catch(() => 0);
+  const legacyImportAvailable = Boolean(await legacyOAuthForOpenCode({ agentDir }).catch(() => undefined));
   // Awaited so the vault handle is closed before startup continues (Windows).
   await pruneRefreshReceipts({ coordinationFile, vaultFile: credentialFile }).catch(() => 0);
   const requestIdentity = options.sessionIdentity;
@@ -272,6 +279,7 @@ export async function registerProviders(ctx: Context, options: ProviderRegistrat
     env, fetchImpl, sleep, now, openBrowserImpl, agentDir, startDeviceFlow: deviceAuth.start,
     credentialFile,
     coordinationFile,
+    legacyImportAvailable,
     });
     for (const integration of editor.list()) {
       const supported = nativeLoginProvider(integration.id);
@@ -479,7 +487,15 @@ export async function registerProviders(ctx: Context, options: ProviderRegistrat
       await ctx.provider.reload();
     }
   };
-  void refresh(controller.signal).catch(() => {});
+  // Bound the first discovery so plugin activation (which model.list awaits)
+  // normally includes Cloud models, avoiding a cold-start 'Model unavailable'
+  // race for headless runs; a slow Cloud never blocks startup indefinitely.
+  const initialRefresh = refresh(controller.signal).catch(() => {});
+  let discoveryTimer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([initialRefresh, new Promise<void>(resolve => {
+    discoveryTimer = setTimeout(resolve, options.initialDiscoveryWaitMs ?? INITIAL_DISCOVERY_WAIT);
+  })]);
+  clearTimeout(discoveryTimer);
   const onConnection = async (event: { type: string }) => {
     if (event.type === 'integration.updated' || event.type === 'credential.updated' || event.type === 'credential.switched') {
       void refresh(controller.signal).catch(() => {});

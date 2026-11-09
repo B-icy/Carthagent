@@ -1381,3 +1381,49 @@ test('concrete native runtime uses OpenCode service/headless/model APIs and real
   assert.ok(events.some(entry => entry[0] === 'tui' && entry[2] === cwd));
   assert.equal(resolve(cwd), cwd);
 });
+
+
+test('JSON tool events stream after admission before completion without duplicates or foreign events', async () => {
+  const output = [];
+  let publish;
+  let release;
+  const completed = new Promise(resolve => { release = resolve; });
+  const events = [];
+  let wake;
+  const runtime = await createOpenCodeCliRuntime({ cwd: '/workspace/stream-fixture',
+    stdout: { write: value => output.push(JSON.parse(value)) }, io: ioCapture().io,
+    native: {
+      runtime: {}, service: { ensureService: async () => ({}) },
+      headless: { runHeadless: async (_service, _cwd, _prompt, options) => {
+        options.onAccepted({ sessionID: 'selected', accepted: { id: 'user' } });
+        publish();
+        await completed;
+        return { session: { id: 'selected' }, accepted: { id: 'user' }, terminal: true, outcome: 'succeeded',
+          messages: [{ type: 'user', id: 'user' }, { type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'done' }] }, { type: 'idle', outcome: 'succeeded' }] };
+      } },
+      clientFactory: async () => ({ event: { subscribe: ({ signal }) => ({ async *[Symbol.asyncIterator]() {
+        publish = () => {
+          events.push({ type: 'session.tool.called', data: { sessionID: 'foreign', id: 'foreign', name: 'read' } });
+          events.push({ type: 'session.tool.called', data: { sessionID: 'selected', id: 'call', name: 'read' } });
+          events.push({ type: 'session.tool.success', data: { sessionID: 'selected', id: 'call', name: 'read', content: [] } });
+          wake?.();
+        };
+        signal.addEventListener('abort', () => wake?.(), { once: true });
+        while (!signal.aborted) {
+          if (events.length) yield events.shift();
+          else await new Promise(resolve => { wake = resolve; });
+        }
+      } }) } }),
+    },
+  });
+  const running = runtime.run({ mode: 'headless', options: { json: true, prompt: 'inspect' }, prompt: 'inspect' });
+  try {
+    for (let i = 0; i < 100 && output.length < 2; i++) await new Promise(resolve => setTimeout(resolve, 5));
+    assert.deepEqual(output.map(event => event.type), ['tool_execution_start', 'tool_execution_end']);
+    assert.ok(output.every(event => event.sessionID === 'selected'));
+  } finally { release(); }
+  assert.equal(await running, 0);
+  assert.equal(output.filter(event => event.type === 'tool_execution_start').length, 1);
+  assert.equal(output.filter(event => event.type === 'tool_execution_end').length, 1);
+  assert.equal(output.at(-1).message.outcome, 'succeeded');
+});
