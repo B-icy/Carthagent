@@ -701,6 +701,36 @@ test('legacy credential migration reads Ship OAuth and BYOK without writing Pi s
   assert.throws(() => credentialStorageKey('../auth'), /Invalid/);
 });
 
+test('startup waits a bounded time for first Cloud discovery so cold headless runs see Cloud models', async () => {
+  const token = `x.${Buffer.from(JSON.stringify({ sub: 'acct', sid: 'sid', scope: 'gateway:invoke' })).toString('base64url')}.x`;
+  const connections = { 'carthagent-cloud': { connection: { id: 'ship', credential: { type: 'oauth', access: token, refresh: 'r', expires: Date.now() + 100000 } } } };
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const fetchImpl = async url => {
+    if (String(url).endsWith('/models')) { await gate; return Response.json({ data: [{ id: 'gpt-6-luna' }] }); }
+    throw new Error(`unexpected URL ${url}`);
+  };
+  // Discovery finishes before the wait bound: registration must not resolve first.
+  const fast = fakeContext({ integrations: ['carthagent-cloud'], connections });
+  let resolved = false;
+  const registration = registerProviders(fast.ctx, { env: { CARTHAGENT_CODING_AGENT_DIR: '/missing' }, fetchImpl,
+    openBrowser: () => false, initialDiscoveryWaitMs: 5_000 }).then(cleanup => { resolved = true; return cleanup; });
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(resolved, false, 'plugin activation waits for the in-flight first discovery');
+  release();
+  const cleanup = await registration;
+  await cleanup();
+
+  // A hung Cloud must not block startup past the bound.
+  const slow = fakeContext({ integrations: ['carthagent-cloud'], connections });
+  const started = Date.now();
+  const cleanupSlow = await registerProviders(slow.ctx, { env: { CARTHAGENT_CODING_AGENT_DIR: '/missing' },
+    fetchImpl: async (_url, init) => new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(init.signal.reason))),
+    openBrowser: () => false, initialDiscoveryWaitMs: 30 });
+  assert.ok(Date.now() - started < 2_000, 'startup is bounded when discovery hangs');
+  await cleanupSlow();
+});
+
 test('fresh native sign-in hides legacy import when no stable credential exists', async t => {
   const directory = await mkdtemp(join(os.tmpdir(), 'ctg-fresh-signin-'));
   t.after(() => rm(directory, { recursive: true, force: true }));

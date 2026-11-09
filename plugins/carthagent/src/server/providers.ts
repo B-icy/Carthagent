@@ -33,6 +33,7 @@ import { nativeLoginProvider } from '../../../../lib/opencode/provider-policy.mj
 const OAUTH_METHOD = 'carthagent-device';
 const SHIP_INTEGRATION_ID = EXPERIENTIAL_PROVIDER_ID;
 const DISCOVERY_TIMEOUT = 10_000;
+const INITIAL_DISCOVERY_WAIT = 5_000;
 const PROFILE_CAP = 200;
 const CACHE_KEY = 'ctg.models/subscriptions/';
 const RUN_MODE = new Set(['interactive', 'print', 'rpc']);
@@ -223,6 +224,8 @@ async function loadShipModels({ ctx, fetchImpl, env, baseURL, signal }: {
  * idempotency identity to native HTTP requests. */
 interface ProviderRegistrationOptions {
   env?: NodeJS.ProcessEnv;
+  /** Upper bound on waiting for the first Cloud model discovery at startup. */
+  initialDiscoveryWaitMs?: number;
   fetchImpl?: typeof fetch;
   now?: () => number;
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
@@ -484,7 +487,14 @@ export async function registerProviders(ctx: Context, options: ProviderRegistrat
       await ctx.provider.reload();
     }
   };
-  void refresh(controller.signal).catch(() => {});
+  // Bound the first discovery so plugin activation (which model.list awaits)
+  // normally includes Cloud models, avoiding a cold-start 'Model unavailable'
+  // race for headless runs; a slow Cloud never blocks startup indefinitely.
+  const initialRefresh = refresh(controller.signal).catch(() => {});
+  await Promise.race([initialRefresh, new Promise<void>(resolve => {
+    const timer = setTimeout(resolve, options.initialDiscoveryWaitMs ?? INITIAL_DISCOVERY_WAIT);
+    (timer as { unref?: () => void }).unref?.();
+  })]);
   const onConnection = async (event: { type: string }) => {
     if (event.type === 'integration.updated' || event.type === 'credential.updated' || event.type === 'credential.switched') {
       void refresh(controller.signal).catch(() => {});
