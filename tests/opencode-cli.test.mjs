@@ -1427,3 +1427,27 @@ test('JSON tool events stream after admission before completion without duplicat
   assert.equal(output.filter(event => event.type === 'tool_execution_end').length, 1);
   assert.equal(output.at(-1).message.outcome, 'succeeded');
 });
+
+test('cold-start model inventory is polled until the requested model appears', async () => {
+  const { listModelsWhenReady } = await import('../lib/opencode/cli-runtime.mjs');
+  const responses = [
+    () => { throw new Error('Location plugins did not finish activating'); },
+    () => ({ data: [] }),
+    () => ({ data: [{ providerID: 'carthagent-cloud', id: 'deepseek-v4.1-flash' }] }),
+  ];
+  let calls = 0;
+  const slept = [];
+  const data = await listModelsWhenReady(async () => responses[calls++](), {
+    want: rows => rows.some(row => row.id === 'deepseek-v4.1-flash'), sleep: async ms => { slept.push(ms); },
+  });
+  assert.equal(calls, 3);
+  assert.equal(data.data[0].id, 'deepseek-v4.1-flash');
+  assert.equal(slept.length, 2);
+
+  // Unrelated failures surface immediately; a never-matching inventory returns the last list.
+  await assert.rejects(listModelsWhenReady(async () => { throw new Error('boom'); }, { want: () => true, sleep: async () => {} }), /boom/);
+  let empty = 0;
+  const last = await listModelsWhenReady(async () => { empty++; return { data: [] }; }, { want: () => false, attempts: 3, sleep: async () => {} });
+  assert.deepEqual(last, { data: [] });
+  assert.equal(empty, 3);
+});

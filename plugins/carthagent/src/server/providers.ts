@@ -33,7 +33,8 @@ import { nativeLoginProvider } from '../../../../lib/opencode/provider-policy.mj
 const OAUTH_METHOD = 'carthagent-device';
 const SHIP_INTEGRATION_ID = EXPERIENTIAL_PROVIDER_ID;
 const DISCOVERY_TIMEOUT = 10_000;
-const INITIAL_DISCOVERY_WAIT = 5_000;
+// Must stay well under the host's fixed 5s plugin-activation deadline.
+const INITIAL_DISCOVERY_WAIT = 2_000;
 const PROFILE_CAP = 200;
 const CACHE_KEY = 'ctg.models/subscriptions/';
 const RUN_MODE = new Set(['interactive', 'print', 'rpc']);
