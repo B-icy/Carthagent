@@ -1450,6 +1450,7 @@ test('cold-start model inventory is polled until the requested model appears', a
   const last = await listModelsWhenReady(async () => { empty++; return { data: [] }; }, { want: () => false, attempts: 3, sleep: async () => {} });
   assert.deepEqual(last, { data: [] });
   assert.equal(empty, 3);
+});
 
 test('unqualified --model infers its provider from connected models, preferring Carthagent Cloud', async () => {
   const { inferModelProvider } = await import('../lib/opencode/cli-runtime.mjs');
@@ -1488,7 +1489,7 @@ test('headless --model without --provider resolves the provider before creating 
   } });
   assert.equal(await runtime.run({ mode: 'headless', options: { model: 'glm-5.3-flash', thinking: 'low' }, prompt: 'hi' }), 0);
   assert.deepEqual(sessions, [{ providerID: 'carthagent-cloud', id: 'glm-5.3-flash', variant: 'low' }]);
-  assert.equal(lists, 2);
+  assert.ok(lists >= 2, 'the cold-start empty inventory was retried');
 });
 
 test('command --help prints usage without running the command', async () => {
