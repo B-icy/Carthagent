@@ -153,9 +153,9 @@ limits.
 
 ## Install and update
 
-The installer selects an exact published release and acquires its pinned native runtime; it never falls back to an unrelated system binary. See the [native upgrade guide](docs/native-upgrade.md) for source-checkout and profile-preservation instructions, or [legacy CLI instructions](docs/legacy-cli.md) for stable 1.0.7.
+The installer selects an exact published release and acquires its pinned native runtime; it never falls back to an unrelated system binary. See the [native upgrade guide](docs/native-upgrade.md) for source-checkout and profile-preservation instructions, or [legacy CLI instructions](docs/legacy-cli.md) for 1.0.7.
 
-`ctg update --check` checks for a published release without installing. Select `--channel experimental` to include published previews; drafts are never installed. The legacy stable updater can update a clean source clone. The native updater differs: it refuses to check out a release into any active source clone, including a clean one; it installs package releases only from an npm installation. Preserve local changes and use the manual exact-tag checkout procedure in the [native upgrade guide](docs/native-upgrade.md) when updating a development checkout. Published previews are immutable. See the [preview.11 release notes](docs/release-notes-preview.11.md); the older [native migration draft](docs/release-notes-native-draft.md) is historical, not current installation guidance.
+`ctg update --check` checks for a published release without installing. Select `--channel experimental` to include published previews; drafts are never installed. The 1.0.7 updater can update a clean source clone. The native updater differs: it refuses to check out a release into any active source clone, including a clean one; it installs package releases only from an npm installation. Preserve local changes and use the manual exact-tag checkout procedure in the [native upgrade guide](docs/native-upgrade.md) when updating a development checkout. Published previews are immutable. See the [preview.11 release notes](docs/release-notes-preview.11.md); the older [native migration draft](docs/release-notes-native-draft.md) is historical, not current installation guidance.
 
 ## Update channels
 
@@ -185,30 +185,29 @@ Experimental software may still contain bugs; read its release notes first.
 
 ## Release status
 
-1.1.0-preview.13 is the current experimental release. It promotes the
-combined-v5 runtime patch: a directory-first Projects rail with a folder
-browser, shared folder and model setup for new sessions, and an isolated
-source-preview launcher, on top of preview.12's npm-publishable package.
-Native remains the default `ctg` interface. Ship retains approval, checks,
-review, repair, recovery, and resume; Quick remains direct execution.
+**1.1.0 is the current stable release** (npm `latest`, `ctg update` on the
+stable channel). It makes the native console the default for everyone and
+carries everything from the 1.1.0 betas. Upgrading from 1.0.7 changes the
+console, the profile location and the Node floor; read the
+[1.1.0 release notes](docs/release-notes-1.1.0.md) first.
 
 Daily quests accept completed work from Ship, Quick, Plan, or Build. Choose a
 session, review its recorded evidence or enter the relevant summary, check
 results, and review findings, then explicitly Submit. User-entered evidence is
 assessed as submitted claims; it does not become a verified Ship delivery.
-Published previews are immutable. Experimental installation is explicit and
-selects published releases only; stable 1.0.7 retains the legacy console.
 
-Each experimental release must pass its exact installed-package gate before
-publication. See the [preview.13 release notes](docs/release-notes-preview.13.md),
-[preview.12 notes](docs/release-notes-preview.12.md), and [preview.11 notes](docs/release-notes-preview.11.md); earlier migration findings and remaining platform caveats
-are in the [Native migration ledger](docs/opencode-migration.md#delivery-ledger),
+Every release must pass its exact installed-package gate before publication.
+Earlier migration findings and remaining platform caveats are in the
+[Native migration ledger](docs/opencode-migration.md#delivery-ledger),
 [native compatibility matrix](docs/native-compatibility.md), and [terminal
 evidence status](docs/native-terminal-semantics.md#evidence-status-pr-162).
 
 ## Regular CLI
 
-The split-terminal console remains available in stable 1.0.7, not as an alternate route inside the native-default experimental package. To return to stable, use `ctg update --channel stable`. Its legacy data and provider setup remain distinct from the native profile; existing transcripts remain available through the read-only archive commands.
+The 1.0.7 split-terminal console is not part of 1.1.0. To keep using it,
+install it explicitly with `npm install -g carthagent@1.0.7`. Its legacy data
+and provider setup remain distinct from the native profile; 1.1.0 reads 1.0.7
+transcripts through the read-only archive commands.
 
 ## Delivery engine and existing CLI
 

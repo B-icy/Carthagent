@@ -1,13 +1,14 @@
-# Native Carthagent beta: upgrade and migration guide
+# Native Carthagent: upgrade and migration guide
 
-**1.1.0-beta.1** uses the native console by default. `ctg native` is a compatibility
-alias; `CTG_NATIVE` no longer selects a different console. Stable 1.0.7 remains
-the legacy release. Select the beta explicitly through the beta channel or its
-exact published version.
+**1.1.0** is the stable release and uses the native console by default.
+`ctg native` is a compatibility alias; `CTG_NATIVE` no longer selects a
+different console. 1.0.7, the previous stable release, carried the legacy
+console; installing it explicitly (`npm install -g carthagent@1.0.7`) is the
+way back.
 
-See the [beta.1 release notes](release-notes-beta.1.md) and
-[launch-readiness report](launch-readiness-live-results.md) for current evidence
-and beta limitations.
+See the [1.1.0 release notes](release-notes-1.1.0.md) for what changes when you
+upgrade from 1.0.7, and the [launch-readiness report](launch-readiness-live-results.md)
+for earlier beta evidence.
 
 ## Before you try it
 
@@ -168,8 +169,9 @@ the checkout has work you need, commit it or preserve it outside the checkout
 before changing revisions; resolve conflicts or recovery deliberately rather
 than using a destructive reset. The updater is Carthagent's updater, not a
 regular OpenCode updater. Beta.1 inherits the native-default CLI from the previews.
-Use `ctg update --channel stable` to return to the legacy stable release; neither
-channel switching nor service refresh deletes profiles or legacy transcripts.
+Use `ctg update --channel stable` to move from a beta or preview to the stable
+release; neither channel switching nor service refresh deletes profiles or
+legacy transcripts.
 Do not install a moving branch or guess an unpublished version.
 
 ## Acceptance status and help
