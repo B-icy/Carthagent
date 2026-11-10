@@ -1,36 +1,36 @@
 {
   "version": 1,
-  "releaseVersion": "1.1.0-beta.8",
+  "releaseVersion": "1.1.0",
   "compatibilityVersion": "2.0.32",
   "runtimeVersion": "0.0.0-ctg.2.0.32",
   "sourceRevision": "843a6c514e606b436a7fe713422ace0a93ad3d61",
-  "patchSha256": "30e10b6c6711757c5109b14a644c2577cc80487cbad386b319615d9b69c516ee",
+  "patchSha256": "6ff3b4112fce21104bcd09c22549b04e29b9bd52c4713600687d2cdf21558d02",
   "lockSha256": "9d78379cd264584a495440a217b9d2ecab524c9a56f7f8b4b5bed3926daa330d",
   "assets": {
     "linux-x64": {
       "name": "opencode-linux-x64.tar.gz",
-      "archiveSha256": "df353716372a687ac7d2cfd78c5be239901fcf947c86828fb5c18db1307d97e2",
-      "executableSha256": "0d2577e4e8cd07f0f1d8ede6d20968afbae2ddb137c90488e2e100a8f0dd3107"
+      "archiveSha256": "830cf4e91b271f1a98ca6acd04f1275007bfccd1515f5b7cf3292cc3a4bb8a81",
+      "executableSha256": "b9e1eda3b63826802bae05139cbca7feb2a09c13d55191fe0e368822c27fffb0"
     },
     "linux-arm64": {
       "name": "opencode-linux-arm64.tar.gz",
-      "archiveSha256": "215755e6aa35cf7514dcba42ecb59c6528c698b57ded80c2d586719af7fcfe68",
-      "executableSha256": "795343031b0257e357b971f73bfc62bcc11d37b73ace97e29db082f600be8378"
+      "archiveSha256": "55feaab5f712c2033ce232f58d84d0171fe240f70a40853f6974a7e6cc935cd1",
+      "executableSha256": "82fcd7b47a4e66348b4c87677b622e29621c4acc4377fd41df79245db7b837b5"
     },
     "darwin-x64": {
       "name": "opencode-darwin-x64.tar.gz",
-      "archiveSha256": "778a4f1f20a27113bb3aa2858f93606d41574bc3756ee9b9cc8dd2e453629cc0",
-      "executableSha256": "62fd3fd3eb913f3cbfbd82a1f0a273b75ced565a0df0420525a322f9469b105b"
+      "archiveSha256": "cabd596c366daa1c165e418b5fbf05de2d7eb215d73bb947ecac77d53014c709",
+      "executableSha256": "2333d136056588717f155cc208f1097276df32bc2179080f14a35a63aa8d7ecf"
     },
     "darwin-arm64": {
       "name": "opencode-darwin-arm64.tar.gz",
-      "archiveSha256": "be4987d293e31b5b10200f1fbc050290aef455bb81f9757d5c9a54632a3cd25a",
-      "executableSha256": "8b1cac7077a3acd611e4e8d5254a52fd307ece654826b05700bf4eb59a7fe0ed"
+      "archiveSha256": "c75b41a24fcb2ba95943bf575f7a3778db6d4264e4b8f1f7f2433d83ace9a07e",
+      "executableSha256": "e0df2de76ce19e91d72ad3c4fd3f70e53f2e2997511342fa84d3bb13e0d1ce14"
     },
     "windows-x64": {
       "name": "opencode-windows-x64.tar.gz",
-      "archiveSha256": "6cfc264c71bf368a3d3ec680c057131dedeb53fab0f69b0b2ca09f3ede0eb798",
-      "executableSha256": "90cd7e2342ce7ec6c54701e0751ec099a5d2ff4d0724b91e67f6e61ed0999bf9"
+      "archiveSha256": "f633a6947f1bc2c1adcd257697fe4639ef6f80bdfbce63d0b79fd6c2036c77f6",
+      "executableSha256": "219096e398c4a8a5b8909909fbf0af7ee8df9362f1dc90ecf024632e259046b7"
     }
   }
 }
