@@ -344,3 +344,13 @@ test('device authorization sends the install id', async t => {
   await legacy.createDeviceAuthorization({});
   assert.equal(bodies.at(-1).installId, undefined);
 });
+
+test('Cloud CLI session labels distinguish installs on the same host', async () => {
+  const { cloudClientName } = await import('../lib/ship-telemetry.mjs');
+  const a = cloudClientName({ hostname: 'devin-box', platform: 'linux', installId: '3f2a9c10-1111-4111-8111-111111111111' });
+  const b = cloudClientName({ hostname: 'devin-box', platform: 'linux', installId: '7b01de22-2222-4222-8222-222222222222' });
+  assert.equal(a, 'Carthagent CLI (devin-box · Linux · 3f2a9c)');
+  assert.notEqual(a, b);
+  assert.equal(cloudClientName({ hostname: 'mac', platform: 'darwin' }), 'Carthagent CLI (mac · macOS)');
+  assert.equal(cloudClientName({ hostname: 'x'.repeat(200), platform: 'win32', installId: 'not-a-uuid' }).length <= 120, true);
+});

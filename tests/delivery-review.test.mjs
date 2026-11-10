@@ -192,3 +192,22 @@ test('review accepts assertion aliases and names missing requirements', async t 
   recordDeliveryReview(state, cwd, { ...params(again.id), coverage: [{ requirement: 'Correct amount', assertions: ['amount is 2', 'new result is 2'] }] });
   assert.equal(state.reviewEvidence.coverage[0].assertions, 'amount is 2; new result is 2');
 });
+
+test('review works in a fresh repository without commits and never creates one', async t => {
+  const cwd = mkdtempSync(join(tmpdir(), 'delivery review unborn '));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const git = args => execFileSync('git', args, { cwd, stdio: 'pipe', encoding: 'utf8' });
+  git(['init', '-q']);
+  writeFileSync(join(cwd, '.gitignore'), '.harness/\n');
+  writeFileSync(join(cwd, 'staged.mjs'), 'export const staged = 1;\n');
+  git(['add', 'staged.mjs']);
+  writeFileSync(join(cwd, 'staged.mjs'), 'export const staged = 2;\n');
+  writeFileSync(join(cwd, 'hello.txt'), 'hi');
+  const state = { runId: 'u', revision: 1, plan: { goal: 'Create hello', artifacts: ['.'], steps: [{ id: 'write', title: 'Write' }], acceptance: [], checks: [] }, evidence: {}, stepStatus: { step0: 'done' } };
+  const capture = await captureDeliveryReview(state, cwd, join(cwd, '.harness', 'review'));
+  assert.match(capture.diff, /no commits yet/);
+  assert.match(capture.diff, /\+export const staged = 1/, 'staged content is diffed against the empty tree');
+  assert.match(capture.diff, /\+export const staged = 2/, 'unstaged edits to staged files are included');
+  assert.match(capture.diff, /New file "hello.txt"[\s\S]*hi/);
+  assert.throws(() => git(['rev-parse', '--verify', 'HEAD']), 'no commit was created');
+});

@@ -18,7 +18,7 @@ class Failure extends Error {
 }
 const codes = new Set(('authentication_required invalid_token expired_token revoked_token reauthentication_required insufficient_scope milestone_locked purchase_required insufficient_coins profile_not_found not_found not_available version_conflict already_owned quote_expired terms_changed quote_consumed key_conflict rate_limited quote_limit voyages_unavailable internal_error invalid_body unknown_field version_required invalid_name invalid_config invalid_item invalid_id invalid_key wallet_limit').split(' '));
 const noDebit = new Set(('invalid_body unknown_field invalid_id invalid_key milestone_locked insufficient_coins not_found not_available already_owned quote_expired terms_changed authentication_required invalid_token expired_token revoked_token reauthentication_required insufficient_scope').split(' '));
-for (const code of ['delivery_ineligible', 'delivery_conflict', 'snapshot_claimed', 'reward_daily_limit', 'progression_limit', 'invalid_delivery']) codes.add(code);
+for (const code of ['delivery_ineligible', 'delivery_changed', 'delivery_conflict', 'snapshot_claimed', 'reward_daily_limit', 'progression_limit', 'invalid_delivery']) codes.add(code);
 type Journal = { get(file: string): Promise<unknown>; set(file: string, state: State): Promise<void> };
 const fileJournal: Journal = {
   async get(file) {

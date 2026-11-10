@@ -6,6 +6,19 @@ type ShipContext = Pick<Context, 'integration'>;
 type ActiveCredential = Extract<ConnectionInfo, { type: 'credential' }>;
 type CloudClientPort = Pick<CloudClient, 'account' | 'usage' | 'quote' | 'checkout' | 'portal' | 'revokeCurrent' | 'revokeSession'>;
 
+const BILLING_ERRORS: Record<string, string> = {
+  stripe_customer_not_found: 'No paid Cloud subscription to manage yet: the billing portal is for existing subscribers. Use `ctg billing checkout` (or /billing checkout) to choose a plan.',
+  billing_not_configured: 'Cloud billing is temporarily unavailable. Your starter credit and your own providers still work; try again later.',
+};
+
+/** Map control-plane billing error codes to user-facing guidance. */
+export function billingErrorMessage(error: unknown) {
+  const code = (error as { code?: unknown })?.code;
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  const key = typeof code === 'string' && code in BILLING_ERRORS ? code : Object.keys(BILLING_ERRORS).find(name => message.includes(name));
+  return key ? BILLING_ERRORS[key] : undefined;
+}
+
 /** Create profile-scoped Ship RPC handlers; injection keeps cloud behavior testable offline. */
 export function createShipRpcHandlers(ctx: ShipContext, options: {
   cloudClient?: CloudClientPort;
@@ -47,9 +60,16 @@ export function createShipRpcHandlers(ctx: ShipContext, options: {
       if (!['builder', 'pro', 'max'].includes(plan)) throw new Error('Choose Builder, Pro, or Max.');
       if (action === 'quote') return { quote: await cloud.quote({ accessToken: token, plan, signal: call.signal }) };
       const returnUrl = `${options.cloudUrl ?? cloudControlUrl()}/account`;
-      const result = action === 'portal'
-        ? await cloud.portal({ accessToken: token, returnUrl, signal: call.signal })
-        : await cloud.checkout({ accessToken: token, priceId: plan, successUrl: `${options.cloudUrl ?? cloudControlUrl()}/v1/browser/billing/complete`, cancelUrl: `${options.cloudUrl ?? cloudControlUrl()}/v1/browser/billing/cancelled?plan=${plan}`, signal: call.signal });
+      let result: { url: string };
+      try {
+        result = action === 'portal'
+          ? await cloud.portal({ accessToken: token, returnUrl, signal: call.signal })
+          : await cloud.checkout({ accessToken: token, priceId: plan, successUrl: `${options.cloudUrl ?? cloudControlUrl()}/v1/browser/billing/complete`, cancelUrl: `${options.cloudUrl ?? cloudControlUrl()}/v1/browser/billing/cancelled?plan=${plan}`, signal: call.signal });
+      } catch (error) {
+        const friendly = billingErrorMessage(error);
+        if (friendly) throw new Error(friendly, { cause: error });
+        throw error;
+      }
       return { url: result.url };
     },
     shipLogout: async (input: unknown, call: import('@opencode/plugin/promise/rpc').RpcCallContext<typeof import('../rpc').Carthagent.methods.shipLogout>) => {

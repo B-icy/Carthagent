@@ -2,7 +2,8 @@ import type { Credential } from '@opencode/schema/credential';
 import { Integration as IntegrationSchema } from '@opencode/schema/integration';
 import { randomUUID } from 'node:crypto';
 import { CloudClient, cloudControlUrl, oauthCredentials } from '../../../../lib/cloud/client.mjs';
-import { shipInstallId } from '../../../../lib/ship-telemetry.mjs';
+import { hostname } from 'node:os';
+import { cloudClientName, shipInstallId } from '../../../../lib/ship-telemetry.mjs';
 
 const METHOD_ID = 'carthagent-device';
 const MAX_EXPIRY_MS = 15 * 60_000;
@@ -42,9 +43,10 @@ export function createDeviceAuthController({ env = process.env, fetchImpl = glob
     const createAuthorization = (input: { clientName: string; installId: string }, signal?: AbortSignal) => request.call(client, '/v1/device/authorizations', {
       method: 'POST', body: input, signal,
     });
+    const installId = shipInstallId({ agentDir });
     const authorization = await createAuthorization({
-      clientName: `Carthagent (${process.env.HOSTNAME || 'device'})`,
-      installId: shipInstallId({ agentDir }),
+      clientName: cloudClientName({ hostname: hostname(), installId }),
+      installId,
     }, signal);
     const flowId = randomUUID();
     const controller = new AbortController();

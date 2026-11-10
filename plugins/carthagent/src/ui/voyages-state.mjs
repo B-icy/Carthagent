@@ -12,6 +12,10 @@ const AUTH_GUIDANCE = {
   insufficient_scope: SIGN_IN,
   expired_token: 'Your Carthagent Cloud sign-in expired. Choose Sign in to reconnect, then Refresh; no success assumed.',
   revoked_token: 'Your Carthagent Cloud sign-in was revoked. Choose Sign in to reconnect, then Refresh; no success assumed.',
+  delivery_ineligible: 'No reward for this session: only a current verified Ship finish with required checks and review can be claimed. Nothing was sent.',
+  delivery_changed: 'Files changed since this delivery was verified, so it can no longer be claimed. Nothing was awarded.',
+  reward_daily_limit: 'Daily delivery reward limit reached (3 per UTC day). Nothing was awarded; try again after 00:00 UTC.',
+  snapshot_claimed: 'This exact project state already earned a reward. Nothing was awarded twice.',
 };
 
 /** UI transaction lifetime. Credentials and durable purchase keys remain server-only. */

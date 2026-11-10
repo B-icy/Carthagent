@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 import { nativeLoginProvider, nativeProviderName } from "../../../lib/opencode/provider-policy.mjs";
 import { framePrompt } from "../../../lib/tui/framing.mjs";
 import { carthagentConfigPath, loadCarthagentConfig, resolveReviewMode, reviewKickoff, saveCarthagentConfig } from "../../../lib/review.mjs";
-import { COMMANDS, NATIVE_COMMAND_COLLISIONS, commandErrorMessage, helpSelectionCommand, pluginSlashAvailable } from "./ui/commands.js";
+import { COMMANDS, NATIVE_COMMAND_COLLISIONS, commandErrorMessage, helpOptions, helpSelectionTarget, pluginSlashAvailable } from "./ui/commands.js";
 import { Workspace, rpcEventOptions, sessionControls, workspaceClient, shipClient, archiveClient, cloudAccountText, cloudUsageText, archiveItemText } from "./ui/client.js";
 import { independentReviewText } from "./ui/workspace-live.js";
 import { findNativeResumeSession } from "./ui/resume-session.mjs";
@@ -100,7 +100,8 @@ export default Plugin.define({
             description: item.description,
             group: "Carthagent",
             palette: true as const,
-            slash: { name: item.name, ...(item.aliases ? { aliases: item.aliases } : {}), ...(item.args || item.submitSlash ? { arguments: true as const } : {}) },
+            // Host-equivalent commands stay in the palette and /help without a duplicate slash row.
+            ...(item.hostSlash ? {} : { slash: { name: item.name, ...(item.aliases ? { aliases: item.aliases } : {}), ...(item.args || item.submitSlash ? { arguments: true as const } : {}) } }),
             run: (input?: string) => {
               const report = (error: unknown) => context.ui.toast.show({ message: commandErrorMessage(error), variant: "error" });
               if (item.id === "restart" || item.id === "abort") {
@@ -140,8 +141,9 @@ export default Plugin.define({
           context.keymap.dispatch("provider.connect", arg ? nativeLoginProvider(arg)?.id ?? arg : "carthagent-cloud");
           return;
         case "help": case "ctg-help": {
-          const selected = helpSelectionCommand(await context.ui.dialog.select({ title: "Carthagent commands · search to filter", options: COMMANDS.map(command => ({ title: `/${command.name}${command.args ? ` ${command.args}` : ""}`, description: command.description, value: command.name })) }));
-          if (selected) await dispatch(selected.id, "");
+          const selected = helpSelectionTarget(await context.ui.dialog.select({ title: "Carthagent commands · search to filter", placeholder: "Search commands…", options: helpOptions() }));
+          if (selected?.type === "host") context.keymap.dispatch(selected.id);
+          else if (selected) await dispatch(selected.command.id, "");
           return;
         }
         case "resume": {

@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { COMMANDS, commandErrorMessage, helpSelectionCommand, matchCommand, NATIVE_COMMAND_COLLISIONS, NATIVE_SESSION_COMMANDS, pluginSlashAvailable, resolveCommand } from "../src/ui/commands.js";
+import { COMMANDS, commandErrorMessage, HOST_ESSENTIALS, helpOptions, helpSelectionCommand, helpSelectionTarget, matchCommand, NATIVE_COMMAND_COLLISIONS, NATIVE_SESSION_COMMANDS, pluginSlashAvailable, resolveCommand } from "../src/ui/commands.js";
 import { readFile } from "node:fs/promises";
 import { parseThemeDocument } from "@opencode/theme/tui";
 import { cliConfigDirectory, cliConfigPath, readCliConfig, writeNativeTheme } from "../src/ui/host-state.js";
@@ -25,8 +25,8 @@ test("Carthagent command manifest resolves visible CTG commands", () => {
   }
   assert.equal(resolveCommand("/cloud")?.id, "account");
   assert.equal(resolveCommand("/auth")?.id, "login");
-  assert.match(resolveCommand("/voyages")!.description, /daily quests/);
-  assert.match(resolveCommand("/quests")!.description, /separate explicit consent/);
+  assert.match(resolveCommand("/voyages")!.description, /quests/);
+  assert.match(resolveCommand("/quests")!.description, /consent/);
 });
 
 test("command error reports read native RPC rejection objects instead of '[object Object]'", () => {
@@ -52,6 +52,47 @@ test("/help list selections dispatch the selected command once; cancel is inert"
   assert.equal(helpSelectionCommand("ctg-help")?.id, "help");
   assert.equal(helpSelectionCommand("cloud")?.id, "account");
   for (const cancelled of [undefined, null, "", "themes", "settings", "theme dark", "/theme"]) assert.equal(helpSelectionCommand(cancelled), undefined, String(cancelled));
+});
+
+test("/help leads with a short Start here list that includes host /connect", () => {
+  const options = helpOptions();
+  const start = options.filter((option) => option.category === "Start here").map((option) => option.title);
+  assert.deepEqual(start, ["/login", "/connect", "/model [name]", "/demo", "/review [ask|yes|no|status]", "/evidence", "/account", "/new", "/sessions", "/status", "/exit"]);
+  assert.ok(start.length <= 12, "Start here stays short");
+  // Every plugin command (except /help itself) remains discoverable exactly once.
+  const pluginTitles = options.filter((option) => !option.value.startsWith("host:")).map((option) => option.value);
+  assert.deepEqual([...pluginTitles].sort(), COMMANDS.filter((command) => command.id !== "help").map((command) => command.name).sort());
+  // Advanced and internal commands are grouped last.
+  const categories = options.map((option) => option.category);
+  assert.equal(categories.lastIndexOf("Start here") < categories.indexOf("More commands"), true);
+  assert.equal(categories.lastIndexOf("More commands") < categories.indexOf("Advanced"), true);
+  for (const name of ["raw", "guide", "ctg-workspace", "ctg-task", "ctg-worktree", "archive"]) {
+    assert.equal(options.find((option) => option.value === name)?.category, "Advanced", name);
+  }
+  // /connect is searchable in /help and dispatches the host integration picker.
+  const connect = options.find((option) => option.title === "/connect");
+  assert.ok(connect && /own provider/i.test(connect.description));
+  assert.deepEqual(helpSelectionTarget(connect!.value), { type: "host", id: "provider.connect" });
+  assert.deepEqual(helpSelectionTarget("host:not-a-command"), undefined);
+  assert.equal(helpSelectionTarget("model")?.type, "plugin");
+  for (const entry of HOST_ESSENTIALS) assert.equal(COMMANDS.some((command) => command.name === entry.name), false, `${entry.name} is host-owned`);
+});
+
+test("command descriptions are short, Cloud-named and fit the palette column", () => {
+  for (const command of COMMANDS) {
+    assert.doesNotMatch(command.description, /\bShip\b/, `${command.name} still says Ship`);
+    assert.ok(command.description.length <= 60, `${command.name} description is ${command.description.length} chars`);
+  }
+  assert.match(resolveCommand("/login")!.description, /Cloud.*\/connect.*own provider/);
+  assert.match(resolveCommand("/billing")!.args!, /refresh/);
+});
+
+test("plugin does not add duplicate slash rows for host-owned equivalents", () => {
+  // /sessions and /thinking are already native host slash commands.
+  assert.equal(resolveCommand("/sessions"), undefined);
+  assert.equal(resolveCommand("/thinking")?.hostSlash, true);
+  const slashNames = COMMANDS.filter((command) => !command.hostSlash).flatMap((command) => [command.name, ...(command.aliases ?? [])]);
+  for (const host of ["sessions", "thinking", "stats", "connect", "new", "status", "exit", "models", "variants"]) assert.equal(slashNames.includes(host), false, host);
 });
 
 test("manifest prevents collisions with native OpenCode slash commands", () => {

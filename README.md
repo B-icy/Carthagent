@@ -62,7 +62,12 @@ The native CLI retains command aliases such as `ui`/`interactive`, `sessions`, `
 shop. Use the normal `/login` browser device approval and choose Carthagent;
 Voyages uses the approving browser user's existing player, not a separate CLI
 wallet. Older account-only Ship sessions may require a new device sign-in.
-Voyages does not require a paid model call or award coins for coding.
+Voyages does not require a paid model call. A current verified Ship finish
+(required checks, fresh evidence and review) can earn 25 coins, 100 XP and 1 km,
+at most three per UTC day, but only when you claim it: the TUI says so after a
+verified run, and `/voyages claim` previews the claim and asks for confirmation.
+Nothing is claimed automatically, and headless `-p` runs can be claimed later
+from the same session in the TUI.
 
 Customization and equipment changes require confirmation. Paid items require a
 server quote showing the coin price and expiry, followed by explicit purchase
