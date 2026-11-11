@@ -125,7 +125,8 @@ try {
       const expectedBinary = resolve(ownedRoot, 'cli-' + identity.platform, 'bin', executableName);
       if (binary !== expectedBinary) throw new Error('Selected owned runtime executable is outside its canonical artifact layout: expected ' + expectedBinary + ', got ' + binary);
     }
-    const isolatedHome = process.env.HOME ?? process.env.USERPROFILE;
+    // The default cache follows the CTG profile root (CTG_OPENCODE_HOME), then HOME.
+    const isolatedHome = process.env.CTG_OPENCODE_HOME ?? process.env.HOME ?? process.env.USERPROFILE;
     const cacheRelative = ownedRoot && relative(isolatedHome, ownedRoot);
     if (ownedRoot && (!cacheRelative || cacheRelative === '..' || cacheRelative.startsWith('..' + sep) || isAbsolute(cacheRelative))) {
       throw new Error('Default owned runtime cache escaped the isolated HOME: ' + ownedRoot);
@@ -147,7 +148,7 @@ try {
     assert.equal(resolution.verified.sourceRevision, releaseManifest.sourceRevision, 'independent verifier must check runtime source provenance');
     assert.equal(resolution.verified.patchSha256, releaseManifest.patchSha256, 'independent verifier must check runtime patch provenance');
     assert.equal(resolution.verified.lockSha256, releaseManifest.lockSha256, 'independent verifier must check runtime lock provenance');
-    assert.equal(resolution.cacheIsolated, true, 'default acquisition cache must remain inside this test\'s isolated HOME');
+    assert.equal(resolution.cacheIsolated, true, 'default acquisition cache must remain inside this test\'s isolated profile');
   } else {
     assert.equal(resolution.identity.kind, 'upstream-compatible', 'unknown runtime identity cannot satisfy installed package acceptance');
     assert.equal(resolution.identity.version, '2.0.32', 'preview upstream runtime must match the explicitly supported compatibility version');
