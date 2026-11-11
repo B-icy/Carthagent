@@ -29,4 +29,7 @@ test('structured findings reject absent, stale, malformed and contradictory data
   for (const bad of [null, {}, {...data,head:'stale'}, {...data,findings:[{}]}]) assert.throws(() => parseFindings(output(bad), 'source', 'head', 'APPROVE'));
   assert.throws(() => parseFindings(output(data), 'source', 'head', 'CHANGES-REQUESTED'), /contradicts/);
   assert.throws(() => parseFindings('VERDICT: APPROVE', 'source', 'head', 'APPROVE'), /Missing/);
+  // Reviewers commonly put a blank line between the trailers.
+  assert.deepEqual(parseFindings(`Findings: none.\n\nREVIEW_JSON: ${JSON.stringify(data)}\n\nVERDICT: APPROVE`, 'source', 'head', 'APPROVE'), data);
+  assert.throws(() => parseFindings(`REVIEW_JSON: ${JSON.stringify(data)}\nextra prose\nVERDICT: APPROVE`, 'source', 'head', 'APPROVE'), /Missing/);
 });

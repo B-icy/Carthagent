@@ -401,3 +401,17 @@ test('local review snapshot supports a repository without commits and tracks new
   assert.notEqual(second.snapshot, first.snapshot, 'snapshot follows staged and unstaged content');
   assert.throws(() => execFileSync('git', ['rev-parse', '--verify', 'HEAD'], { cwd: root, stdio: 'pipe' }), 'no commit was created');
 });
+
+test('reviewer model prefers the default, falls back to a connected Cloud model, and honours explicit models', async () => {
+  const { resolveReviewModel, DEFAULT_REVIEW_MODEL } = await import('../lib/opencode/review.mjs');
+  const listing = rows => ({ model: { async list() { return { data: rows }; } } });
+  const cloud = [{ providerID: 'openai', id: 'gpt-x' }, { providerID: 'carthagent-cloud', id: 'deepseek-v4.1-flash' }];
+  assert.deepEqual(await resolveReviewModel(listing(cloud), undefined, '/w'), { providerID: 'carthagent-cloud', id: 'deepseek-v4.1-flash' });
+  assert.deepEqual(await resolveReviewModel(listing([{ providerID: 'openai', id: 'gpt-x' }]), undefined, '/w'), { providerID: 'openai', id: 'gpt-x' });
+  assert.equal(await resolveReviewModel(listing([...cloud, { providerID: 'lattice', id: 'gpt-6-luna' }]), undefined, '/w'), DEFAULT_REVIEW_MODEL);
+  const explicit = { providerID: 'fixture', id: 'review-model' };
+  assert.equal(await resolveReviewModel(listing(cloud), explicit, '/w'), explicit);
+  assert.equal(await resolveReviewModel({}, undefined, '/w'), DEFAULT_REVIEW_MODEL);
+  assert.equal(await resolveReviewModel(listing([]), undefined, '/w'), DEFAULT_REVIEW_MODEL);
+  assert.equal(await resolveReviewModel({ model: { async list() { throw new Error('down'); } } }, undefined, '/w'), DEFAULT_REVIEW_MODEL);
+});
