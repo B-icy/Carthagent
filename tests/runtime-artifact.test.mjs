@@ -147,6 +147,24 @@ test('downloads, verifies and installs the pinned archive, then uses the revalid
   assert.equal(gets, 1);
 });
 
+test('default runtime cache follows CTG_OPENCODE_HOME so nested ctg runs share the service runtime', async () => {
+  setArchive(makeArchive());
+  const profile = path.join(temp, 'profile-root');
+  const previousProfile = process.env.CTG_OPENCODE_HOME;
+  const previousHome = process.env.HOME;
+  // Model a command spawned by the agent: HOME is the profile's private home.
+  process.env.CTG_OPENCODE_HOME = profile;
+  process.env.HOME = path.join(profile, 'home');
+  try {
+    const { cacheRoot: _ignored, ...withoutCache } = args();
+    const destination = await acquireOwnedRuntime(withoutCache);
+    assert.equal(destination, path.join(profile, 'runtimes', version, targetKey));
+  } finally {
+    if (previousProfile === undefined) delete process.env.CTG_OPENCODE_HOME; else process.env.CTG_OPENCODE_HOME = previousProfile;
+    if (previousHome === undefined) delete process.env.HOME; else process.env.HOME = previousHome;
+  }
+});
+
 test('follows a normal release-asset redirect while retaining the pinned digest check', async () => {
   setArchive(makeArchive());
   const redirectedUrl = `${baseUrl}/redirect`;
