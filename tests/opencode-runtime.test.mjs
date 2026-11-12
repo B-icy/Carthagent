@@ -1116,10 +1116,11 @@ time.sleep(30)`]);
   await exited;
 });
 
-test('headless runs reject pending permission requests instead of parking until timeout', async () => {
-  const { rejectPendingPermissions, HEADLESS_PERMISSION_MESSAGE } = await import('../lib/opencode/headless.mjs');
+test('headless runs reject pending permission requests and question forms instead of parking until timeout', async () => {
+  const { rejectPendingPermissions, HEADLESS_PERMISSION_MESSAGE, HEADLESS_QUESTION_MESSAGE } = await import('../lib/opencode/headless.mjs');
   const { createServer } = await import('node:http');
   const replies = [];
+  const cancels = [];
   let listed = 0;
   const server = createServer((req, res) => {
     let body = '';
@@ -1132,6 +1133,12 @@ test('headless runs reject pending permission requests instead of parking until 
         res.end(JSON.stringify({ data: [{ id: 'per_1', sessionID: 'ses_1', action: 'read', resources: ['.env.test'] }, { id: 'per_x', sessionID: 'ses_other' }] }));
         return;
       }
+      if (req.method === 'GET' && url.pathname === '/api/session/ses_1/form') {
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ data: [{ id: 'frm_1', sessionID: 'ses_1' }] }));
+        return;
+      }
+      if (req.method === 'DELETE' && url.pathname === '/api/session/ses_1/form/frm_1') { cancels.push(url.searchParams.get('message')); res.statusCode = 204; res.end(); return; }
       if (req.method === 'POST' && url.pathname.endsWith('/reply')) { replies.push({ path: url.pathname, body: JSON.parse(body) }); res.setHeader('content-type', 'application/json'); res.end('true'); return; }
       res.statusCode = 404; res.end('{}');
     });
@@ -1144,7 +1151,8 @@ test('headless runs reject pending permission requests instead of parking until 
   while (listed < 3) await new Promise(done => setTimeout(done, 5));
   await watch.stop();
   server.close();
-  assert.deepEqual(rejected, ['per_1'], 'each request is rejected once; other sessions are untouched');
+  assert.deepEqual(rejected, ['per_1', 'frm_1'], 'each request/question is declined once; other sessions are untouched');
+  assert.deepEqual(cancels, [HEADLESS_QUESTION_MESSAGE], 'the question form is cancelled once, telling the agent to proceed');
   assert.equal(replies.length, 1);
   assert.equal(replies[0].path, '/api/session/ses_1/permission/per_1/reply');
   assert.deepEqual(replies[0].body, { decision: 'reject', message: HEADLESS_PERMISSION_MESSAGE });
