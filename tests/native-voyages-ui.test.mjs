@@ -267,7 +267,7 @@ test('retired null prices stay unknown, never quote/purchase or imply free equip
     assert.equal(quotes, 0);
     assert.deepEqual(writes, []);
     view().snapshot.profile.owned.push(retired.item);
-    assert.match(voyagesCatalogLabel(view().snapshot, retired), /^Owned.*price unavailable/);
+    assert.equal(voyagesCatalogLabel(view().snapshot, retired), `Owned · ${retired.name}`, 'owned items show no price');
     assert.equal(canEquip(view().snapshot, retired), true);
     assert.equal(canEquip(view().snapshot, { ...retired, available: false }), false);
     assert.equal(canEquip(view().snapshot, { ...retired, eligible: false }), false);
@@ -354,3 +354,17 @@ test('ineligible or already-claimed rewards explain why instead of raw codes, an
   }
 });
 
+
+test('catalog labels: owned items show no price and mark the equipped one; shop items keep price and shortfall', async () => {
+  const { controller, view } = fixture();
+  await controller.refresh();
+  const snap = view().snapshot;
+  const owned = { ...item, price: 0, requiresPurchase: false };
+  snap.profile.owned.push(owned.item);
+  assert.equal(voyagesCatalogLabel(snap, owned), `Owned · ${owned.name}${snap.profile.config.hat === owned.itemKey ? ' · equipped' : ''}`);
+  assert.doesNotMatch(voyagesCatalogLabel(snap, owned), /coins/);
+  snap.profile.config.hat = owned.itemKey;
+  assert.match(voyagesCatalogLabel(snap, owned), /· equipped$/);
+  const shop = { ...item, item: 'hat:crown', itemKey: 'crown', price: snap.profile.coins + 5, requiresPurchase: true };
+  assert.match(voyagesCatalogLabel(snap, shop), new RegExp(`^Shop · .* · ${shop.price} coins · need 5 more$`));
+});

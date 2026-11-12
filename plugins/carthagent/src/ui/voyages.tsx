@@ -78,7 +78,8 @@ export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "
     setAppearance({ [key]: value });
     return { [key]: value };
   }, (_profile: VoyagesProfile, patch: Record<string, string>) => confirm("Save customization?", Object.entries(patch).map(([key, value]) => `${key === "shipName" ? "Ship name" : key[0].toUpperCase() + key.slice(1)}: ${value}`).join("\n"), "Save")).finally(() => setAppearance({}));
-  const equip = (item: VoyagesItem) => controller.equip(item, () => confirm("Equip this item?", `${item.name}\nReplaces your current ${labels[item.slot].toLowerCase()}.`, "Equip"));
+  const singular: Record<VoyagesSlot, string> = { hairStyle: "hairstyle", hat: "hat", shirt: "top", bottoms: "bottoms", shoes: "shoes", pet: "companion", hull: "hull", sail: "sail", setting: "harbour" };
+  const equip = (item: VoyagesItem) => controller.equip(item, () => confirm("Equip this item?", `${item.name}\nReplaces your current ${singular[item.slot]}.`, "Equip"));
   const purchase = (item: VoyagesItem) => controller.purchase(item, (quote: VoyagesQuote, profile: VoyagesProfile) => confirm("Buy this item?", `${item.name}\n${quote.price} coins · Balance after purchase: ${profile.coins - quote.price} coins`, "Buy"));
   const retry = () => controller.retry((pending: NonNullable<VoyagesSnapshot["pending"]>) => confirm("Resolve pending purchase?", `Outcome unknown: ${pending.item}\n${pending.price} coins · quote ${pending.quoteId}\nReplay the server's SAME saved quote/key pair only. This does not create a new purchase key. Cancel keeps it pending.`, "Retry same purchase"));
   const chooseItem = async (item: VoyagesItem) => {
