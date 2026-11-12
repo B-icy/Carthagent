@@ -176,6 +176,8 @@ export function canEquip(snapshot, item) {
 
 export function voyagesCatalogLabel(snapshot, item) {
   const category = snapshot.profile.owned.includes(item.item) ? 'Owned' : item.price === null ? 'Retired' : item.requiresPurchase ? 'Shop' : 'Free';
+  // Owned items have no price to show ("0 coins" read as a free offer); mark the equipped one instead.
+  if (category === 'Owned') return `Owned · ${item.name}${snapshot.profile.config?.[item.slot] === item.itemKey ? ' · equipped' : ''}`;
   const price = item.price === null ? 'price unavailable / retired' : `${item.price} coins`;
   const shortfall = category === 'Shop' && item.price > snapshot.profile.coins ? ` · need ${item.price - snapshot.profile.coins} more` : '';
   return `${category} · ${item.name} · ${price}${shortfall}`;
