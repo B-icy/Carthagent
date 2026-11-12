@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { checkDigest, fingerprint, validatePlan, planD2, pendingChecks, restoreState, runCommand, shouldContinue, localPath, createSerialQueue, validateRevision, turnBudgetExceeded, maxEvidenceFiles, maxEvidenceBytes, bindRequiredChecks, verificationMode, looksInformational, computePhase } from '../lib/delivery.mjs';
+import { checkDigest, fingerprint, validatePlan, planD2, pendingChecks, restoreState, runCommand, shouldContinue, localPath, createSerialQueue, validateRevision, turnBudgetExceeded, maxEvidenceFiles, maxEvidenceBytes, bindRequiredChecks, verificationMode, looksInformational, computePhase, revisePlan } from '../lib/delivery.mjs';
 import { createReport, latestReport, saveReport, reconcileReport } from '../lib/reports.mjs';
 
 function fixture(t) {
@@ -377,4 +377,43 @@ test('guidance, prompt template and README document the classification', () => {
   assert.match(extension, /looksInformational\(event\.prompt\)/);
   assert.match(readme, /Informational vs delivery asks/);
   assert.match(readme, /advisory/);
+});
+
+test('plan paths in a monorepo package must be workspace-relative', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ctg-mono-'));
+  try {
+    mkdirSync(join(root, 'packages', 'api', 'src'), { recursive: true });
+    const cwd = join(root, 'packages', 'api');
+    const plan = extra => ({ goal: 'Add statuses', assumptions: [], steps: [{ id: 'build', title: 'Build' }], acceptance: [{ requirement: 'Statuses map', checks: ['unit'] }], checks: [{ id: 'unit', kind: 'test', argv: ['node', '--test'], timeoutSeconds: 60 }], artifacts: ['.'], ...extra });
+    // Repository-root paths can never exist from this workspace; say which path to use.
+    assert.throws(() => validatePlan(plan({ outputs: ['packages/api/status.mjs'] }), cwd, { strictPaths: true }), /use "status\.mjs"/);
+    assert.throws(() => validatePlan(plan({ artifacts: ['packages/api'] }), cwd, { strictPaths: true }), /use "\."/);
+    // Prose deliverables are not paths; completion would require them to exist on disk.
+    assert.throws(() => validatePlan(plan({ artifacts: ['Updated status.mjs with 201 mappings'] }), cwd, { strictPaths: true }), /description, not a path/);
+    // Genuine new files and directories stay valid.
+    assert.doesNotThrow(() => validatePlan(plan({ artifacts: ['src', 'docs/guide.md'], outputs: ['src/new.mjs', 'status.test.mjs'] }), cwd, { strictPaths: true }));
+    // Saved reports from older plans still load.
+    assert.doesNotThrow(() => validatePlan(plan({ outputs: ['packages/api/status.mjs'] }), cwd));
+    // A stuck plan can be corrected: replacing the root-relative output is not dropping it.
+    const previous = { runId: 'r', revision: 1, status: 'verifying', evidence: {}, stepStatus: {}, plan: plan({ outputs: ['packages/api/status.mjs'] }) };
+    const next = revisePlan(previous, { outputs: ['status.mjs'] }, { cwd, reason: 'workspace-relative paths', hash: 'h' });
+    assert.deepEqual(next.plan.outputs, ['status.mjs']);
+    assert.throws(() => revisePlan(previous, { outputs: ['other.mjs'] }, { cwd, reason: 'drop', hash: 'h' }), /cannot silently remove promised outputs/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('workspace path hints do not reject legitimate new paths', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ctg-paths-'));
+  try {
+    const cwd = join(root, 'mylib');
+    mkdirSync(cwd, { recursive: true });
+    const plan = extra => ({ goal: 'g', assumptions: [], steps: [{ id: 'a', title: 't' }], acceptance: [{ requirement: 'r', checks: ['c'] }], checks: [{ id: 'c', kind: 'test', argv: ['node', '--test'], timeoutSeconds: 60 }], artifacts: ['.'], ...extra });
+    // A package directory named like the workspace is a real new path.
+    assert.doesNotThrow(() => validatePlan(plan({ artifacts: ['mylib', 'mylib/__init__.py'], outputs: ['mylib/__init__.py'] }), cwd, { strictPaths: true }));
+    // File names with spaces are paths, not prose.
+    assert.doesNotThrow(() => validatePlan(plan({ artifacts: ['docs/Release Notes 2026.md'] }), cwd, { strictPaths: true }));
+    // Revising one field does not re-judge an untouched legacy field.
+    const previous = { runId: 'r', revision: 1, status: 'implementing', evidence: {}, stepStatus: {}, plan: plan({ artifacts: ['New parser module with tests'] }) };
+    assert.doesNotThrow(() => revisePlan(previous, { outputs: ['parser.mjs'] }, { cwd, reason: 'add output', hash: 'h' }));
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

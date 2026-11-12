@@ -796,6 +796,43 @@ test('headless runner passes workspace environment and returns assistant content
   } finally { globalThis.fetch = original; }
 });
 
+test('headless follows message pages back to the accepted prompt in long runs', async () => {
+  const original = globalThis.fetch;
+  const queries = [];
+  // Newest first, like the runtime: idle, final answer, 120 tool turns, prompt.
+  const history = [
+    { id: 'idle', type: 'idle', outcome: 'succeeded', time: { created: 1000 } },
+    { id: 'final', type: 'assistant', finish: 'stop', content: [{ type: 'text', text: 'Delivered and verified.' }], time: { created: 999 } },
+    ...Array.from({ length: 120 }, (_, i) => ({ id: `tool-${i}`, type: 'assistant', finish: 'tool-calls', content: [], time: { created: 998 - i } })),
+    { id: 'user_long', type: 'user', text: 'task', time: { created: 1 } },
+  ];
+  try {
+    globalThis.fetch = async url => {
+      const parsed = new URL(url);
+      const pathname = parsed.pathname;
+      if (pathname.endsWith('/environment')) return new Response(null, { status: 204 });
+      if (pathname.endsWith('/prompt')) return new Response('{"data":{"id":"user_long"}}');
+      if (pathname.endsWith('/wait')) return new Response(null, { status: 204 });
+      if (pathname.endsWith('/message')) {
+        queries.push(parsed.search);
+        assert.ok(Number(parsed.searchParams.get('limit')) <= 200, 'runtime rejects limits above 200');
+        const start = Number(parsed.searchParams.get('cursor') || 0);
+        const size = 50; // a server page smaller than the request, as observed live
+        const data = history.slice(start, start + size);
+        const next = start + size < history.length ? String(start + size) : undefined;
+        return new Response(JSON.stringify({ data, cursor: { next } }));
+      }
+      if (/\/api\/session\/ses_long$/.test(pathname)) return new Response('{"data":{"id":"ses_long","outcome":"succeeded"}}');
+      throw new Error(`Unexpected endpoint ${pathname}`);
+    };
+    const result = await runHeadless({ url: 'http://127.0.0.1:3333', headers: {} }, '/workspace', 'task', { sessionID: 'ses_long' });
+    assert.equal(queries.length, 3, 'stops paging once the accepted prompt is found');
+    assert.equal(result.messages[0].id, 'user_long', 'the turn keeps its prompt anchor');
+    assert.equal(result.result.text, 'Delivered and verified.');
+    assert.equal(result.outcome, 'succeeded');
+  } finally { globalThis.fetch = original; }
+});
+
 test('headless reattaches after HTTP wait header timeouts without replaying admitted work', async () => {
   const original = globalThis.fetch;
   let waits = 0, prompts = 0, environments = 0;
@@ -1086,4 +1123,24 @@ test('headless runs reject pending permission requests instead of parking until 
   assert.equal(replies.length, 1);
   assert.equal(replies[0].path, '/api/session/ses_1/permission/per_1/reply');
   assert.deepEqual(replies[0].body, { decision: 'reject', message: HEADLESS_PERMISSION_MESSAGE });
+});
+
+test('sessionMessages reads one page without an anchor and keeps pages read before a failure', async () => {
+  const original = globalThis.fetch;
+  let requests = 0;
+  try {
+    globalThis.fetch = async url => {
+      requests++;
+      const cursor = new URL(url).searchParams.get('cursor');
+      if (cursor === 'boom') throw new Error('socket hang up');
+      const page = cursor ? [{ id: 'older' }] : [{ id: 'idle' }, { id: 'final' }];
+      return new Response(JSON.stringify({ data: page, cursor: { next: cursor ? 'boom' : 'p2' } }));
+    };
+    const service = { url: 'http://127.0.0.1:1', headers: {} };
+    assert.deepEqual((await sessionMessages(service, 's')).map(m => m.id), ['idle', 'final']);
+    assert.equal(requests, 1, 'no anchor: only the latest page');
+    requests = 0;
+    assert.deepEqual((await sessionMessages(service, 's', { untilID: 'missing' })).map(m => m.id), ['idle', 'final', 'older']);
+    assert.equal(requests, 3, 'a failing later page keeps the pages already read');
+  } finally { globalThis.fetch = original; }
 });
