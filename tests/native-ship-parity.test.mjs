@@ -123,6 +123,17 @@ test('the harness is scoped to Ship: Lite, Plan and Build get no guidance, locks
   }
 })
 
+test('after a Ship plan, switching agents tells the model delivery tools are gone', async t => {
+  const h = host(t)
+  const cleanup = await registerDelivery(h.ctx, { workflow: 'standard' })
+  await h.plan()
+  h.sessions.get('ses-a').agent = LITE_AGENT_ID
+  const quick = await h.context()
+  assert.match(systemText(quick), /switched away from Ship: delivery_\* tools/)
+  assert.equal(quick.tools.carthagent_delivery_plan, undefined)
+  await cleanup()
+})
+
 test('switching away from Ship mid-session stops enforcement; switching back restores it', async t => {
   const h = host(t)
   const cleanup = await registerDelivery(h.ctx, { workflow: 'standard' })

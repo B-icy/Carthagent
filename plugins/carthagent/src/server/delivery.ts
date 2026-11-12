@@ -55,6 +55,8 @@ function sessionKey(sessionID: string) { return `session/${sessionID}` }
  * no active-session process global is used. State is durable per session in ctx.storage while
  * the existing .harness report and workspace lock remain canonical cross-process coordination.
  */
+
+export const AGENT_SWITCH_NOTE = "This session switched away from Ship: delivery_* tools (plan, check, finish) are not available now, even though earlier turns used them. Work directly with the available tools; do not call delivery tools."
 export async function registerDelivery(ctx: Context, options: DeliveryOptions = {}) {
   const registrations: Array<{ dispose(): Promise<void> }> = []
   const serial = new Map<string, Promise<unknown>>()
@@ -468,6 +470,9 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
     }
     if (!active || !isShipAgent(event.agent)) {
       if (event.tools) for (const name of Object.keys(event.tools)) if (localToolName(name).startsWith("delivery_")) delete event.tools[name]
+      // After switching away from Ship, earlier turns still show delivery_* calls;
+      // without this note models keep calling them and hit "require Ship mode".
+      if (data.state && Array.isArray(event.system)) event.system.push({ type: "text", text: AGENT_SWITCH_NOTE })
       return
     }
     data.model = { providerID: event.model.providerID, id: event.model.id }
