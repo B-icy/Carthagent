@@ -8,6 +8,8 @@ import { unframe } from "./framing.mjs"
 
 export const STANDARD_GUIDANCE = "Standard delivery: inspect relevant files (glob/read/code_nav); create delivery_plan with complete requirements, artifact roots, a few steps and real checks. A valid required plan enables implementation immediately: design components/scenario ceremony is optional. Revisions merge design/workflow fields, replace supplied arrays, preserve obligations and require fresh final evidence, not repeated approval. Mark implementation steps done independently of integrated check execution. Use delivery_check all, final delivery_review inspect/record, then delivery_finish with honest limitations. No fabricated evidence, scope reduction or unrequested dependency changes. Informational plans do not authorize implementation. For bounded environment versions use delivery_probe kind=node-version or npm-version; inspect other APIs through read."
 
+export const SECRET_FILES_GUIDANCE = "Do not open .env, .env.* or other secrets files unless the task is about them: each read stops the run for user approval. Use .env.example, config code and docs to learn variable names; never print secret values."
+
 export const TOOL_SURFACE_GUIDANCE = "Read files with direct read/glob/grep tools. Ship withholds direct write/edit/shell tools until implementation is authorized: first create delivery_plan with a valid required acceptance contract; standard mode then unlocks implementation on the next tool turn, while strict mode also requires tested-design approval. File edits and commands use those direct tools, including shell (not bash), outside execute. The code-mode search() catalog lists only namespaced tools.* helpers, not direct tools. If write/edit/shell are missing, complete the required delivery step instead of searching catalogs or runtime internals for alternatives. Use delivery_probe for bounded pre-plan version discovery; never use delivery_check to bootstrap file edits."
 
 const browserCheck = fileURLToPath(new URL("../../../../tools/browser-check.mjs", import.meta.url))
@@ -26,8 +28,8 @@ export function shipGuidance({ state, workflow, prompt = "", profiles = [], disc
   const task = originalTask(prompt)
   const mode = state && !["verified", "blocked"].includes(state.status) ? state.workflowMode : workflow
   const parts = mode === "standard"
-    ? ["Preserve every user requirement and promised output.", STANDARD_GUIDANCE, TOOL_SURFACE_GUIDANCE]
-    : [DELIVERY_INVARIANTS, deliveryPhaseGuidance(state), TOOL_SURFACE_GUIDANCE]
+    ? ["Preserve every user requirement and promised output.", STANDARD_GUIDANCE, TOOL_SURFACE_GUIDANCE, SECRET_FILES_GUIDANCE]
+    : [DELIVERY_INVARIANTS, deliveryPhaseGuidance(state), TOOL_SURFACE_GUIDANCE, SECRET_FILES_GUIDANCE]
   if (/\b(test|typescript|route|backend|api)\b/i.test(task)) parts.push(TEST_INFRASTRUCTURE_GUIDANCE)
   if (profiles.some(profile => /web|browser/.test(profile.id)) || /\b(browser|web|frontend|screenshot)\b/i.test(task)) parts.push(browserGuidance)
   if (imageInput === false) parts.push("This session's model cannot process images: do not attempt to view, read, or reason over image files or screenshots — visual review is unavailable. Verify visual behavior through DOM structure, computed styles, and console evidence instead; screenshots remain useful as evidence artifacts for the user even though you cannot inspect them.")

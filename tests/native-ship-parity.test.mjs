@@ -87,6 +87,7 @@ test('Ship and Quick are native primary agents and Ship is the default mode', as
   assert.equal(agents.get(SHIP_AGENT_ID).mode, 'primary')
   assert.equal(agents.get(LITE_AGENT_ID).mode, 'primary')
   assert.equal(agents.get(LITE_AGENT_ID).name, 'Quick')
+  assert.match(agents.get(LITE_AGENT_ID).system, /Do not open \.env/)
   for (const id of [LITE_AGENT_ID, 'plan', 'build']) {
     assert.deepEqual(agents.get(id).permissions.at(-1), { action: DELIVERY_TOOL_PERMISSION, resource: '*', effect: 'deny' })
   }
