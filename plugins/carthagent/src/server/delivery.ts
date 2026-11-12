@@ -120,7 +120,10 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
       }
       data.state.plan = bindRequiredChecks(data.state.plan, data.required)
     }
-    return { session, cwd, data, options: opts, active: Boolean(opts.delivery) && isShipAgent(session.agent) }
+    // `active` reflects the session's current agent; tool hooks must judge each call by the
+    // agent that issued it (`deliveryEnabled && isShipAgent(call.agent)`), because the user can
+    // switch agents while a Ship turn is still running.
+    return { session, cwd, data, options: opts, deliveryEnabled: Boolean(opts.delivery), active: Boolean(opts.delivery) && isShipAgent(session.agent) }
   }
   function runDirectory(cwd: string, sessionID: string, runId: string) { return join(cwd, ".harness", sessionID, runId) }
   async function persist(cwd: string, sessionID: string, data: SessionState) {
@@ -156,8 +159,8 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
   const add = (editor: Parameters<Parameters<Context["tool"]["transform"]>[0]>[0], name: string, description: string, input: Schema, execute: (input: DeliveryInput, toolContext: RegisteredToolContext) => Promise<{ content: string }>) => editor.add({
     name, description: `${description} Returns text; in code mode use JSON.parse(result) for JSON responses before reading fields. Plain-text messages are not JSON.`, input: input as Tool.ValueSchema<DeliveryInput>, execute: async (rawValue, tool) => {
       const value = rawValue as DeliveryInput
-      const { active } = await scope(tool.sessionID)
-      if (!active || !isShipAgent(tool.agent)) throw Error("Carthagent delivery tools are disabled for this session; select Ship mode to use them.")
+      const { deliveryEnabled } = await scope(tool.sessionID)
+      if (!deliveryEnabled || !isShipAgent(tool.agent)) throw Error("Carthagent delivery tools are disabled for this session; select Ship mode to use them.")
       try {
         const result = await execute(value, tool)
         const { data } = await scope(tool.sessionID)
@@ -326,8 +329,8 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
     // share the outer call ID/message ID while still being distinct invocations.
     const callKey = `${event.sessionID}\0${event.messageID}\0${event.id}\0${event.tool}`
     if (admittedCalls.has(callKey)) return
-    const { cwd, data, options: opts, active: selected } = await scope(event.sessionID)
-    const active = selected && isShipAgent(event.agent)
+    const { cwd, data, options: opts, deliveryEnabled } = await scope(event.sessionID)
+    const active = deliveryEnabled && isShipAgent(event.agent)
     const toolName = localToolName(event.tool)
     if (toolName.startsWith("delivery_") && !active) throw Error("Delivery tools require Ship mode.")
     if (!active && Number(data.budget.limits.tools) === 0 && Number(data.budget.limits.seconds) === 0 && Number(data.budget.limits.repairs) === 0) return
@@ -402,8 +405,8 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
   })))
 
   registrations.push(await ctx.tool.hook("execute.after", async event => serialized(event.sessionID, async () => {
-    const { cwd, data, options: opts, active } = await scope(event.sessionID)
-    if (!active || !isShipAgent(event.agent)) return
+    const { cwd, data, options: opts, deliveryEnabled } = await scope(event.sessionID)
+    if (!deliveryEnabled || !isShipAgent(event.agent)) return
     const tool = localToolName(event.tool)
     const failed = event.status === "error"
     if (!failed && ["write", "edit", "patch"].includes(tool)) data.touched = true

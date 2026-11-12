@@ -134,6 +134,20 @@ test('after a Ship plan, switching agents tells the model delivery tools are gon
   await cleanup()
 })
 
+test('a Ship turn still running when the user switches agents keeps its delivery tools and gates', async t => {
+  const h = host(t)
+  const cleanup = await registerDelivery(h.ctx, { workflow: 'standard' })
+  // The session now shows Quick, but these calls were issued by the in-flight Ship turn.
+  h.sessions.get('ses-a').agent = LITE_AGENT_ID
+  await assert.rejects(h.before('edit', { path: 'app.ts' }, 'e1', SHIP_AGENT_ID), /delivery_plan/)
+  const status = await h.call('delivery_status', {}, SHIP_AGENT_ID)
+  assert.match(status.content, /No delivery contract/)
+  // Quick's own calls stay unrestricted and cannot use delivery tools.
+  await h.before('edit', { path: 'app.ts' }, 'e2', LITE_AGENT_ID)
+  await assert.rejects(h.call('delivery_status', {}, LITE_AGENT_ID), /Ship/)
+  await cleanup()
+})
+
 test('switching away from Ship mid-session stops enforcement; switching back restores it', async t => {
   const h = host(t)
   const cleanup = await registerDelivery(h.ctx, { workflow: 'standard' })
