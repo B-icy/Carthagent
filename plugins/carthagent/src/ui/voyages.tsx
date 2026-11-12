@@ -27,9 +27,16 @@ export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "
   const controller = createVoyagesState({ api: voyagesClient(context, location), changed: (next: ViewState) => setView(next) });
   const back = () => context.ui.router.navigate(props.sessionID ? { type: "session", sessionID: props.sessionID } : { type: "home" });
   const memory = createSelectMemory(() => list);
+  // Character and Shop are one reused page; switching must not restore the row that was focused on the
+  // other side ("Shop" and "Character" share a value), or one Enter bounces straight back.
+  const switchSection = (section: "profile" | "equipment") => {
+    memory.reset(); setCategory(undefined); setPreviewItem(undefined);
+    context.ui.router.navigate({ type: "plugin", name: "voyages", data: { ...(props.sessionID ? { sessionID: props.sessionID } : {}), section } });
+  };
   const goBack = () => {
     if (previewItem()) { memory.reset(); setPreviewItem(undefined); return; }
     if (category()) { memory.reset(); setCategory(undefined); return; }
+    if (props.section === "equipment") { switchSection("profile"); return; }
     back();
   };
   let summary: ScrollBoxRenderable | undefined;
@@ -121,7 +128,7 @@ export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "
     }
     if (value === "refresh") { void controller.refresh(); return; }
     if (value === "reward" && props.sessionID) { void controller.claimReward(props.sessionID, (preview: { coins: number; xp: number; km: number; dailyLimit: number; runId: string; snapshot: string }) => confirm("Claim delivery reward?", `+${preview.coins} coins · +${preview.xp} XP · +${preview.km} km\nUp to ${preview.dailyLimit} deliveries per UTC day.\nRun: ${preview.runId}\nSnapshot: ${preview.snapshot}\nSends delivery/check/review digests, not code or output. Based on local harness verification; the server does not rerun your repository. Replaying this delivery never earns twice.`, "Claim")); return; }
-    if (value === "section") { setCategory(undefined); setPreviewItem(undefined); context.ui.router.navigate({ type: "plugin", name: "voyages", data: { ...(props.sessionID ? { sessionID: props.sessionID } : {}), section: props.section === "equipment" ? "profile" : "equipment" } }); return; }
+    if (value === "section") { switchSection(props.section === "equipment" ? "profile" : "equipment"); return; }
     if (value === "daily") { context.ui.router.navigate({ type: "plugin", name: "daily-quests", data: { ...(props.sessionID ? { sessionID: props.sessionID } : {}) } }); return; }
     if (value === "customize") { void customize(); return; }
     if (value === "retry") { void retry(); return; }

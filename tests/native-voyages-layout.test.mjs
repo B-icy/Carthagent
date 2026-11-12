@@ -27,3 +27,11 @@ test('Voyages keeps profile progress, artwork and status in the scroll viewport 
   assert.match(source, /const enabled = \(\) => !view\(\).busy && !reconciling\(\) && context.keymap.mode.current\(\) === "base";/);
   assert.match(choices, /onSelect=\{\(_index, option\) => select\(option\?\.value\)\}/);
 });
+
+test('switching Character ↔ Shop starts on the first row and Esc in Shop returns to Character', () => {
+  const switcher = source.slice(source.indexOf('const switchSection'), source.indexOf('const goBack'));
+  assert.match(switcher, /memory\.reset\(\)/, 'the shared "section" row must not be restored on the other side');
+  const goBack = source.slice(source.indexOf('const goBack'), source.indexOf('let summary'));
+  assert.match(goBack, /props\.section === "equipment"\) \{ switchSection\("profile"\)/);
+  assert.match(source, /if \(value === "section"\) \{ switchSection\(/);
+});
