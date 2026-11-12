@@ -1550,3 +1550,32 @@ test('billing portal without a paid subscription explains the next step', async 
   } });
   await assert.rejects(runtime.billing({ action: 'portal' }), /No paid Cloud subscription to manage yet.*ctg billing checkout/);
 });
+
+test('--agent/--mode selects the native agent for new headless sessions and skips Ship framing', async t => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-agent-flag-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  assert.equal(parseOpenCodeArgs(['--agent', 'quick', 'x']).agent, 'quick');
+  assert.equal(parseOpenCodeArgs(['--mode', 'plan', 'x']).agent, 'plan');
+  const seen = [];
+  const { io } = ioCapture();
+  const runtime = await createOpenCodeCliRuntime({ cwd, io, stdout: { write() {} }, native: {
+    runtime: {}, service: { ensureService: async () => ({}) },
+    clientFactory: async () => ({ session: { get: async () => ({ id: 's', location: { directory: cwd } }) } }),
+    headless: { runHeadless: async (_service, _cwd, prompt, options) => {
+      seen.push({ agent: options.session.agent, prompt });
+      return { session: { id: 's' }, outcome: 'succeeded', terminal: true, messages: [{ type: 'assistant', finish: 'stop', content: [{ type: 'text', text: 'ok' }] }] };
+    } },
+  } });
+  const task = 'Add a validation test for the timeseries route';
+  assert.equal(await runtime.run({ mode: 'headless', options: { agent: 'Quick' }, prompt: task }), 0);
+  assert.equal(seen[0].agent, 'lite');
+  assert.equal(seen[0].prompt, task, 'non-Ship agents receive the task verbatim');
+  assert.equal(await runtime.run({ mode: 'headless', options: { agent: 'build' }, prompt: task }), 0);
+  assert.equal(seen[1].agent, 'build');
+  assert.equal(await runtime.run({ mode: 'headless', options: {}, prompt: task }), 0);
+  assert.equal(seen[2].agent, undefined, 'default agent is left to the runtime (Ship)');
+  await assert.rejects(runtime.run({ mode: 'headless', options: { agent: 'nope' }, prompt: task }), /Unknown agent "nope"/);
+  await assert.rejects(runtime.run({ mode: 'headless', options: { agent: 'quick', continue: true }, prompt: task }), /applies to new sessions/);
+});
