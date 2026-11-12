@@ -93,6 +93,9 @@ login/account/billing.
   command aliases.
 - `--agent-cli` and `--engine-cli` share the explicit native executable
   override. They must not silently select a legacy Pi executable.
+- `--agent <ship|quick|plan|build>` (alias `--mode`) picks the agent for a
+  new session (`quick` is the runtime's `lite` agent). Only Ship receives
+  delivery framing. It is rejected with `--session`/`--continue`/`--resume`.
 - `--isolate` describes extension/skill/prompt discovery isolation and never
   implies worktree creation.
 - Help/output and domain exit behavior remain the CLI contract. PI session
