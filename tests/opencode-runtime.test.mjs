@@ -1124,3 +1124,23 @@ test('headless runs reject pending permission requests instead of parking until 
   assert.equal(replies[0].path, '/api/session/ses_1/permission/per_1/reply');
   assert.deepEqual(replies[0].body, { decision: 'reject', message: HEADLESS_PERMISSION_MESSAGE });
 });
+
+test('sessionMessages reads one page without an anchor and keeps pages read before a failure', async () => {
+  const original = globalThis.fetch;
+  let requests = 0;
+  try {
+    globalThis.fetch = async url => {
+      requests++;
+      const cursor = new URL(url).searchParams.get('cursor');
+      if (cursor === 'boom') throw new Error('socket hang up');
+      const page = cursor ? [{ id: 'older' }] : [{ id: 'idle' }, { id: 'final' }];
+      return new Response(JSON.stringify({ data: page, cursor: { next: cursor ? 'boom' : 'p2' } }));
+    };
+    const service = { url: 'http://127.0.0.1:1', headers: {} };
+    assert.deepEqual((await sessionMessages(service, 's')).map(m => m.id), ['idle', 'final']);
+    assert.equal(requests, 1, 'no anchor: only the latest page');
+    requests = 0;
+    assert.deepEqual((await sessionMessages(service, 's', { untilID: 'missing' })).map(m => m.id), ['idle', 'final', 'older']);
+    assert.equal(requests, 3, 'a failing later page keeps the pages already read');
+  } finally { globalThis.fetch = original; }
+});

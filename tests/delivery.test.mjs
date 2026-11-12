@@ -401,3 +401,19 @@ test('plan paths in a monorepo package must be workspace-relative', () => {
     assert.throws(() => revisePlan(previous, { outputs: ['other.mjs'] }, { cwd, reason: 'drop', hash: 'h' }), /cannot silently remove promised outputs/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test('workspace path hints do not reject legitimate new paths', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ctg-paths-'));
+  try {
+    const cwd = join(root, 'mylib');
+    mkdirSync(cwd, { recursive: true });
+    const plan = extra => ({ goal: 'g', assumptions: [], steps: [{ id: 'a', title: 't' }], acceptance: [{ requirement: 'r', checks: ['c'] }], checks: [{ id: 'c', kind: 'test', argv: ['node', '--test'], timeoutSeconds: 60 }], artifacts: ['.'], ...extra });
+    // A package directory named like the workspace is a real new path.
+    assert.doesNotThrow(() => validatePlan(plan({ artifacts: ['mylib', 'mylib/__init__.py'], outputs: ['mylib/__init__.py'] }), cwd, { strictPaths: true }));
+    // File names with spaces are paths, not prose.
+    assert.doesNotThrow(() => validatePlan(plan({ artifacts: ['docs/Release Notes 2026.md'] }), cwd, { strictPaths: true }));
+    // Revising one field does not re-judge an untouched legacy field.
+    const previous = { runId: 'r', revision: 1, status: 'implementing', evidence: {}, stepStatus: {}, plan: plan({ artifacts: ['New parser module with tests'] }) };
+    assert.doesNotThrow(() => revisePlan(previous, { outputs: ['parser.mjs'] }, { cwd, reason: 'add output', hash: 'h' }));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
