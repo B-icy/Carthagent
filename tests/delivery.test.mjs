@@ -319,12 +319,16 @@ test('looksInformational recognizes scoped and read-only-constrained questions f
     'In invest-with-friends, read only lib/market-data-query.ts and report in one sentence what normalizeMarketSymbol rejects. Do not edit files or run shell commands.',
     'Recommend the single best small improvement. Do not make changes.',
     'For the api package: where is the retry configured?',
+    'Which of the tests in parse.test.mjs currently fail, and why? Just tell me, I will fix them myself.',
+    "Why does startup crash on Node 22? I'll fix it myself later.",
   ]) assert.equal(looksInformational(text), true, text);
   for (const text of [
     'In invest-with-friends, add a test for normalizeMarketSymbol.',
     'In the api package, fix the retry bug. Answer with a summary.',
     'Do not edit the README; fix the failing route test.',
     'Which file defines X? Then update it to use Y.',
+    'Fix the failing parse tests. I will review them myself.',
+    'Tell me why it fails, then fix it.',
   ]) assert.equal(looksInformational(text), false, text);
 });
 
