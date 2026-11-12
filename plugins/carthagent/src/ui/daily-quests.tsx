@@ -8,6 +8,7 @@ import { clickSelect, createSelectMemory } from "./select-mouse.js";
 import { dailyQuestsClient, dailySourceClient } from "./client.js";
 import type { DailyEvidence, DailyQuestDetail, DailySnapshot, DailyRecord } from "../daily-quests-rpc.js";
 import { createDailyQuestsState } from "./daily-quests-state.mjs";
+import { pickerOptions } from "./daily-quests-picker.mjs";
 import { handleDailyQuestsEvent } from "./daily-quests-events.mjs";
 import { voyagesEventAction } from "./voyages-state.mjs";
 import { selectedQuestEvidence } from "./quest-evidence.mjs";
@@ -151,7 +152,9 @@ export function DailyQuestsPage(props: { sessionID?: string; questID?: string; d
       }
       const sessionID = automatic ? props.sessionID : await ownDialog(() => context.ui.dialog.select({
         title: "Choose completed work",
-        options: sessions.filter(s => sources.has(s.id)).map(s => ({ title: s.title || "Untitled session", value: s.id, description: sources.get(s.id)?.source?.origin === "session" ? "Add selected evidence · any mode" : sources.get(s.id)?.source?.freshness === "stale" ? "Checks need refreshing" : "Recorded work" })),
+        // Group instead of a per-row description: the host renders descriptions inline after the
+        // title, so long session titles ran into them and both were cut off.
+        options: pickerOptions(sessions.filter(s => sources.has(s.id)), id => sources.get(id)?.source ?? undefined),
       }));
       if (!sessionID || !live()) return;
       const { source } = sources.get(sessionID) ?? await sourceApi.report({ sessionID, allowSession: true }, AbortSignal.any([signal, AbortSignal.timeout(15_000)]));
