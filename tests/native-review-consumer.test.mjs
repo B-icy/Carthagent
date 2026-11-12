@@ -284,3 +284,15 @@ test('host execution subscriptions are disposed and plugin shutdown blocks pendi
   cleanups.forEach((cleanup) => cleanup());
   assert.equal(unsubscribed.length, 5);
 });
+
+test('review offer focuses "Not now" so a reflexive Enter never opens a PR', async () => {
+  const { askNativeReviewOffer } = await import('../plugins/carthagent/src/ui/native-review.mjs');
+  let shown;
+  const dialog = choice => ({ async select(options) { shown = options; return choice(options); } });
+  assert.equal(await askNativeReviewOffer(dialog(options => options.current), { title: 'Fix', writes: 2 }), false);
+  assert.equal(shown.current, 'not-now');
+  assert.equal(shown.options[0].value, 'not-now');
+  assert.match(shown.options[1].description, /open a PR.*2 files/);
+  assert.equal(await askNativeReviewOffer(dialog(() => undefined), { title: 'Fix', writes: 1 }), false);
+  assert.equal(await askNativeReviewOffer(dialog(() => 'start'), { title: 'Fix', writes: 1 }), true);
+});

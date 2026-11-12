@@ -8,6 +8,23 @@ export async function sendNativeReviewKickoff({ client, sessionID, signal, promp
 }
 
 /** Explicit launch mode persisted for the session wins over the profile default. */
+/**
+ * Ask whether to start the PR review loop. Starting it pushes a branch and
+ * opens a real pull request, so the safe choice is focused: a reflexive Enter
+ * (or Esc) means "Not now", and starting requires an explicit selection.
+ */
+export async function askNativeReviewOffer(dialog, { title, writes }) {
+  const choice = await dialog.select({
+    title: `Review ${title}?`,
+    current: 'not-now',
+    options: [
+      { title: 'Not now', value: 'not-now', description: 'Keep the changes local' },
+      { title: 'Start review', value: 'start', description: `Push a branch, open a PR, run a fresh-context review (${writes} file${writes === 1 ? '' : 's'} changed)` },
+    ],
+  });
+  return choice === 'start';
+}
+
 export function nativeReviewMode(session, config, explicitMode) {
   return resolveReviewMode(explicitMode ?? session?.metadata?.[SESSION_OPTIONS_KEY]?.review, config);
 }
