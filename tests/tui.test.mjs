@@ -405,6 +405,9 @@ test('shouldFrame gates framing to substantial prompts', () => {
   assert.ok(shouldFrame('what cache layer should I add — implement it'));
   assert.ok(!shouldFrame('build x', { enabled: false }));
   assert.ok(!shouldFrame('build x', { delivery: false }));
+  // Stray keystrokes and acknowledgements are not delivery tasks.
+  for (const stray of ['cs', 'ok', 'thanks!', 'continue', 'y']) assert.ok(!shouldFrame(stray), stray);
+  for (const task of ['fix README.md', 'add tests', 'src/app.ts']) assert.ok(shouldFrame(task), task);
 });
 
 test('scenario manifests load and expand placeholders', () => {

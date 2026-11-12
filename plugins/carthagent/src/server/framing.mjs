@@ -68,6 +68,16 @@ export function unframe(text) {
   return m ? m[1].trim() : null;
 }
 
+/**
+ * A lone short word without a path ("cs", "ok", "thanks", "continue") is not a
+ * task: wrapping it as a phased delivery makes the model invent one. It is sent
+ * as typed; Ship still answers it, it just isn't framed.
+ */
+export function isStrayInput(text) {
+  const v = String(text ?? '').trim();
+  return v.length > 0 && v.length <= 24 && !/\s/.test(v) && !/[./\\]/.test(v);
+}
+
 /** True when a submitted prompt should get the delivery framing. */
 export function shouldFrame(text, { enabled = true, delivery = true } = {}) {
   if (!enabled || !delivery) return false;
@@ -76,5 +86,6 @@ export function shouldFrame(text, { enabled = true, delivery = true } = {}) {
   if (v.startsWith('/') || v.startsWith('!')) return false;
   // Questions/read-only asks are not delivery runs (one shared classifier).
   if (looksInformational(v)) return false;
+  if (isStrayInput(v)) return false;
   return existsSync(TEMPLATE_PATH);
 }
