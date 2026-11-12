@@ -50,13 +50,13 @@ try {
   await host.client.rpc.call({ rpcID: 'carthagent.session', method: 'framing',
     input: { sessionID: first.sessionID, enabled: false }, location: { directory: first.directory } }, host.request());
   await Promise.all([first, second].map((task, index) => host.client.session.prompt({
-    sessionID: task.sessionID, text: `WORKTREE_FIXTURE_${index}`,
+    sessionID: task.sessionID, text: `implement WORKTREE_FIXTURE_${index}`,
   }, host.request())));
   assert.deepEqual(await Promise.all([first, second].map(task => host.outcome(task.sessionID))), ['succeeded', 'succeeded']);
   const contexts = await Promise.all([first, second].map(task => host.client.session.context({ sessionID: task.sessionID }, host.request())));
   const userTexts = contexts.map(messages => messages.filter(message => message.type === 'user').map(message => message.text));
-  assert.deepEqual(userTexts[0], ['WORKTREE_FIXTURE_0']);
-  assert.ok(userTexts[1].some(text => text.includes('WORKTREE_FIXTURE_1') && text !== 'WORKTREE_FIXTURE_1'), 'Neighboring worktree keeps its delivery framing');
+  assert.deepEqual(userTexts[0], ['implement WORKTREE_FIXTURE_0']);
+  assert.ok(userTexts[1].some(text => text.includes('WORKTREE_FIXTURE_1') && text !== 'implement WORKTREE_FIXTURE_1'), 'Neighboring worktree keeps its delivery framing');
   assert.ok(!JSON.stringify(contexts[0]).includes('WORKTREE_FIXTURE_1'));
   assert.ok(!JSON.stringify(contexts[1]).includes('WORKTREE_FIXTURE_0'));
   await host.stop();
