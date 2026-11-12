@@ -499,10 +499,35 @@ test('a live registered process is retained when health inspection fails', async
     const record = { id: 'ctg-live', pid: process.pid, url: 'http://127.0.0.1:1', password: 'test', version: '2.0.32' };
     await writeFile(paths.serviceFile, JSON.stringify(record));
     globalThis.fetch = async () => { throw new Error('temporary outage'); };
-    const options = { root, binary: '/missing/binary' };
+    const options = { root, binary: '/missing/binary', healthPatience: 300 };
     // stopService does not need to resolve an executable and must not discard ownership.
     await assert.rejects(stopService(options), /alive but its service identity cannot be verified/);
     assert.deepEqual(JSON.parse(await readFile(paths.serviceFile, 'utf8')), record);
+  } finally { globalThis.fetch = original; await rm(root, { recursive: true, force: true }); }
+});
+
+test('a slow but live service is given patience instead of being declared unhealthy', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'ctg-slow-health-'));
+  const paths = runtimePaths({ root });
+  const original = globalThis.fetch;
+  try {
+    await provisionRuntime({ root });
+    const record = { id: 'ctg-slow', pid: process.pid, url: 'http://127.0.0.1:1', password: 'test', version: '2.0.32' };
+    await writeFile(paths.serviceFile, JSON.stringify(record));
+    let calls = 0;
+    const killed = [];
+    const originalKill = process.kill;
+    globalThis.fetch = async () => {
+      calls++;
+      if (calls < 3) throw new Error('timeout under load');
+      return new Response(JSON.stringify({ version: '2.0.32', pid: process.pid }), { status: 200 });
+    };
+    // Health succeeds on the third probe, so stop proceeds to signal the registered pid.
+    process.kill = (pid, signal) => { if (signal === 0) return originalKill.call(process, pid, 0); killed.push([pid, signal]); throw Object.assign(new Error('stub'), { code: 'EPERM' }); };
+    try { await stopService({ root, binary: '/missing/binary', healthPatience: 5_000 }).catch(() => {}); }
+    finally { process.kill = originalKill; }
+    assert.ok(calls >= 3, `expected retries, saw ${calls}`);
+    assert.deepEqual(killed[0], [process.pid, 'SIGTERM']);
   } finally { globalThis.fetch = original; await rm(root, { recursive: true, force: true }); }
 });
 
