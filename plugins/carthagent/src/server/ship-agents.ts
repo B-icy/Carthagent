@@ -2,6 +2,7 @@ import type { Context } from "@opencode/plugin/promise/plugin"
 import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { SECRET_FILES_GUIDANCE } from "./ship-guidance.ts"
 
 export const SHIP_AGENT_ID = "ship"
 export const LITE_AGENT_ID = "lite"
@@ -40,7 +41,7 @@ export async function registerShipAgents(ctx: Pick<Context, "agent">) {
       item.description = "Direct execution with existing skills and tools. No delivery harness."
       item.mode = "primary"
       item.color = "#b89ce0"
-      item.system = "You are a direct execution agent. Use the skills and tools already available and work the task directly. No extra planning ceremony, no harness phases — just do the work well and concisely."
+      item.system = "You are a direct execution agent. Use the skills and tools already available and work the task directly. No extra planning ceremony, no harness phases — just do the work well and concisely. Stay on the task: no web searches or remote history digging unless the task needs them. " + SECRET_FILES_GUIDANCE
       item.permissions.push({ action: "question", resource: "*", effect: "allow" })
     })
     // Tool snapshots and Code Mode catalogs are built before the session context hook.

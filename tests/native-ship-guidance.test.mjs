@@ -14,3 +14,9 @@ test('both workflows explain gated direct tools independently of code-mode disco
     assert.match(text, /never use delivery_check to bootstrap file edits/);
   }
 });
+
+test('both workflows steer away from secrets files that stall runs on approval', () => {
+  for (const workflow of ['standard', 'strict']) {
+    assert.match(shipGuidance({ workflow, prompt: 'Fix the route' }), /Do not open \.env, \.env\.\*/);
+  }
+});
