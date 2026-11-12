@@ -18,6 +18,7 @@ export interface NativeReviewConsumerOptions {
 }
 
 export function sendNativeReviewKickoff(options: { client: any; sessionID: string; signal?: AbortSignal; prompt?: string }): Promise<void>;
+export function askNativeReviewOffer(dialog: { select: (options: any) => Promise<unknown> }, input: { title: string; writes: number }): Promise<boolean>;
 export function nativeReviewMode(session: any, config: any, explicitMode?: string): string;
 export function createNativeReviewConsumer(options: NativeReviewConsumerOptions): {
   setLoopActive(sessionID: string, active: boolean): void;

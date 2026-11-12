@@ -19,7 +19,7 @@ import { nativeNavigation } from "./ui/native-navigation.js";
 import { provisionNativeThemes } from "./ui/theme-provision.mjs";
 import { setSessionAutoCompaction } from "./ui/session-preferences.mjs";
 import { runModelCommand } from "./ui/model-command.js";
-import { createNativeReviewConsumer, nativeReviewMode, sendNativeReviewKickoff, subscribeNativeReviewEvents } from "./ui/native-review.mjs";
+import { askNativeReviewOffer, createNativeReviewConsumer, nativeReviewMode, sendNativeReviewKickoff, subscribeNativeReviewEvents } from "./ui/native-review.mjs";
 import { createDeliveryRewardNotice } from "./ui/delivery-reward-notice.mjs";
 
 const THEMES = ["carthage", "tokyonight", "nebula", "ember", "forest", "mono", "obsidian", "midnight", "solarized-dark", "nord", "contrast-dark", "okabe-dark", "paper", "daylight", "solarized-light", "contrast-light", "okabe-light", "solarized", "okabe", "contrast", "system"];
@@ -59,7 +59,7 @@ export default Plugin.define({
         return delivery.status === "unavailable" || delivery.status === "verified";
       },
       offer: async ({ sessionID, writes, start }: { sessionID: string; writes: number; start: () => Promise<boolean> }) => {
-        const accepted = await context.ui.dialog.confirm({ title: `Review ${context.data.session.get(sessionID)?.title ?? sessionID}?`, message: `This run changed ${writes} file${writes === 1 ? "" : "s"}. Start the PR → fresh-context review → fixes workflow?`, label: { confirm: "Start review", cancel: "Not now" } });
+        const accepted = await askNativeReviewOffer(context.ui.dialog, { title: context.data.session.get(sessionID)?.title ?? sessionID, writes });
         if (accepted) await start();
       },
       kickoff: async (reviewSessionID: string, signal?: AbortSignal) => sendNativeReviewKickoff({ client: context.client, sessionID: reviewSessionID, signal }),
