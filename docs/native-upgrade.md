@@ -1,6 +1,6 @@
 # Native Carthagent: upgrade and migration guide
 
-**1.1.0** is the stable release and uses the native console by default.
+**1.1.x** is the stable line (currently 1.1.1) and uses the native console by default.
 `ctg native` is a compatibility alias; `CTG_NATIVE` no longer selects a
 different console. 1.0.7, the previous stable release, carried the legacy
 console; installing it explicitly (`npm install -g carthagent@1.0.7`) is the
