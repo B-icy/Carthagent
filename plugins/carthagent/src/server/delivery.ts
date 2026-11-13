@@ -157,6 +157,7 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
     })
   }
   /** Run declared checks with fresh fingerprints; shared by delivery_check and delivery_small. */
+  /* eslint-disable @typescript-eslint/no-explicit-any -- Check and evidence records mirror the JS delivery schema. */
   async function runChecks(selected: any[], { cwd, data, tool, verification }: { cwd: string; data: SessionState; tool: RegisteredToolContext; verification: string }) {
     const results: any[] = []
     for (const check of selected) {
@@ -190,6 +191,7 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
     }
     return results
   }
+  /* eslint-enable @typescript-eslint/no-explicit-any */
   // The code-mode catalog drops the longest signatures first; pin the plan entry point so it is always listed.
   const add = (editor: Parameters<Parameters<Context["tool"]["transform"]>[0]>[0], name: string, description: string, input: Schema, execute: (input: DeliveryInput, toolContext: RegisteredToolContext) => Promise<{ content: string }>) => editor.add({
     name, description: `${description} Returns text; in code mode use JSON.parse(result) for JSON responses before reading fields. Plain-text messages are not JSON.`, input: input as Tool.ValueSchema<DeliveryInput>, execute: async (rawValue, tool) => {
