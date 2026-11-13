@@ -61,8 +61,11 @@ const Observer = { id: 'carthagent-delivery-observer', methods: { state: {
   output: { type: 'object', properties: { budget: { type: ['object', 'null'], additionalProperties: true }, delivery: { type: ['object', 'null'], additionalProperties: true }, invocations: { type: 'array', items: { type: 'object', additionalProperties: true } }, duplicateInvocations: { type: 'array', items: { type: 'object', additionalProperties: true } }, interrupts: { type: 'array', items: { type: 'object', additionalProperties: true } }, tools: { type: 'array', items: { type: 'string' } } }, required: ['budget', 'delivery', 'invocations', 'duplicateInvocations', 'interrupts', 'tools'], additionalProperties: false },
 } }, events: {} };
 export default { id: 'carthagent', async setup(context) {
+  let beforeObserved = false;
   const monitored = { ...context,
-    tool: { ...context.tool, hook: async (name, callback) => context.tool.hook(name, async event => { if (name === 'execute.before') { const entry = { hook: name, sessionID: event.sessionID, tool: event.tool, agent: event.agent, id: event.id, messageID: event.messageID }; if (invocations.some(previous => previous.sessionID === entry.sessionID && previous.tool === entry.tool && previous.id === entry.id && previous.messageID === entry.messageID)) duplicateInvocations.push(entry); invocations.push(entry); } await callback(event); }) },
+    // Only the first execute.before registration (delivery's budget hook) is observed;
+    // later passive hooks such as daily-goal counting see the same calls and charge nothing.
+    tool: { ...context.tool, hook: async (name, callback) => { const observed = name === 'execute.before' && !beforeObserved; if (observed) beforeObserved = true; return context.tool.hook(name, async event => { if (observed) { const entry = { hook: name, sessionID: event.sessionID, tool: event.tool, agent: event.agent, id: event.id, messageID: event.messageID }; if (invocations.some(previous => previous.sessionID === entry.sessionID && previous.tool === entry.tool && previous.id === entry.id && previous.messageID === entry.messageID)) duplicateInvocations.push(entry); invocations.push(entry); } await callback(event); }); } },
     shell: { ...context.shell, hook: async (name, callback) => context.shell.hook(name, async event => { if (name === 'create.before') invocations.push({ hook: 'shell.' + name, command: event.command }); await callback(event); }) },
     session: { ...context.session, interrupt: async input => { interrupts.push(input); return context.session.interrupt(input); } },
   };

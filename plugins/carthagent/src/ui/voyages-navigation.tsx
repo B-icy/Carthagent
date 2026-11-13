@@ -5,7 +5,7 @@ import { useRenderer } from "@opentui/solid";
 import { usePlugin } from "@opencode/plugin/tui";
 import stringWidth from "string-width";
 import { createSelectPointer } from "./select-mouse.js";
-import { dailyQuestsClient, voyagesClient } from "./client.js";
+import { dailyGoalsClient, voyagesClient } from "./client.js";
 import { nativeNavigation, type NavigationInput } from "./native-navigation.js";
 import { createVoyagesNavigationState } from "./voyages-navigation-state.mjs";
 import { voyagesEventAction } from "./voyages-state.mjs";
@@ -22,7 +22,7 @@ export function VoyagesNavigation(props: NavigationInput) {
   const location = () => (props.sessionID ? context.data.session.get(props.sessionID)?.location : undefined) ?? context.location ?? context.data.location.default();
   const [view, setView] = createSignal<Summary>({ busy: false, error: "" });
   const [selection, setSelection] = createSignal("daily");
-  const profile = voyagesClient(context, location), daily = dailyQuestsClient(context, location);
+  const profile = voyagesClient(context, location), daily = dailyGoalsClient(context, location);
   const controller = createVoyagesNavigationState({ profile: profile.snapshot, daily: daily.snapshot, changed: setView });
   let actions: SelectRenderable | undefined;
   let scroll: ScrollBoxRenderable | undefined;

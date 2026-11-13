@@ -5,7 +5,7 @@ import { createVoyagesNavigationState } from '../plugins/carthagent/src/ui/voyag
 
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 const account = { profile: { name: 'Captain', shipName: 'Ship', coins: 10, level: 3, totalXp: 200, config: { private: true }, owned: ['secret'] }, items: [{ private: true }], pending: { quoteId: 'private' } };
-const assignments = { accountKey: 'private-account', slate: { day: '2026-10-30', endsAt: '2026-10-31T00:00:00Z', items: [{ id: 'quest-one', definition: { title: 'Protect a boundary', criteria: ['private'] }, status: 'open' }] }, records: [{ request: { evidence: 'private-claim', consent: true } }] };
+const assignments = { day: '2026-10-30', endsAt: '2026-10-31T00:00:00Z', goals: [{ id: 'lines-20', metric: 'lines', title: 'Change 20 lines of code', target: 20, progress: 12, completed: false, coins: 10, xp: 50 }, { id: 'reviews-1', metric: 'reviews', title: 'Run a code review', target: 1, progress: 1, completed: true, coins: 10, xp: 50 }], coins: 10, level: 3 };
 function fixture(overrides = {}) {
   const updates = [], calls = [];
   const controller = createVoyagesNavigationState({
@@ -27,9 +27,9 @@ test('navigation loads only when selected, reads once per activation and retains
   assert.deepEqual(f.last(), {
     busy: false, error: '',
     profile: { name: 'Captain', shipName: 'Ship', coins: 10, level: 3, totalXp: 200 },
-    daily: { day: '2026-10-30', endsAt: '2026-10-31T00:00:00Z', items: [{ id: 'quest-one', title: 'Protect a boundary', status: 'Choose work' }] },
+    daily: { day: '2026-10-30', endsAt: '2026-10-31T00:00:00Z', items: [{ id: 'lines-20', title: 'Change 20 lines of code', status: '12/20' }, { id: 'reviews-1', title: 'Run a code review', status: 'Done' }] },
   });
-  assert.doesNotMatch(JSON.stringify(f.last()), /private|consent|evidence|quoteId|owned|criteria/);
+  assert.doesNotMatch(JSON.stringify(f.last()), /private|quoteId|owned/);
   await f.controller.activate(true);
   assert.equal(f.calls.length, 2);
   f.controller.dispose();
@@ -64,7 +64,7 @@ test('hidden pane cannot resurrect a late authenticated response', async () => {
 
 test('either authentication failure hides both account-bound summaries and never renders server messages', async () => {
   for (const boundary of ['profile', 'daily']) {
-    const f = fixture({ [boundary]: async () => { throw { type: boundary === 'profile' ? 'voyagesError' : 'dailyQuestError', data: { code: 'authentication_required' }, message: 'private token' }; } });
+    const f = fixture({ [boundary]: async () => { throw { type: boundary === 'profile' ? 'voyagesError' : 'dailyGoalsError', data: { code: 'authentication_required' }, message: 'private token' }; } });
     await f.controller.activate(true);
     assert.equal(f.last().profile, undefined);
     assert.equal(f.last().daily, undefined);
@@ -75,7 +75,7 @@ test('either authentication failure hides both account-bound summaries and never
 });
 
 test('untrusted error codes and transport messages cannot leak through the rail', async () => {
-  for (const error of [new Error('private message'), { type: 'dailyQuestError', data: { code: 'private\u001b[31m' } }, { type: 'voyagesError', data: { code: 'x'.repeat(65) } }]) {
+  for (const error of [new Error('private message'), { type: 'dailyGoalsError', data: { code: 'private\u001b[31m' } }, { type: 'voyagesError', data: { code: 'x'.repeat(65) } }]) {
     const f = fixture({ daily: async () => { throw error; } });
     await f.controller.activate(true);
     assert.match(f.last().error, /^(voyages_request_failed|voyages_error)$/);
@@ -155,15 +155,15 @@ test('timeout clears busy and fails closed without an unhandled promise', async 
   f.controller.dispose();
 });
 
-test('native extension is optional; navigation cannot itself accept consent or purchase', async () => {
+test('native extension is optional; navigation and daily goals cannot purchase', async () => {
   const root = new URL('../plugins/carthagent/src/', import.meta.url);
-  const [tui, pane, adapter, daily, voyages] = await Promise.all(['tui.tsx', 'ui/voyages-navigation.tsx', 'ui/native-navigation.ts', 'ui/daily-quests.tsx', 'ui/voyages.tsx'].map((file) => readFile(new URL(file, root), 'utf8')));
+  const [tui, pane, adapter, daily, voyages] = await Promise.all(['tui.tsx', 'ui/voyages-navigation.tsx', 'ui/native-navigation.ts', 'ui/daily-goals.tsx', 'ui/voyages.tsx'].map((file) => readFile(new URL(file, root), 'utf8')));
   assert.match(tui, /if \(navigation\) cleanups.push\(navigation.register/);
   assert.match(adapter, /navigation\?: NativeNavigation/);
   assert.match(pane, /!props.active \|\| context.keymap.mode.current\(\) !== "navigation" \|\| !props.focused/);
   assert.match(pane, /showDescription=\{false\}/);
   assert.doesNotMatch(pane, /\.submit\(|\.retry\(|\.purchase\(|\.quote\(|\.customize\(|\.equip\(|dialog\.confirm|consent: true/);
-  assert.match(daily, /controller.refresh\(\).then\(async \(\) => \{\s*if \(props.questID\) await openQuest\(props.questID\)/);
+  assert.doesNotMatch(daily, /\.purchase\(|\.quote\(|dialog\.confirm|consent/);
   assert.match(voyages, /const enabled = \(\) => !view\(\).busy && !reconciling\(\) && context.keymap.mode.current\(\) === "base";/);
   assert.match(voyages, /if \(!value \|\| !enabled\(\)\) return;/);
 });

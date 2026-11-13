@@ -11,10 +11,10 @@ import { Voyages } from "../src/voyages-rpc.js";
 import { VoyagesNavigation } from "../src/ui/voyages-navigation.js";
 
 const profile = { profile: { name: "Test captain", shipName: "Test vessel", coins: 10, level: 2, totalXp: 150 } };
-const slate = { slate: { day: "2026-10-30", endsAt: "2026-10-31T00:00:00Z", items: [
-  { id: "quest-one", definition: { title: "Protect a boundary" }, status: "open" },
-  { id: "quest-two", definition: { title: "Review a change" }, status: "assessed_complete" },
-] }, records: [{ request: { evidence: "must not appear in navigation", consent: true } }] };
+const slate = { day: "2026-10-30", endsAt: "2026-10-31T00:00:00Z", coins: 10, level: 1, goals: [
+  { id: "lines-20", metric: "lines", title: "Change 20 lines of code", target: 20, progress: 3, completed: false, coins: 10, xp: 50 },
+  { id: "reviews-1", metric: "reviews", title: "Run a code review", target: 1, progress: 1, completed: true, coins: 10, xp: 50 },
+] };
 
 async function fixture({ width = 30, height = 36, authenticated = true, hint = false } = {}) {
   const [active, setActive] = createSignal(true);
@@ -78,7 +78,7 @@ test.each([30, 18])("real Voyages navigator renders account and assignment summa
     expect(frame).toContain("10 coins");
     expect(frame).toContain("Quests");
     expect(frame).toContain("Friends · WIP");
-    expect(frame).not.toContain("Review a change");
+    expect(frame).not.toContain("Run a code review");
     expect(frame).not.toContain("must not appear");
     expect(f.calls).toEqual(["profile", "daily"]);
     expect(f.routes).toHaveLength(0);

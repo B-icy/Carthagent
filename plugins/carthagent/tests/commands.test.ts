@@ -25,8 +25,9 @@ test("Carthagent command manifest resolves visible CTG commands", () => {
   }
   assert.equal(resolveCommand("/cloud")?.id, "account");
   assert.equal(resolveCommand("/auth")?.id, "login");
-  assert.match(resolveCommand("/voyages")!.description, /quests/);
-  assert.match(resolveCommand("/quests")!.description, /consent/);
+  assert.match(resolveCommand("/voyages")!.description, /daily goals/);
+  assert.match(resolveCommand("/quests")!.description, /counted automatically/);
+  assert.doesNotMatch(resolveCommand("/quests")!.description, /consent|evidence/);
 });
 
 test("command error reports read native RPC rejection objects instead of '[object Object]'", () => {

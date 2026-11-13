@@ -191,10 +191,10 @@ carries everything from the 1.1.0 betas. Upgrading from 1.0.7 changes the
 console, the profile location and the Node floor; read the
 [1.1.0 release notes](docs/release-notes-1.1.0.md) first.
 
-Daily quests accept completed work from Ship, Quick, Plan, or Build. Choose a
-session, review its recorded evidence or enter the relevant summary, check
-results, and review findings, then explicitly Submit. User-entered evidence is
-assessed as submitted claims; it does not become a verified Ship delivery.
+`/quests` shows three simple [daily goals](docs/native-daily-goals.md) (e.g.
+"Change 20 lines of code", "Run your tests", "Run a code review") that rotate
+every day. `ctg` counts them automatically from your sessions in any mode and
+pays 10 coins and 50 XP per goal; there is nothing to submit.
 
 Every release must pass its exact installed-package gate before publication.
 Earlier migration findings and remaining platform caveats are in the

@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import type { Context } from "@opencode/plugin/tui/context";
-import { archiveClient, dailyQuestsClient, dailySourceClient, pullRequestClient, sessionControls, shipClient, voyagesClient, workspaceClient } from "../src/ui/client.js";
+import { archiveClient, dailyGoalsClient, dailySourceClient, pullRequestClient, sessionControls, shipClient, voyagesClient, workspaceClient } from "../src/ui/client.js";
 
-test.each([dailyQuestsClient, voyagesClient])("mounted page RPC reads follow the current client after service replacement", async (makeClient) => {
+test.each([dailyGoalsClient, voyagesClient])("mounted page RPC reads follow the current client after service replacement", async (makeClient) => {
   const calls: string[] = [];
   const service = (name: string) => ({ rpc: () => ({ snapshot: async () => { calls.push(name); return {}; } }) });
   let client = service("before");

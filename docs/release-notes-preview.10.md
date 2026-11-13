@@ -40,7 +40,7 @@ separate from other coding-tool credentials and sessions.
   Scores are not calibrated confidence. There are **no coins, XP, distance,
   inventory or other rewards**; personal quests remain separate.
 
-See [native daily quest guidance](native-daily-quests.md) for schema, privacy,
+See [daily goals](native-daily-goals.md) (which replaced daily quests) for schema, privacy,
 retention, consent and recovery details.
 
 ## Candidate provenance
