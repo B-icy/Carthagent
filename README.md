@@ -185,9 +185,10 @@ Experimental software may still contain bugs; read its release notes first.
 
 ## Release status
 
-**1.1.0 is the current stable release** (npm `latest`, `ctg update` on the
-stable channel). It makes the native console the default for everyone and
-carries everything from the 1.1.0 betas. Upgrading from 1.0.7 changes the
+**1.1.1 is the current stable release** (npm `latest`, `ctg update` on the
+stable channel): daily goals, `--agent` for headless runs and reliability fixes;
+see the [1.1.1 release notes](docs/release-notes-1.1.1.md). The 1.1 line makes
+the native console the default for everyone. Upgrading from 1.0.7 changes the
 console, the profile location and the Node floor; read the
 [1.1.0 release notes](docs/release-notes-1.1.0.md) first.
 
