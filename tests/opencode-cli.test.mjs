@@ -1579,3 +1579,28 @@ test('--agent/--mode selects the native agent for new headless sessions and skip
   await assert.rejects(runtime.run({ mode: 'headless', options: { agent: 'nope' }, prompt: task }), /Unknown agent "nope"/);
   await assert.rejects(runtime.run({ mode: 'headless', options: { agent: 'quick', continue: true }, prompt: task }), /applies to new sessions/);
 });
+
+test('Ctrl+C in a headless run says "Interrupted", how to continue, and exits 130', async t => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const cwd = mkdtempSync(join(tmpdir(), 'ctg-opencode-ctrl-c-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const capture = ioCapture();
+  const runtime = await createOpenCodeCliRuntime({ cwd, stdout: { write() {} }, io: capture.io, native: {
+    runtime: {}, service: { ensureService: async () => ({ url: 'http://127.0.0.1:1', headers: {} }) },
+    headless: { runHeadless: async (_service, _workspace, _prompt, options) => {
+      setImmediate(() => process.emit('SIGINT'));
+      await new Promise(resolve => options.signal.addEventListener('abort', resolve, { once: true }));
+      return { session: { id: 'ses_ctrl_c' }, messages: [], outcome: 'interrupted', terminal: true, error: 'aborted' };
+    } },
+    clientFactory: async () => ({ event: { subscribe: () => ({ async *[Symbol.asyncIterator]() { } }) }, session: {
+      get: async () => ({ id: 'ses_ctrl_c', outcome: 'interrupted' }), messages: async () => ({ data: [] }),
+    } }),
+  } });
+  assert.equal(await runtime.run({ mode: 'headless', options: { prompt: 'long task', print: true }, prompt: 'long task' }), 130);
+  const stderr = capture.output.stderr.join('\n');
+  assert.match(stderr, /^Interrupted\. Work done so far is saved/m);
+  assert.match(stderr, /ctg --print --session ses_ctrl_c "Continue the task"/);
+  assert.doesNotMatch(stderr, /Native run failed/);
+});
