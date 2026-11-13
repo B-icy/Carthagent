@@ -13,6 +13,7 @@ import { createShipRpcHandlers } from './server/ship-rpc';
 import { registerVoyagesRpc } from './server/voyages-rpc';
 import { registerDailySourceRpc } from './server/daily-source-rpc';
 import { registerDailyGoals } from './server/daily-goals';
+import { registerSessionGoals } from './server/session-goal';
 import { registerShipAgents, registerShipSkills } from './server/ship-agents';
 
 export async function setupCarthagent(
@@ -50,6 +51,7 @@ export async function setupCarthagent(
       const dailySource = await registerDailySourceRpc(context);
       cleanups.push(() => dailySource.dispose());
       cleanups.push(await registerDailyGoals(context));
+      cleanups.push(await registerSessionGoals(context));
       const shipHandlers = createShipRpcHandlers(context);
       const registration = await context.rpc.register(Carthagent, {
         health: async () => ({

@@ -3,7 +3,7 @@ export type CommandId =
   | "help" | "resume" | "new" | "restart" | "theme" | "model" | "thinking"
   | "compact" | "autocompact" | "review" | "export" | "copy" | "stats"
   | "clear" | "abort" | "raw" | "guide" | "workflow" | "architecture" | "evidence"
-  | "login" | "account" | "usage" | "billing" | "logout-cloud" | "archive" | "demo" | "voyages" | "quests"
+  | "login" | "account" | "usage" | "billing" | "logout-cloud" | "archive" | "demo" | "voyages" | "quests" | "goal"
   | "ctg-workspace" | "ctg-open" | "ctg-preview" | "ctg-review" | "ctg-worktree" | "ctg-task";
 
 export interface CarthagentCommand {
@@ -40,6 +40,7 @@ export const COMMANDS: readonly CarthagentCommand[] = [
   { id: "stats", name: "stats", hostSlash: true, description: "This session's tokens and cost" },
   { id: "clear", name: "clear", description: "Clear the screen; history is kept" },
   { id: "abort", name: "abort", description: "Stop the running turn" },
+  { id: "goal", name: "goal", args: "[<objective>|resume|clear]", submitSlash: true, description: "Keep working on an objective across turns until it is done" },
   { id: "raw", name: "raw", advanced: true, args: "<prompt>", description: "Advanced: send without delivery framing" },
   { id: "guide", name: "guide", advanced: true, args: "[task]", description: "Advanced: toggle delivery framing" },
   { id: "workflow", name: "workflow", description: "Delivery plan steps and progress" },
