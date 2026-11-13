@@ -106,7 +106,7 @@ export function createVoyagesState({ api, changed = (_state) => {}, now = Date.n
         await api.equip({ version: snapshot.profile.version, slot: item.slot, item: item.itemKey }, networkSignal(tx.signal));
         if (!tx.live()) return;
         await load(tx);
-        if (tx.live()) state.notice = "Equipment saved and refreshed.";
+        if (tx.live()) state.notice = `Equipped ${item.name}.`;
       });
     },
     purchase(item, confirm) {
@@ -126,7 +126,7 @@ export function createVoyagesState({ api, changed = (_state) => {}, now = Date.n
         await api.purchase({ quoteId: quote.id }, networkSignal(tx.signal));
         if (!tx.live()) return;
         await load(tx);
-        if (tx.live()) state.notice = "Purchase receipt received; authoritative inventory refreshed.";
+        if (tx.live()) state.notice = `Bought ${item.name} for ${quote.price} coins. Press Enter on it to equip.`;
       });
     },
     retry(confirm) {
@@ -136,7 +136,7 @@ export function createVoyagesState({ api, changed = (_state) => {}, now = Date.n
         await api.retryPurchase({ quoteId: pending.quoteId }, networkSignal(tx.signal));
         if (!tx.live()) return;
         await load(tx);
-        if (tx.live()) state.notice = "Purchase replay receipt received; inventory refreshed.";
+        if (tx.live()) state.notice = "Pending purchase resolved; your items are up to date.";
       });
     },
   };
@@ -167,6 +167,19 @@ export function handleVoyagesEvent(controller, event, location, closeDialog = ()
   controller.invalidate();
   closeDialog();
   if (action === 'refresh') return controller.refresh();
+}
+
+/**
+ * Key auto-repeat after a confirm dialog closes lands on the next action
+ * (Buy -> Equip). Ignore item actions briefly after a dialog-backed action ends.
+ */
+export const ACTION_SETTLE_MS = 600;
+export function createActionGuard(now = Date.now, settleMs = ACTION_SETTLE_MS) {
+  let until = 0;
+  return {
+    settle() { until = now() + settleMs; },
+    ready() { return now() >= until; },
+  };
 }
 
 export function canEquip(snapshot, item) {

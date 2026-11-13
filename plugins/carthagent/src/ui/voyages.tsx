@@ -5,7 +5,7 @@ import { useTerminalDimensions } from "@opentui/solid";
 import { clickSelect, createSelectMemory, wheelSelect } from "./select-mouse.js";
 import { usePlugin } from "@opencode/plugin/tui";
 import { voyagesClient, type VoyagesSnapshot, type VoyagesProfile, type VoyagesItem, type VoyagesQuote } from "./client.js";
-import { canEquip, createVoyagesState, handleVoyagesEvent, voyagesCatalogLabel, voyagesEventAction } from "./voyages-state.mjs";
+import { canEquip, createActionGuard, createVoyagesState, handleVoyagesEvent, voyagesCatalogLabel, voyagesEventAction } from "./voyages-state.mjs";
 import { voyagesAppearance, voyagesSlots, type VoyagesSlot } from "../voyages-rpc.js";
 import { VoyagesPreview } from "./voyages-preview.js";
 
@@ -61,6 +61,14 @@ export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "
     context.ui.dialog.clear();
   };
   const confirm = (title: string, message: string, label = "Confirm") => ownDialog(() => context.ui.dialog.confirm({ title, message, label: { confirm: label, cancel: "Cancel" } }));
+  // Spending coins or changing equipment: Cancel has focus so a stray Enter never commits.
+  const confirmSafe = (title: string, message: string, label: string) => ownDialog(async () => await context.ui.dialog.select({
+    title, current: "cancel",
+    options: [
+      { title: "Cancel", value: "cancel", description: "" },
+      { title: label, value: "confirm", description: message.replace(/\n/g, " · ") },
+    ],
+  }) === "confirm");
   const customize = () => controller.customize(async (profile: VoyagesProfile, live: () => boolean) => {
     const field = await ownDialog(() => context.ui.dialog.select({ title: "Customize your captain", options: [
       { title: "Captain name", value: "name" }, { title: "Ship name", value: "shipName" },
@@ -79,13 +87,16 @@ export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "
     return { [key]: value };
   }, (_profile: VoyagesProfile, patch: Record<string, string>) => confirm("Save customization?", Object.entries(patch).map(([key, value]) => `${key === "shipName" ? "Ship name" : key[0].toUpperCase() + key.slice(1)}: ${value}`).join("\n"), "Save")).finally(() => setAppearance({}));
   const singular: Record<VoyagesSlot, string> = { hairStyle: "hairstyle", hat: "hat", shirt: "top", bottoms: "bottoms", shoes: "shoes", pet: "companion", hull: "hull", sail: "sail", setting: "harbour" };
-  const equip = (item: VoyagesItem) => controller.equip(item, () => confirm("Equip this item?", `${item.name}\nReplaces your current ${singular[item.slot]}.`, "Equip"));
-  const purchase = (item: VoyagesItem) => controller.purchase(item, (quote: VoyagesQuote, profile: VoyagesProfile) => confirm("Buy this item?", `${item.name}\n${quote.price} coins · Balance after purchase: ${profile.coins - quote.price} coins`, "Buy"));
+  const equip = (item: VoyagesItem) => controller.equip(item, () => confirmSafe("Equip this item?", `${item.name}\nReplaces your current ${singular[item.slot]}.`, "Equip"));
+  const purchase = (item: VoyagesItem) => controller.purchase(item, (quote: VoyagesQuote, profile: VoyagesProfile) => confirmSafe("Buy this item?", `${item.name}\n${quote.price} coins · Balance after purchase: ${profile.coins - quote.price} coins`, "Buy"));
   const retry = () => controller.retry((pending: NonNullable<VoyagesSnapshot["pending"]>) => confirm("Resolve pending purchase?", `Outcome unknown: ${pending.item}\n${pending.price} coins · quote ${pending.quoteId}\nReplay the server's SAME saved quote/key pair only. This does not create a new purchase key. Cancel keeps it pending.`, "Retry same purchase"));
+  const actionGuard = createActionGuard();
   const chooseItem = async (item: VoyagesItem) => {
-    if (view().busy) return;
-    if (view().snapshot && canEquip(view().snapshot, item)) await equip(item);
-    else if (item.price !== null && item.price <= (view().snapshot?.profile.coins ?? 0)) await purchase(item);
+    if (view().busy || !actionGuard.ready()) return;
+    try {
+      if (view().snapshot && canEquip(view().snapshot, item)) await equip(item);
+      else if (item.price !== null && item.price <= (view().snapshot?.profile.coins ?? 0)) await purchase(item);
+    } finally { actionGuard.settle(); }
   };
   type Action = { name: string; description: string; value: string };
   const options = (): Action[] => {

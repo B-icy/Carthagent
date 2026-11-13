@@ -122,7 +122,7 @@ test("same-account reload keeps the chosen category and its window; a credential
 });
 
 // Catalog item IDs are shared by every account, so an item ID alone never proves the reload belongs to the same captain.
-async function identityFixture(accountKey: () => string | undefined) {
+async function identityFixture(accountKey: () => string | undefined, dialogOverrides: Record<string, unknown> = {}) {
   const writes: string[] = [];
   let cleared = 0;
   let listener: ((event: { details: { type: string; data?: unknown } }) => void) | undefined;
@@ -138,7 +138,7 @@ async function identityFixture(accountKey: () => string | undefined) {
       quote: async () => { writes.push("quote"); return { quote }; }, equip: async () => writes.push("equip"), purchase: async () => writes.push("purchase"), retryPurchase: async () => writes.push("retryPurchase"), customize: async () => writes.push("customize"),
     }) },
     keymap: { layer: () => {}, mode: { current: () => "base" } },
-    ui: { router: { navigate: () => writes.push("navigate") }, dialog: { clear: () => { cleared++; }, confirm: () => new Promise(() => {}) } },
+    ui: { router: { navigate: () => writes.push("navigate") }, dialog: { clear: () => { cleared++; }, confirm: () => new Promise(() => {}), select: () => new Promise(() => {}), ...dialogOverrides } },
   } as unknown as Context;
   const app = await testRender(() => <PluginContextProvider value={context}><VoyagesPage section="equipment" /></PluginContextProvider>, { width: 110, height: 36 });
   const settle = async () => { for (let i = 0; i < 12; i++) { await Promise.resolve(); await app.renderOnce(); } };
@@ -256,4 +256,17 @@ test("/voyages claim opens the reward preview and still waits for explicit confi
     for (let i = 0; i < 12; i++) { await Promise.resolve(); await app.renderOnce(); }
     expect(calls).toEqual([`preview:${JSON.stringify({ sessionID: "s1" })}`, "confirm:+25 coins · +100 XP · +1 km"]);
   } finally { app.renderer.destroy(); }
+});
+
+test("Buy asks with Cancel focused, so a stray Enter spends nothing", async () => {
+  const asked: Array<{ current?: string; options: Array<{ value: string }> }> = [];
+  // Answer like a user pressing Enter on whatever has focus.
+  const f = await identityFixture(() => "a".repeat(64), { select: async (input: { current?: string; options: Array<{ value: string }> }) => { asked.push(input); return input.current; } });
+  try {
+    f.list().selectCurrent();
+    await f.settle();
+    expect(asked[0]?.current).toBe("cancel");
+    expect(asked[0]?.options.map(o => o.value)).toEqual(["cancel", "confirm"]);
+    expect(f.writes).toEqual(["quote"]);
+  } finally { f.app.renderer.destroy(); }
 });
