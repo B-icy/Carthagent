@@ -5,7 +5,7 @@ import type { Context } from '@opencode/plugin/promise/plugin';
 import { CloudClient, cloudControlUrl } from '../../../../lib/cloud/client.mjs';
 import { atomicWrite, runtimePaths } from '../../../../lib/opencode/runtime.mjs';
 import { addProgress, readProgress, toolGoalProgress, utcDay, DAILY_GOAL_METRICS } from '../daily-goals.mjs';
-import { DailyGoals, type DailyGoal, type DailyGoalCompleted, type DailyGoalsSnapshot } from '../daily-goals-rpc';
+import { DailyGoals, type DailyGoal, type DailyGoalCompleted, type DailyGoalTier, type DailyGoalsSnapshot } from '../daily-goals-rpc';
 
 type Metrics = Record<string, number>;
 type Progress = { day: string; metrics: Metrics };
@@ -17,6 +17,9 @@ class Failure extends Error {
   constructor(code: string, status = 0) { super(code); this.code = code; this.status = status; }
 }
 
+const TIERS: readonly DailyGoalTier[] = ['normal', 'bigger', 'stretch'];
+// Servers before tiers (migration 008) send no tier: those goals are normal.
+const tierOf = (value: unknown): DailyGoalTier => { if (value === undefined) return 'normal'; if (!TIERS.includes(value as DailyGoalTier)) throw new Failure('invalid_response'); return value as DailyGoalTier; };
 const MAX_PREVIOUS_BYTES = 2_000_000;
 const name = (tool: string) => String(tool).replace(/^carthagent[._]/, '');
 const record = (value: unknown): Record<string, unknown> => { if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Failure('invalid_response'); return value as Record<string, unknown>; };
@@ -29,13 +32,13 @@ function goals(body: Record<string, unknown>): DailyGoal[] {
     const g = record(value);
     if (!DAILY_GOAL_METRICS.includes(g.metric as string) || typeof g.completed !== 'boolean') throw new Failure('invalid_response');
     const target = int(g.target, 1);
-    return { id: str(g.id, 40), metric: g.metric as DailyGoal['metric'], title: str(g.title, 80), target, progress: Math.min(target, int(g.progress)), completed: g.completed, coins: int(g.coins), xp: int(g.xp) };
+    return { id: str(g.id, 40), metric: g.metric as DailyGoal['metric'], tier: tierOf(g.tier), title: str(g.title, 80), target, progress: Math.min(target, int(g.progress)), completed: g.completed, coins: int(g.coins), xp: int(g.xp) };
   });
 }
 function completedGoals(body: Record<string, unknown>): DailyGoalCompleted[] {
   if (body.completed === undefined) return [];
   if (!Array.isArray(body.completed) || body.completed.length > 10) throw new Failure('invalid_response');
-  return body.completed.map(value => { const c = record(value); return { id: str(c.id, 40), title: str(c.title, 80), coins: int(c.coins), xp: int(c.xp) }; });
+  return body.completed.map(value => { const c = record(value); return { id: str(c.id, 40), tier: tierOf(c.tier), title: str(c.title, 80), coins: int(c.coins), xp: int(c.xp) }; });
 }
 
 /**

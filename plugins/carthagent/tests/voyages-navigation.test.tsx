@@ -12,7 +12,7 @@ import { VoyagesNavigation } from "../src/ui/voyages-navigation.js";
 
 const profile = { profile: { name: "Test captain", shipName: "Test vessel", coins: 10, level: 2, totalXp: 150 } };
 const slate = { day: "2026-10-30", endsAt: "2026-10-31T00:00:00Z", coins: 10, level: 1, goals: [
-  { id: "lines-20", metric: "lines", title: "Change 20 lines of code", target: 20, progress: 3, completed: false, coins: 10, xp: 50 },
+  { id: "lines-20", metric: "lines", tier: "bigger", title: "Change 20 lines of code", target: 20, progress: 3, completed: false, coins: 10, xp: 50 },
   { id: "reviews-1", metric: "reviews", title: "Run a code review", target: 1, progress: 1, completed: true, coins: 10, xp: 50 },
 ] };
 

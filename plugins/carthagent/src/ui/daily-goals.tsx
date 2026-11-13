@@ -4,7 +4,7 @@ import { TextAttributes } from "@opentui/core";
 import { usePlugin } from "@opencode/plugin/tui";
 import { dailyGoalsClient } from "./client.js";
 import type { DailyGoalsSnapshot } from "../daily-goals-rpc.js";
-import { goalBar, goalProgressLabel, goalsReset } from "../daily-goals.mjs";
+import { goalBar, goalProgressLabel, goalTierLabel, goalsReset } from "../daily-goals.mjs";
 import { voyagesEventAction } from "./voyages-state.mjs";
 
 const errorText = (code: string) => /auth|credential|token|unauthorized/.test(code) ? "Sign in to Carthagent Cloud to track daily goals (/login)."
@@ -55,13 +55,14 @@ export function DailyGoalsPage(props: { sessionID?: string }) {
       <box flexGrow={1} />
       <Show when={snapshot()}>{s => <text fg={context.theme.text.muted}>{s().coins} coins · Level {s().level} · {goalsReset(s().endsAt, clock())}</text>}</Show>
     </box>
-    <text flexShrink={0} fg={context.theme.text.muted}>Counted automatically from your ctg sessions. Each goal pays once a day.</text>
+    <text flexShrink={0} fg={context.theme.text.muted}>Counted automatically from your ctg sessions. Each goal pays once a day; ★ goals are bigger and pay more.</text>
     <box flexDirection="column" flexGrow={1} minHeight={0} overflow="hidden">
       <Show when={busy() && !snapshot()}><text flexShrink={0} marginTop={1} fg={context.theme.text.muted}>Loading…</text></Show>
       <Show when={error()}><text flexShrink={0} marginTop={1} fg={context.theme.text.feedback.warning.base}>{error()}</text></Show>
       <For each={snapshot()?.goals ?? []}>{goal => <box flexDirection="column" flexShrink={0} marginTop={1} paddingX={2} backgroundColor={context.theme.background.raised.base}>
         <box flexDirection="row" flexShrink={0}>
           <text flexShrink={0} fg={goal.completed ? context.theme.text.feedback.success.base : context.theme.text.base} attributes={TextAttributes.BOLD}>{goal.completed ? "✓ " : "○ "}{goal.title}</text>
+          <Show when={goalTierLabel(goal)}><text flexShrink={0} fg={goal.tier === "stretch" ? context.theme.text.feedback.warning.base : context.theme.text.action.primary.base} attributes={TextAttributes.BOLD}>{`  ★ ${goalTierLabel(goal)}`}</text></Show>
           <box flexGrow={1} />
           <text flexShrink={0} fg={context.theme.text.muted}>+{goal.coins} coins · +{goal.xp} XP</text>
         </box>

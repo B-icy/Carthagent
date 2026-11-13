@@ -119,6 +119,12 @@ export function goalsReset(endsAt, now = Date.now()) {
   return minutes === 0 ? 'Resetting…' : `New goals in ${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
+/** "Bigger" / "Stretch" badge for goals that rolled a larger target and reward. */
+export function goalTierLabel(goal) {
+  return goal?.tier === 'stretch' ? 'Stretch' : goal?.tier === 'bigger' ? 'Bigger' : '';
+}
+
 export function completionMessage(goal) {
-  return `Daily goal done: ${goal.title} · +${goal.coins} coins, +${goal.xp} XP`;
+  const tier = goalTierLabel(goal);
+  return `${tier ? `${tier} goal` : 'Daily goal'} done: ${goal.title} · +${goal.coins} coins, +${goal.xp} XP`;
 }
