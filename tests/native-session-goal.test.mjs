@@ -150,3 +150,21 @@ test('only the plugin instance for the session\'s own workspace continues a goal
   assert.deepEqual(prompts.map(p => p.directory), ['/repo/app'], 'exactly one continuation, from the owning workspace');
   assert.equal(store.get('goal/s1').turns, 1);
 });
+
+test('goal_update is a direct tool only, never callable from the code tool when no goal is active', async () => {
+  const { registerSessionGoals } = await jiti.import('../plugins/carthagent/src/server/session-goal.ts');
+  const added = [];
+  const dispose = await registerSessionGoals({
+    location: { directory: '/repo' },
+    storage: { get: async () => undefined, set: async () => {}, remove: async () => {} },
+    session: { get: async () => ({ location: { directory: '/repo' } }), prompt: async () => {}, hook: async () => ({ dispose: async () => {} }) },
+    tool: { transform: async fn => { fn({ namespace() {}, add: def => added.push(def) }); return { dispose: async () => {} }; } },
+    rpc: { register: async () => ({ dispose: async () => {}, events: { emit: async () => {} } }) },
+    event: { subscribe: ({ signal }) => ({ async *[Symbol.asyncIterator]() { await new Promise(r => signal.addEventListener('abort', r)); } }) },
+  });
+  await dispose();
+  const goal = added.find(def => def.name === 'goal_update');
+  assert.ok(goal);
+  // Hiding is done per turn in the context hook, which only filters direct tools.
+  assert.equal(goal.options.codemode, false);
+});
