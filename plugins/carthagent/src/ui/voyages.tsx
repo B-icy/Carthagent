@@ -200,7 +200,7 @@ export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "
         <text flexShrink={0} fg={context.theme.text.base} attributes={TextAttributes.BOLD}>{snapshot().profile.name} · {snapshot().profile.shipName}</text>
         <Show when={previewItem()} fallback={<>
           <text flexShrink={0} fg={context.theme.text.muted}>{snapshot().profile.xpIntoLevel} / {snapshot().profile.xpForLevel} XP to next level · {snapshot().profile.km} km sailed</text>
-          <text flexShrink={0} fg={context.theme.text.muted}>Earn coins and XP with verified Ship deliveries.</text>
+          <text flexShrink={0} fg={context.theme.text.muted}>Earn coins and XP from daily goals (/quests) and verified Ship deliveries.</text>
         </>}>{item => <>
           <text flexShrink={0} fg={context.theme.text.base}>{voyagesCatalogLabel(snapshot(), item())}</text>
           <text flexShrink={0} fg={context.theme.text.muted}>{snapshot().profile.config[item().slot] === item().itemKey ? "Currently equipped" : !item().available ? "Currently unavailable" : !item().eligible ? item().reason ?? "Unlock this item through your voyages" : item().price === null && !canEquip(snapshot(), item()) ? "Not available to buy" : !canEquip(snapshot(), item()) && item().price! > snapshot().profile.coins ? `Earn ${item().price! - snapshot().profile.coins} more coins to buy this item` : "Preview · choose Equip or Buy to save"}</text>

@@ -38,7 +38,7 @@ export function patchLines(patch) {
   return count;
 }
 
-const TEST_COMMAND = /(^|[\s;&|(])((npm|pnpm|yarn|bun)( run)? test(:[\w:-]+)?\b|npx (vitest|jest|playwright test|mocha)\b|node (--test|--experimental-test)\b|(vitest|jest|mocha|pytest|phpunit|rspec)\b|(python3?|uv run|poetry run) -m (pytest|unittest)\b|go test\b|cargo (test|nextest)\b|dotnet test\b|mvn( -\S+)* (test|verify)\b|gradlew? (test|check)\b|make (test|check)\b|swift test\b|deno test\b|mix test\b|bundle exec (rspec|rake test)\b)/;
+const TEST_COMMAND = /(^|[\s;&|(])((npm|pnpm|yarn|bun)( run)? test(:[\w:-]+)?\b|npx (vitest|jest|playwright test|mocha)\b|node( (-r|--import|--require|--loader|--env-file(-if-exists)?)(=| )\S+| --(?!test)[\w-]+(=\S+)?)* --test\b|(vitest|jest|mocha|pytest|phpunit|rspec)\b|(python3?|uv run|poetry run) -m (pytest|unittest)\b|uv run pytest\b|go test\b|cargo (test|nextest)\b|dotnet test\b|mvn( -\S+)* (test|verify)\b|gradlew? (test|check)\b|make (test|check)\b|swift test\b|deno test\b|mix test\b|bundle exec (rspec|rake test)\b)/;
 const COMMIT_COMMAND = /(^|[\s;&|(])git( -C \S+)?( -c \S+)* commit\b/;
 
 export const isTestCommand = command => TEST_COMMAND.test(text(command));
