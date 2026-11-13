@@ -75,7 +75,8 @@ export async function registerSessionGoals(ctx: Port) {
         name: GOAL_TOOL,
         description: 'Report the session /goal as done (achieved and checked) or blocked (needs the user). Only available while a /goal is active.',
         input: { type: 'object', additionalProperties: false, required: ['status', 'summary'], properties: { status: { type: 'string', enum: ['done', 'blocked'] }, summary: { type: 'string', minLength: 1, maxLength: 2000 } } } as Tool.ValueSchema<{ status: string; summary: string }>,
-        options: { namespace: 'carthagent' },
+        // Direct tool only: the per-turn hide below cannot reach the code tool's catalog.
+        options: { namespace: 'carthagent', codemode: false },
         execute: async (input, tool) => {
           const goal = await goals.update(tool.sessionID, input);
           return { content: goal?.status === 'done' ? 'Goal marked done. Stop here and give the user the summary.' : 'Goal marked blocked. Stop here and tell the user exactly what you need.' };
