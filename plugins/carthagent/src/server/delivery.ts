@@ -18,6 +18,7 @@ import { lockWorkspace, selectReport, assertActiveReport } from "../../../../lib
 import { enforceToolPolicy, requiresPlanApproval } from "./policy.ts"
 import { effectiveSessionOptions } from "../../../../lib/opencode/session-options.mjs"
 import { archiveContext } from "../../../../lib/context-archive.mjs"
+import { SMALL_LANE_LIMITS, shipRoute, smallLaneOverflow } from "../../../../lib/ship-route.mjs"
 import { probeDiagnostics } from "../../../../lib/probe-diagnostics.mjs"
 import { configuredAdvisor, inspectAdvice } from "../../../../lib/planning-advice.mjs"
 import { createShipJev } from "../../../../lib/ship-jev.mjs"
@@ -28,7 +29,7 @@ import { originalTask, shipGuidance } from "./ship-guidance.ts"
 import { archiveDeliveryExchanges, localToolName, normalizeDesignReview, shellProtection } from "./ship-context.mjs"
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- Existing workflow snapshots mirror evolving JS domain schemas. */
-type SessionState = { state: any; discovery: any; nudges: number; touched: boolean; budget: any; required: any[]; configError?: string; extraGuidance?: string; initialFiles: string[]; lastPrompt?: string; guidance?: string; writeCounts?: Record<string, number>; outcome?: string; cwd?: string; guidanceProfiles?: string[]; probeState?: { failures: number; family: string | null }; statusPoll?: { key: string; count: number }; contextBytes?: number; recovery?: Record<string, any>; initialFilesCaptured?: boolean; model?: { providerID: string; id: string } }
+type SessionState = { state: any; discovery: any; nudges: number; touched: boolean; budget: any; required: any[]; configError?: string; extraGuidance?: string; initialFiles: string[]; lastPrompt?: string; guidance?: string; writeCounts?: Record<string, number>; outcome?: string; cwd?: string; guidanceProfiles?: string[]; probeState?: { failures: number; family: string | null }; route?: { route: string; reason: string }; statusPoll?: { key: string; count: number }; contextBytes?: number; recovery?: Record<string, any>; initialFilesCaptured?: boolean; model?: { providerID: string; id: string } }
 type DeliveryOptions = Record<string, unknown>
 type Schema = Record<string, unknown>
 type DeliveryInput = Record<string, any>
@@ -155,6 +156,42 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
       } finally { release() }
     })
   }
+  /** Run declared checks with fresh fingerprints; shared by delivery_check and delivery_small. */
+  /* eslint-disable @typescript-eslint/no-explicit-any -- Check and evidence records mirror the JS delivery schema. */
+  async function runChecks(selected: any[], { cwd, data, tool, verification }: { cwd: string; data: SessionState; tool: RegisteredToolContext; verification: string }) {
+    const results: any[] = []
+    for (const check of selected) {
+      if (tool.signal.aborted) throw Error("Check cancelled before execution")
+      const identity = evidenceIdentity(data.state, check); data.state.status = "verifying"; data.state.verificationStarted = true; delete data.state.evidence[check.id]
+      let before: string
+      try { before = fingerprint(cwd, ["."]) }
+      catch (error) {
+        data.state.evidence[check.id] = { passed: false, ...identity, fingerprint: null, code: 1, outputTail: `Evidence scope error: ${error}` }
+        await persist(cwd, tool.sessionID, data)
+        throw Error(`Evidence scope error: ${error}. Call delivery_finish with status="blocked" and specific limitations rather than retrying.`)
+      }
+      await persist(cwd, tool.sessionID, data)
+      await tool.progress?.({ title: `Running ${check.id}`, description: JSON.stringify(check.argv) })
+      const dir = runDirectory(cwd, tool.sessionID, data.state.runId)
+      const result = await runCommand(check.argv, { cwd, timeoutSeconds: check.timeoutSeconds, signal: tool.signal, logPath: join(dir, `${check.id}-${randomUUID()}.log`) } as Parameters<typeof runCommand>[1])
+      let after: string
+      try { after = fingerprint(cwd, ["."]) }
+      catch (error) {
+        data.state.evidence[check.id] = { passed: false, ...identity, fingerprint: null, code: result.code, logPath: result.logPath, outputTail: `Post-check evidence scope error: ${error}\n${result.output.slice(-800)}` }
+        await persist(cwd, tool.sessionID, data)
+        throw Error(`Post-check evidence scope error: ${error}. Call delivery_finish with status="blocked" and specific limitations.`)
+      }
+      const passed = result.code === 0 && !result.timedOut && !result.cancelled && !result.outputLimit && before === after
+      data.state.evidence[check.id] = { passed, ...identity, executedRevision: data.state.revision, fingerprint: after, code: result.code, timedOut: result.timedOut, cancelled: result.cancelled, logPath: result.logPath, durationMs: result.durationMs, changedDuringCheck: before !== after, outputTail: result.output.slice(-1200) }
+      // The first execution in a run is its baseline; later receipts replace evidence only.
+      const baselines = (data.state.baselines ??= {}) as Record<string, unknown>
+      if (!baselines[check.id]) baselines[check.id] = { passed, code: result.code, checkDigest: identity.checkDigest, fingerprint: after, at: new Date().toISOString() }
+      results.push({ id: check.id, advisory: verification !== "required", ...data.state.evidence[check.id], outputTail: result.output })
+      await persist(cwd, tool.sessionID, data)
+    }
+    return results
+  }
+  /* eslint-enable @typescript-eslint/no-explicit-any */
   // The code-mode catalog drops the longest signatures first; pin the plan entry point so it is always listed.
   const add = (editor: Parameters<Parameters<Context["tool"]["transform"]>[0]>[0], name: string, description: string, input: Schema, execute: (input: DeliveryInput, toolContext: RegisteredToolContext) => Promise<{ content: string }>) => editor.add({
     name, description: `${description} Returns text; in code mode use JSON.parse(result) for JSON responses before reading fields. Plain-text messages are not JSON.`, input: input as Tool.ValueSchema<DeliveryInput>, execute: async (rawValue, tool) => {
@@ -184,6 +221,52 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
       await persist(cwd, tool.sessionID, data)
       return text({ plan: join(dir, "plan.d2"), report: join(dir, "report.json"), next: data.state.workflowMode === "standard" ? "Contract accepted; implement, verify all checks, review and finish." : "No code or commands yet. Validate, inspect, adversarially review, then approve the design." })
     }, true))
+    add(editor, "delivery_small", "Fast lane for a small edit (typo, rename, comment, wording, version bump; at most 3 files and 80 changed lines). action=start declares the goal, the files you will change and at least one check of kind test or runtime (static alone is rejected), then unlocks edits. action=finish runs every check fresh and records a verified handoff in one call. If the change grows past the fast lane it is moved to the full flow automatically.", O({
+      action: { type: "string", enum: ["start", "finish"] },
+      goal: short, files: A(S("Workspace-relative file you will change"), SMALL_LANE_LIMITS.files),
+      checks, change: { ...short, description: "finish: one-paragraph summary of what changed" }, limitations: A(short),
+    }, ["action"]), async (input, tool) => operate(tool.sessionID, async ({ cwd, data, options: opts }) => {
+      if (data.configError) throw Error(data.configError)
+      if (input.action === "start") {
+        if (opts.workflow === "strict" || opts.fastLane === false) throw Error("The fast lane is off for this session; use delivery_plan.")
+        if (data.state && !["verified", "blocked"].includes(data.state.status)) throw Error("A delivery is already active; continue it instead of starting the fast lane.")
+        if (!input.goal || !Array.isArray(input.files) || !input.files.length) throw Error("start needs goal and files (the 1-3 files you will change).")
+        if (!Array.isArray(input.checks) || !input.checks.length) throw Error("start needs at least one real check (a test, build, lint or a grep/node one-liner that proves the edit).")
+        const baseline = await laneSnapshot(cwd, tool.signal)
+        if (!baseline) throw Error("The fast lane needs a Git repository to measure the change; use delivery_plan.")
+        const plan = validatePlan(bindRequiredChecks({
+          goal: input.goal, assumptions: ["Fast lane: small edit"], artifacts: input.files, steps: ["Make the edit", "Run the checks"],
+          verification: "required", acceptance: [{ requirement: input.goal, checks: input.checks.map((c: { id: string }) => c.id) }], checks: input.checks,
+        }, data.required), cwd, { strictPaths: true })
+        data.state = { version: 1, workflowMode: "standard", reviewRequired: false, runId: randomUUID(), revision: (data.state?.revision || 0) + 1, plan, evidence: {}, status: "implementing", createdAt: new Date().toISOString(), stepStatus: {}, guidanceProfiles: data.guidanceProfiles || [], smallLane: { files: input.files, baseline, startedAt: new Date().toISOString() } }
+        data.discovery = newDiscovery(); const dir = runDirectory(cwd, tool.sessionID, data.state.runId)
+        mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, "plan.d2"), planD2WithProgress(data.state.plan, data.state.stepStatus))
+        await persist(cwd, tool.sessionID, data)
+        return text({ lane: "small", next: "Edits are unlocked. Make the change, then call delivery_small action=finish with a one-paragraph change summary." })
+      }
+      if (input.action !== "finish") throw Error("action must be start or finish")
+      const lane = data.state?.smallLane
+      if (!lane || data.state.lane === "full") throw Error("No fast-lane delivery is active; call delivery_small action=start, or continue the full flow.")
+      if (!input.change) throw Error("finish needs change: a one-paragraph summary of what changed.")
+      const current = await laneSnapshot(cwd, tool.signal)
+      const overflow = smallLaneOverflow(laneChanges(lane.baseline, current || {}), lane.files)
+      if (overflow.length) {
+        // Escalate, never fail open: the change now needs the full review gate.
+        data.state.lane = "full"; data.state.reviewRequired = true
+        await persist(cwd, tool.sessionID, data)
+        throw Error(`This change outgrew the fast lane (${overflow.join("; ")}). It is now a full delivery: run delivery_check id="all", delivery_review inspect then record, and delivery_finish.`)
+      }
+      const results = await runChecks(data.state.plan.checks, { cwd, data, tool, verification: "required" })
+      const failures = results.filter(r => !r.passed)
+      if (failures.length) throw Error(JSON.stringify({ failures, next: "Repair the actual failure, then call delivery_small action=finish again. Do not weaken the checks." }))
+      const hash = fingerprint(cwd, ["."])
+      const issues = completionIssues(data.state, cwd, hash)
+      if (Object.values(issues).some(items => items.length)) throw Error(`Cannot verify: ${JSON.stringify(issues)}`)
+      data.state.status = "verified"
+      data.state.handoff = { status: "verified", change: input.change, review: "Fast lane: small edit within declared files; checks ran fresh.", launch: "", limitations: input.limitations || [], lane: "small", verification: "required", advisory: false, advisoryFailures: [], fingerprint: hash, at: new Date().toISOString(), evidence: structuredClone(data.state.evidence), reviewEvidence: null }
+      await persist(cwd, tool.sessionID, data)
+      return text({ status: "verified", lane: "small", checks: results.map(r => ({ id: r.id, passed: r.passed, code: r.code })), note: "Evidence covers the declared checks. Give the user the summary and stop.", report: join(runDirectory(cwd, tool.sessionID, data.state.runId), "report.json") })
+    }))
     add(editor, "delivery_probe", "Bounded pre-plan version probe only; other APIs can be inspected with read.", O({ kind: { type: "string", enum: ["node-version", "npm-version"] } }), async (input, tool) => {
       const { cwd } = await scope(tool.sessionID)
       const argv = input.kind === "node-version" ? [process.execPath, "--version"] : [process.platform === "win32" ? "npm.cmd" : "npm", "--version"]
@@ -260,36 +343,7 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
       startImplementation(data.state, fingerprint(cwd, ["."]))
       const selected = input.id === "all" ? data.state.plan.checks : data.state.plan.checks.filter((c: { id: string }) => c.id === input.id)
       if (!selected.length) throw Error("Unknown check ID; use delivery_status or id=all")
-      const results = []
-      for (const check of selected) {
-        if (tool.signal.aborted) throw Error("Check cancelled before execution")
-        const identity = evidenceIdentity(data.state, check); data.state.status = "verifying"; data.state.verificationStarted = true; delete data.state.evidence[check.id]
-        let before: string
-        try { before = fingerprint(cwd, ["."]) }
-        catch (error) {
-          data.state.evidence[check.id] = { passed: false, ...identity, fingerprint: null, code: 1, outputTail: `Evidence scope error: ${error}` }
-          await persist(cwd, tool.sessionID, data)
-          throw Error(`Evidence scope error: ${error}. Call delivery_finish with status="blocked" and specific limitations rather than retrying.`)
-        }
-        await persist(cwd, tool.sessionID, data)
-        await tool.progress?.({ title: `Running ${check.id}`, description: JSON.stringify(check.argv) })
-        const dir = runDirectory(cwd, tool.sessionID, data.state.runId)
-        const result = await runCommand(check.argv, { cwd, timeoutSeconds: check.timeoutSeconds, signal: tool.signal, logPath: join(dir, `${check.id}-${randomUUID()}.log`) } as Parameters<typeof runCommand>[1])
-        let after: string
-        try { after = fingerprint(cwd, ["."]) }
-        catch (error) {
-          data.state.evidence[check.id] = { passed: false, ...identity, fingerprint: null, code: result.code, logPath: result.logPath, outputTail: `Post-check evidence scope error: ${error}\n${result.output.slice(-800)}` }
-          await persist(cwd, tool.sessionID, data)
-          throw Error(`Post-check evidence scope error: ${error}. Call delivery_finish with status="blocked" and specific limitations.`)
-        }
-        const passed = result.code === 0 && !result.timedOut && !result.cancelled && !result.outputLimit && before === after
-        data.state.evidence[check.id] = { passed, ...identity, executedRevision: data.state.revision, fingerprint: after, code: result.code, timedOut: result.timedOut, cancelled: result.cancelled, logPath: result.logPath, durationMs: result.durationMs, changedDuringCheck: before !== after, outputTail: result.output.slice(-1200) }
-        // The first execution in a run is its baseline; later receipts replace evidence only.
-        const baselines = (data.state.baselines ??= {}) as Record<string, unknown>
-        if (!baselines[check.id]) baselines[check.id] = { passed, code: result.code, checkDigest: identity.checkDigest, fingerprint: after, at: new Date().toISOString() }
-        results.push({ id: check.id, advisory: verification !== "required", ...data.state.evidence[check.id], outputTail: result.output })
-        await persist(cwd, tool.sessionID, data)
-      }
+      const results = await runChecks(selected, { cwd, data, tool, verification })
       const failures = results.filter(r => !r.passed && verification === "required")
       if (failures.length) throw Error(JSON.stringify({ failures, next: "Repair actual failures; do not weaken obligations." }))
       const hash = fingerprint(cwd, ["."]); const issues = completionIssues(data.state, cwd, hash)
@@ -457,6 +511,8 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
     const prior = data.state && !["verified", "blocked"].includes(data.state.status) ? data.guidanceProfiles || data.state.guidanceProfiles || [] : []
     data.guidanceProfiles = [...new Set([...prior, ...routed.map(profile => profile.id)])]
     data.lastPrompt = prompt
+    // Cheap rule-based routing (no model call); recorded so the route is visible in the report and tests.
+    data.route = shipRoute(prompt)
     if (!data.state || ["verified", "blocked"].includes(data.state.status)) data.discovery = newDiscovery(!looksInformational(prompt))
     data.touched = false
     data.statusPoll = undefined
@@ -485,7 +541,7 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
       imageInput = models.data.find(model => model.providerID === event.model.providerID && model.id === event.model.id)?.capabilities.input.includes("image")
     }
     const activeProfiles = profiles.filter(profile => (data.guidanceProfiles || data.state?.guidanceProfiles || []).includes(profile.id))
-    event.system.push({ type: "text", text: shipGuidance({ state: data.state, workflow: String(opts.workflow || "standard"), prompt: data.lastPrompt, profiles: activeProfiles, discovery: data.discovery, extraGuidance: data.extraGuidance, required: data.required, imageInput }) })
+    event.system.push({ type: "text", text: shipGuidance({ route: opts.fastLane === false ? undefined : data.route?.route, state: data.state, workflow: String(opts.workflow || "standard"), prompt: data.lastPrompt, profiles: activeProfiles, discovery: data.discovery, extraGuidance: data.extraGuidance, required: data.required, imageInput }) })
     if (data.budget.limits.tools || data.budget.limits.seconds || data.budget.limits.repairs) event.system.push({ type: "text", text: `Delivery budget: ${JSON.stringify(budgetSnapshot(data.budget))}. Reserve tools for verification/review/handoff; stop at exhaustion. Only the explicit delivery-budget-reset command authorizes a new budget.` })
     const checkpoint = discoveryCheckpoint(data.discovery)
     if (checkpoint) event.system.push({ type: "text", text: checkpoint })
@@ -598,6 +654,29 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
     await Promise.all(registrations.map(registration => registration.dispose()))
     serial.clear()
   }
+}
+
+/** Per-file added+deleted line counts against HEAD, plus untracked files. Undefined outside Git. */
+async function laneSnapshot(cwd: string, signal?: AbortSignal): Promise<Record<string, string> | undefined> {
+  const diff = await runCommand(["git", "diff", "--numstat", "--relative", "HEAD", "--", "."], { cwd, signal, timeoutSeconds: 15 } as Parameters<typeof runCommand>[1])
+  if (diff.code !== 0 || diff.timedOut || diff.cancelled) return undefined
+  const untracked = await runCommand(["git", "ls-files", "--others", "--exclude-standard", "--", "."], { cwd, signal, timeoutSeconds: 15 } as Parameters<typeof runCommand>[1])
+  if (untracked.code !== 0) return undefined
+  const files: Record<string, string> = {}
+  for (const line of diff.output.split("\n")) { const [added, deleted, ...path] = line.split("\t"); if (path.length) files[path.join("\t")] = `${added}\t${deleted}` }
+  for (const path of untracked.output.split("\n").map((p: string) => p.trim()).filter(Boolean)) {
+    let lines = 0
+    try { lines = readFileSync(join(cwd, path), "utf8").split("\n").length } catch { lines = 0 }
+    files[path] = `${lines}\t0\tnew`
+  }
+  return files
+}
+
+/** Files whose diff changed since the lane started, with their current changed-line count. */
+function laneChanges(before: Record<string, string>, after: Record<string, string>) {
+  const lines = (entry?: string) => { if (!entry) return 0; const [a, d] = entry.split("\t"); return (Number(a) || 0) + (Number(d) || 0) }
+  return [...new Set([...Object.keys(before), ...Object.keys(after)])].filter(path => before[path] !== after[path])
+    .map(path => ({ path, lines: Math.abs(lines(after[path]) - lines(before[path])) || lines(after[path]) }))
 }
 
 function requiresImplementationTool(name: string) {

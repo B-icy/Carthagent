@@ -1,5 +1,5 @@
 import type { Context } from '@opencode/plugin/promise/plugin';
-import { framePrompt, shouldFrame, unframe } from './framing.mjs';
+import { frameShipTask, shouldFrame, unframe } from './framing.mjs';
 import { SessionControls } from '../session-rpc';
 import { isShipAgent } from './ship-agents';
 import { effectiveSessionOptions } from '../../../../lib/opencode/session-options.mjs';
@@ -34,7 +34,10 @@ export async function registerSessionControls(ctx: Context) {
         delivery: options.delivery,
       }) || unframe(event.prompt.text) !== null) return;
       const original = event.prompt.text;
-      const framed = framePrompt(original);
+      // Small edits get the fast-lane template unless strict workflow, user validators or --no-fast-lane say otherwise.
+      const extra = options as { fastLane?: boolean; validators?: string };
+      const fastLane = extra.fastLane !== false && options.workflow !== 'strict' && !extra.validators;
+      const framed = frameShipTask(original, { fastLane });
       // Mentions refer to offsets in the original text. Drop only their display
       // ranges after rewriting; keep resolved files/agents/skills attached.
       for (const entries of [event.prompt.files, event.prompt.agents, event.prompt.skills]) {
