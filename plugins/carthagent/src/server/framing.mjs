@@ -15,12 +15,15 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { looksInformational } from '../../../../lib/delivery.mjs';
+import { shipRoute } from '../../../../lib/ship-route.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '../../../..');
 const TEMPLATE_PATH = join(ROOT, 'prompts', 'delivery.md');
+const SMALL_TEMPLATE_PATH = join(ROOT, 'prompts', 'delivery-small.md');
 
 let cached = null;
+let cachedSmall = null;
 
 export const FRAME_HINTS = ['Message carthagent…'];
 
@@ -44,7 +47,25 @@ export function framingTemplate(path = TEMPLATE_PATH) {
     if (cached == null) cached = readTemplate(TEMPLATE_PATH);
     return cached;
   }
+  if (path === SMALL_TEMPLATE_PATH) {
+    if (cachedSmall == null) cachedSmall = readTemplate(SMALL_TEMPLATE_PATH);
+    return cachedSmall;
+  }
   return readTemplate(path);
+}
+
+/** Fast-lane template for requests the cheap router calls small. */
+export function smallFramingTemplate() {
+  return framingTemplate(SMALL_TEMPLATE_PATH);
+}
+
+/**
+ * Frame a Ship task, picking the fast-lane template when the request reads as a
+ * small edit and the lane is allowed (standard workflow, no user validators).
+ */
+export function frameShipTask(task, { fastLane = true } = {}) {
+  const small = fastLane && shipRoute(task).route === 'small' && smallFramingTemplate();
+  return framePrompt(task, small || framingTemplate());
 }
 
 /** Expand the delivery template for a task. Falls back to the bare task text. */
@@ -59,10 +80,11 @@ export function unframe(text) {
   // Match the current template suffix first: the task itself may contain
   // blank lines (or even phase headings). Keep the legacy format fallback.
   const value = String(text);
-  const template = framingTemplate();
-  const parts = template.split('$@');
-  if (parts.length === 2 && value.startsWith(parts[0]) && value.endsWith(parts[1])) {
-    return value.slice(parts[0].length, parts[1] ? -parts[1].length : undefined).trim();
+  for (const template of [framingTemplate(), smallFramingTemplate()]) {
+    const parts = template.split('$@');
+    if (parts.length === 2 && value.startsWith(parts[0]) && value.endsWith(parts[1])) {
+      return value.slice(parts[0].length, parts[1] ? -parts[1].length : undefined).trim();
+    }
   }
   const m = value.match(/^Deliver this task in phases(?: with executable evidence)?:\s*([\s\S]*?)\n\n/);
   return m ? m[1].trim() : null;

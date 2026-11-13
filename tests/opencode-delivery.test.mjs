@@ -59,7 +59,7 @@ test('code-mode catalog always lists the delivery_plan entry point', async t => 
 test('OpenCode V2 registration exposes domain tools and returns complete cleanup', async t => {
   const h = host(t)
   const cleanup = await registerDelivery(h.ctx, { workflow: 'standard' })
-  assert.deepEqual([...h.tools.keys()].sort(), ['delivery_check', 'delivery_design', 'delivery_finish', 'delivery_plan', 'delivery_progress', 'delivery_review', 'delivery_status', 'delivery_probe', 'delivery_revise'].sort())
+  assert.deepEqual([...h.tools.keys()].sort(), ['delivery_check', 'delivery_design', 'delivery_finish', 'delivery_plan', 'delivery_progress', 'delivery_review', 'delivery_status', 'delivery_probe', 'delivery_revise', 'delivery_small'].sort())
   assert.deepEqual([...h.commands.keys()].sort(), ['delivery-budget-reset', 'delivery-budget-status'])
   assert.ok(h.hooks.has('prompt'))
   assert.ok(h.hooks.has('context'))

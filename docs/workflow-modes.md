@@ -10,6 +10,15 @@ Partial revisions merge omitted design/workflow object fields; supplied arrays r
 
 Graph navigation is permitted during discovery, returns pagination/coverage and supports file/container filtering. Absolute workspace file paths normalize; directory filters return actionable errors. Name-based call matches remain candidates rather than runtime resolution.
 
+## Fast lane (small edits)
+
+`lib/ship-route.mjs` routes a Ship request with rules only: `answer` (shared `looksInformational`), `small` (short, one or two files, a small kind of edit such as typo/rename/comment/wording/bump) or `full` (everything else, including sensitive areas: auth, sessions, secrets, payments/coins, migrations/schema/SQL, deploy/release/CI, deletes). A `small` route frames the task with `prompts/delivery-small.md`, which points the model at `delivery_small`:
+
+- `action:"start"` takes `goal`, 1–3 `files` and at least one test/runtime check, creates a required plan (no review step) and unlocks edits. It snapshots `git diff --numstat` so the change can be measured.
+- `action:"finish"` measures the change. Undeclared files, more than 3 files or more than 80 changed lines escalate it: the run becomes a full delivery with `reviewRequired`, and only `delivery_check` → `delivery_review` → `delivery_finish` can verify it. Otherwise every check runs fresh, and the run is recorded `verified` with `handoff.lane:"small"`.
+
+Off in strict workflow, with user-owned validators and with `--no-fast-lane`. It needs a Git repository.
+
 ## Four-arm local pilot
 
 One natural-user trade-validation task, identical bundled engine/model/dependencies, external 900-second/120-tool ceilings, 47 frozen checks:
