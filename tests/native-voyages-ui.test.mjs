@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { canEquip, createVoyagesState, handleVoyagesEvent, voyagesCatalogLabel, voyagesErrorCode, voyagesEventAction } from '../plugins/carthagent/src/ui/voyages-state.mjs';
+import { canEquip, createActionGuard, createVoyagesState, handleVoyagesEvent, voyagesCatalogLabel, voyagesErrorCode, voyagesEventAction } from '../plugins/carthagent/src/ui/voyages-state.mjs';
 
 const item = { item: 'hat:beanie', itemKey: 'beanie', name: 'Beanie', slot: 'hat', price: 5, requiresPurchase: true, available: true, eligible: true };
 const snapshot = () => ({ profile: { version: 2, name: 'Captain', shipName: 'Ship', coins: 10, config: { hat: 'none' }, owned: [] }, items: [{ ...item }] });
@@ -367,4 +367,25 @@ test('catalog labels: owned items show no price and mark the equipped one; shop 
   assert.match(voyagesCatalogLabel(snap, owned), /· equipped$/);
   const shop = { ...item, item: 'hat:crown', itemKey: 'crown', price: snap.profile.coins + 5, requiresPurchase: true };
   assert.match(voyagesCatalogLabel(snap, shop), new RegExp(`^Shop · .* · ${shop.price} coins · need 5 more$`));
+});
+
+test('purchase and equip notices name the item in plain words', async () => {
+  const f = fixture();
+  await f.controller.refresh();
+  await f.controller.purchase(item, async () => true);
+  assert.equal(f.view().notice, 'Bought Beanie for 5 coins. Press Enter on it to equip.');
+  const owned = fixture({ snapshot: async () => ({ ...snapshot(), profile: { ...snapshot().profile, owned: [item.item] } }) });
+  await owned.controller.refresh();
+  await owned.controller.equip(item, async () => true);
+  assert.equal(owned.view().notice, 'Equipped Beanie.');
+});
+
+test('a held Enter cannot chain Buy into Equip: item actions settle after each dialog', () => {
+  let now = 1000;
+  const guard = createActionGuard(() => now, 600);
+  assert.equal(guard.ready(), true);
+  guard.settle();
+  now += 100; assert.equal(guard.ready(), false, 'auto-repeat right after Buy is ignored');
+  now += 499; assert.equal(guard.ready(), false);
+  now += 1; assert.equal(guard.ready(), true, 'a deliberate press after the pause works');
 });
