@@ -6,7 +6,7 @@ import { PullRequests, type PullRequestRecord } from "../pull-request-rpc.js";
 import { Archive } from "../archive-rpc.js";
 import { Carthagent } from "../rpc.js";
 import { Voyages, type VoyagesSnapshot, type VoyagesProfile, type VoyagesItem, type VoyagesQuote } from "../voyages-rpc.js";
-import { DailyQuests, type DailyEvidence, type DailySnapshot, type DailyQuestDetail } from "../daily-quests-rpc.js";
+import { DailyGoals, type DailyGoalsSnapshot } from "../daily-goals-rpc.js";
 import { DailySource, type DailySourceReport } from "../daily-source-rpc.js";
 import { formatCloudAccount, formatCloudUsage } from "../../../../lib/cloud/client.mjs";
 
@@ -42,15 +42,10 @@ export function voyagesClient(context: RpcContext, selectedLocation?: SelectedLo
   };
 }
 
-export function dailyQuestsClient(context: RpcContext, selectedLocation?: SelectedLocation) {
-  const rpc = () => context.client.rpc(DailyQuests);
+export function dailyGoalsClient(context: RpcContext, selectedLocation?: SelectedLocation) {
+  const rpc = () => context.client.rpc(DailyGoals);
   return {
-    snapshot: (signal?: AbortSignal) => rpc().snapshot({}, requestOptions(context, selectedLocation, signal)) as Promise<DailySnapshot>,
-    detail: (input: { id: string }, signal?: AbortSignal) => rpc().detail(input, requestOptions(context, selectedLocation, signal)) as Promise<DailyQuestDetail>,
-    submit: (input: { accountKey: string; questId: string; id: string; consent: true; evidence: DailyEvidence }, signal?: AbortSignal) => rpc().submit(input, requestOptions(context, selectedLocation, signal)),
-    retry: (input: { accountKey: string; id: string }, signal?: AbortSignal) => rpc().retry(input, requestOptions(context, selectedLocation, signal)),
-    poll: (input: { id: string }, signal?: AbortSignal) => rpc().poll(input, requestOptions(context, selectedLocation, signal)),
-    forgetPayload: (input: { accountKey: string; id: string }, signal?: AbortSignal) => rpc().forgetPayload(input, requestOptions(context, selectedLocation, signal)),
+    snapshot: (signal?: AbortSignal) => rpc().snapshot({}, requestOptions(context, selectedLocation, signal)) as Promise<DailyGoalsSnapshot>,
   };
 }
 

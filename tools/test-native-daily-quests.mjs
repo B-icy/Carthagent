@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Real native RPC registration and source projection, with no cloud submission. */
+/** Real native RPC registration (daily goals, source projection), with no cloud request. */
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
@@ -13,24 +13,14 @@ const host = await nativeFixture({ plugin: process.argv[2] });
 try {
   await host.active();
   const rpc = (rpcID, method, input) => host.client.rpc.call({ rpcID, method, input, location: host.location }, host.request());
-  const daily = (method, input = {}) => rpc('carthagent.dailyQuests', method, input);
   const source = sessionID => rpc('carthagent.daily-source', 'report', { sessionID });
-  const authFailure = promise => assert.rejects(promise, error => {
-    assert.equal(error.type, 'dailyQuestError');
+  // This fixture has no managed device credential. The daily-goals read must fail
+  // with its declared auth error and never reach Voyages.
+  await assert.rejects(rpc('carthagent.dailyGoals', 'snapshot', {}), error => {
+    assert.equal(error.type, 'dailyGoalsError');
     assert.equal(error.data.code, 'authentication_required');
     return true;
   });
-  // This fixture has no managed device credential. All six real handlers must
-  // fail with their declared auth error, never reach an external API/provider.
-  await authFailure(daily('snapshot'));
-  await authFailure(daily('detail', { id: randomUUID() }));
-  await authFailure(daily('poll', { id: randomUUID() }));
-  await authFailure(daily('retry', { id: randomUUID(), accountKey: '0'.repeat(64) }));
-  await authFailure(daily('forgetPayload', { id: randomUUID(), accountKey: '0'.repeat(64) }));
-  await authFailure(daily('submit', { id: randomUUID(), questId: randomUUID(), accountKey: '0'.repeat(64), consent: true, evidence: {
-    projectId: randomUUID(), outcomeId: randomUUID(), runId: randomUUID(), revision: 'a'.repeat(40),
-    goal: '', change: '', checks: [], findings: [],
-  } }));
 
   const session = await host.client.session.create({ location: host.location, model: host.model, title: 'Daily source schema probe' }, host.request());
   assert.deepEqual((await source(session.id)).output, { source: null });
@@ -68,7 +58,7 @@ try {
   assert.equal(stale.freshness, 'stale');
   assert.equal(stale.checks[0].after, 'not_run');
   assert.equal(host.requests.length, 0, 'No model requests are authorized by this probe');
-  console.log(JSON.stringify({ runtime: host.runtimeIdentity.runtimeVersion, binarySha256: host.runtimeIdentity.binarySha256, dailyRegistration: 'passed', anyModeSourceSchema: 'passed', authFailures: 6, sourceOutputSchema: 'passed', staleProjection: 'passed', cloudSubmissions: 0, providerRequests: 0, productionAcceptance: false }));
+  console.log(JSON.stringify({ runtime: host.runtimeIdentity.runtimeVersion, binarySha256: host.runtimeIdentity.binarySha256, dailyGoalsRegistration: 'passed', anyModeSourceSchema: 'passed', authFailures: 1, sourceOutputSchema: 'passed', staleProjection: 'passed', cloudSubmissions: 0, providerRequests: 0, productionAcceptance: false }));
 } finally {
   await host.close();
 }

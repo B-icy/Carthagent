@@ -13,7 +13,9 @@ import { findNativeResumeSession } from "./ui/resume-session.mjs";
 import { cliConfigDirectory, cliConfigPath, readCliConfig, writeNativeTheme } from "./ui/host-state.js";
 import { WorkspacePage } from "./ui/workspace.js";
 import { VoyagesPage } from "./ui/voyages.js";
-import { DailyQuestsPage } from "./ui/daily-quests.js";
+import { DailyGoalsPage } from "./ui/daily-goals.js";
+import { DailyGoals, type DailyGoalCompleted } from "./daily-goals-rpc.js";
+import { completionMessage } from "./daily-goals.mjs";
 import { VoyagesNavigation } from "./ui/voyages-navigation.js";
 import { nativeNavigation } from "./ui/native-navigation.js";
 import { provisionNativeThemes } from "./ui/theme-provision.mjs";
@@ -28,15 +30,10 @@ const OPENCODE_BUILTIN_THEMES = new Set(["opencode", "tokyonight"]);
 export default Plugin.define({
   id: "carthagent.tui",
   setup(context) {
-    const questDrafts = new Map<string, Map<string, unknown>>();
     const unregister = context.ui.router.register({ name: "carthagent", render: ({ data }) => <WorkspacePage view={String(data?.view ?? "workspace")} refreshKey={String(data?.refresh ?? "")} sessionID={typeof data?.sessionID === "string" ? data.sessionID : undefined} returnSessionID={typeof data?.returnSessionID === "string" ? data.returnSessionID : undefined} /> });
     const cleanups = [unregister];
     cleanups.push(context.ui.router.register({ name: "voyages", render: ({ data }) => <VoyagesPage sessionID={typeof data?.sessionID === "string" ? data.sessionID : undefined} section={data?.section === "profile" || data?.section === "equipment" ? data.section : undefined} claim={data?.claim === true} /> }));
-    cleanups.push(context.ui.router.register({ name: "daily-quests", render: ({ data }) => <DailyQuestsPage drafts={questDrafts} sessionID={typeof data?.sessionID === "string" ? data.sessionID : undefined} questID={typeof data?.questID === "string" ? data.questID : undefined} /> }));
-    const clearQuestDrafts = () => { for (const drafts of questDrafts.values()) drafts.clear(); };
-    cleanups.push(clearQuestDrafts, context.data.listen(({ details }) => {
-      if (["credential.switched", "credential.updated", "provider.updated", "integration.updated", "server.connected", "server.disconnected"].includes(details.type)) clearQuestDrafts();
-    }));
+    cleanups.push(context.ui.router.register({ name: "daily-quests", render: ({ data }) => <DailyGoalsPage sessionID={typeof data?.sessionID === "string" ? data.sessionID : undefined} /> }));
     const navigation = nativeNavigation(context);
     if (navigation) cleanups.push(navigation.register({ name: "voyages", title: "Voyages", render: (input) => <VoyagesNavigation {...input} /> }));
     const lifecycle = new AbortController();
@@ -77,6 +74,10 @@ export default Plugin.define({
       notify: (message: string) => context.ui.toast.show({ message, variant: "success" }),
     });
     cleanups.push(context.data.on("session.execution.succeeded", (event) => { void rewardNotice.onSucceeded(event); }));
+    // A goal completed in any session: a short celebratory toast, nothing more.
+    cleanups.push(context.client.rpc(DailyGoals).events.on("completed", (event) => {
+      for (const goal of (event.data as { goals: DailyGoalCompleted[] }).goals) context.ui.toast.show({ message: completionMessage(goal), variant: "success" });
+    }, rpcEventOptions(context, lifecycle.signal)));
     const workspaceEvents = context.client.rpc(Workspace);
     cleanups.push(workspaceEvents.events.on("updated", (event) => {
       // Promise RPC exposes the server event envelope (including location)

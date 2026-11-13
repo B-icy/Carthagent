@@ -1,7 +1,6 @@
 import { voyagesErrorCode } from './voyages-state.mjs';
-import { questCopy, questStatus } from './quest-presentation.mjs';
 
-/** Read-only summaries only. Never retain recovery payloads, catalog or consent. */
+/** Read-only summaries only. Never retain recovery payloads, catalog or purchase state. */
 export function createVoyagesNavigationState({ profile, daily, changed = (_state) => {}, timeoutSignal = () => AbortSignal.timeout(15_000) }) {
   let generation = 0, active = false, disposed = false;
   let request = new AbortController();
@@ -29,12 +28,12 @@ export function createVoyagesNavigationState({ profile, daily, changed = (_state
         coins: account.profile.coins, level: account.profile.level, totalXp: account.profile.totalXp,
       };
       state.daily = {
-        day: assignments.slate.day, endsAt: assignments.slate.endsAt,
-        items: assignments.slate.items.map((quest) => ({ id: quest.id, title: questCopy(quest).title, status: quest.status === 'assessed_complete' ? quest.status : questStatus(quest, assignments.records) })),
+        day: assignments.day, endsAt: assignments.endsAt,
+        items: assignments.goals.map((goal) => ({ id: goal.id, title: goal.title, status: goal.completed ? 'Done' : `${Math.min(goal.progress, goal.target)}/${goal.target}` })),
       };
     } catch (error) {
       if (!disposed && active && generation === current) {
-        const code = error?.type === 'dailyQuestError' ? error.data?.code : voyagesErrorCode(error);
+        const code = error?.type === 'dailyGoalsError' ? error.data?.code : voyagesErrorCode(error);
         state.error = typeof code === 'string' && /^[a-z_]{1,64}$/.test(code) ? code : 'voyages_request_failed';
       }
     } finally {
