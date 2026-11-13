@@ -8,6 +8,7 @@ import { Carthagent } from "../rpc.js";
 import { Voyages, type VoyagesSnapshot, type VoyagesProfile, type VoyagesItem, type VoyagesQuote } from "../voyages-rpc.js";
 import { DailyGoals, type DailyGoalsSnapshot } from "../daily-goals-rpc.js";
 import { DailySource, type DailySourceReport } from "../daily-source-rpc.js";
+import { SessionGoals, type SessionGoal } from "../session-goal-rpc.js";
 import { formatCloudAccount, formatCloudUsage } from "../../../../lib/cloud/client.mjs";
 
 export { Workspace, SessionControls, PullRequests, Archive };
@@ -46,6 +47,17 @@ export function dailyGoalsClient(context: RpcContext, selectedLocation?: Selecte
   const rpc = () => context.client.rpc(DailyGoals);
   return {
     snapshot: (signal?: AbortSignal) => rpc().snapshot({}, requestOptions(context, selectedLocation, signal)) as Promise<DailyGoalsSnapshot>,
+  };
+}
+
+export function sessionGoalClient(context: RpcContext, selectedLocation?: SelectedLocation) {
+  const rpc = () => context.client.rpc(SessionGoals);
+  type R = Promise<{ goal: SessionGoal | null }>;
+  return {
+    get: (input: { sessionID: string }, signal?: AbortSignal) => rpc().get(input, requestOptions(context, selectedLocation, signal)) as R,
+    set: (input: { sessionID: string; objective: string; maxTurns: number }, signal?: AbortSignal) => rpc().set(input, requestOptions(context, selectedLocation, signal)) as R,
+    clear: (input: { sessionID: string }, signal?: AbortSignal) => rpc().clear(input, requestOptions(context, selectedLocation, signal)) as R,
+    resume: (input: { sessionID: string }, signal?: AbortSignal) => rpc().resume(input, requestOptions(context, selectedLocation, signal)) as R,
   };
 }
 

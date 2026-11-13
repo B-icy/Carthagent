@@ -192,6 +192,9 @@ the native console the default for everyone. Upgrading from 1.0.7 changes the
 console, the profile location and the Node floor; read the
 [1.1.0 release notes](docs/release-notes-1.1.0.md) first.
 
+`/goal <objective>` keeps a session working across turns until the objective is
+done or blocked, with a turn limit; see [/goal](docs/native-goal.md).
+
 `/quests` shows three simple [daily goals](docs/native-daily-goals.md) (e.g.
 "Change 20 lines of code", "Run your tests", "Run a code review") that rotate
 every day. `ctg` counts them automatically from your sessions in any mode and

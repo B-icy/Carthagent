@@ -7,6 +7,9 @@ import { nativeLoginProvider, nativeProviderName } from "../../../lib/opencode/p
 import { framePrompt } from "../../../lib/tui/framing.mjs";
 import { carthagentConfigPath, loadCarthagentConfig, resolveReviewMode, reviewKickoff, saveCarthagentConfig } from "../../../lib/review.mjs";
 import { COMMANDS, NATIVE_COMMAND_COLLISIONS, commandErrorMessage, helpOptions, helpSelectionTarget, pluginSlashAvailable } from "./ui/commands.js";
+import { sessionGoalClient } from "./ui/client.js";
+import { SessionGoals, type SessionGoal } from "./session-goal-rpc.js";
+import { goalStatusText, parseGoalCommand } from "./session-goal.mjs";
 import { Workspace, rpcEventOptions, sessionControls, workspaceClient, shipClient, archiveClient, cloudAccountText, cloudUsageText, archiveItemText } from "./ui/client.js";
 import { independentReviewText } from "./ui/workspace-live.js";
 import { findNativeResumeSession } from "./ui/resume-session.mjs";
@@ -78,6 +81,11 @@ export default Plugin.define({
     cleanups.push(context.client.rpc(DailyGoals).events.on("completed", (event) => {
       for (const goal of (event.data as { goals: DailyGoalCompleted[] }).goals) context.ui.toast.show({ message: completionMessage(goal), variant: "success" });
     }, rpcEventOptions(context, lifecycle.signal)));
+    // /goal finished, blocked or paused in any session: say so once.
+    cleanups.push(context.client.rpc(SessionGoals).events.on("changed", (event) => {
+      const goal = (event.data as { goal: SessionGoal | null }).goal;
+      if (goal && goal.status !== "active") context.ui.toast.show({ message: goalStatusText(goal), variant: goal.status === "done" ? "success" : "warning" });
+    }, rpcEventOptions(context, lifecycle.signal)));
     const workspaceEvents = context.client.rpc(Workspace);
     cleanups.push(workspaceEvents.events.on("updated", (event) => {
       // Promise RPC exposes the server event envelope (including location)
@@ -135,6 +143,26 @@ export default Plugin.define({
           if (arg) { toast("Usage: /voyages [claim].", "warning"); return; }
           context.ui.router.navigate({ type: "plugin", name: "daily-quests", data: { ...(sessionID ? { sessionID } : {}) } });
           return;
+        case "goal": {
+          const parsed = parseGoalCommand(arg);
+          const goals = sessionGoalClient(context, location);
+          if (parsed.action === "error") { toast(parsed.message, "warning"); return; }
+          if (!sessionID) {
+            // From home, a new objective starts its own session (selected model, default mode).
+            if (parsed.action !== "set") { toast("No session is open. Run /goal <objective> to start one, or open a session first.", "warning"); return; }
+            const created = await context.client.session.create({ location: { directory: location.directory }, title: parsed.objective.slice(0, 60), ...(selectedModel ? { model: { providerID: selectedModel.providerID, id: selectedModel.modelID, ...(selectedModel.variant ? { variant: selectedModel.variant } : {}) } } : {}) });
+            context.ui.router.navigate({ type: "session", sessionID: created.id });
+            const { goal } = await goals.set({ sessionID: created.id, objective: parsed.objective, maxTurns: parsed.maxTurns });
+            toast(`Goal set in a new session (up to ${goal?.maxTurns ?? parsed.maxTurns} turns). Esc pauses, /goal clear stops.`, "success");
+            return;
+          }
+          if (parsed.action === "status") { toast(goalStatusText((await goals.get({ sessionID })).goal ?? undefined), "info"); return; }
+          if (parsed.action === "clear") { await goals.clear({ sessionID }); toast("Goal cleared. Carthagent will not continue on its own.", "success"); return; }
+          if (parsed.action === "resume") { const { goal } = await goals.resume({ sessionID }); toast(goalStatusText(goal ?? undefined), "success"); return; }
+          const { goal } = await goals.set({ sessionID, objective: parsed.objective, maxTurns: parsed.maxTurns });
+          toast(`Goal set (up to ${goal?.maxTurns ?? parsed.maxTurns} turns). Carthagent keeps going until it is done; Esc pauses, /goal clear stops.`, "success");
+          return;
+        }
         case "quests":
           context.ui.router.navigate({ type: "plugin", name: "daily-quests", data: { ...(sessionID ? { sessionID } : {}) } });
           return;
