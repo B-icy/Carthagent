@@ -27,6 +27,9 @@ test('edits, writes and patches count lines; failed edits count nothing', () => 
 
 test('test runs count even when they fail; commits count only when they succeed', () => {
   for (const command of ['npm test', 'npm run test:unit', 'cd app && npx vitest run', 'node --test tests/*.test.mjs', 'pytest -q', 'python -m pytest', 'go test ./...', 'cargo test', 'bun test', 'yarn test']) assert.ok(isTestCommand(command), command);
+  // Seen live: flags before --test (IWF's real test script).
+  for (const command of ['node --env-file-if-exists=.env.test --import tsx --test tests/user-add.test.ts', 'node --import tsx --test', 'NODE_ENV=test node --test-reporter=dot --test', 'python3 -m pytest -x', 'uv run pytest']) assert.ok(isTestCommand(command), command);
+  for (const command of ['node scripts/build.mjs --testing', 'node --version', 'node server.js # test later']) assert.equal(isTestCommand(command), false, command);
   for (const command of ['npm install', 'cat test.txt', 'git commit -m test', 'ls tests', 'echo "attest"']) assert.equal(isTestCommand(command), false, command);
   assert.deepEqual(toolGoalProgress({ tool: 'shell', status: 'error', input: { command: 'npm test' } }), { tests: 1 });
   assert.deepEqual(toolGoalProgress({ tool: 'shell', status: 'completed', input: { command: 'git add -A && git commit -m "fix"' } }), { commits: 1 });
