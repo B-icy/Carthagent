@@ -194,7 +194,8 @@ console, the profile location and the Node floor; read the
 `/quests` shows three simple [daily goals](docs/native-daily-goals.md) (e.g.
 "Change 20 lines of code", "Run your tests", "Run a code review") that rotate
 every day. `ctg` counts them automatically from your sessions in any mode and
-pays 10 coins and 50 XP per goal; there is nothing to submit.
+pays 10 coins and 50 XP per goal (more for ★ bigger and stretch goals); there
+is nothing to submit.
 
 Every release must pass its exact installed-package gate before publication.
 Earlier migration findings and remaining platform caveats are in the
