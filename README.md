@@ -21,6 +21,9 @@ ctg login   # your own provider, or Carthagent Cloud hosted models
 ctg
 ```
 
+Something not working? `ctg doctor` checks Node, the runtime, the background
+service, connected providers and sign-in, and says how to fix what fails.
+
 Bring-your-own-key is free and permanently supported. Carthagent Cloud is optional hosted model access (listed as "Carthagent Ship" in 1.0.7). From source: `npm install -g --install-links=true github:B-icy/Carthagent#vX.Y.Z` (replace with a published tag).
 
 ## Verified or blocked
