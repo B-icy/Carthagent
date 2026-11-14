@@ -1,4 +1,5 @@
 import type { Context } from '@opencode/plugin/promise/plugin';
+import { trimHistoryMedia } from './history-media.mjs';
 import type { ConnectionInfo } from '@opencode/client';
 import type { Credential } from '@opencode/schema/credential';
 import type { SessionModelRequest } from '@opencode/plugin/promise/session';
@@ -396,6 +397,15 @@ export async function registerProviders(ctx: Context, options: ProviderRegistrat
     if (isManagedShipCredential(credential)) event.baseURL = cloudGatewayUrl(env);
   }, { providerID: EXPERIENTIAL_PROVIDER_ID });
   registrations.push(routeHook);
+
+  // Cloud rejects requests over the model's byte budget (request_too_large);
+  // old inline screenshots would otherwise be resent on every later turn.
+  const mediaBudget = await ctx.session.hook('context', async event => {
+    if (event.model.providerID !== EXPERIENTIAL_PROVIDER_ID) return;
+    const trimmed = trimHistoryMedia(event.messages);
+    if (trimmed.omitted) event.messages = trimmed.messages;
+  }, { providerID: EXPERIENTIAL_PROVIDER_ID });
+  registrations.push(mediaBudget);
 
   const managedRetry = await ctx.session.hook('retry', async event => {
     if (event.model.providerID !== EXPERIENTIAL_PROVIDER_ID) return;

@@ -633,8 +633,9 @@ test('provider registration rolls back every completed stage in reverse order af
     ['provider.transform', ['integration.transform']],
     ['hook:http.request', ['provider.transform', 'integration.transform']],
     ['hook:model.request', ['hook:http.request', 'provider.transform', 'integration.transform']],
-    ['hook:retry', ['hook:model.request', 'hook:http.request', 'provider.transform', 'integration.transform']],
-    ['hook:http.response', ['hook:retry', 'hook:model.request', 'hook:http.request', 'provider.transform', 'integration.transform']],
+    ['hook:context', ['hook:model.request', 'hook:http.request', 'provider.transform', 'integration.transform']],
+    ['hook:retry', ['hook:context', 'hook:model.request', 'hook:http.request', 'provider.transform', 'integration.transform']],
+    ['hook:http.response', ['hook:retry', 'hook:context', 'hook:model.request', 'hook:http.request', 'provider.transform', 'integration.transform']],
   ]) {
     const fake = fakeContext({ failAt });
     await assert.rejects(registerProviders(fake.ctx, { env: { CARTHAGENT_CODING_AGENT_DIR: '/missing' } }), /injected/);
