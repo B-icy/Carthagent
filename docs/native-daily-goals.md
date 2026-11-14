@@ -1,6 +1,6 @@
 # Daily goals
 
-Open `/quests` or `/voyages` to see **Daily goals**: three quick wins for today,
+Open `/quests` (or **Daily goals** in the `/voyages` hub) to see **Daily goals**: three quick wins for today,
 such as:
 
 - **Change 20 lines of code**
@@ -45,7 +45,9 @@ measure. Rewards for a verified Ship finish (`/voyages claim`) are separate.
 
 `s` opens your Character, `r` refreshes, Esc returns to coding. The header shows
 coins, level and the time until new goals. Signed out, `ctg` still counts
-locally; sign in with `/login` to see goals and get paid.
+locally; the page shows three greyed example goals (10 coins and 50 XP each),
+says verified Ship tasks count automatically, and `l` opens sign-in (same as
+`/login`) to see your goals and get paid.
 
 On a runtime with navigation support, the left rail also has **Projects /
 Voyages** modes. The Voyages navigator shows coins and **Quests** (daily
