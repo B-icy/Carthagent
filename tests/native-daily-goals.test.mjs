@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -146,4 +147,18 @@ test('an unknown tier from the server is rejected rather than shown', async t =>
   const daily = createDailyGoals(f.ctx, { cloudClient: f.cloudClient, now: f.now, file: join(t.dir, 'goals.json'), syncDelayMs: 60_000 });
   t.after(() => daily.dispose());
   await assert.rejects(daily.snapshot(AbortSignal.timeout(5000)), error => error.code === 'invalid_response');
+});
+
+// VOY-06: signed out, the page previews real goals and offers Sign in.
+test('signed-out daily goals preview real catalogue goals and a Sign in action', async () => {
+  const { SAMPLE_GOALS, signInNeeded } = await import('../plugins/carthagent/src/daily-goals.mjs');
+  assert.deepEqual(SAMPLE_GOALS.map(goal => goal.title), ['Finish a verified Ship task', 'Run your tests', 'Make a commit']);
+  for (const goal of SAMPLE_GOALS) assert.deepEqual([goal.coins, goal.xp], [10, 50]);
+  assert.equal(signInNeeded('unauthorized'), true);
+  assert.equal(signInNeeded('request_failed'), false);
+  const page = readFileSync(new URL('../plugins/carthagent/src/ui/daily-goals.tsx', import.meta.url), 'utf8');
+  assert.match(page, /Example goals \(yours appear after you sign in\)/);
+  assert.match(page, /Verified Ship tasks and everyday coding count automatically/);
+  assert.match(page, /bind: "l", title: "Sign in"/);
+  assert.match(page, /dispatch\("provider\.connect"\)/);
 });

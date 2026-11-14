@@ -119,6 +119,18 @@ export function goalsReset(endsAt, now = Date.now()) {
   return minutes === 0 ? 'Resetting…' : `New goals in ${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
+// Signed-out preview: real normal-tier goals from the Cloud catalogue
+// (Carthagent-Backend lib/voyages/daily-goals.mjs), labelled as examples.
+// Never shown as progress: there is no account to count against.
+export const SAMPLE_GOALS = Object.freeze([
+  Object.freeze({ id: 'verified-1', title: 'Finish a verified Ship task', coins: 10, xp: 50 }),
+  Object.freeze({ id: 'tests-1', title: 'Run your tests', coins: 10, xp: 50 }),
+  Object.freeze({ id: 'commits-1', title: 'Make a commit', coins: 10, xp: 50 }),
+]);
+
+/** True when a daily-goals error code means "no Cloud sign-in" rather than an outage. */
+export const signInNeeded = code => /auth|credential|token|unauthorized/.test(String(code || ''));
+
 /** "Bigger" / "Stretch" badge for goals that rolled a larger target and reward. */
 export function goalTierLabel(goal) {
   return goal?.tier === 'stretch' ? 'Stretch' : goal?.tier === 'bigger' ? 'Bigger' : '';
