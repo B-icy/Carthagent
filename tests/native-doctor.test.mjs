@@ -47,3 +47,13 @@ test('`ctg doctor` is a command, not a task named "doctor"', async () => {
   assert.deepEqual(calls, [['command', 'doctor']]);
   assert.match(commandHelp('doctor'), /Usage: ctg doctor/);
 });
+
+// INF-03: a revoked session is broken auth, not "All good".
+test('a revoked Cloud session is a problem with the re-login fix; the RPC rejects with a plain object', async () => {
+  const revoked = { type: 'unauthenticated', message: 'Your Carthagent Cloud session expired or was revoked. Run `ctg login` again and choose Carthagent Cloud.' };
+  const rows = await doctorReport({ ...base, probes: { ...ok, cloud: async () => { throw revoked; } } });
+  assert.equal(doctorExitCode(rows), 1);
+  const text = formatDoctor(rows);
+  assert.match(text, /✗ Carthagent Cloud\s+session expired or revoked\n\s+→ Run `ctg login` again/);
+  assert.doesNotMatch(text, /All good/);
+});

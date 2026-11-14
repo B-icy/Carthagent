@@ -39,6 +39,8 @@ test("command error reports read native RPC rejection objects instead of '[objec
   assert.match(commandErrorMessage({ _tag: "RpcInternalError", type: "rpc.internal", message: "An active Carthagent Cloud OAuth connection is required." }), signIn);
   assert.match(commandErrorMessage(new Error("An active Carthagent Cloud OAuth connection is required.")), signIn);
   assert.match(commandErrorMessage({ _tag: "UnauthorizedError", message: "Unauthorized" }), signIn);
+  // INF-03: a session the server ended says so, rather than "sign in" as if never signed in.
+  assert.match(commandErrorMessage({ _tag: "RpcError", type: "unauthenticated", message: "Your Carthagent Cloud session expired or was revoked. Run `ctg login` again and choose Carthagent Cloud.", data: {} }), /expired or was revoked\. Run \/login again/);
   // Non-auth and network failures keep their useful message.
   assert.equal(commandErrorMessage({ _tag: "RpcError", type: "rpc.failed", message: "Cloud usage limit must be between 1 and 200." }), "Cloud usage limit must be between 1 and 200.");
   assert.equal(commandErrorMessage(new Error("fetch failed: ECONNREFUSED")), "fetch failed: ECONNREFUSED");

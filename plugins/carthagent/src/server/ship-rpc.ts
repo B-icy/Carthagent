@@ -19,6 +19,14 @@ export function billingErrorMessage(error: unknown) {
   return key ? BILLING_ERRORS[key] : undefined;
 }
 
+export const SESSION_ENDED = 'Your Carthagent Cloud session expired or was revoked. Run `ctg login` again and choose Carthagent Cloud.';
+
+/** A Cloud 401 (expired, revoked or unknown token) rather than any other failure. */
+export function cloudSessionEnded(error: unknown) {
+  const { status, code } = (error ?? {}) as { status?: unknown; code?: unknown };
+  return status === 401 || ['unauthorized', 'invalid_token', 'revoked_token', 'reauthentication_required'].includes(String(code));
+}
+
 /** Create profile-scoped Ship RPC handlers; injection keeps cloud behavior testable offline. */
 export function createShipRpcHandlers(ctx: ShipContext, options: {
   cloudClient?: CloudClientPort;
@@ -41,7 +49,12 @@ export function createShipRpcHandlers(ctx: ShipContext, options: {
       let token: string;
       try { ({ token } = await access()); }
       catch { return call.error('unauthenticated', 'An active Carthagent Cloud OAuth connection is required.', {}); }
-      return { account: await cloud.account({ accessToken: token, signal: call.signal }) };
+      // A revoked session must say so, not surface as a generic "RPC call failed".
+      try { return { account: await cloud.account({ accessToken: token, signal: call.signal }) }; }
+      catch (error) {
+        if (cloudSessionEnded(error)) return call.error('unauthenticated', SESSION_ENDED, {});
+        throw error;
+      }
     },
     shipUsage: async (input: unknown, call: { signal: AbortSignal }) => {
       call.signal.throwIfAborted();
@@ -58,7 +71,13 @@ export function createShipRpcHandlers(ctx: ShipContext, options: {
       const { action, plan = 'builder' } = input as { action: 'checkout' | 'portal' | 'quote'; plan?: string };
       if (!['checkout', 'portal', 'quote'].includes(action)) throw new Error('Unsupported Cloud billing action.');
       if (!['builder', 'pro', 'max'].includes(plan)) throw new Error('Choose Builder, Pro, or Max.');
-      if (action === 'quote') return { quote: await cloud.quote({ accessToken: token, plan, signal: call.signal }) };
+      if (action === 'quote') {
+        try { return { quote: await cloud.quote({ accessToken: token, plan, signal: call.signal }) }; }
+        catch (error) {
+          if (cloudSessionEnded(error)) return call.error('unauthenticated', SESSION_ENDED, {});
+          throw error;
+        }
+      }
       const returnUrl = `${options.cloudUrl ?? cloudControlUrl()}/account`;
       let result: { url: string };
       try {
@@ -66,6 +85,7 @@ export function createShipRpcHandlers(ctx: ShipContext, options: {
           ? await cloud.portal({ accessToken: token, returnUrl, signal: call.signal })
           : await cloud.checkout({ accessToken: token, priceId: plan, successUrl: `${options.cloudUrl ?? cloudControlUrl()}/v1/browser/billing/complete`, cancelUrl: `${options.cloudUrl ?? cloudControlUrl()}/v1/browser/billing/cancelled?plan=${plan}`, signal: call.signal });
       } catch (error) {
+        if (cloudSessionEnded(error)) return call.error('unauthenticated', SESSION_ENDED, {});
         const friendly = billingErrorMessage(error);
         if (friendly) throw new Error(friendly, { cause: error });
         throw error;

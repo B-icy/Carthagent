@@ -81,3 +81,17 @@ test('Ship RPC requires its managed OAuth credential and honors cancellation bef
   await assert.rejects(handlers.shipBilling({ action: 'portal' }, { signal: controller.signal }));
   assert.equal(calls.some(([name]) => name === 'portal'), false);
 });
+
+// INF-03: a revoked or expired Cloud session (HTTP 401) says so, instead of the
+// runtime's generic "RPC call failed".
+test('a Cloud 401 on account, quote or checkout becomes a session-ended unauthenticated error', async () => {
+  const { cloud, ctx } = setup();
+  const revoked = () => { throw Object.assign(new Error('revoked_token'), { code: 'revoked_token', status: 401 }); };
+  const handlers = createShipRpcHandlers(ctx, { cloudClient: { ...cloud, account: revoked, quote: revoked, checkout: revoked }, cloudUrl: 'https://ship.example.test' });
+  const ended = { code: 'unauthenticated', message: /expired or was revoked\. Run `ctg login` again/ };
+  await assert.rejects(handlers.shipAccount({}, call), ended);
+  await assert.rejects(handlers.shipBilling({ action: 'quote' }, call), ended);
+  await assert.rejects(handlers.shipBilling({ action: 'checkout' }, call), ended);
+  const outage = createShipRpcHandlers(ctx, { cloudClient: { ...cloud, account: () => { throw Object.assign(new Error('cloud_http_503'), { status: 503 }); } } });
+  await assert.rejects(outage.shipAccount({}, call), { message: 'cloud_http_503' });
+});
