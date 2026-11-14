@@ -117,7 +117,7 @@ export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "
     ];
     const basic = [
       ...(snapshot ? [{ name: "Customize", description: "", value: "customize" }, { name: "Shop", description: "", value: "section" }] : []),
-      { name: "Quests", description: "", value: "daily" },
+      { name: "Daily goals", description: "", value: "daily" },
       { name: "Refresh", description: "Reload profile and shop", value: "refresh" },
       ...(!snapshot ? [{ name: "Sign in", description: "Connect Carthagent Cloud", value: "signin" }] : []),
       { name: "Back", description: props.sessionID ? "Return to selected session" : "Return home", value: "back" },

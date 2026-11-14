@@ -25,7 +25,9 @@ test("Carthagent command manifest resolves visible CTG commands", () => {
   }
   assert.equal(resolveCommand("/cloud")?.id, "account");
   assert.equal(resolveCommand("/auth")?.id, "login");
-  assert.match(resolveCommand("/voyages")!.description, /daily goals/);
+  // VOY-02: /voyages opens the hub; daily goals live on /quests.
+  assert.match(resolveCommand("/voyages")!.description, /character, ship and shop/);
+  assert.doesNotMatch(resolveCommand("/voyages")!.description, /daily goals/i);
   assert.match(resolveCommand("/quests")!.description, /counted automatically/);
   assert.doesNotMatch(resolveCommand("/quests")!.description, /consent|evidence/);
 });
