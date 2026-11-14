@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto"
+import { execFileSync } from "node:child_process"
 import type { Context } from "@opencode/plugin/promise/plugin"
 import { Error as NativeToolError, type ToolContext } from "@opencode/plugin/promise/tool"
 import type { Tool } from "@opencode/schema/tool"
@@ -19,6 +20,7 @@ import { enforceToolPolicy, requiresPlanApproval } from "./policy.ts"
 import { effectiveSessionOptions } from "../../../../lib/opencode/session-options.mjs"
 import { archiveContext } from "../../../../lib/context-archive.mjs"
 import { SMALL_LANE_LIMITS, shipRoute, smallLaneOverflow } from "../../../../lib/ship-route.mjs"
+import { smallLaneFileViolation, smallLaneKind } from "../../../../lib/small-lane-diff.mjs"
 import { probeDiagnostics } from "../../../../lib/probe-diagnostics.mjs"
 import { configuredAdvisor, inspectAdvice } from "../../../../lib/planning-advice.mjs"
 import { createShipJev } from "../../../../lib/ship-jev.mjs"
@@ -230,31 +232,45 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
       if (input.action === "start") {
         if (opts.workflow === "strict" || opts.fastLane === false) throw Error("The fast lane is off for this session; use delivery_plan.")
         if (data.state && !["verified", "blocked"].includes(data.state.status)) throw Error("A delivery is already active; continue it instead of starting the fast lane.")
+        // The router, not the model, opens the lane: a request routed full stays full.
+        if (data.route && data.route.route !== "small") throw Error(`This request was routed to the full flow (${data.route.reason}); use delivery_plan.`)
         if (!input.goal || !Array.isArray(input.files) || !input.files.length) throw Error("start needs goal and files (the 1-3 files you will change).")
         if (!Array.isArray(input.checks) || !input.checks.length) throw Error("start needs at least one real check (a test, build, lint or a grep/node one-liner that proves the edit).")
         const baseline = await laneSnapshot(cwd, tool.signal)
         if (!baseline) throw Error("The fast lane needs a Git repository to measure the change; use delivery_plan.")
+        // Content guard: the request's kind (typo/comment/rename/...) bounds what may change in each file.
+        const kind = smallLaneKind(data.lastPrompt || input.goal)
+        const contents = await laneContents(cwd, input.files, tool.signal)
         const plan = validatePlan(bindRequiredChecks({
           goal: input.goal, assumptions: ["Fast lane: small edit"], artifacts: input.files, steps: ["Make the edit", "Run the checks"],
           verification: "required", acceptance: [{ requirement: input.goal, checks: input.checks.map((c: { id: string }) => c.id) }], checks: input.checks,
         }, data.required), cwd, { strictPaths: true })
-        data.state = { version: 1, workflowMode: "standard", reviewRequired: false, runId: randomUUID(), revision: (data.state?.revision || 0) + 1, plan, evidence: {}, status: "implementing", createdAt: new Date().toISOString(), stepStatus: {}, guidanceProfiles: data.guidanceProfiles || [], smallLane: { files: input.files, baseline, startedAt: new Date().toISOString() } }
+        data.state = { version: 1, workflowMode: "standard", reviewRequired: false, runId: randomUUID(), revision: (data.state?.revision || 0) + 1, plan, evidence: {}, status: "implementing", createdAt: new Date().toISOString(), stepStatus: {}, guidanceProfiles: data.guidanceProfiles || [], smallLane: { files: input.files, baseline, kind, contents, startedAt: new Date().toISOString() } }
         data.discovery = newDiscovery(); const dir = runDirectory(cwd, tool.sessionID, data.state.runId)
         mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, "plan.d2"), planD2WithProgress(data.state.plan, data.state.stepStatus))
         await persist(cwd, tool.sessionID, data)
-        return text({ lane: "small", next: "Edits are unlocked. Make the change, then call delivery_small action=finish with a one-paragraph change summary." })
+        return text({ lane: "small", kind, next: `Edits are unlocked for a ${kind} edit${kind === "text" ? " (comments, strings and docs only)" : ""}. Make the change, then call delivery_small action=finish with a one-paragraph change summary.` })
       }
       if (input.action !== "finish") throw Error("action must be start or finish")
       const lane = data.state?.smallLane
       if (!lane || data.state.lane === "full") throw Error("No fast-lane delivery is active; call delivery_small action=start, or continue the full flow.")
       if (!input.change) throw Error("finish needs change: a one-paragraph summary of what changed.")
       const current = await laneSnapshot(cwd, tool.signal)
-      const overflow = smallLaneOverflow(laneChanges(lane.baseline, current || {}), lane.files)
+      const changed = laneChanges(lane.baseline, current || {})
+      const overflow = smallLaneOverflow(changed, lane.files)
+      if (!overflow.length && lane.contents) {
+        const now = await laneContents(cwd, changed.map(entry => entry.path), tool.signal)
+        for (const entry of changed) {
+          const before = lane.contents[entry.path] ?? await headContent(cwd, entry.path)
+          const violation = smallLaneFileViolation(lane.kind || "text", entry.path, before ?? "", now[entry.path] ?? "")
+          if (violation) overflow.push(violation)
+        }
+      }
       if (overflow.length) {
         // Escalate, never fail open: the change now needs the full review gate.
         data.state.lane = "full"; data.state.reviewRequired = true
         await persist(cwd, tool.sessionID, data)
-        throw Error(`This change outgrew the fast lane (${overflow.join("; ")}). It is now a full delivery: run delivery_check id="all", delivery_review inspect then record, and delivery_finish.`)
+        throw Error(`This change is not a small ${lane.kind || "text"} edit (${overflow.join("; ")}). It is now a full delivery: run delivery_check id="all", delivery_review inspect then record, and delivery_finish.`)
       }
       const results = await runChecks(data.state.plan.checks, { cwd, data, tool, verification: "required" })
       const failures = results.filter(r => !r.passed)
@@ -670,6 +686,22 @@ async function laneSnapshot(cwd: string, signal?: AbortSignal): Promise<Record<s
     files[path] = `${lines}\t0\tnew`
   }
   return files
+}
+
+/** Current text of the given workspace files ('' when missing or unreadable). */
+async function laneContents(cwd: string, files: string[], _signal?: AbortSignal): Promise<Record<string, string>> {
+  const out: Record<string, string> = {}
+  for (const file of files) {
+    const norm = String(file).replace(/\\/g, "/").replace(/^\.\//, "")
+    try { out[norm] = readFileSync(join(cwd, norm), "utf8") } catch { out[norm] = "" }
+  }
+  return out
+}
+
+/** File text at HEAD, for files changed outside the declared set. */
+async function headContent(cwd: string, path: string) {
+  // Full text: runCommand keeps only an output tail.
+  try { return execFileSync("git", ["show", `HEAD:./${path}`], { cwd, encoding: "utf8", timeout: 15000, maxBuffer: 16 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] }) } catch { return "" }
 }
 
 /** Files whose diff changed since the lane started, with their current changed-line count. */

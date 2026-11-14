@@ -1,0 +1,597 @@
+{
+  "about": "Labelled Ship requests for lib/ship-route.mjs. 'small' must take the fast lane; 'full' must never take it ('answer' is also fine for full). Add every misroute users hit.",
+  "cases": [
+    {
+      "ask": "Fix the typo 'recieve' in README.md",
+      "want": "small"
+    },
+    {
+      "ask": "Fix the typo 'recieve' to 'receive' in invest-with-friends/README.md if present, otherwise add a trailing period to its first heading line",
+      "want": "small"
+    },
+    {
+      "ask": "Rename the local variable usr to user in lib/user-add.ts",
+      "want": "small"
+    },
+    {
+      "ask": "Bump lodash to 4.17.21 in package.json",
+      "want": "small"
+    },
+    {
+      "ask": "Add a one-line JSDoc comment above decideAddUser in lib/user-add.ts",
+      "want": "small"
+    },
+    {
+      "ask": "Remove the unused import in lib/market-data.ts",
+      "want": "small"
+    },
+    {
+      "ask": "Fix the label on the Buy button in components/BuyButton.tsx",
+      "want": "small"
+    },
+    {
+      "ask": "Add a comment explaining the retry loop in lib/market-data.ts",
+      "want": "small"
+    },
+    {
+      "ask": "In invest-with-friends/lib/match-name.ts, add a short JSDoc comment above generateMatchName explaining the random choice",
+      "want": "small"
+    },
+    {
+      "ask": "Also add a one-line JSDoc summary above the nameWords array in lib/match-name.ts. Nothing else.",
+      "want": "small"
+    },
+    {
+      "ask": "Add a one-line comment at the top of invest-with-friends/tests/user-add.test.ts saying what the file tests",
+      "want": "small"
+    },
+    {
+      "ask": "Fix the grammar in the second paragraph of docs/setup.md",
+      "want": "small"
+    },
+    {
+      "ask": "Reword the placeholder text in components/SearchBox.tsx to 'Search tickers'",
+      "want": "small"
+    },
+    {
+      "ask": "Fix the spelling of \"recieve\" everywhere",
+      "want": "full"
+    },
+    {
+      "ask": "Rename getUser to fetchUser across the codebase",
+      "want": "full"
+    },
+    {
+      "ask": "Rename all usages of oldName to newName",
+      "want": "full"
+    },
+    {
+      "ask": "Rename the User model to Account",
+      "want": "full"
+    },
+    {
+      "ask": "Rename the default export in index.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Rename the exported function decideAddUser in lib/user-add.ts to decideUserAdd",
+      "want": "full"
+    },
+    {
+      "ask": "Update the version check so it rejects Node 20",
+      "want": "full"
+    },
+    {
+      "ask": "Change the error message so it no longer leaks the stack trace",
+      "want": "full"
+    },
+    {
+      "ask": "Reword the 401 error message in lib/user-add.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Change the 404 message in app/not-found.tsx",
+      "want": "full"
+    },
+    {
+      "ask": "Fix the typo in the env var name DATABSE_URL in lib/prisma.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Comment out the rate limiter in app/api/trade/route.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Update the README with the new setup steps",
+      "want": "full"
+    },
+    {
+      "ask": "fix typo",
+      "want": "full"
+    },
+    {
+      "ask": "Fix the typo",
+      "want": "full"
+    },
+    {
+      "ask": "Fix the bug where the label shows NaN",
+      "want": "full"
+    },
+    {
+      "ask": "Change the price label format to two decimals",
+      "want": "full"
+    },
+    {
+      "ask": "Fix the typo in README.md and then also add a contributing guide",
+      "want": "full"
+    },
+    {
+      "ask": "Carefully reword the README",
+      "want": "full"
+    },
+    {
+      "ask": "Add a POST endpoint that lets friends invite each other",
+      "want": "full"
+    },
+    {
+      "ask": "Make the dashboard load faster",
+      "want": "full"
+    },
+    {
+      "ask": "Bump the version in the release workflow",
+      "want": "full"
+    },
+    {
+      "ask": "Rename foo to bar in a.ts, b.ts and c.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Update the label so it shows the user's balance in lib/labels.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Bump next to 15 in package.json",
+      "want": "full"
+    },
+    {
+      "ask": "Change the timeout comment and the timeout value in lib/market-data.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Fix the typo in the API route name in app/api/users/add/route.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Rename the users table column in prisma/schema.prisma",
+      "want": "full"
+    },
+    {
+      "ask": "Update the comment and the logic in lib/user-add.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Change the log message text in lib/market-data.ts to include the symbol",
+      "want": "full"
+    },
+    {
+      "ask": "Rename the CSS class btn-primary to button-primary in styles.css",
+      "want": "full"
+    },
+    {
+      "ask": "What test command does this project use?",
+      "want": "answer"
+    },
+    {
+      "ask": "Explain how decideAddUser works",
+      "want": "answer"
+    },
+    {
+      "ask": "Where is the README typo?",
+      "want": "answer"
+    },
+    {
+      "ask": "Rename usr to user in lib/user-add.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Rename isValid to isValidEmail in lib/check.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Fix the misspelled word in the footer text in components/Footer.tsx",
+      "want": "small"
+    },
+    {
+      "ask": "Add a docstring to parse_args in cli.py",
+      "want": "small"
+    },
+    {
+      "ask": "Correct the typo in CONTRIBUTING.md",
+      "want": "small"
+    },
+    {
+      "ask": "Rename the local variable tmp to buffer in lib/stream.ts",
+      "want": "small"
+    },
+    {
+      "ask": "Fix indentation in src/app.js",
+      "want": "small"
+    },
+    {
+      "ask": "Rephrase the tooltip in components/Help.tsx to be shorter",
+      "want": "small"
+    },
+    {
+      "ask": "Bump eslint to 9.12.0 in package.json",
+      "want": "small"
+    },
+    {
+      "ask": "Fix the typo in the button label",
+      "want": "full"
+    },
+    {
+      "ask": "Rename the hook useData to useMarketData in hooks/useData.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Update the comment to explain why we retry, and lower the retry count in lib/fetch.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Change the label text so it displays the ticker in uppercase in components/Ticker.tsx",
+      "want": "full"
+    },
+    {
+      "ask": "Fix the typo in the SQL query in lib/db.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Reword the error in lib/validate.ts so users know the email is invalid",
+      "want": "full"
+    },
+    {
+      "ask": "Rename session to sess in lib/cache.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Bump react to latest in package.json",
+      "want": "full"
+    },
+    {
+      "ask": "Rename the env variable API_KEY in config.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Add comments to every function in lib/math.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Fix the typo in the JSON key \"recieved_at\" in lib/serialize.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Rename isValid to isValidEmail in lib/validate.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Remove the console.log in lib/user-add.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Fix the typo in the heading of docs/api.md",
+      "want": "small"
+    },
+    {
+      "ask": "Add a comment above the loop in utils/sort.js",
+      "want": "small"
+    },
+    {
+      "ask": "Correct the spelling of colour in styles/theme.css comments",
+      "want": "small"
+    },
+    {
+      "ask": "Fix the grammar in the docstring of models/order.py",
+      "want": "full"
+    },
+    {
+      "ask": "Remove trailing whitespace in src/index.ts",
+      "want": "small"
+    },
+    {
+      "ask": "Reword the welcome message in components/Welcome.tsx",
+      "want": "small"
+    },
+    {
+      "ask": "Fix the typo in the alt text in components/Logo.tsx",
+      "want": "small"
+    },
+    {
+      "ask": "Bump typescript to 5.6.3 in package.json",
+      "want": "small"
+    },
+    {
+      "ask": "Change the default timeout comment in lib/net.ts",
+      "want": "small"
+    },
+    {
+      "ask": "Rename the parameter cb to callback in lib/events.ts",
+      "want": "small"
+    },
+    {
+      "ask": "Fix the typo in the function name calcualte in lib/math.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Update the label in components/Price.tsx to show cents",
+      "want": "full"
+    },
+    {
+      "ask": "Change the placeholder and make the field required in components/Form.tsx",
+      "want": "full"
+    },
+    {
+      "ask": "Remove the commented-out code in lib/old.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Add a comment and a null check in lib/parse.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Reword the tooltip so it explains fees in components/Fees.tsx",
+      "want": "full"
+    },
+    {
+      "ask": "Fix the typo in the CSS class name in components/Card.tsx",
+      "want": "full"
+    },
+    {
+      "ask": "Bump the minimum Node version in package.json",
+      "want": "full"
+    },
+    {
+      "ask": "Rename the file utils.ts to helpers.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Fix the typo in the README and the docs folder",
+      "want": "full"
+    },
+    {
+      "ask": "Fix the typo 'adress' in docs/install.md",
+      "want": "small"
+    },
+    {
+      "ask": "Add a short comment explaining the regex in lib/parse.ts",
+      "want": "small"
+    },
+    {
+      "ask": "Reword the empty-state text in components/EmptyList.tsx to 'Nothing here yet'",
+      "want": "small"
+    },
+    {
+      "ask": "Fix the spelling mistake in the header comment of src/server.ts",
+      "want": "small"
+    },
+    {
+      "ask": "Rename the loop variable i to index in lib/sum.ts",
+      "want": "small"
+    },
+    {
+      "ask": "Bump prettier to 3.3.3 in package.json",
+      "want": "small"
+    },
+    {
+      "ask": "Remove the unused import of useEffect in components/Chart.tsx",
+      "want": "small"
+    },
+    {
+      "ask": "Fix the typo in the page title in app/layout.tsx",
+      "want": "small"
+    },
+    {
+      "ask": "Add a JSDoc comment to formatDate in lib/date.ts",
+      "want": "small"
+    },
+    {
+      "ask": "Correct the grammar in the CHANGELOG.md entry for 1.2.0",
+      "want": "small"
+    },
+    {
+      "ask": "Fix the typo in the error message in lib/upload.ts",
+      "want": "small"
+    },
+    {
+      "ask": "Rephrase the confirm dialog text in components/DeleteDialog.tsx",
+      "want": "full"
+    },
+    {
+      "ask": "Change the button text from Submit to Save and disable it while saving in components/Form.tsx",
+      "want": "full"
+    },
+    {
+      "ask": "Fix the typo in the route path /dashbaord in app/router.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Rename formatDate to formatIsoDate in lib/date.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Update the copyright year everywhere",
+      "want": "full"
+    },
+    {
+      "ask": "Fix the off-by-one in the pagination label in components/Pager.tsx",
+      "want": "full"
+    },
+    {
+      "ask": "Bump all dependencies in package.json",
+      "want": "full"
+    },
+    {
+      "ask": "Change the comment and the threshold constant in lib/risk.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Reword the onboarding copy to mention the new pricing in components/Onboarding.tsx",
+      "want": "full"
+    },
+    {
+      "ask": "Rename the prop onClick to onPress in components/Button.tsx",
+      "want": "full"
+    },
+    {
+      "ask": "Fix the typo in the localStorage key in lib/storage.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Translate the README to French",
+      "want": "full"
+    },
+    {
+      "ask": "Add a TODO comment and remove the fallback in lib/fetch.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Update the docs",
+      "want": "full"
+    },
+    {
+      "ask": "Fix the wording of the 500 page in app/error.tsx",
+      "want": "full"
+    },
+    {
+      "ask": "Change the tooltip to show the exact time in components/Time.tsx",
+      "want": "full"
+    },
+    {
+      "ask": "Remove the deprecated function oldParse from lib/parse.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Fix the indentation in config/deploy.yml",
+      "want": "full"
+    },
+    {
+      "ask": "Rename the test file user.test.ts to user-add.test.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Fix the typo 'seperate' in docs/contributing.md",
+      "want": "small"
+    },
+    {
+      "ask": "Add a comment explaining why we sleep in scripts/wait.js",
+      "want": "small"
+    },
+    {
+      "ask": "Reword the subtitle in components/Hero.tsx to 'Invest together'",
+      "want": "small"
+    },
+    {
+      "ask": "Fix the spelling in the comment above parseCsv in lib/csv.ts",
+      "want": "small"
+    },
+    {
+      "ask": "Rename the local variable res to response in lib/http-client.ts",
+      "want": "small"
+    },
+    {
+      "ask": "Bump vitest to 2.1.4 in package.json",
+      "want": "small"
+    },
+    {
+      "ask": "Remove the unused import in components/Header.tsx",
+      "want": "small"
+    },
+    {
+      "ask": "Fix the typo in the aria-label text in components/Menu.tsx",
+      "want": "small"
+    },
+    {
+      "ask": "Add a docstring to the main function in tools/report.py",
+      "want": "small"
+    },
+    {
+      "ask": "Correct the typo 'teh' in README.md",
+      "want": "small"
+    },
+    {
+      "ask": "Fix the typo in the toast message in components/Toast.tsx",
+      "want": "small"
+    },
+    {
+      "ask": "Fix trailing whitespace in lib/strings.ts",
+      "want": "small"
+    },
+    {
+      "ask": "Make the error message in lib/fetch.ts include the URL",
+      "want": "full"
+    },
+    {
+      "ask": "Fix the typo in the enum value PENDNG in lib/status.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Rename getPrice to fetchPrice in lib/prices.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Change the copy on every page to use 'friends' instead of 'users'",
+      "want": "full"
+    },
+    {
+      "ask": "Add a comment and change the retry delay to 500ms in lib/retry.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Fix the typo in the import path ./utlis in lib/index.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Reword the cancel button and hide it on mobile in components/Modal.tsx",
+      "want": "full"
+    },
+    {
+      "ask": "Bump the API version header in lib/client.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Fix the typo in middleware.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Update the README badges",
+      "want": "full"
+    },
+    {
+      "ask": "Fix the typo in the regex in lib/email.ts",
+      "want": "full"
+    },
+    {
+      "ask": "Update the placeholder in components/Search.tsx to match the new search behaviour",
+      "want": "full"
+    },
+    {
+      "ask": "Rename the component Card to Tile in components/Card.tsx",
+      "want": "full"
+    },
+    {
+      "ask": "Fix the grammar in the console warning in lib/warn.ts",
+      "want": "small"
+    },
+    {
+      "ask": "Change the label from Buy to Purchase in components/TradeButton.tsx",
+      "want": "full"
+    },
+    {
+      "ask": "Add a comment to explain the magic number in lib/score.ts",
+      "want": "small"
+    },
+    {
+      "ask": "Fix the typo in the default value of the name field in components/Profile.tsx",
+      "want": "full"
+    }
+  ]
+}
