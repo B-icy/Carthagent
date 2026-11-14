@@ -33,6 +33,9 @@ test('review captures real diff/new files and binds complete assertions to final
   assert.equal(readFileSync(capture.path, 'utf8'), capture.diff);
   assert.throws(() => recordDeliveryReview(state, cwd, { ...params(capture.id), coverage: [] }), /every exact/);
   assert.throws(() => recordDeliveryReview(state, cwd, { ...params(capture.id), probes: [] }), /boundary/);
+  // All shape problems in one error, so the model fixes them in one retry.
+  const { probes: _p, findings: _f, limitations: _l, ...bare } = params(capture.id);
+  assert.throws(() => recordDeliveryReview(state, cwd, bare), error => /probes:[\s\S]*findings:[\s\S]*limitations:/.test(error.message) && /one call/.test(error.message));
   assert.match(capture.diff, /export const result = 2/);
   recordDeliveryReview(state, cwd, params(capture.id));
   assert.deepEqual(state.reviewEvidence.evidence, state.evidence);

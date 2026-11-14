@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createJiti } from 'jiti';
 
-const { shipGuidance } = await createJiti(import.meta.url).import('../plugins/carthagent/src/server/ship-guidance.ts');
+const { shipGuidance, STANDARD_GUIDANCE } = await createJiti(import.meta.url).import('../plugins/carthagent/src/server/ship-guidance.ts');
 
 test('both workflows explain gated direct tools independently of code-mode discovery', () => {
   for (const workflow of ['standard', 'strict']) {
@@ -20,3 +20,8 @@ test('both workflows steer away from secrets files that stall runs on approval',
     assert.match(shipGuidance({ workflow, prompt: 'Fix the route' }), /Do not open \.env, \.env\.\*/);
   }
 });
+
+test('standard guidance steers check choice away from slow builds that cheaper checks cover', () => {
+  assert.match(STANDARD_GUIDANCE, /cheapest checks/)
+  assert.match(STANDARD_GUIDANCE, /production build only when/)
+})
