@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { checkDigest, fingerprint, validatePlan, planD2, pendingChecks, restoreState, runCommand, shouldContinue, localPath, createSerialQueue, validateRevision, turnBudgetExceeded, maxEvidenceFiles, maxEvidenceBytes, bindRequiredChecks, verificationMode, looksInformational, computePhase, revisePlan } from '../lib/delivery.mjs';
 import { createReport, latestReport, saveReport, reconcileReport } from '../lib/reports.mjs';
 
@@ -34,6 +35,27 @@ test('fingerprints detect edits, additions and deletion; ignore generated eviden
   assert.notEqual(fingerprint(cwd, ['.']), initial);
   rmSync(join(cwd, 'test.py')); assert.equal(fingerprint(cwd, ['.']), initial);
   writeFileSync(join(cwd, 'app.py'), 'print(2)'); assert.notEqual(fingerprint(cwd, ['.']), initial);
+});
+test('fingerprints ignore git-ignored build output (tsbuildinfo, .next-style dirs) but not tracked or untracked source', t => {
+  const cwd = fixture(t);
+  execFileSync('git', ['init', '-q'], { cwd });
+  writeFileSync(join(cwd, '.gitignore'), '*.tsbuildinfo\nnext-env.d.ts\n/out-cache/\n');
+  const initial = fingerprint(cwd, ['.']);
+  // `tsc` / `next build` rewrite these on every run; they must not invalidate evidence.
+  writeFileSync(join(cwd, 'tsconfig.tsbuildinfo'), String(Math.random()));
+  writeFileSync(join(cwd, 'next-env.d.ts'), '/// <reference types="next" />');
+  mkdirSync(join(cwd, 'out-cache')); writeFileSync(join(cwd, 'out-cache', 'BUILD_ID'), String(Math.random()));
+  assert.equal(fingerprint(cwd, ['.']), initial);
+  // Untracked (not ignored) source still counts, as do edits and the .gitignore itself.
+  writeFileSync(join(cwd, 'new.py'), 'x = 1'); assert.notEqual(fingerprint(cwd, ['.']), initial);
+  rmSync(join(cwd, 'new.py')); assert.equal(fingerprint(cwd, ['.']), initial);
+  writeFileSync(join(cwd, 'app.py'), 'print(2)'); assert.notEqual(fingerprint(cwd, ['.']), initial);
+  writeFileSync(join(cwd, 'app.py'), 'print(1)');
+  writeFileSync(join(cwd, '.gitignore'), '*.tsbuildinfo\nnext-env.d.ts\n/out-cache/\n.env*\n');
+  const withEnvIgnored = fingerprint(cwd, ['.']);
+  // Ignored dotenv files still change what checks see.
+  writeFileSync(join(cwd, '.env.test'), 'MODE=a'); assert.notEqual(fingerprint(cwd, ['.']), withEnvIgnored);
+  writeFileSync(join(cwd, '.gitignore'), '*.tsbuildinfo\n'); assert.notEqual(fingerprint(cwd, ['.']), initial);
 });
 test('evidence cannot pass on missing, failed or stale checks', () => {
   const state = { runId: 'run-a', revision: 1, plan: plan(), evidence: {} };

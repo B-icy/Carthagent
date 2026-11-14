@@ -245,3 +245,13 @@ test('delivery:false disables workflow hooks and tools per session while authori
   assert.equal(h.stores.has('session/ses-off') && h.stores.get('session/ses-off').state, null)
   await cleanup()
 })
+
+test('delivery_plan schema teaches the regression-step rule up front (models hit it on every first plan)', async t => {
+  const h = host(t)
+  const cleanup = await registerDelivery(h.ctx, { workflow: 'standard' })
+  const def = h.tools.get('delivery_plan')
+  const schema = JSON.stringify(def.parameters ?? def.inputSchema ?? def.schema ?? def)
+  assert.match(schema, /regression[^"]*checks: \[\]/)
+  assert.match(schema, /Must be \[\] on a regression step/)
+  await cleanup()
+})
