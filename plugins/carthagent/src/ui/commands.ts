@@ -126,6 +126,7 @@ export function helpSelectionCommand(value: unknown, commands: readonly Carthage
 }
 
 const SIGN_IN_REQUIRED = "Sign in to Carthagent Cloud to use this command. Run /login (Google or email), then try again.";
+const SESSION_ENDED = "Your Carthagent Cloud session expired or was revoked. Run /login again, then try again.";
 const AUTH_FAILURE = /OAuth connection is required|not authenticated|unauthenticated|unauthorized/i;
 
 /** Native promise RPC rejects with plain { _tag, type, message, data } objects, not Error instances. */
@@ -133,6 +134,7 @@ export function commandErrorMessage(error: unknown): string {
   if (typeof error === "string") return error || "Command failed without details.";
   const record = error && typeof error === "object" ? error as { _tag?: unknown; type?: unknown; message?: unknown } : undefined;
   const message = typeof record?.message === "string" ? record.message : "";
+  if (/expired or was revoked/i.test(message)) return SESSION_ENDED;
   if (record?.type === "unauthenticated" || record?._tag === "UnauthorizedError" || AUTH_FAILURE.test(message)) return SIGN_IN_REQUIRED;
   return message || "Command failed without details.";
 }
