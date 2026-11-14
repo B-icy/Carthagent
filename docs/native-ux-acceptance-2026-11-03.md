@@ -63,7 +63,7 @@ sidebar-color refinement has its own identity and screenshots in the addendum.
 
 ## Implemented experience
 
-- `/voyages` and `/quests` open quest cards with concrete conditions, selected
+- `/quests` opens quest cards (`/voyages` now opens the Voyages hub; see VOY-02, 2026-11-14) with concrete conditions, selected
   recorded work, one explicit **Submit**, and clear processing/result states.
 - Evidence text, rubric, IDs, retention, editing and recovery are in **Details**.
 - Local **recorded** markers never claim semantic acceptance. Completion comes

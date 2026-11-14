@@ -48,7 +48,7 @@ export const COMMANDS: readonly CarthagentCommand[] = [
   { id: "evidence", name: "evidence", description: "Check results and evidence freshness" },
   { id: "login", name: "login", aliases: ["auth"], description: "Sign in to Carthagent Cloud; /connect for your own provider" },
   { id: "account", name: "account", aliases: ["cloud"], description: "Cloud credit, plan and signed-in devices" },
-  { id: "voyages", name: "voyages", args: "[claim]", description: "Voyages daily goals and shop; claim this run's reward" },
+  { id: "voyages", name: "voyages", args: "[claim]", description: "Your character, ship and shop; claim a reward" },
   { id: "quests", name: "quests", description: "Daily goals: three quick wins, counted automatically" },
   { id: "usage", name: "usage", description: "Recent Carthagent Cloud usage and cost" },
   { id: "billing", name: "billing", args: "[checkout|portal|refresh]", description: "Cloud plans: checkout, portal or refresh" },
@@ -149,4 +149,20 @@ export const NATIVE_SESSION_COMMANDS = ["clear"] as const;
 
 export function pluginSlashAvailable(name: string, route: { readonly type: string }) {
   return !(route.type === "session" && NATIVE_SESSION_COMMANDS.includes(name as typeof NATIVE_SESSION_COMMANDS[number]));
+}
+
+/** Where a Voyages slash command goes. `/voyages` is the hub its name and the "Voyages" tab promise; daily goals stay on `/quests`. */
+export type VoyagesCommandRoute =
+  | { kind: "navigate"; name: "voyages" | "daily-quests"; data: Record<string, unknown> }
+  | { kind: "error"; message: string };
+export function voyagesCommandRoute(id: "voyages" | "quests", arg: string, sessionID?: string): VoyagesCommandRoute {
+  const session = sessionID ? { sessionID } : {};
+  if (id === "quests") return { kind: "navigate", name: "daily-quests", data: session };
+  const word = arg.trim().toLowerCase();
+  if (word === "claim") {
+    if (!sessionID) return { kind: "error", message: "No session is open. Run /voyages claim inside the ctg session that finished the delivery." };
+    return { kind: "navigate", name: "voyages", data: { sessionID, section: "profile", claim: true } };
+  }
+  if (word) return { kind: "error", message: "Usage: /voyages [claim]. Daily goals are on /quests." };
+  return { kind: "navigate", name: "voyages", data: { ...session, section: "profile" } };
 }

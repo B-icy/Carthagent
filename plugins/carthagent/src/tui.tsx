@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 import { nativeLoginProvider, nativeProviderName } from "../../../lib/opencode/provider-policy.mjs";
 import { framePrompt } from "../../../lib/tui/framing.mjs";
 import { carthagentConfigPath, loadCarthagentConfig, resolveReviewMode, reviewKickoff, saveCarthagentConfig } from "../../../lib/review.mjs";
-import { COMMANDS, NATIVE_COMMAND_COLLISIONS, commandErrorMessage, helpOptions, helpSelectionTarget, pluginSlashAvailable } from "./ui/commands.js";
+import { COMMANDS, NATIVE_COMMAND_COLLISIONS, commandErrorMessage, helpOptions, helpSelectionTarget, pluginSlashAvailable, voyagesCommandRoute } from "./ui/commands.js";
 import { sessionGoalClient } from "./ui/client.js";
 import { SessionGoals, type SessionGoal } from "./session-goal-rpc.js";
 import { goalStatusText, parseGoalCommand } from "./session-goal.mjs";
@@ -135,14 +135,12 @@ export default Plugin.define({
       const sessionApi = sessionControls(context, location);
       switch (id) {
         case "voyages":
-          if (arg.toLowerCase() === "claim") {
-            if (!sessionID) { toast("No session is open. Run /voyages claim inside the ctg session that finished the delivery.", "warning"); return; }
-            context.ui.router.navigate({ type: "plugin", name: "voyages", data: { sessionID, section: "profile", claim: true } });
-            return;
-          }
-          if (arg) { toast("Usage: /voyages [claim].", "warning"); return; }
-          context.ui.router.navigate({ type: "plugin", name: "daily-quests", data: { ...(sessionID ? { sessionID } : {}) } });
+        case "quests": {
+          const route = voyagesCommandRoute(id, arg, sessionID);
+          if (route.kind === "error") { toast(route.message, "warning"); return; }
+          context.ui.router.navigate({ type: "plugin", name: route.name, data: route.data });
           return;
+        }
         case "goal": {
           const parsed = parseGoalCommand(arg);
           const goals = sessionGoalClient(context, location);
@@ -163,9 +161,6 @@ export default Plugin.define({
           toast(`Goal set (up to ${goal?.maxTurns ?? parsed.maxTurns} turns). Carthagent keeps going until it is done; Esc pauses, /goal clear stops.`, "success");
           return;
         }
-        case "quests":
-          context.ui.router.navigate({ type: "plugin", name: "daily-quests", data: { ...(sessionID ? { sessionID } : {}) } });
-          return;
         case "login":
           context.keymap.dispatch("provider.connect", arg ? nativeLoginProvider(arg)?.id ?? arg : "carthagent-cloud");
           return;
