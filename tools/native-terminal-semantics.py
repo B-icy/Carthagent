@@ -461,7 +461,9 @@ def main():
         regression_case = args.assertion_regression_only
         picker_only = args.picker_regression_only
         layout_only = regression_case and not picker_only
-        focused_case = args.focused_host_roundtrip or regression_case or picker_only
+        # Picker-only still opens and dismisses the picker; only transport/layout
+        # modes intentionally skip that interaction.
+        focused_case = args.focused_host_roundtrip or regression_case
         resize_case = layout_only or (not focused_case and not args.picker_regression_only)
         exact = ('focused-host-request' if focused_case else
                  'native-pty: café 日本語 😀\n' + 'large-paste-λ-' * 1200 + '\nEND-PASTE-終')
@@ -552,7 +554,7 @@ def main():
                         'providerRequestsBeforePrompt': len(Provider.received)}
                 if not sent and not picker_only and (((not focused_case) and
                                   picker_cancelled and
-                                  result['checks'].get('pickerEscapeCancel', {}).get('status') != 'PENDING' and
+                                  result['checks'].get('pickerEscapeCancel', {}).get('status') == 'PASS' and
                                   elapsed > 5 and home_ready) or
                                  (args.focused_host_roundtrip and elapsed > 2 and home_ready) or
                                  (layout_only and elapsed > 2 and home_ready)):

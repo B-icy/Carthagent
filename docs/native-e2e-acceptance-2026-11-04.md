@@ -1,6 +1,25 @@
 # Beta.7 candidate acceptance
 
-This records the November 4 follow-up to beta.6. Five-platform prebuild passed; publication and installed release acceptance are still pending.
+This records the November 4 follow-up to beta.6. At the original checkpoint,
+five-platform prebuild had passed and publication/installed acceptance were
+pending. The historical follow-up below distinguishes subsequently confirmed
+release status from the original author's local acceptance report.
+
+## Historical release follow-up (reviewed November 17)
+
+- [Draft acceptance 41805902929](https://github.com/B-icy/Carthagent/actions/runs/41805902929)
+  and [release acceptance/publication 41806815554](https://github.com/B-icy/Carthagent/actions/runs/41806815554)
+  both have successful GitHub Actions conclusions.
+- [v1.1.0-beta.7](https://github.com/B-icy/Carthagent/releases/tag/v1.1.0-beta.7)
+  is public and non-draft, published November 4 at 09:21:24 UTC.
+- [PR #254](https://github.com/B-icy/Carthagent/pull/254) retains the original
+  author's installed authenticated-profile preservation and npm propagation
+  follow-up. Local evidence was not rerun during backlog review, and its npm
+  dist-tag observations describe November 4, not current channels.
+
+GitHub release status and workflow conclusions were rechecked; no release tags
+or assets were changed. The pending statements later in this document are the
+original checkpoint, not a claim that beta.7 remains unpublished today.
 
 ## Fixes
 
