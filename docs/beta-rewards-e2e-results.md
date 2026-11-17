@@ -54,7 +54,27 @@ Native build/lint and 76 focused tests passed, including explicit confirmation,
 account/session binding, current source gates, privacy of digest-only uploads,
 lost-response recovery, restart and receipt recovery after source changes.
 
-## Remaining acceptance gates
+## Historical release follow-up (reviewed November 17)
+
+The pending-release statements below describe the original November 2 checkpoint,
+not the current publication state. Beta.1 was subsequently published:
+
+- [Draft acceptance 41406021097](https://github.com/B-icy/Carthagent/actions/runs/41406021097)
+  and [release acceptance/publication 41413154402](https://github.com/B-icy/Carthagent/actions/runs/41413154402)
+  both have successful GitHub Actions conclusions.
+- [v1.1.0-beta.1](https://github.com/B-icy/Carthagent/releases/tag/v1.1.0-beta.1)
+  is a public, non-draft release, published November 2 at 08:26:59 UTC.
+- [PR #237](https://github.com/B-icy/Carthagent/pull/237) retains the original
+  author's additional account/browser, installed-profile, provenance and reward
+  replay report. Its local evidence paths were not independently revalidated in
+  the November 17 backlog review; those assertions are not new acceptance results.
+
+Publication status and workflow conclusions were rechecked through GitHub. No
+release tags/assets were changed, and old npm dist-tag observations must not be
+read as current channel state. This historical delivery-reward record is not
+acceptance of today's daily-goal or crew-harbour journey.
+
+## Remaining acceptance gates at the original checkpoint
 
 - Live browser comparison awaits normal user sign-in in `voyages-rewards-e2e`.
 - Live terminal rendering, cancellation and confirmed replay passed.

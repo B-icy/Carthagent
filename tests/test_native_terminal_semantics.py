@@ -184,7 +184,37 @@ class SnapshotTests(unittest.TestCase):
 
 @unittest.skipUnless(PTY_AVAILABLE, 'requires POSIX probe imports')
 class PickerSequencingTests(unittest.TestCase):
-    def test_pending_acceptance_prevents_resize_and_paste_with_stale_home_footer(self):
+    def test_picker_only_enters_the_actual_picker_open_phase(self):
+        tree = ast.parse(MODULE_PATH.read_text(encoding='utf8'))
+        focused = [node for node in ast.walk(tree) if isinstance(node, ast.Assign)
+                   and any(isinstance(target, ast.Name) and target.id == 'focused_case'
+                           for target in node.targets)]
+        opening = [node for node in ast.walk(tree) if isinstance(node, ast.If)
+                   and isinstance(node.test, ast.BoolOp)
+                   and [ast.unparse(value) for value in node.test.values[:2]] ==
+                   ['not focused_case', 'not picker_started']]
+        self.assertEqual(len(focused), 1)
+        self.assertEqual(len(opening), 1)
+        phase = compile(ast.Module(body=focused + opening, type_ignores=[]),
+                        str(MODULE_PATH), 'exec')
+        for picker_only, transport, layout, expected in (
+                (True, False, False, True), (False, False, False, True),
+                (False, True, False, False), (False, False, True, False)):
+            with self.subTest(picker_only=picker_only, transport=transport, layout=layout):
+                write_input = Mock()
+                namespace = dict(args=Mock(focused_host_roundtrip=transport),
+                                 regression_case=layout, picker_only=picker_only,
+                                 picker_started=False, elapsed=3, home_ready=True,
+                                 write_input=write_input, time=Mock())
+                exec(phase, namespace)
+                self.assertEqual(namespace['picker_started'], expected)
+                if expected:
+                    write_input.assert_called_once_with(b'\x0f')
+                    self.assertTrue(namespace['picker_home_before'])
+                else:
+                    write_input.assert_not_called()
+
+    def test_only_passed_acceptance_allows_resize_and_paste_with_stale_home_footer(self):
         # Execute the actual prompt phase from main, not a duplicate predicate.
         # A slow startup (>5s) leaves the home footer visible behind the picker
         # in the same iteration that Escape marks its acceptance PENDING.
@@ -212,7 +242,7 @@ class PickerSequencingTests(unittest.TestCase):
                                  struct=PROBE.struct, os=Mock(), signal=PROBE.signal,
                                  time=Mock())
                 exec(phase, namespace)
-                if status == 'PENDING':
+                if status != 'PASS':
                     namespace['fcntl'].ioctl.assert_not_called()
                     namespace['os'].kill.assert_not_called()
                     write_input.assert_not_called()
