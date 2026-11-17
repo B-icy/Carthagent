@@ -7,7 +7,118 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { runInNewContext } from 'node:vm';
 import { runNativeEvaluation } from '../lib/opencode/evaluation.mjs';
+
+const toolPart = (id, name, status, content = [], metadata = {}) => ({
+  type: 'tool', id, name, state: { status, content, metadata },
+});
+const resultText = status => [{ type: 'text', text: JSON.stringify({ status }) }];
+async function accountTools(parts, events = []) {
+  const api = {
+    server: { info: async () => ({ version: '2.0.32' }) },
+    plugin: { list: async () => ({ data: [{ id: 'ctg.evaluation-budget', state: { status: 'active' } }] }) },
+    session: {
+      create: async () => ({ id: 'accounting' }), prompt: async () => {}, wait: async () => {},
+      get: async () => ({ outcome: 'succeeded', cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } }),
+    },
+    event: { subscribe: async function* () { yield* events; } },
+    message: { list: async () => {
+      if (parts === null) throw Error('fixture transcript unavailable');
+      return { data: [{ type: 'assistant', finish: 'stop', content: parts }], cursor: {} };
+    } },
+  };
+  return runNativeEvaluation({ client: api, directory: tmpdir(), prompt: 'fixture', model: 'fake', provider: 'local' });
+}
+
+test('native accounting counts observed nested calls and errors, not code or search matches', async () => {
+  // Pilot shape: nested entries have tool/status/input, but no ID or result.
+  const part = toolPart('e1', 'execute', 'completed', resultText('verified'), { toolCalls: [
+    { tool: 'carthagent.delivery_plan', status: 'error', input: {} },
+    { tool: 'carthagent.delivery_plan', status: 'completed', input: {} },
+    { tool: 'search', status: 'completed', input: { query: 'delivery_finish' } },
+  ] });
+  part.state.input = { code: 'tools.carthagent.delivery_finish()' };
+  const result = await accountTools([part, part]);
+  assert.deepEqual(result.tools, { execute: 1, delivery_plan: 2, search: 1 });
+  assert.deepEqual(result.toolErrors, { delivery_plan: 1 });
+  assert.equal(result.deliveryStatus, null);
+});
+
+test('event-only accounting ignores opaque provider state and preserves terminal observations', async () => {
+  const called = (id, tool) => ({ type: 'session.tool.called', data: {
+    sessionID: 'accounting', id, tool, state: { opaque: 'provider-state' },
+  } });
+  const terminal = (id, type, extra = {}) => ({ type: `session.tool.${type}`, data: { sessionID: 'accounting', id, ...extra } });
+  const events = [
+    called('e1', 'execute'),
+    terminal('e1', 'success', { metadata: { toolCalls: [{ tool: 'carthagent.delivery_plan', status: 'error' }] } }),
+    called('f1', 'carthagent_delivery_finish'),
+    terminal('f1', 'success', { content: resultText('verified') }),
+  ];
+  const completed = await accountTools(null, events);
+  assert.equal(completed.exitCode, 1);
+  assert.ok(completed.errors.includes('fixture transcript unavailable'));
+  assert.deepEqual(completed.tools, { execute: 1, delivery_plan: 1, delivery_finish: 1 });
+  assert.deepEqual(completed.toolErrors, { delivery_plan: 1 });
+  assert.equal(completed.deliveryStatus, 'verified');
+
+  const failed = await accountTools(null, [...events,
+    called('f2', 'carthagent.delivery_finish'), terminal('f2', 'failed'),
+  ]);
+  assert.deepEqual(failed.toolErrors, { delivery_plan: 1, delivery_finish: 1 });
+  assert.equal(failed.deliveryStatus, null);
+});
+
+test('evaluation report serializes native tool errors alongside tool counts', async () => {
+  const result = await accountTools([toolPart('e1', 'execute', 'completed', [], { toolCalls: [
+    { tool: 'carthagent.delivery_plan', status: 'error' },
+  ] })]);
+  // Execute the actual CLI summary projection without launching a live provider
+  // or service. This exercises its serialized consumer contract, not a regex.
+  const source = readFileSync(new URL('../evaluate.mjs', import.meta.url), 'utf8');
+  const start = source.indexOf('  const summary = {');
+  const end = source.indexOf('  summary.developmentChecks =', start);
+  assert.ok(start >= 0 && end > start);
+  const serialized = runInNewContext(`${source.slice(start, end)}\nJSON.stringify(summary)`, {
+    result, mode: 'custom', scenarioName: 'fixture', args: { provider: 'local', model: 'fake' },
+    cwd: '/fixture', NATIVE_EVALUATION_RUNTIME: 'opencode-2',
+  });
+  const report = JSON.parse(serialized);
+  assert.deepEqual(report.tools, { execute: 1, delivery_plan: 1 });
+  assert.deepEqual(report.toolErrors, { delivery_plan: 1 });
+  assert.equal(report.deliveryStatus, null);
+});
+
+test('native accounting normalizes finish names and deduplicates IDs across metadata and events', async () => {
+  const finish = toolPart('f1', 'carthagent_delivery_finish', 'completed', resultText('verified'));
+  const result = await accountTools([
+    toolPart('e1', 'execute', 'completed', [], { toolCalls: [
+      { id: 'f1', tool: 'carthagent.delivery_finish', status: 'completed', content: resultText('verified') },
+    ] }), finish,
+  ], [
+    { type: 'session.tool.called', data: { sessionID: 'accounting', id: 'f1', tool: 'carthagent_delivery_finish' } },
+    { type: 'session.tool.called', data: { sessionID: 'accounting', id: 'f1', tool: 'carthagent_delivery_finish' } },
+  ]);
+  assert.deepEqual(result.tools, { execute: 1, delivery_finish: 1 });
+  assert.equal(result.deliveryStatus, 'verified');
+});
+
+test('native accounting never retains verified after a failed, pending or unreadable finish', async () => {
+  for (const status of ['error', 'running', 'completed']) {
+    const result = await accountTools([
+      toolPart('f1', 'delivery_finish', 'completed', resultText('verified')),
+      toolPart('e1', 'execute', 'completed', resultText('verified'), { toolCalls: [
+        { tool: 'carthagent.delivery_finish', status, input: { status: 'verified' } },
+      ] }),
+    ]);
+    assert.equal(result.deliveryStatus, null, status);
+    assert.equal(result.tools.delivery_finish, 2);
+    assert.deepEqual(result.toolErrors, status === 'error' ? { delivery_finish: 1 } : {});
+  }
+  const blocked = await accountTools([toolPart('f1', 'carthagent.delivery_finish', 'completed', resultText('blocked'))]);
+  assert.equal(blocked.deliveryStatus, 'blocked');
+});
 
 test('native evaluation adapter consumes native event shapes and reconciles session usage', async () => {
   const events = [];
