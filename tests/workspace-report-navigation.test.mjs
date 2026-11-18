@@ -47,11 +47,10 @@ test('report content scrolls in a bounded viewport instead of shrinking rows ove
   for (const box of page.slice(page.indexOf('<scrollbox')).matchAll(/<box\b([^>]*)>/g)) assert.match(box[1], /flexShrink=\{0\}/);
 });
 
-test('DTO section rows are labelled returned or truncated from the data, with readiness-dependent tone', () => {
+test('fully returned DTO sections collapse to coverage while truncation stays explicit', () => {
   const complete = live.renderDeliveryReadiness({ completion: 'ready', gate: 'open', freshness: 'current', truncation: { checks: { returned: 1, total: 1 }, risks: { returned: 0, total: 0 } } });
   assert.deepEqual(complete.sectionRows, [
-    { text: 'Returned DTO section · checks: 1 of 1 returned', tone: 'returned' },
-    { text: 'Returned DTO section · risks: 0 of 0 returned', tone: 'returned' },
+    { text: 'Coverage: complete · 2 sections fully returned', tone: 'returned' },
   ]);
   const partial = live.renderDeliveryReadiness({ completion: 'incomplete', gate: 'locked', truncation: { checks: { returned: 100, total: 101 } } });
   assert.deepEqual(partial.sectionRows, [{ text: 'Truncated DTO section · checks: 100 of 101 returned', tone: 'truncated' }]);
@@ -62,7 +61,18 @@ test('DTO section rows are labelled returned or truncated from the data, with re
   assert.doesNotMatch(page, /Incomplete DTO section/);
   assert.doesNotMatch(page, /Returned DTO section · \{section\}/);
   const architecture = page.slice(page.indexOf('<Show when={props.view === "architecture"}>'), page.indexOf('<Show when={props.view === "evidence"}>'));
-  assert.match(architecture, /fg=\{readiness\(\)\.gate === "open" \? context\.theme\.text\.feedback\.success\.base : context\.theme\.text\.feedback\.warning\.base\}/);
+  assert.match(architecture, /fg=\{readinessColor\(\)\}/);
+  assert.doesNotMatch(page, /finish gate|readiness\(\)\.gate === "open"/);
+  assert.match(page, /readiness\(\)\.tone === "success"/);
+});
+
+test('workflow shows failed receipts and incomplete steps before coverage diagnostics', () => {
+  const workflow = page.slice(page.indexOf('<Show when={props.view === "workflow"}>'), page.indexOf('<Show when={props.view === "architecture"}>'));
+  assert.ok(workflow.indexOf('readiness().receipts') < workflow.indexOf('readiness().sectionRows'));
+  assert.ok(workflow.indexOf('orderedWorkflowNodes(') < workflow.indexOf('readiness().sectionRows'));
+  const nodes = [{ id: 'done', status: 'passed' }, { id: 'pending', status: 'pending' }, { id: 'failed', status: 'failed' }, { id: 'blocked', status: 'blocked' }];
+  assert.deepEqual(live.orderedWorkflowNodes(nodes).map(node => node.id), ['failed', 'blocked', 'pending', 'done']);
+  assert.equal(nodes[0].id, 'done', 'presentation must not mutate the authoritative graph');
 });
 
 test('review surfaces name the independent code-review receipt and never promote self-review', () => {

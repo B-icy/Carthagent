@@ -28,17 +28,18 @@ export function deliveryReadiness(delivery: {
   completion?: string;
   gate?: string;
   freshness?: string;
+  evidence?: Array<{ id: string; status: string }>;
   truncation?: Record<string, { returned: number; total: number }>;
 } | undefined) {
   if (!delivery) return { complete: false, coverage: "unknown", status: "not loaded" };
   const truncation = delivery.truncation;
   const capped = truncation ? Object.entries(truncation).filter(([, value]) => value.returned !== value.total) : [];
-  const complete = delivery.completion === "ready";
+  const complete = delivery.completion === "ready" && delivery.freshness === "current";
   const totals = capped.map(([name, value]) => `${name} ${value.returned}/${value.total}`);
   return {
     complete,
     coverage: truncation ? (totals.length ? "partial" : "complete") : "unknown",
-    status: `completion ${delivery.completion ?? "unknown"} · gate ${delivery.gate ?? "unknown"} · freshness ${delivery.freshness ?? "unknown"}${totals.length ? ` · partial coverage: ${totals.join(", ")}` : ""}`,
+    status: `completion ${delivery.completion ?? "unknown"} · freshness ${delivery.freshness ?? "unknown"} · implementation gate ${delivery.gate ?? "unknown"}${totals.length ? ` · partial coverage: ${totals.join(", ")}` : ""}`,
   };
 }
 
@@ -49,15 +50,17 @@ export function renderDeliveryReadiness(delivery: Parameters<typeof deliveryRead
     ? entries.map(([name, value]) => `${name}: ${value.returned} of ${value.total} returned`)
     : ["Coverage metadata unavailable: completeness cannot be confirmed"];
   const sectionRows: Array<{ text: string; tone: "returned" | "truncated" | "unknown" }> = entries
-    ? entries.map(([name, value], index) => value.returned === value.total
-      ? { text: `Returned DTO section · ${sections[index]}`, tone: "returned" }
-      : { text: `Truncated DTO section · ${sections[index]}`, tone: "truncated" })
+    ? entries.flatMap(([, value], index) => value.returned === value.total
+      ? []
+      : [{ text: `Truncated DTO section · ${sections[index]}`, tone: "truncated" as const }])
     : [{ text: sections[0]!, tone: "unknown" }];
-  const receipts = (delivery && "evidence" in delivery && Array.isArray(delivery.evidence) ? delivery.evidence : [])
+  if (entries && !sectionRows.length) sectionRows.push({ text: `Coverage: complete · ${entries.length} sections fully returned`, tone: "returned" });
+  const receipts = orderedWorkflowNodes(delivery?.evidence ?? [])
     .map((item) => `Receipt ${item.id}: ${item.status}`);
   const gate = delivery?.gate === "open" || delivery?.gate === "locked" ? delivery.gate : "unknown";
   return {
-    label: `Readiness: ${delivery?.completion === "ready" ? "ready" : delivery?.completion === "incomplete" ? "incomplete" : "unknown"} · ${readiness.status}`,
+    label: `Readiness: ${delivery?.completion ?? "unknown"} · freshness ${delivery?.freshness ?? "unknown"} · implementation gate ${gate}`,
+    tone: readiness.complete ? "success" as const : delivery?.completion ? "warning" as const : "muted" as const,
     gate,
     coverageLabel: readiness.coverage === "unknown" ? "Coverage: unknown" : `Coverage: ${readiness.coverage}`,
     coverage: readiness.coverage,
@@ -65,6 +68,13 @@ export function renderDeliveryReadiness(delivery: Parameters<typeof deliveryRead
     sectionRows,
     receipts,
   };
+}
+
+/** Attention first, preserving authored order within each group and never changing the DTO. */
+export function orderedWorkflowNodes<T extends { status: string }>(nodes: readonly T[]) {
+  const priority = (status: string) => ["fail", "failed", "blocked", "stale"].includes(status) ? 0
+    : ["done", "completed", "complete", "passed", "pass", "fresh"].includes(status) ? 2 : 1;
+  return [...nodes].sort((a, b) => priority(a.status) - priority(b.status));
 }
 
 export function workspaceReturnRoute(sessionID: string | undefined) {
