@@ -10,6 +10,8 @@ The native API requires `projectID` for worktree create/list/refresh/remove. Use
 
 ## Durable operations
 
+The delivery DTO's `gate` is the planning/implementation gate, not permission to finish. Workflow, architecture and evidence views label it **implementation gate**; readiness receives success styling only when authoritative `completion` is `ready` and `freshness` is `current`. The workflow shows failed/stale receipts and failing or incomplete nodes before coverage diagnostics. Fully returned DTO sections share one coverage summary; truncated sections and unavailable coverage metadata remain explicit. These are presentation rules, not changes to verification or finish enforcement.
+
 Each create intent is persisted before calling the OpenCode APIs. Successful worktree + root session creation completes the journal entry and records the task. If the operation fails between native API calls, its intent remains `recovery-required`; reconciliation only repairs outcomes that can be verified and never blindly retries a worktree/session create. The JSON state is atomically replaced, and a cooperative exclusive lock serializes local CTG writers. A leftover lock is an explicit recovery condition, not an invitation to steal it automatically.
 
 ## Legacy Pi archive

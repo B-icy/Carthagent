@@ -79,13 +79,13 @@ test('bounded delivery DTO preserves stale incomplete status and authoritative l
   const readiness = deliveryReadiness(delivery);
   const rendered = renderDeliveryReadiness(delivery);
   assert.equal(readiness.complete, false);
-  assert.match(readiness.status, /completion incomplete · gate locked · freshness stale/);
+  assert.match(readiness.status, /completion incomplete · freshness stale · implementation gate locked/);
   assert.match(readiness.status, /partial coverage: checks 100\/101/);
   assert.equal(rendered.gate, 'locked');
   assert.match(rendered.label, /Readiness: incomplete/);
   assert.equal(rendered.coverage, 'partial');
   assert.ok(rendered.sections.includes('checks: 100 of 101 returned'));
-  assert.match(rendered.receipts.at(-1), /check_99: stale/);
+  assert.match(rendered.receipts[0], /check_99: stale/);
 });
 
 test('capped presentation coverage does not downgrade authoritative ready status or gate', () => {
@@ -102,7 +102,7 @@ test('capped presentation coverage does not downgrade authoritative ready status
   assert.ok(rendered.sections.includes('architecture: 100 of 101 returned'));
 });
 
-test('stale check outside the returned cap remains blocked by the authoritative DTO gate', () => {
+test('stale check outside the returned cap remains incomplete regardless of implementation gate', () => {
   const delivery = {
     status: 'stale', freshness: 'stale', completion: 'incomplete', gate: 'locked',
     evidence: Array.from({ length: 100 }, (_, index) => ({ id: `check_${index}`, status: 'fresh' })),
@@ -113,6 +113,29 @@ test('stale check outside the returned cap remains blocked by the authoritative 
   assert.equal(rendered.coverage, 'partial');
   assert.match(rendered.label, /Readiness: incomplete/);
   assert.match(rendered.label, /freshness stale/);
+});
+
+test('approved design with a failed required check never presents finish permission or success', () => {
+  const delivery = { completion: 'incomplete', gate: 'open', freshness: 'stale', evidence: [{ id: 'required', status: 'failed' }] };
+  const rendered = renderDeliveryReadiness(delivery);
+  assert.match(rendered.label, /Readiness: incomplete/);
+  assert.match(rendered.label, /implementation gate open/);
+  assert.doesNotMatch(rendered.label, /finish gate/);
+  assert.equal(rendered.tone, 'warning');
+  assert.deepEqual(rendered.receipts, ['Receipt required: failed']);
+});
+
+test('only authoritative ready and current completion receives success styling', () => {
+  for (const gate of ['open', 'locked', undefined]) {
+    const fresh = renderDeliveryReadiness({ completion: 'ready', freshness: 'current', gate });
+    assert.equal(fresh.tone, 'success');
+    for (const freshness of ['stale', undefined]) {
+      const stale = renderDeliveryReadiness({ completion: 'ready', freshness, gate });
+      assert.equal(stale.tone, 'warning');
+      assert.match(stale.label, new RegExp(`freshness ${freshness ?? 'unknown'}`));
+    }
+  }
+  assert.equal(renderDeliveryReadiness(undefined).tone, 'muted');
 });
 
 test('missing coverage metadata and gate are unknown rather than fabricated incomplete or locked', () => {
