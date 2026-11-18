@@ -14,7 +14,7 @@ The caller of `runOpenCodeCli()` supplies these concrete capabilities:
 | --- | --- |
 | `run({ mode, options, prompt, args })` | Launch native OpenCode interactive or headless (`print`/JSONL) session. Honor `--engine-cli`/`--agent-cli` as an explicit executable override and `--isolate` as extension/skill/prompt discovery isolation using a fresh CTG profile, not a worktree. |
 | `listModels({ query })` | Enumerate models from the native provider catalog, filter the optional query, and print the compatible provider/model/context/token/input/output columns. |
-| `login({ args })` | Uses OpenCode 2 integration list/connect/status/complete/cancel APIs. Defaults to Carthagent Ship when available; optional integration and method arguments select another integration. Key-based methods are not prompted in clear text. |
+| `login({ args })` | Uses OpenCode 2 integration list/connect/status/complete/cancel APIs. Enter selects Carthagent Cloud when available; optional integration and method arguments select another integration. Invalid provider numbers show the valid range and prompt again; Ctrl+C cancels with exit status 130. Key-based methods are not prompted in clear text. Success prints next steps without launching a session. |
 | `account({ args })` | Uses the profile-owned Ship RPC and active managed OAuth connection; `--json` emits the account response. |
 | `billing({ action })` | Uses the profile-owned Ship RPC to create checkout/portal links and opens the returned URL explicitly. |
 | `logout({ session })` | Uses the profile-owned Ship RPC to revoke a named session or the current session; current logout also removes its native credential. |

@@ -24,7 +24,7 @@ import { nativeNavigation } from "./ui/native-navigation.js";
 import { provisionNativeThemes } from "./ui/theme-provision.mjs";
 import { setSessionAutoCompaction } from "./ui/session-preferences.mjs";
 import { runModelCommand } from "./ui/model-command.js";
-import { askNativeReviewOffer, createNativeReviewConsumer, nativeReviewMode, sendNativeReviewKickoff, subscribeNativeReviewEvents } from "./ui/native-review.mjs";
+import { showNativeReviewOffer, createNativeReviewConsumer, nativeReviewMode, sendNativeReviewKickoff, subscribeNativeReviewEvents } from "./ui/native-review.mjs";
 import { createDeliveryRewardNotice } from "./ui/delivery-reward-notice.mjs";
 
 const THEMES = ["carthage", "tokyonight", "nebula", "ember", "forest", "mono", "obsidian", "midnight", "solarized-dark", "nord", "contrast-dark", "okabe-dark", "paper", "daylight", "solarized-light", "contrast-light", "okabe-light", "solarized", "okabe", "contrast", "system"];
@@ -58,10 +58,7 @@ export default Plugin.define({
         const delivery = await workspaceClient(context, context.data.session.get(sessionID)?.location).delivery({ sessionID }, signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000));
         return delivery.status === "unavailable" || delivery.status === "verified";
       },
-      offer: async ({ sessionID, writes, start }: { sessionID: string; writes: number; start: () => Promise<boolean> }) => {
-        const accepted = await askNativeReviewOffer(context.ui.dialog, { title: context.data.session.get(sessionID)?.title ?? sessionID, writes });
-        if (accepted) await start();
-      },
+      offer: async (offer) => showNativeReviewOffer(context.ui.toast, offer),
       kickoff: async (reviewSessionID: string, signal?: AbortSignal) => sendNativeReviewKickoff({ client: context.client, sessionID: reviewSessionID, signal }),
     });
     cleanups.push(() => reviewConsumer.dispose());
@@ -380,7 +377,7 @@ export default Plugin.define({
           if (!["checkout", "portal"].includes(action) || !["builder", "pro", "max"].includes(plan)) { toast("Usage: /billing [checkout [builder|pro|max]|portal|refresh].", "warning"); return; }
           if (action === "checkout") {
             const { quote } = await shipClient(context, location).billing({ action: "quote", plan: plan as "builder" | "pro" | "max" }) as { quote: { terms: string; changingPlan: boolean } };
-            const proceed = await context.ui.dialog.confirm({ title: "Review Cloud plan", message: `${quote.terms}\n\n${quote.changingPlan ? "Review the exact proration in your browser before confirming the change." : "Continue to Stripe to review and pay."}\nYour task stays in this session. You can also connect your own provider with /login.` });
+            const proceed = await context.ui.dialog.confirm({ title: "Review Cloud plan", message: `${quote.terms}\n\n${quote.changingPlan ? "Review the exact proration in your browser before confirming the change." : "Continue to Stripe to review and pay."}\nYour task stays in this session. You can also connect your own provider with /connect.` });
             if (proceed !== true) return;
           }
           const { url } = await shipClient(context, location).billing({ action: action as "checkout" | "portal", plan: plan as "builder" | "pro" | "max" }) as { url: string };

@@ -7,24 +7,21 @@ export async function sendNativeReviewKickoff({ client, sessionID, signal, promp
   await client.session.prompt({ sessionID, text: prompt, metadata: { "ctg.raw": true, "ctg.reviewKickoff": true } }, { signal });
 }
 
-/** Explicit launch mode persisted for the session wins over the profile default. */
 /**
- * Ask whether to start the PR review loop. Starting it pushes a branch and
- * opens a real pull request, so the safe choice is focused: a reflexive Enter
- * (or Esc) means "Not now", and starting requires an explicit selection.
+ * Offer the optional PR loop without taking focus from the finished response.
+ * The plugin toast API links to a session, but has no custom action callback;
+ * /review remains the explicit keyboard action and discloses its remote effects.
  */
-export async function askNativeReviewOffer(dialog, { title, writes }) {
-  const choice = await dialog.select({
-    title: `Review ${title}?`,
-    current: 'not-now',
-    options: [
-      { title: 'Not now', value: 'not-now', description: 'Keep the changes local' },
-      { title: 'Start review', value: 'start', description: `Push a branch, open a PR, run a fresh-context review (${writes} file${writes === 1 ? '' : 's'} changed)` },
-    ],
+export function showNativeReviewOffer(toast, { sessionID }) {
+  toast.show({
+    sessionID,
+    message: 'Optional: /review to push a branch, open a PR and run a fresh-context review.',
+    variant: 'info',
+    duration: 5000,
   });
-  return choice === 'start';
 }
 
+/** Explicit launch mode persisted for the session wins over the profile default. */
 export function nativeReviewMode(session, config, explicitMode) {
   return resolveReviewMode(explicitMode ?? session?.metadata?.[SESSION_OPTIONS_KEY]?.review, config);
 }

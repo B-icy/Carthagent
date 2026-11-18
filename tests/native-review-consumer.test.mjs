@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import { reviewKickoff } from '../lib/review.mjs';
 import { createNativeReviewConsumer, nativeReviewMode, sendNativeReviewKickoff, subscribeNativeReviewEvents } from '../plugins/carthagent/src/ui/native-review.mjs';
 
@@ -285,14 +286,44 @@ test('host execution subscriptions are disposed and plugin shutdown blocks pendi
   assert.equal(unsubscribed.length, 5);
 });
 
-test('review offer focuses "Not now" so a reflexive Enter never opens a PR', async () => {
-  const { askNativeReviewOffer } = await import('../plugins/carthagent/src/ui/native-review.mjs');
-  let shown;
-  const dialog = choice => ({ async select(options) { shown = options; return choice(options); } });
-  assert.equal(await askNativeReviewOffer(dialog(options => options.current), { title: 'Fix', writes: 2 }), false);
-  assert.equal(shown.current, 'not-now');
-  assert.equal(shown.options[0].value, 'not-now');
-  assert.match(shown.options[1].description, /open a PR.*2 files/);
-  assert.equal(await askNativeReviewOffer(dialog(() => undefined), { title: 'Fix', writes: 1 }), false);
-  assert.equal(await askNativeReviewOffer(dialog(() => 'start'), { title: 'Fix', writes: 1 }), true);
+test('default successful finish offers review without a modal or kickoff; duplicate events do not spam', async () => {
+  const { showNativeReviewOffer } = await import('../plugins/carthagent/src/ui/native-review.mjs');
+  const notices = [], kickoffs = [];
+  // Only the nonmodal toast capability is supplied: no dialog or prompt access.
+  const toast = { show: (options) => notices.push(options) };
+  const consumer = createNativeReviewConsumer({
+    mode: () => nativeReviewMode({}, {}), diff: makeDiff(), eligible: async () => true,
+    offer: async (offer) => showNativeReviewOffer(toast, offer),
+    kickoff: async (sessionID) => kickoffs.push(sessionID),
+  });
+  consumer.onStarted(execution('verified-run', 'session-a'));
+  await Promise.all([1, 2, 3].map(() => consumer.onSucceeded(execution('verified-run', 'session-a'))));
+  assert.equal(notices.length, 1);
+  assert.equal(notices[0].sessionID, 'session-a', 'background offers link to their own session');
+  assert.equal(notices[0].variant, 'info');
+  assert.match(notices[0].message, /Optional.*\/review.*push.*branch.*open.*PR.*fresh-context review/);
+  assert.equal(notices[0].duration, 5000, 'offer expires without requiring dismissal');
+  assert.deepEqual(kickoffs, [], 'an automatic offer never starts paid or external work');
+  consumer.dispose();
+});
+
+test('no mode still suppresses offers and automatic kickoff after changed successful runs', async () => {
+  const consumer = createNativeReviewConsumer({
+    mode: () => 'no', diff: makeDiff(),
+    offer: async () => assert.fail('no must not offer'),
+    kickoff: async () => assert.fail('no must not start automatically'),
+  });
+  consumer.onStarted(execution('run', 'session'));
+  await consumer.onSucceeded(execution('run', 'session'));
+  consumer.dispose();
+});
+
+test('TUI wires the nonmodal offer and retains the explicit /review kickoff and formal delivery gate', () => {
+  const source = readFileSync(new URL('../plugins/carthagent/src/tui.tsx', import.meta.url), 'utf8');
+  assert.match(source, /offer: async \(offer\) => showNativeReviewOffer\(context\.ui\.toast, offer\)/);
+  assert.doesNotMatch(source, /askNativeReviewOffer/);
+  assert.match(source, /delivery\.status === "unavailable" \|\| delivery\.status === "verified"/);
+  const command = source.slice(source.indexOf('case "review":'), source.indexOf('case "export":'));
+  assert.match(command, /reviewConsumer\.setLoopActive\(sessionID, true\)/);
+  assert.match(command, /await sendNativeReviewKickoff\(\{ client: context\.client, sessionID, signal: lifecycle\.signal, prompt: reviewKickoff\(\) \}\)/);
 });
