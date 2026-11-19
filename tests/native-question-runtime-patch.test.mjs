@@ -11,6 +11,7 @@ import {
 
 const releasedPath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v15.patch';
 const candidatePath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v16.patch';
+const promotedPath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v18.patch';
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url));
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 
@@ -23,9 +24,10 @@ function additions(patch, path) {
     .map(line => line.slice(1)).join('\n');
 }
 
-test('question staging preserves the immutable v15 release and existing development pin', () => {
+test('v15 patch stays immutable; the 1.1.2 runtime pin selects reviewed v18', () => {
   assert.equal(sha256(read(releasedPath)), 'eb6feae3931d78a2ff572b63a2186c63f0300ca2ee4b7808d96bb270c65ec3f0');
-  assert.equal(CTG_RUNTIME_PATCH_SHA256, sha256(read(releasedPath)));
+  assert.equal(CTG_RUNTIME_PATCH_SHA256, sha256(read(promotedPath)));
+  assert.equal(CTG_RUNTIME_PATCH_SHA256, '636e01c3da517c64a5f90fb1ea6a682a25fbcb2b63372a8fd2c32ec11fe706dd');
   assert.equal(CTG_DEVELOPMENT_RUNTIME_PATCH_SHA256,
     sha256(read('docs/patches/opencode-v2.0.32-session-ui-development-v20.patch')));
   const release = JSON.parse(read('lib/opencode/runtime-release.json'));
@@ -34,18 +36,14 @@ test('question staging preserves the immutable v15 release and existing developm
   assert.equal(release.lockSha256, CTG_RUNTIME_LOCK_SHA256);
 });
 
-test('prebuild promotion preserves resolver and release trust root', () => {
-  // Source-only boundary at Carthagent 244dc99. These are regression guards,
-  // not candidate trust pins. A later promotion needs its own reviewed change.
-  const unchanged = {
-    'lib/opencode/runtime.mjs': 'a86cd22405de4eed551b1a0400e72696e7631b06fbca0c355a3f6993b5d6ea0f',
-    'lib/opencode/runtime-release.json': '72a909a14fa4ac85cb8d3b7bb04909e10ac971621eeb674c4f4b11a87abf9e11',
-  };
-  for (const [path, digest] of Object.entries(unchanged)) {
-    // Windows checkout conversion must not look like a trust-root edit.
-    assert.equal(sha256(read(path).toString('utf8').replace(/\r\n/g, '\n')), digest, path);
-  }
-  const candidateBuildPath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v18.patch';
+test('resolver, release trust root, build recipe and workflow agree on promoted v18', () => {
+  const release = JSON.parse(read('lib/opencode/runtime-release.json'));
+  const packageJson = JSON.parse(read('package.json'));
+  assert.equal(release.releaseVersion, packageJson.version);
+  assert.equal(release.patchSha256, CTG_RUNTIME_PATCH_SHA256);
+  assert.equal(release.sourceRevision, CTG_RUNTIME_SOURCE);
+  assert.equal(release.lockSha256, CTG_RUNTIME_LOCK_SHA256);
+  const candidateBuildPath = promotedPath;
   const build = read('script/ctg/build-owned-runtime.sh').toString('utf8');
   assert.ok(build.includes(`EXPECTED_PATCH="${sha256(read(candidateBuildPath))}"`));
   assert.ok(build.includes(candidateBuildPath));
