@@ -136,10 +136,6 @@ export function VoyagesNavigation(props: NavigationInput) {
         setSelection(item.value);
         if (actions) scroll?.scrollChildIntoView(actions.id);
       }} onSelect={(_index, item) => select(item?.value)} />
-      <box id="voyages-friends-locked" paddingX={1} paddingTop={1} flexShrink={0} flexDirection="column">
-        <text fg={context.theme.text.action.secondary.disabled} selectable={false}>{props.compact ? "Friends" : "Friends · WIP"}</text>
-        <Show when={props.compact}><text fg={context.theme.text.muted} selectable={false}>WIP</text></Show>
-      </box>
     </scrollbox>
   </box>;
 }
