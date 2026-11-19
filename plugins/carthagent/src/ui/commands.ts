@@ -11,7 +11,7 @@ export interface CarthagentCommand {
   name: string;
   aliases?: string[];
   args?: string;
-  /** Keep slash input eligible for command dispatch when the composer is submitted. */
+  /** Also dispatch a submitted `/name` for a command without arguments (see slashRegistrations). */
   submitSlash?: boolean;
   description: string;
   hidden?: boolean;
@@ -62,6 +62,32 @@ export const COMMANDS: readonly CarthagentCommand[] = [
   { id: "ctg-worktree", name: "ctg-worktree", advanced: true, args: "<project-id> <name>", description: "Advanced: create a git worktree" },
   { id: "ctg-task", name: "ctg-task", advanced: true, args: "<task>", description: "Advanced: new task in its own worktree" },
 ] as const;
+
+export interface SlashRegistration {
+  /** Appended to the keymap command id. */
+  idSuffix: "" | ".submit";
+  palette: boolean;
+  slash?: { name: string; aliases?: string[]; arguments?: true };
+}
+
+/**
+ * Keymap entries for one command, in registration order. Picking an
+ * argument-taking entry from slash completion only inserts `/name `; prompt
+ * submission dispatches only argument-taking entries. A `submitSlash` command
+ * without arguments therefore registers an argument-taking twin (for a
+ * submitted `/name`) and then a plain entry. The host's completion runs the
+ * last plain `/help` registration on the first Enter; for any other name,
+ * including aliases, it still prefers the argument-taking twin.
+ */
+export function slashRegistrations(command: CarthagentCommand): SlashRegistration[] {
+  // Host-equivalent commands stay in the palette and /help without a duplicate slash row.
+  if (command.hostSlash) return [{ idSuffix: "", palette: true }];
+  const names = { name: command.name, ...(command.aliases ? { aliases: [...command.aliases] } : {}) };
+  if (command.args) return [{ idSuffix: "", palette: true, slash: { ...names, arguments: true } }];
+  const plain: SlashRegistration = { idSuffix: "", palette: true, slash: names };
+  if (!command.submitSlash) return [plain];
+  return [{ idSuffix: ".submit", palette: false, slash: { ...names, arguments: true } }, plain];
+}
 
 /** Host-owned commands surfaced by /help so newcomers see one short starting list. */
 export interface HostHelpEntry { id: string; name: string; description: string }
