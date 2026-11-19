@@ -34,12 +34,10 @@ test('question staging preserves the immutable v15 release and existing developm
   assert.equal(release.lockSha256, CTG_RUNTIME_LOCK_SHA256);
 });
 
-test('question staging does not edit the active build, publish workflow, resolver or release trust root', () => {
+test('prebuild promotion preserves resolver and release trust root', () => {
   // Source-only boundary at Carthagent 244dc99. These are regression guards,
   // not candidate trust pins. A later promotion needs its own reviewed change.
   const unchanged = {
-    'script/ctg/build-owned-runtime.sh': 'f3896af8191b261b13c75fae9c0a3c2d11fd58f065d1ebd07b89df8726dbd773',
-    '.github/workflows/publish-owned-opencode-runtime.yml': '230e92404f6948e92da53367b1710cee06d8bc72b54f76d1111ba29a83dc7492',
     'lib/opencode/runtime.mjs': 'a86cd22405de4eed551b1a0400e72696e7631b06fbca0c355a3f6993b5d6ea0f',
     'lib/opencode/runtime-release.json': '72a909a14fa4ac85cb8d3b7bb04909e10ac971621eeb674c4f4b11a87abf9e11',
   };
@@ -47,10 +45,11 @@ test('question staging does not edit the active build, publish workflow, resolve
     // Windows checkout conversion must not look like a trust-root edit.
     assert.equal(sha256(read(path).toString('utf8').replace(/\r\n/g, '\n')), digest, path);
   }
+  const candidateBuildPath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v18.patch';
   const build = read('script/ctg/build-owned-runtime.sh').toString('utf8');
-  assert.ok(build.includes(`EXPECTED_PATCH="${CTG_RUNTIME_PATCH_SHA256}"`));
-  assert.ok(build.includes(releasedPath));
-  assert.ok(read('.github/workflows/publish-owned-opencode-runtime.yml').toString('utf8').includes(releasedPath));
+  assert.ok(build.includes(`EXPECTED_PATCH="${sha256(read(candidateBuildPath))}"`));
+  assert.ok(build.includes(candidateBuildPath));
+  assert.ok(read('.github/workflows/publish-owned-opencode-runtime.yml').toString('utf8').includes(candidateBuildPath));
 });
 
 test('combined v16 is a separately identified source candidate, not an active runtime pin', t => {

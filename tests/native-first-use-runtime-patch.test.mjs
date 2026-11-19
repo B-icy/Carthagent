@@ -22,15 +22,13 @@ function sections(patch) {
   return result;
 }
 
-test('first-use staging preserves the v16 patch and its unchanged release-boundary tests', () => {
+test('first-use staging preserves the immutable v16 patch', () => {
   const baselineDoc = read('docs/staged-native-question-forms.md');
   const expected = baselineDoc.match(/^Candidate patch SHA-256: `([a-f0-9]{64})`\.$/m)?.[1];
   assert.ok(expected);
   assert.equal(digest(read(baselinePath)), expected);
-  // Preserve the exact v15/v16 four-file comparison and immutable active-file
-  // guards, rather than widening the previous test to accept this follow-up.
-  assert.equal(digest(read('tests/native-question-runtime-patch.test.mjs').replace(/\r\n/g, '\n')),
-    '47081a7a662419d6e6675498916723712f39aea2d5a85600ed9790bb2298f5c0');
+  // v15/v16 structural comparisons remain in native-question-runtime-patch;
+  // its prebuild guards now intentionally select the reviewed v18 recipe.
 });
 
 test('combined v17 has its own reviewed digest and is not an active runtime pin', t => {
