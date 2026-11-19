@@ -77,7 +77,9 @@ test.each([30, 18])("real Voyages navigator renders account and assignment summa
     expect(frame).not.toContain("Test captain");
     expect(frame).toContain("10 coins");
     expect(frame).toContain("Quests");
-    expect(frame).toContain("Friends · WIP");
+    expect(frame).toContain("Coding");
+    expect(frame).not.toContain("Friends");
+    expect(frame).not.toContain("WIP");
     expect(frame).not.toContain("Run a code review");
     expect(frame).not.toContain("must not appear");
     expect(f.calls).toEqual(["profile", "daily"]);
@@ -269,9 +271,10 @@ test("mouse press focuses the rail and release opens the clicked row without act
     await f.app.renderOnce();
     expect(f.routes).toEqual([{ type: "plugin", name: "daily-quests", data: { sessionID: "coding-session" } }]);
     expect(f.mode()).toBe("base");
-    const friendsRow = f.app.captureCharFrame().split("\n").findIndex((line) => line.includes("Friends · WIP"));
-    expect(friendsRow).toBeGreaterThanOrEqual(0);
-    await f.app.mockMouse.click(5, friendsRow);
+    // Empty pane space below the actions never routes.
+    const blankRow = f.app.captureCharFrame().split("\n").findIndex((line) => line.includes("Coding")) + 2;
+    expect(blankRow).toBeGreaterThan(1);
+    await f.app.mockMouse.click(5, blankRow);
     await f.app.renderOnce();
     expect(f.routes).toEqual([
       { type: "plugin", name: "daily-quests", data: { sessionID: "coding-session" } },
@@ -319,8 +322,8 @@ const pointerCases = [
   { name: "focused full", width: 30, height: 36, compact: false, focused: true, scrolled: false },
   { name: "unfocused compact", width: 11, height: 36, compact: true, focused: false, scrolled: false },
   { name: "focused compact", width: 11, height: 36, compact: true, focused: true, scrolled: false },
-  { name: "unfocused scrolled", width: 30, height: 7, compact: false, focused: false, scrolled: true },
-  { name: "focused scrolled", width: 30, height: 7, compact: false, focused: true, scrolled: true },
+  { name: "unfocused scrolled", width: 30, height: 6, compact: false, focused: false, scrolled: true },
+  { name: "focused scrolled", width: 30, height: 6, compact: false, focused: true, scrolled: true },
 ];
 for (const c of pointerCases) for (const [label, route] of [["Shop", { type: "plugin", name: "voyages", data: { sessionID: "coding-session", section: "equipment" } }], [c.compact ? "Captain" : "Character", { type: "plugin", name: "voyages", data: { sessionID: "coding-session", section: "profile" } }]] as const) {
   test(`pointer activates the row under the press when the focus hint shifts the rail (${c.name}, ${label})`, async () => {
