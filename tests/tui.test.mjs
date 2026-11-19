@@ -6,7 +6,7 @@ import { UNICODE_GLYPHS, ASCII_GLYPHS, detectGlyphMode, resolveGlyphs } from '..
 import { checkDigest, planD2, computePhase, freshChecks, PHASES } from '../lib/delivery.mjs';
 import { createFeed, resetFeed, applyEvent, summarizeArgs, renderFeed, hydrateFeed } from '../lib/tui/feed.mjs';
 import { CARTHAGE_LINES } from '../lib/tui/carthage.mjs';
-import { strip, width, wrap, truncate, hasTruecolor, sliceCols, inverseCols, mix, fg } from '../lib/tui/ansi.mjs';
+import { strip, width, wrap, truncate, hasTruecolor, sliceCols, inverseCols, mix, fg, colorDepth } from '../lib/tui/ansi.mjs';
 import { getTheme, resolveThemeName, flattenTheme, THEME_NAMES } from '../lib/tui/theme.mjs';
 import { framePrompt, shouldFrame, unframe, frameHint, FRAME_HINTS } from '../lib/tui/framing.mjs';
 import { listSessions, mostRecentSession, sessionDirFor, buildEngineArgs } from '../lib/engine.mjs';
@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
 import { mkdtempSync, writeFileSync, rmSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -137,6 +138,20 @@ test('renderD2 breathes the arrowhead into the active node', () => {
 });
 
 test('renderD2 swirls a comet around the active node border', () => {
+  // The fingerprint below requires distinct RGB colors. ANSI palette reduction
+  // can map idle borders to that same color; isolate the truecolor fixture
+  // before ansi.mjs initializes rather than changing this process's environment.
+  if (colorDepth !== 24) {
+    const env = { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor', CARTHAGENT_TRUECOLOR: '1' };
+    delete env.NO_COLOR;
+    delete env.CARTHAGENT_NO_TRUECOLOR;
+    const result = spawnSync(process.execPath, ['--test', '--test-name-pattern=^renderD2 swirls a comet around the active node border$', fileURLToPath(import.meta.url)], {
+      env, encoding: 'utf8', timeout: 30_000,
+    });
+    assert.ifError(result.error);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    return;
+  }
   const g = parseD2(planD2(SAMPLE_PLAN));
   const theme = getTheme('opencode');
   const accent = theme.primary || theme.accent;
