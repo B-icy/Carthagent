@@ -262,7 +262,7 @@ It's opt-in and tri-state, resolved as `--review <mode>` flag → `~/.carthagent
 
 | Mode | Behavior |
 |---|---|
-| `ask` (default) | Offer the loop at the end of a major change (`^y` accepts, `esc` skips) |
+| `ask` (default) | Show a brief, nonmodal offer after a changed, successful run; type `/review` to start |
 | `yes` | Start the loop automatically — no prompt |
 | `no` | Never offer |
 
@@ -274,6 +274,11 @@ ctg --review no              # per-launch override
 ```
 
 Inside a session, `/review` starts a loop immediately and `/review ask|yes|no|status` manages the same default. The loop needs `git` + an authenticated `gh` — without them the agent reports and skips instead of simulating a review.
+
+The optional offer does not take keyboard focus or require dismissal. Ignoring
+it keeps changes local. It is separate from Ship's required `delivery_review`
+receipt and does not change any checks needed for a verified finish. Blocked or
+unfinished formal deliveries are not offered for automatic review.
 
 ## Make it yours
 

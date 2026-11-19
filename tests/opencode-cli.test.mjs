@@ -846,6 +846,64 @@ test('native login defaults to Cloud on Enter and completes the host OAuth lifec
   assert.deepEqual(calls[1][1].location, { directory: '/project' });
 });
 
+test('native login provider selection retries invalid input with a fresh prompt', async t => {
+  const invalid = ['0', '3', '-1', '1.5', '2.0', '2junk', 'junk', '1e0', '0x1', '+1', 'Infinity'];
+  const cases = [
+    ...invalid.map(value => ({ name: `rejects ${value}, then selects another provider`, answers: [value, ' 2 '], provider: 'anthropic' })),
+    { name: 'Enter keeps the Cloud default', answers: [''], provider: 'carthagent-cloud' },
+    { name: 'Enter after invalid input keeps the Cloud default', answers: ['3', ''], provider: 'carthagent-cloud' },
+    { name: 'Ctrl+C during retry cancels without connecting', answers: ['3', null] },
+  ];
+  for (const scenario of cases) await t.test(scenario.name, async () => {
+    const { io, output } = ioCapture();
+    const calls = [];
+    const prompts = [];
+    const answers = [...scenario.answers];
+    const listeners = process.listenerCount('SIGINT');
+    const runtime = await createOpenCodeCliRuntime({ cwd: '/project', io, stdin: { isTTY: true }, stdout: { isTTY: true }, readlineFactory: () => {
+      assert.ok(prompts.every(prompt => prompt.closed), 'previous readline interface must be closed');
+      const prompt = { closed: false, text: '' };
+      prompts.push(prompt);
+      return {
+        close() { assert.equal(prompt.closed, false); prompt.closed = true; },
+        question: async text => {
+          assert.equal(prompt.closed, false, 'cannot reuse a closed readline interface');
+          assert.equal(prompt.text, '', 'each interface asks only one question');
+          prompt.text = text;
+          assert.deepEqual(calls, ['list'], 'no authentication before a valid selection');
+          assert.ok(answers.length, 'unexpected extra prompt');
+          const answer = answers.shift();
+          if (answer === null) {
+            queueMicrotask(() => process.emit('SIGINT'));
+            return new Promise(() => {});
+          }
+          return answer;
+        },
+      };
+    }, native: {
+      runtime: {}, service: { ensureService: async () => ({}) }, headless: {},
+      clientFactory: async () => ({ integration: {
+        list: async () => {
+          calls.push('list');
+          return { data: ['anthropic', 'carthagent-cloud'].map(id => ({ id, name: id, methods: [{ id: 'fixture', type: 'external' }] })) };
+        },
+        connect: { external: async input => { calls.push(['connect', input.integrationID]); } },
+      } }),
+    } });
+    assert.equal(await runOpenCodeCli({ argv: ['login'], runtime, io, stdoutIsTTY: true }), scenario.provider ? 0 : 130);
+    assert.equal(answers.length, 0);
+    assert.equal(prompts.length, scenario.answers.length);
+    assert.ok(prompts.every(prompt => prompt.closed));
+    for (const prompt of prompts) {
+      assert.match(prompt.text, /1\) Carthagent Cloud \(recommended\)/);
+      assert.match(prompt.text, /Provider number \[1\]:/);
+    }
+    if (scenario.answers.length > 1) assert.match(output.stdout.join('\n'), /Please enter a provider number from 1 to 2/);
+    assert.deepEqual(calls, scenario.provider ? ['list', ['connect', scenario.provider]] : ['list']);
+    assert.equal(process.listenerCount('SIGINT'), listeners);
+  });
+});
+
 test('native login cancellation maps to 130 and attempts to cancel the pending host flow', async () => {
   const calls = [];
   const lines = [];

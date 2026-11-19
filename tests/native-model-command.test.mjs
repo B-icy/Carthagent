@@ -65,3 +65,9 @@ test('plugin /model dispatch routes through the shared command and the native mo
   assert.match(tui, /keymap\.dispatch\("model\.list", query\)/);
   assert.doesNotMatch(tui, /Open or create a session before selecting its model/);
 });
+
+test('Cloud billing recovery points own-provider users to /connect rather than Cloud /login', async () => {
+  const tui = await readFile(new URL('../plugins/carthagent/src/tui.tsx', import.meta.url), 'utf8');
+  assert.match(tui, /You can also connect your own provider with \/connect\./);
+  assert.doesNotMatch(tui, /connect your own provider with \/login/);
+});
