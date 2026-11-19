@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 import { nativeLoginProvider, nativeProviderName } from "../../../lib/opencode/provider-policy.mjs";
 import { framePrompt } from "../../../lib/tui/framing.mjs";
 import { carthagentConfigPath, loadCarthagentConfig, resolveReviewMode, reviewKickoff, saveCarthagentConfig } from "../../../lib/review.mjs";
-import { COMMANDS, NATIVE_COMMAND_COLLISIONS, commandErrorMessage, helpOptions, helpSelectionTarget, pluginSlashAvailable, voyagesCommandRoute } from "./ui/commands.js";
+import { COMMANDS, NATIVE_COMMAND_COLLISIONS, commandErrorMessage, helpOptions, helpSelectionTarget, pluginSlashAvailable, slashRegistrations, voyagesCommandRoute } from "./ui/commands.js";
 import { sessionGoalClient } from "./ui/client.js";
 import { SessionGoals, type SessionGoal } from "./session-goal-rpc.js";
 import { goalStatusText, parseGoalCommand } from "./session-goal.mjs";
@@ -100,23 +100,25 @@ export default Plugin.define({
         priority: 20,
         commands: [
           ...COMMANDS.filter((item) => !NATIVE_COMMAND_COLLISIONS.includes(item.name as typeof NATIVE_COMMAND_COLLISIONS[number]) && pluginSlashAvailable(item.name, route))
-          .map((item) => ({
-            id: `carthagent.${item.id}`,
-            title: `/${item.name}${item.args ? ` ${item.args}` : ""}`,
-            description: item.description,
-            group: "Carthagent",
-            palette: true as const,
-            // Host-equivalent commands stay in the palette and /help without a duplicate slash row.
-            ...(item.hostSlash ? {} : { slash: { name: item.name, ...(item.aliases ? { aliases: item.aliases } : {}), ...(item.args || item.submitSlash ? { arguments: true as const } : {}) } }),
-            run: (input?: string) => {
+          .flatMap((item) => {
+            const run = (input?: string) => {
               const report = (error: unknown) => context.ui.toast.show({ message: commandErrorMessage(error), variant: "error" });
               if (item.id === "restart" || item.id === "abort") {
                 void dispatch(item.id, input ?? "").catch(report);
                 return false;
               }
               return dispatch(item.id, input ?? "").then(() => undefined).catch(report);
-            },
-          })),
+            };
+            return slashRegistrations(item).map((entry) => ({
+              id: `carthagent.${item.id}${entry.idSuffix}`,
+              title: `/${item.name}${item.args ? ` ${item.args}` : ""}`,
+              description: item.description,
+              group: "Carthagent",
+              ...(entry.palette ? { palette: true as const } : {}),
+              ...(entry.slash ? { slash: entry.slash } : {}),
+              run,
+            }));
+          }),
         ],
       };
     });

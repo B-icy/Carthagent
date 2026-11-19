@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { COMMANDS, commandErrorMessage, HOST_ESSENTIALS, helpOptions, helpSelectionCommand, helpSelectionTarget, matchCommand, NATIVE_COMMAND_COLLISIONS, NATIVE_SESSION_COMMANDS, pluginSlashAvailable, resolveCommand } from "../src/ui/commands.js";
+import { COMMANDS, commandErrorMessage, HOST_ESSENTIALS, slashRegistrations, helpOptions, helpSelectionCommand, helpSelectionTarget, matchCommand, NATIVE_COMMAND_COLLISIONS, NATIVE_SESSION_COMMANDS, pluginSlashAvailable, resolveCommand } from "../src/ui/commands.js";
 import { readFile } from "node:fs/promises";
 import { parseThemeDocument } from "@opencode/theme/tui";
 import { cliConfigDirectory, cliConfigPath, readCliConfig, writeNativeTheme } from "../src/ui/host-state.js";
@@ -8,6 +8,20 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { provisionNativeThemes } from "../src/ui/theme-provision.mjs";
+
+test("picking /help from completion runs it; a submitted /help still dispatches", () => {
+  const help = COMMANDS.find((item) => item.id === "help")!;
+  const entries = slashRegistrations(help);
+  // The host's completion runs the last plain /help entry; the argument-taking twin keeps a submitted /help working.
+  assert.deepEqual(entries.map((entry) => [entry.idSuffix, entry.palette, entry.slash?.arguments]), [[".submit", false, true], ["", true, undefined]]);
+  for (const entry of entries) assert.deepEqual([entry.slash?.name, entry.slash?.aliases], ["help", ["ctg-help"]]);
+  // Commands that take arguments keep a single argument-taking entry so completion leaves room to type them.
+  assert.deepEqual(slashRegistrations(COMMANDS.find((item) => item.id === "goal")!), [{ idSuffix: "", palette: true, slash: { name: "goal", arguments: true } }]);
+  assert.deepEqual(slashRegistrations(COMMANDS.find((item) => item.id === "quests")!), [{ idSuffix: "", palette: true, slash: { name: "quests" } }]);
+  assert.deepEqual(slashRegistrations(COMMANDS.find((item) => item.id === "stats")!), [{ idSuffix: "", palette: true }]);
+  // Aliases are copied, so the host cannot mutate the manifest.
+  assert.notEqual(entries[1]!.slash!.aliases, help.aliases);
+});
 
 test("Carthagent command manifest resolves visible CTG commands", () => {
   assert.equal(resolveCommand("/help")?.id, "help");

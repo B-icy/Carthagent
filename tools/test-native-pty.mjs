@@ -28,6 +28,8 @@ const probes = [
   { command: '/ctg-workspace', expect: 'Workspace native sessions', postSubmitMarker: 'Workspace native sessions', dismissCompletion: true },
   { command: '/help', expect: 'Carthagent commands', postSubmitMarker: 'search to filter', dismissCompletion: true },
   { command: '/ctg-help', expect: 'Carthagent commands', dismissCompletion: true },
+  // One Enter on the open completion menu must open help, not just complete the text.
+  { command: '/help', expect: 'Carthagent commands', postSubmitMarker: 'search to filter' },
   { command: '/compact', expect: '/compact requires an open session.', secondEnter: true, dismissCompletion: true },
   {
     command: '/theme carthage', expect: 'Theme “carthage” saved', postSubmitMarker: 'Carthagent reloads valid theme selections', expectedTheme: 'carthage', dismissCompletion: true,
