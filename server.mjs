@@ -16,7 +16,7 @@ import {
   createSerialQueue,
   revisePlan,
   completionIssues,
-  verificationMode
+  verificationMode,
 } from './lib/delivery.mjs';
 import { captureDeliveryReview, recordDeliveryReview } from './lib/delivery-review.mjs';
 import { mergePlanPatch } from './lib/delivery.mjs';
@@ -39,18 +39,28 @@ let currentState = active?.state || { version: 1, status: 'idle', plan: null, ev
 // surfaced on /api/status so the dashboard can badge an available update.
 let updateState = null;
 if (updateCheckEnabled()) {
-  latestReleaseCached().then(({ release }) => {
-    const installed = packageVersion();
-    let available = false;
-    try { available = Boolean(installed && release && compareVersions(installed, release.version) < 0); }
-    catch { /* non-semver comparison input */ }
-    updateState = { installed, latest: release?.version || installed, available, tag: release?.tag, note: release?.note };
-  }).catch(() => { /* update check is best-effort */ });
+  latestReleaseCached()
+    .then(({ release }) => {
+      const installed = packageVersion();
+      let available = false;
+      try {
+        available = Boolean(installed && release && compareVersions(installed, release.version) < 0);
+      } catch {
+        /* non-semver comparison input */
+      }
+      updateState = { installed, latest: release?.version || installed, available, tag: release?.tag, note: release?.note };
+    })
+    .catch(() => {
+      /* update check is best-effort */
+    });
 }
 
 app.disable('x-powered-by');
 app.use((req, res, next) => {
-  res.setHeader('content-security-policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'");
+  res.setHeader(
+    'content-security-policy',
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'",
+  );
   res.setHeader('referrer-policy', 'no-referrer');
   res.setHeader('x-content-type-options', 'nosniff');
   if (req.path.startsWith('/api/')) res.setHeader('cache-control', 'no-store');
@@ -107,7 +117,7 @@ app.get('/api/status', (req, res) => {
       pendingChecks: pending,
       workspace: cwd,
       report: active?.path || null,
-      update: updateState
+      update: updateState,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -124,23 +134,39 @@ app.post('/api/plan/validate', (req, res) => {
 });
 
 app.post('/api/plan/d2', (req, res) => {
-  try { res.json({ d2: planD2(req.body.plan) }); }
-  catch (error) { res.status(400).json({ error: error.message }); }
+  try {
+    res.json({ d2: planD2(req.body.plan) });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
 });
 
 // Mutating endpoints share a cross-process lease for the entire response.
 app.use(['/api/design', '/api/plan/set', '/api/plan/revise', '/api/checks/run', '/api/review', '/api/finish'], (req, res, next) => {
   if (req.method !== 'POST') return next();
   let release;
-  try { release = lockWorkspace(cwd); refresh(); }
-  catch (error) { release?.(); return res.status(409).json({ error: error.message }); }
+  try {
+    release = lockWorkspace(cwd);
+    refresh();
+  } catch (error) {
+    release?.();
+    return res.status(409).json({ error: error.message });
+  }
   let done = false;
-  const finish = () => { if (!done) { done = true; release(); } };
+  const finish = () => {
+    if (!done) {
+      done = true;
+      release();
+    }
+  };
   // Mutations are persisted before handlers serialize their response. Release
   // at that boundary rather than waiting for the socket's `finish` event: a
   // client that has received the response must not race the still-held lease.
   const json = res.json.bind(res);
-  res.json = body => { finish(); return json(body); };
+  res.json = body => {
+    finish();
+    return json(body);
+  };
   // Do not release on socket close: a disconnected request may still run checks.
   res.once('finish', finish);
   res.locals.releaseWorkspace = finish;
@@ -165,7 +191,7 @@ app.post('/api/plan/set', (req, res) => {
         plan,
         evidence: {},
         stepStatus: {},
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
       };
       active = createReport(cwd, currentState);
       currentState = active.state;
@@ -185,7 +211,9 @@ app.post('/api/plan/revise', (req, res) => {
     currentState = revisePlan(currentState, plan, { cwd, hash: fingerprint(cwd, ['.']), reason: req.body.reason });
     persist();
     res.json({ success: true, revision: currentState.revision, report: active.path });
-  } catch (error) { res.status(400).json({ error: error.message }); }
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
 });
 
 app.post('/api/plan/bind-required', (req, res) => {
@@ -211,12 +239,13 @@ app.post('/api/design', (req, res) => {
       }
       if (review.captureId == null && typeof review.id === 'string' && review.id) review.captureId = review.id;
       result = recordPlanReview(currentState, hash, review);
-    }
-    else if (req.body.action === 'approve') result = approvePlanning(currentState, hash);
+    } else if (req.body.action === 'approve') result = approvePlanning(currentState, hash);
     else throw Error('Unknown design action');
     persist();
     res.json({ result, planningStatus: planningStatus(currentState, hash) });
-  } catch (error) { res.status(400).json({ error: error.message }); }
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
 });
 
 app.post('/api/checks/run', async (req, res) => {
@@ -240,7 +269,7 @@ app.post('/api/checks/run', async (req, res) => {
         const result = await runCommand(check.argv, {
           cwd,
           timeoutSeconds: check.timeoutSeconds,
-          logPath: join(active.dir, `${check.id}-${randomUUID()}.log`)
+          logPath: join(active.dir, `${check.id}-${randomUUID()}.log`),
         });
         const after = fingerprint(cwd, ['.']);
         const evidence = {
@@ -256,7 +285,7 @@ app.post('/api/checks/run', async (req, res) => {
           changedDuringCheck: before !== after,
           outputTail: result.output.slice(-1200),
           logPath: result.logPath,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
         };
         currentState.evidence[check.id] = evidence;
         persist();
@@ -286,8 +315,11 @@ app.post('/api/review', async (req, res) => {
     else throw Error('Review action must be inspect or record');
     persist();
     res.json({ success: true, result });
-  } catch (error) { res.status(400).json({ error: error.message }); }
-  finally { res.locals.releaseWorkspace?.(); }
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  } finally {
+    res.locals.releaseWorkspace?.();
+  }
 });
 
 app.post('/api/finish', (req, res) => {
@@ -307,7 +339,17 @@ app.post('/api/finish', (req, res) => {
     currentState.review = review || '';
     currentState.launch = launch || '';
     currentState.limitations = Array.isArray(limitations) ? limitations : [];
-    currentState.handoff = { status, review: currentState.review, launch: currentState.launch, limitations: currentState.limitations, verification: verificationMode(currentState.plan), fingerprint: fingerprint(cwd, ['.']), at: new Date().toISOString(), evidence: structuredClone(currentState.evidence), reviewEvidence: currentState.reviewEvidence ? structuredClone(currentState.reviewEvidence) : null };
+    currentState.handoff = {
+      status,
+      review: currentState.review,
+      launch: currentState.launch,
+      limitations: currentState.limitations,
+      verification: verificationMode(currentState.plan),
+      fingerprint: fingerprint(cwd, ['.']),
+      at: new Date().toISOString(),
+      evidence: structuredClone(currentState.evidence),
+      reviewEvidence: currentState.reviewEvidence ? structuredClone(currentState.reviewEvidence) : null,
+    };
     persist();
     res.json({ success: true, state: currentState });
   } catch (error) {
@@ -322,7 +364,7 @@ app.get('/api/docs/:name', (req, res) => {
     delivery: join(root, 'prompts', 'delivery.md'),
     'game-development': join(root, 'skills', 'game-development', 'SKILL.md'),
     'software-delivery': join(root, 'skills', 'software-delivery', 'SKILL.md'),
-    'typescript-delivery': join(root, 'skills', 'typescript-delivery', 'SKILL.md')
+    'typescript-delivery': join(root, 'skills', 'typescript-delivery', 'SKILL.md'),
   };
   const path = paths[req.params.name];
   if (!path || !existsSync(path)) return res.status(404).json({ error: 'Document not found' });
@@ -336,7 +378,11 @@ app.use((req, res, next) => {
 });
 
 const server = app.listen(port, '127.0.0.1', error => {
-  if (error) { console.error(`Dashboard startup failed: ${error.message}`); process.exitCode = 1; return; }
+  if (error) {
+    console.error(`Dashboard startup failed: ${error.message}`);
+    process.exitCode = 1;
+    return;
+  }
   console.log(`carthagent dashboard: http://127.0.0.1:${server.address().port}/?token=${token}`);
   console.log(`workspace: ${cwd}`);
 });

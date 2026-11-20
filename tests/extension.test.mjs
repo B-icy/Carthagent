@@ -19,17 +19,42 @@ function fixture(t, { approve = true } = {}) {
   const cwd = mkdtempSync(join(tmpdir(), 'engine extension integration '));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
   writeFileSync(join(cwd, 'app.py'), 'print(1)');
-  const hooks = {}, commands = {}, tools = {}, entries = [], messages = [], flags = { 'delivery-strict': true };
+  const hooks = {},
+    commands = {},
+    tools = {},
+    entries = [],
+    messages = [],
+    flags = { 'delivery-strict': true };
   const engine = {
-    registerCommand(name, command) { commands[name] = command; },
-    registerFlag() {}, getFlag: name => flags[name],
-    on(name, fn) { hooks[name] = fn; },
-    registerTool(tool) { tools[tool.name] = tool; },
-    appendEntry(customType, data) { entries.push({ type: 'custom', customType, data }); },
-    sendMessage(message) { messages.push(message); },
+    registerCommand(name, command) {
+      commands[name] = command;
+    },
+    registerFlag() {},
+    getFlag: name => flags[name],
+    on(name, fn) {
+      hooks[name] = fn;
+    },
+    registerTool(tool) {
+      tools[tool.name] = tool;
+    },
+    appendEntry(customType, data) {
+      entries.push({ type: 'custom', customType, data });
+    },
+    sendMessage(message) {
+      messages.push(message);
+    },
   };
   factory(engine);
-  const ctx = { cwd, hasUI: false, aborted: 0, abort() { this.aborted++; }, sessionManager: { getEntries: () => entries, getBranch: () => entries, getSessionId: () => 'integration-session' }, hasPendingMessages: () => false };
+  const ctx = {
+    cwd,
+    hasUI: false,
+    aborted: 0,
+    abort() {
+      this.aborted++;
+    },
+    sessionManager: { getEntries: () => entries, getBranch: () => entries, getSessionId: () => 'integration-session' },
+    hasPendingMessages: () => false,
+  };
   const rawCall = (name, params = {}) => tools[name].execute('test-id', params, undefined, undefined, ctx);
   const inspectReview = async () => {
     const inspected = JSON.parse((await rawCall('delivery_design', { action: 'inspect' })).content[0].text);
@@ -37,12 +62,14 @@ function fixture(t, { approve = true } = {}) {
   };
   const call = async (name, params = {}) => {
     if (approve && name === 'delivery_plan' && (params.verification ?? 'required') === 'required') params = { ...params, design: fixtureDesign(params) };
-    if (approve && name === 'delivery_revise' && params.patch?.acceptance) params = { ...params, patch: { ...params.patch, design: fixtureDesign({ ...entries.at(-1).data.plan, ...params.patch }) } };
+    if (approve && name === 'delivery_revise' && params.patch?.acceptance)
+      params = { ...params, patch: { ...params.patch, design: fixtureDesign({ ...entries.at(-1).data.plan, ...params.patch }) } };
     const result = await rawCall(name, params);
     if (approve && ['delivery_plan', 'delivery_revise'].includes(name)) {
       const current = entries.at(-1)?.data?.plan;
       if (current && (current.verification ?? 'required') === 'required') {
-        if (JSON.stringify(current.design) !== JSON.stringify(fixtureDesign(current))) await rawCall('delivery_revise', { reason: 'Bind fixture scenarios to required validators', patch: { design: fixtureDesign(current) } });
+        if (JSON.stringify(current.design) !== JSON.stringify(fixtureDesign(current)))
+          await rawCall('delivery_revise', { reason: 'Bind fixture scenarios to required validators', patch: { design: fixtureDesign(current) } });
         const plan = entries.at(-1).data.plan;
         await rawCall('delivery_design', { action: 'validate' });
         const inspected = JSON.parse((await rawCall('delivery_design', { action: 'inspect' })).content[0].text);
@@ -52,7 +79,14 @@ function fixture(t, { approve = true } = {}) {
     }
     return result;
   };
-  const plan = { goal: 'Working script', assumptions: [], artifacts: ['app.py'], steps: ['Implement', 'Verify'], acceptance: [{ requirement: 'Runs', checks: ['run'] }], checks: [{ id: 'run', kind: 'runtime', argv: [process.execPath, '-e', 'console.log("passed")'], timeoutSeconds: 5 }] };
+  const plan = {
+    goal: 'Working script',
+    assumptions: [],
+    artifacts: ['app.py'],
+    steps: ['Implement', 'Verify'],
+    acceptance: [{ requirement: 'Runs', checks: ['run'] }],
+    checks: [{ id: 'run', kind: 'runtime', argv: [process.execPath, '-e', 'console.log("passed")'], timeoutSeconds: 5 }],
+  };
   return { cwd, ctx, hooks, commands, entries, messages, flags, call, plan, inspectReview };
 }
 
@@ -106,7 +140,10 @@ test('design review accepts captureId beside the action or echoed as review.id',
   await f.call('delivery_revise', { reason: 'Adjust scope', patch: { assumptions: ['new'] } });
   await f.call('delivery_design', { action: 'validate' });
   const second = JSON.parse((await f.call('delivery_design', { action: 'inspect' })).content[0].text);
-  const failed = await f.call('delivery_design', { action: 'review', review: fixtureReview(entriesPlan(f)) }).then(() => null, e => e);
+  const failed = await f.call('delivery_design', { action: 'review', review: fixtureReview(entriesPlan(f)) }).then(
+    () => null,
+    e => e,
+  );
   assert.match(failed.message, new RegExp(second.result.id));
   await f.call('delivery_design', { action: 'review', review: { ...fixtureReview(entriesPlan(f)), id: second.result.id } });
   await f.call('delivery_design', { action: 'approve' });
@@ -117,12 +154,15 @@ test('design review accepts captureId beside the action or echoed as review.id',
   await f.call('delivery_design', { action: 'review', captureId: third.result.id, review: { ...fixtureReview(entriesPlan(f)), captureId: null } });
   await f.call('delivery_design', { action: 'approve' });
 });
-function entriesPlan(f) { return f.entries.at(-1).data.plan; }
+function entriesPlan(f) {
+  return f.entries.at(-1).data.plan;
+}
 
 test('discovery guide/checkpoint restore, questions, terminal suppression and read permission', async t => {
   const f = fixture(t, { approve: false });
   const guide = JSON.parse((await f.call('delivery_design', { action: 'guide' })).content[0].text);
-  assert.equal(guide.authority, 'none'); assert.equal(f.entries.length, 0);
+  assert.equal(guide.authority, 'none');
+  assert.equal(f.entries.length, 0);
   f.hooks.before_agent_start({ prompt: 'Implement a new feature', systemPrompt: '' }, f.ctx);
   for (let i = 0; i < 8; i++) await f.hooks.tool_result({ toolName: 'read', content: [] }, f.ctx);
   assert.match(f.hooks.context({ messages: [] }, f.ctx).messages[0].content, /8 discovery/);
@@ -130,7 +170,8 @@ test('discovery guide/checkpoint restore, questions, terminal suppression and re
   assert.equal(f.hooks.tool_call({ toolName: 'code_nav' }, f.ctx), undefined);
   await f.hooks.tool_result({ toolName: 'code_nav', content: [] }, f.ctx);
   assert.match(f.hooks.context({ messages: [] }, f.ctx).messages[0].content, /9 discovery/);
-  f.hooks.session_compact({}, f.ctx); f.hooks.session_start({}, f.ctx);
+  f.hooks.session_compact({}, f.ctx);
+  f.hooks.session_start({}, f.ctx);
   assert.match(f.hooks.context({ messages: [] }, f.ctx).messages[0].content, /9 discovery/);
   const branch = f.ctx.sessionManager.getBranch;
   f.ctx.sessionManager.getBranch = () => [];
@@ -153,41 +194,78 @@ test('discovery guide/checkpoint restore, questions, terminal suppression and re
 });
 
 test('schema repair -> Jev -> approved edit -> checks -> final review completes without changing scope', async t => {
-  const { createServer } = await import('node:http'); let calls = 0;
+  const { createServer } = await import('node:http');
+  let calls = 0;
   const server = createServer(async (req, res) => {
-    let body = ''; for await (const chunk of req) body += chunk;
-    const payload = JSON.parse(body); assert.equal(payload.state.goal, 'Working script'); assert.ok(payload.state.checks[0].argv); calls++;
+    let body = '';
+    for await (const chunk of req) body += chunk;
+    const payload = JSON.parse(body);
+    assert.equal(payload.state.goal, 'Working script');
+    assert.ok(payload.state.checks[0].argv);
+    calls++;
     res.setHeader('content-type', 'application/json');
-    res.end(JSON.stringify({ model: 'typesafe/jev-1.13-fixture', answers: { srp: { type: 'noul', noul: .1 }, di: { type: 'noul', noul: .1 }, tests: { type: 'noul', noul: .8 } } }));
+    res.end(
+      JSON.stringify({
+        model: 'typesafe/jev-1.13-fixture',
+        answers: { srp: { type: 'noul', noul: 0.1 }, di: { type: 'noul', noul: 0.1 }, tests: { type: 'noul', noul: 0.8 } },
+      }),
+    );
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  t.after(() => { server.closeAllConnections(); server.close(); });
+  t.after(() => {
+    server.closeAllConnections();
+    server.close();
+  });
   const f = fixture(t, { approve: false });
-  f.flags['delivery-jev'] = true; f.flags['delivery-jev-broker'] = `http://127.0.0.1:${server.address().port}/jev`;
+  f.flags['delivery-jev'] = true;
+  f.flags['delivery-jev-broker'] = `http://127.0.0.1:${server.address().port}/jev`;
   await f.call('delivery_design', { action: 'guide' });
   const plan = { ...f.plan, steps: [{ id: 'build', title: 'Implement and test', checks: ['run'] }] };
-  plan.design = fixtureDesign(plan); const correct = structuredClone(plan.design); plan.design.scenarios[0].checks = ['wrong'];
+  plan.design = fixtureDesign(plan);
+  const correct = structuredClone(plan.design);
+  plan.design.scenarios[0].checks = ['wrong'];
   await f.call('delivery_plan', plan);
   const validation = JSON.parse((await f.call('delivery_design', { action: 'validate' })).content[0].text);
-  assert.match(validation.next, /No Jev call/); assert.deepEqual(validation.references.checks, ['run']);
-  await assert.rejects(f.call('delivery_design', { action: 'inspect' }), /Fresh passing/); assert.equal(calls, 0);
+  assert.match(validation.next, /No Jev call/);
+  assert.deepEqual(validation.references.checks, ['run']);
+  await assert.rejects(f.call('delivery_design', { action: 'inspect' }), /Fresh passing/);
+  assert.equal(calls, 0);
   assert.equal(f.entries.at(-1).data.advisorAttempts, undefined);
   await f.call('delivery_revise', { reason: 'Fix check reference preserving obligations', patch: { design: correct } });
   await f.call('delivery_design', { action: 'validate' });
   const inspected = JSON.parse((await f.call('delivery_design', { action: 'inspect' })).content[0].text);
-  assert.equal(calls, 1); assert.equal(inspected.advice.findings[0].category, 'tests'); assert.equal(inspected.planningStatus.locked, true);
+  assert.equal(calls, 1);
+  assert.equal(inspected.advice.findings[0].category, 'tests');
+  assert.equal(inspected.planningStatus.locked, true);
   const current = f.entries.at(-1).data.plan;
-  assert.deepEqual(current.acceptance, plan.acceptance); assert.deepEqual(current.checks, plan.checks);
-  await f.call('delivery_design', { action: 'review', review: { ...fixtureReview(current), captureId: inspected.result.id, challenges: ['Investigated Jev tests topic; fixture checks plumbing, not semantic completeness'] } });
+  assert.deepEqual(current.acceptance, plan.acceptance);
+  assert.deepEqual(current.checks, plan.checks);
+  await f.call('delivery_design', {
+    action: 'review',
+    review: {
+      ...fixtureReview(current),
+      captureId: inspected.result.id,
+      challenges: ['Investigated Jev tests topic; fixture checks plumbing, not semantic completeness'],
+    },
+  });
   await f.call('delivery_design', { action: 'approve' });
   assert.equal(f.hooks.tool_call({ toolName: 'write' }, f.ctx), undefined);
   writeFileSync(join(f.cwd, 'app.py'), 'print(2)');
   f.hooks.session_compact({}, f.ctx);
-  await f.call('delivery_check', { id: 'all' }); await f.call('delivery_progress', { step: 'build', status: 'done' });
+  await f.call('delivery_check', { id: 'all' });
+  await f.call('delivery_progress', { step: 'build', status: 'done' });
   const capture = JSON.parse((await f.call('delivery_review', { action: 'inspect' })).content[0].text);
-  await f.call('delivery_review', { action: 'record', captureId: capture.id, coverage: [{ requirement: 'Runs', assertions: 'Fixture subprocess exited zero' }], probes: ['Runtime check exit 0'], findings: [], limitations: ['Plumbing fixture, no Git baseline or semantic proof'] });
+  await f.call('delivery_review', {
+    action: 'record',
+    captureId: capture.id,
+    coverage: [{ requirement: 'Runs', assertions: 'Fixture subprocess exited zero' }],
+    probes: ['Runtime check exit 0'],
+    findings: [],
+    limitations: ['Plumbing fixture, no Git baseline or semantic proof'],
+  });
   await f.call('delivery_finish', { status: 'verified', review: 'Reviewed fixture', launch: 'python app.py', limitations: ['Plumbing only'] });
-  assert.equal(f.entries.at(-1).data.status, 'verified'); assert.equal(calls, 1);
+  assert.equal(f.entries.at(-1).data.status, 'verified');
+  assert.equal(calls, 1);
 });
 
 test('revision tool rejects malformed patches before merging current fields', async t => {
@@ -222,7 +300,12 @@ test('terminal deliveries stop context reminders and repair turns across restore
     await f.call('delivery_plan', f.plan);
     assert.match(f.hooks.context({ messages: [] }).messages.at(-1).content, /Inspect freshness before execution/);
     await f.call('delivery_check', { id: 'all' });
-    await f.call('delivery_finish', { status, review: 'Reviewed', launch: 'python app.py', limitations: status === 'blocked' ? ['External prerequisite unavailable'] : [] });
+    await f.call('delivery_finish', {
+      status,
+      review: 'Reviewed',
+      launch: 'python app.py',
+      limitations: status === 'blocked' ? ['External prerequisite unavailable'] : [],
+    });
     for (const restore of [false, true]) {
       if (restore) f.hooks.session_start({}, f.ctx);
       assert.equal(f.hooks.context({ messages: [] }), undefined);
@@ -314,7 +397,8 @@ test('context archives only after approval, large captures stay retrievable, com
   await f.call('delivery_design', { action: 'review', review: { ...fixtureReview(plan), captureId: capture.id } });
   await f.call('delivery_design', { action: 'approve' });
   const status = JSON.parse((await f.call('delivery_status')).content[0].text);
-  assert.equal(status.plan, undefined); assert.equal(status.planning.history, undefined);
+  assert.equal(status.plan, undefined);
+  assert.equal(status.planning.history, undefined);
   assert.deepEqual(status.acceptance, plan.acceptance);
   f.hooks.before_provider_request({ payload: { messages: [{ role: 'user', content: 'PRIVATE_TEXT' }] } });
   const log = readFileSync(join(f.cwd, '.harness', 'integration-session', capture.runId, 'context-metrics.jsonl'), 'utf8');
@@ -411,15 +495,12 @@ test('bash cap blocks process-wide termination but allows targeted child cleanup
     'Get-Process | Stop-Process',
   ]) {
     const broadKill = { toolName: 'bash', input: { command } };
-    assert.match(
-      f.hooks.tool_call(broadKill, f.ctx).reason,
-      /Broad process termination/
-    );
+    assert.match(f.hooks.tool_call(broadKill, f.ctx).reason, /Broad process termination/);
   }
 
   const targetedKill = {
     toolName: 'bash',
-    input: { command: 'kill "$child_pid"' }
+    input: { command: 'kill "$child_pid"' },
   };
   assert.equal(f.hooks.tool_call(targetedKill, f.ctx), undefined);
   assert.equal(targetedKill.input.timeout, 120);
@@ -435,24 +516,15 @@ test('bounded runs cap whole-file rewrites per path and pace tool loops', option
   assert.match(write('app.py').reason, /Preserve the existing app.py implementation/);
   assert.equal(f.hooks.tool_call({ toolName: 'edit', input: { path: 'app.py' } }, f.ctx), undefined);
   assert.match(
-    f.hooks.tool_call(
-      { toolName: 'bash', input: { command: `cat > "${join(f.cwd, 'app.py')}" <<'EOF'\nprint(2)\nEOF` } },
-      f.ctx,
-    ).reason,
+    f.hooks.tool_call({ toolName: 'bash', input: { command: `cat > "${join(f.cwd, 'app.py')}" <<'EOF'\nprint(2)\nEOF` } }, f.ctx).reason,
     /Shell redirection cannot replace/,
   );
   assert.match(
-    f.hooks.tool_call(
-      { toolName: 'bash', input: { command: "python - <<'PY'\nwith open('app.py', 'w') as f:\n f.write('print(2)')\nPY" } },
-      f.ctx,
-    ).reason,
+    f.hooks.tool_call({ toolName: 'bash', input: { command: "python - <<'PY'\nwith open('app.py', 'w') as f:\n f.write('print(2)')\nPY" } }, f.ctx).reason,
     /script cannot replace/,
   );
   assert.match(
-    f.hooks.tool_call(
-      { toolName: 'bash', input: { command: `mv /tmp/replacement.py "${join(f.cwd, 'app.py')}"` } },
-      f.ctx,
-    ).reason,
+    f.hooks.tool_call({ toolName: 'bash', input: { command: `mv /tmp/replacement.py "${join(f.cwd, 'app.py')}"` } }, f.ctx).reason,
     /cannot remove or replace/,
   );
   f.flags['delivery-protect-existing'] = false;
@@ -463,17 +535,11 @@ test('bounded runs cap whole-file rewrites per path and pace tool loops', option
   assert.equal(write('README.md'), undefined);
   assert.equal(f.hooks.tool_call({ toolName: 'edit', input: { path: 'app.py' } }, f.ctx), undefined);
   assert.match(
-    f.hooks.tool_call(
-      { toolName: 'write', input: { path: f.cwd.replace(/^\/+/, '') + '/nested.py' } },
-      f.ctx,
-    ).reason,
+    f.hooks.tool_call({ toolName: 'write', input: { path: f.cwd.replace(/^\/+/, '') + '/nested.py' } }, f.ctx).reason,
     /recreates the working directory/,
   );
   assert.match(
-    f.hooks.tool_call(
-      { toolName: 'write', input: { path: `${f.cwd.split('/').at(-1)}/nested.py` } },
-      f.ctx,
-    ).reason,
+    f.hooks.tool_call({ toolName: 'write', input: { path: `${f.cwd.split('/').at(-1)}/nested.py` } }, f.ctx).reason,
     /recreates the working directory/,
   );
 
@@ -484,10 +550,7 @@ test('bounded runs cap whole-file rewrites per path and pace tool loops', option
 
   f.flags['delivery-turn-delay-ms'] = 10;
   const scaled = Date.now();
-  await f.hooks.tool_result(
-    { toolName: 'read', isError: false },
-    { getContextUsage: () => ({ tokens: 100001 }) },
-  );
+  await f.hooks.tool_result({ toolName: 'read', isError: false }, { getContextUsage: () => ({ tokens: 100001 }) });
   assert.ok(Date.now() - scaled >= 25);
 
   f.flags['delivery-turn-delay-ms'] = 0;
@@ -522,12 +585,14 @@ test('failed infrastructure probes append diagnostics while preserving original 
   assert.equal(f.entries.length, 0);
 });
 test('standard mode accepts compact contracts and bounded discovery probe', async t => {
-  const f = fixture(t, { approve: false }); f.flags['delivery-workflow'] = 'standard';
+  const f = fixture(t, { approve: false });
+  f.flags['delivery-workflow'] = 'standard';
   const result = await f.call('delivery_plan', f.plan);
   assert.match(result.content[0].text, /Implement now/);
   assert.equal(f.hooks.tool_call({ toolName: 'write', input: { path: 'new.py' } }, f.ctx), undefined);
   const probe = JSON.parse((await f.call('delivery_probe', { kind: 'node-version' })).content[0].text);
-  assert.equal(probe.code, 0); assert.equal(probe.evidence, false);
+  assert.equal(probe.code, 0);
+  assert.equal(probe.evidence, false);
   await assert.rejects(f.call('delivery_probe', { kind: 'shell' }), /Unknown discovery/);
   await f.call('delivery_check', { id: 'all' });
   await assert.rejects(f.call('delivery_finish', { status: 'verified', review: 'done', launch: 'n/a', limitations: [] }), /Review:/);
@@ -541,7 +606,8 @@ test('resumed runs keep their planned workflow guidance regardless of the launch
   const resumed = f.hooks.before_agent_start({ systemPrompt: 'base', prompt: 'continue the implementation' }, f.ctx).systemPrompt;
   assert.doesNotMatch(resumed, /Standard delivery:/);
   assert.match(f.hooks.tool_call({ toolName: 'write', input: { path: 'app.py' } }, f.ctx).reason, /approve/);
-  const g = fixture(t, { approve: false }); g.flags['delivery-workflow'] = 'standard';
+  const g = fixture(t, { approve: false });
+  g.flags['delivery-workflow'] = 'standard';
   await g.call('delivery_plan', g.plan);
   g.flags['delivery-workflow'] = 'strict';
   g.hooks.session_start({}, g.ctx);
@@ -550,7 +616,10 @@ test('resumed runs keep their planned workflow guidance regardless of the launch
 test('required validators cannot be omitted or replaced by model plans', options, async t => {
   const f = fixture(t);
   const manifest = join(f.cwd, 'validators.json');
-  writeFileSync(manifest, JSON.stringify({ version: 1, checks: [{ id: 'oracle', kind: 'test', argv: [process.execPath, '-e', 'process.exit(9)'], timeoutSeconds: 5 }] }));
+  writeFileSync(
+    manifest,
+    JSON.stringify({ version: 1, checks: [{ id: 'oracle', kind: 'test', argv: [process.execPath, '-e', 'process.exit(9)'], timeoutSeconds: 5 }] }),
+  );
   f.flags['delivery-validators'] = manifest;
   f.hooks.session_start({}, f.ctx);
   await f.call('delivery_plan', f.plan);
@@ -581,7 +650,8 @@ test('request guidance is injected behind the scenes and survives follow-ups', o
   writeFileSync(join(f.cwd, 'package.json'), JSON.stringify({ dependencies: { next: '15.1.7' } }));
   const prompt = 'Add authenticated trades and a portfolio time series chart backed by a third-party API';
   const started = f.hooks.before_agent_start({ systemPrompt: 'base', prompt }, f.ctx);
-  for (const id of ['web-application', 'authenticated-web', 'transactional-data', 'external-api', 'data-visualization']) assert.match(started.systemPrompt, new RegExp(`\\[${id}\\]`));
+  for (const id of ['web-application', 'authenticated-web', 'transactional-data', 'external-api', 'data-visualization'])
+    assert.match(started.systemPrompt, new RegExp(`\\[${id}\\]`));
   await f.call('delivery_plan', f.plan);
   const state = f.entries.at(-1).data;
   // Persisted only for internal continuity across resumes and follow-up prompts.
@@ -613,10 +683,7 @@ test('blocked delivery succeeds and finishes cleanly even when evidence scope li
   assert.match(status.content[0].text, /scope error/);
 
   // delivery_check reports scope error with guidance
-  await assert.rejects(
-    f.call('delivery_check', { id: 'run' }),
-    /Evidence scope exceeds/
-  );
+  await assert.rejects(f.call('delivery_check', { id: 'run' }), /Evidence scope exceeds/);
 
   // delivery_finish with status='verified' must still fail
   await assert.rejects(
@@ -626,7 +693,7 @@ test('blocked delivery succeeds and finishes cleanly even when evidence scope li
       launch: 'python app.py',
       limitations: [],
     }),
-    /Evidence scope exceeds/
+    /Evidence scope exceeds/,
   );
 
   // delivery_finish with status='blocked' must SUCCEED without looping or throwing
@@ -683,7 +750,12 @@ test('advisory commands cannot bypass approval; informational finish remains ava
   await assert.rejects(f.call('delivery_check', { id: 'all' }), /Implementation locked/);
   assert.deepEqual(f.entries.at(-1).data.evidence, {});
   // Advisory classification cannot authorize arbitrary process execution.
-  await f.call('delivery_finish', { status: 'verified', review: 'Reported the measured failure as context.', launch: 'n/a', limitations: ['advisory check failed by design'] });
+  await f.call('delivery_finish', {
+    status: 'verified',
+    review: 'Reported the measured failure as context.',
+    launch: 'n/a',
+    limitations: ['advisory check failed by design'],
+  });
   const handoff = f.entries.at(-1).data.handoff;
   assert.equal(handoff.advisory, true);
   assert.equal(handoff.verification, 'advisory');
@@ -709,7 +781,10 @@ test('pre-verify reclassification is refused once evidence exists', options, asy
 test('required validators force verification:required on an informational plan', options, async t => {
   const f = fixture(t);
   const manifest = join(f.cwd, 'validators.json');
-  writeFileSync(manifest, JSON.stringify({ version: 1, checks: [{ id: 'oracle', kind: 'test', argv: [process.execPath, '-e', 'process.exit(0)'], timeoutSeconds: 5 }] }));
+  writeFileSync(
+    manifest,
+    JSON.stringify({ version: 1, checks: [{ id: 'oracle', kind: 'test', argv: [process.execPath, '-e', 'process.exit(0)'], timeoutSeconds: 5 }] }),
+  );
   f.flags['delivery-validators'] = manifest;
   f.hooks.session_start({}, f.ctx);
   await f.call('delivery_plan', { ...f.plan, verification: 'none', checks: [], acceptance: [] });
@@ -717,7 +792,6 @@ test('required validators force verification:required on an informational plan',
   assert.equal(state.plan.verification, 'required');
   assert.ok(state.plan.checks.some(c => c.id === 'required_oracle'));
 });
-
 
 test('session budget survives replan, input and branch restoration; only command resets', options, async t => {
   const f = fixture(t);
@@ -774,9 +848,13 @@ test('revision tool preserves evidence, progress and discoveries across restore 
   await f.call('delivery_progress', { step: 0, status: 'done' });
   await f.call('delivery_check', { id: 'all' });
   const original = structuredClone(f.entries.at(-1).data);
-  await f.call('delivery_revise', { reason: 'Discovered a second caller during repository inspection', patch: {
-    steps: ['Inspect second caller', ...f.plan.steps], assumptions: ['Keep the old caller compatible'],
-  } });
+  await f.call('delivery_revise', {
+    reason: 'Discovered a second caller during repository inspection',
+    patch: {
+      steps: ['Inspect second caller', ...f.plan.steps],
+      assumptions: ['Keep the old caller compatible'],
+    },
+  });
   const revised = f.entries.at(-1).data;
   assert.equal(revised.runId, original.runId);
   assert.equal(revised.revision, original.revision + 1);
@@ -784,7 +862,10 @@ test('revision tool preserves evidence, progress and discoveries across restore 
   assert.equal(revised.evidence.run.logPath, original.evidence.run.logPath);
   assert.equal(revised.stepStatus.step1, 'done');
   f.hooks.session_start({}, f.ctx);
-  const context = f.hooks.context({ messages: [] }).messages.map(m => m.content).join('\n');
+  const context = f.hooks
+    .context({ messages: [] })
+    .messages.map(m => m.content)
+    .join('\n');
   assert.match(context, /Keep the old caller compatible/);
   assert.match(context, /Discovered a second caller/);
   assert.match(context, /"step1":"done"/);
@@ -807,7 +888,10 @@ test('repeated full plans cannot erase verification history to allow downgrades'
   assert.deepEqual(f.entries.at(-1).data.evidence, {});
   await assert.rejects(f.call('delivery_plan', { ...f.plan, verification: 'none', acceptance: [], checks: [] }), /Cannot downgrade/);
   await f.call('delivery_finish', { status: 'blocked', review: 'Need external decision', launch: 'n/a', limitations: ['Missing decision'] });
-  await assert.rejects(f.call('delivery_revise', { reason: 'Resume without tests', patch: { verification: 'none', acceptance: [], checks: [] } }), /Cannot downgrade/);
+  await assert.rejects(
+    f.call('delivery_revise', { reason: 'Resume without tests', patch: { verification: 'none', acceptance: [], checks: [] } }),
+    /Cannot downgrade/,
+  );
 });
 
 test('structured steps and promised outputs are enforced consistently by status and finish', async t => {
@@ -831,7 +915,14 @@ test('structured steps and promised outputs are enforced consistently by status 
   writeFileSync(join(f.cwd, 'artifacts', 'report.json'), '{}');
   await assert.rejects(f.call('delivery_finish', finish), /delivery_review/);
   const capture = JSON.parse((await f.call('delivery_review', { action: 'inspect' })).content[0].text);
-  await f.call('delivery_review', { action: 'record', captureId: capture.id, coverage: [{ requirement: 'Runs', assertions: 'runtime command exits zero' }], probes: ['node runtime probe returned passed'], findings: [], limitations: ['No Git baseline in this fixture'] });
+  await f.call('delivery_review', {
+    action: 'record',
+    captureId: capture.id,
+    coverage: [{ requirement: 'Runs', assertions: 'runtime command exits zero' }],
+    probes: ['node runtime probe returned passed'],
+    findings: [],
+    limitations: ['No Git baseline in this fixture'],
+  });
   assert.equal(JSON.parse((await f.call('delivery_status')).content[0].text).readyToFinish, true);
   await f.call('delivery_finish', finish);
 });
@@ -841,7 +932,14 @@ test('review acceptance gaps persist through session restore and cannot be relab
   await f.call('delivery_plan', f.plan);
   await f.call('delivery_check', { id: 'all' });
   const capture = JSON.parse((await f.call('delivery_review', { action: 'inspect' })).content[0].text);
-  const review = { action: 'record', captureId: capture.id, coverage: [{ requirement: 'Runs', assertions: 'Only component behavior checked', status: 'unverified' }], probes: ['component check exited zero'], findings: [], limitations: [] };
+  const review = {
+    action: 'record',
+    captureId: capture.id,
+    coverage: [{ requirement: 'Runs', assertions: 'Only component behavior checked', status: 'unverified' }],
+    probes: ['component check exited zero'],
+    findings: [],
+    limitations: [],
+  };
   const result = JSON.parse((await f.call('delivery_review', review)).content[0].text);
   assert.equal(result.recorded, false);
   assert.equal(f.entries.at(-1).data.reviewFindings.length, 1);
@@ -849,8 +947,14 @@ test('review acceptance gaps persist through session restore and cannot be relab
   review.coverage[0] = { requirement: 'Runs', assertions: 'component check exited zero' };
   review.limitations = ['No integration test'];
   assert.equal(JSON.parse((await f.call('delivery_review', review)).content[0].text).recorded, false);
-  await assert.rejects(f.call('delivery_finish', { status: 'verified', review: 'done', launch: 'n/a', limitations: review.limitations }), /Unresolved review finding/);
-  const resolved = await f.call('delivery_review', { ...review, resolutions: [{ id: result.unresolvedFindings[0].id, change: 'Checked actual entrypoint', evidence: 'Entrypoint executes and returns expected output' }] });
+  await assert.rejects(
+    f.call('delivery_finish', { status: 'verified', review: 'done', launch: 'n/a', limitations: review.limitations }),
+    /Unresolved review finding/,
+  );
+  const resolved = await f.call('delivery_review', {
+    ...review,
+    resolutions: [{ id: result.unresolvedFindings[0].id, change: 'Checked actual entrypoint', evidence: 'Entrypoint executes and returns expected output' }],
+  });
   assert.equal(JSON.parse(resolved.content[0].text).recorded, true);
   await f.call('delivery_finish', { status: 'verified', review: 'entrypoint checked', launch: 'n/a', limitations: [] });
 });
@@ -873,11 +977,17 @@ test('all checks collects failures and independent successes rather than stoppin
 test('revision respects workspace supersession and user-owned validators', async t => {
   const f = fixture(t);
   const manifest = join(f.cwd, 'validators.json');
-  writeFileSync(manifest, JSON.stringify({ version: 1, checks: [{ id: 'oracle', kind: 'test', argv: [process.execPath, '-e', 'process.exit(9)'], timeoutSeconds: 5 }] }));
+  writeFileSync(
+    manifest,
+    JSON.stringify({ version: 1, checks: [{ id: 'oracle', kind: 'test', argv: [process.execPath, '-e', 'process.exit(9)'], timeoutSeconds: 5 }] }),
+  );
   f.flags['delivery-validators'] = manifest;
   f.hooks.session_start({}, f.ctx);
   await f.call('delivery_plan', f.plan);
-  await f.call('delivery_revise', { reason: 'Try overriding validator', patch: { checks: [...f.plan.checks, { ...f.plan.checks[0], id: 'required_oracle' }] } });
+  await f.call('delivery_revise', {
+    reason: 'Try overriding validator',
+    patch: { checks: [...f.plan.checks, { ...f.plan.checks[0], id: 'required_oracle' }] },
+  });
   assert.match(f.entries.at(-1).data.plan.checks.find(c => c.id === 'required_oracle').argv[2], /exit\(9\)/);
   const other = createReport(f.cwd, { status: 'implementing', plan: f.plan, evidence: {} });
   selectReport(f.cwd, other.path);
@@ -895,7 +1005,6 @@ test('budget status command reports remaining allowance without consuming tools'
   assert.equal(status.remaining.tools, 1);
   assert.equal(status.reason, null);
 });
-
 
 test('unapproved tasks fail closed for shell, custom tools, tests and disabled legacy strict flag', async t => {
   const f = fixture(t, { approve: false });

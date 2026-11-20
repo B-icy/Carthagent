@@ -4,8 +4,17 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  validatePlan, revisePlan, fingerprint, evidenceIdentity, pendingChecks,
-  updateStepStatus, completionIssues, coverageReport, planD2, looksInformational, pendingRequirements,
+  validatePlan,
+  revisePlan,
+  fingerprint,
+  evidenceIdentity,
+  pendingChecks,
+  updateStepStatus,
+  completionIssues,
+  coverageReport,
+  planD2,
+  looksInformational,
+  pendingRequirements,
 } from '../lib/delivery.mjs';
 
 function fixture(t) {
@@ -16,21 +25,27 @@ function fixture(t) {
     writeFileSync(join(cwd, 'packages', name, 'index.js'), 'export const version = 1;');
   }
   const checks = ['unit', 'integration'].map(id => ({ id, kind: 'test', argv: ['node', '--test', `${id}.test.mjs`], timeoutSeconds: 60 }));
-  const plan = validatePlan({
-    goal: 'Migrate a public API while preserving existing clients', assumptions: ['Old clients must remain supported'],
-    artifacts: ['packages'],
-    steps: [
-      { id: 'contract', title: 'Capture the public contract', checks: ['unit'] },
-      { id: 'api', title: 'Implement compatible API', dependsOn: ['contract'] },
-      { id: 'client', title: 'Migrate client', dependsOn: ['contract'] },
-      { id: 'integration', title: 'Exercise both clients', dependsOn: ['api', 'client'], checks: ['integration'] },
-    ],
-    checks, acceptance: [{ requirement: 'Old and new clients both work', checks: ['unit', 'integration'] }],
-  }, cwd);
+  const plan = validatePlan(
+    {
+      goal: 'Migrate a public API while preserving existing clients',
+      assumptions: ['Old clients must remain supported'],
+      artifacts: ['packages'],
+      steps: [
+        { id: 'contract', title: 'Capture the public contract', checks: ['unit'] },
+        { id: 'api', title: 'Implement compatible API', dependsOn: ['contract'] },
+        { id: 'client', title: 'Migrate client', dependsOn: ['contract'] },
+        { id: 'integration', title: 'Exercise both clients', dependsOn: ['api', 'client'], checks: ['integration'] },
+      ],
+      checks,
+      acceptance: [{ requirement: 'Old and new clients both work', checks: ['unit', 'integration'] }],
+    },
+    cwd,
+  );
   const state = { runId: 'task-a', revision: 1, plan, evidence: {}, stepStatus: {}, status: 'implementing' };
   const hash = fingerprint(cwd, ['.']);
   for (const check of checks) state.evidence[check.id] = { ...evidenceIdentity(state, check), passed: true, fingerprint: hash, logPath: `${check.id}.log` };
-  const revise = (patch, reason = 'Discovered an additional compatibility constraint') => revisePlan(state, patch, { cwd, hash: fingerprint(cwd, ['.']), reason });
+  const revise = (patch, reason = 'Discovered an additional compatibility constraint') =>
+    revisePlan(state, patch, { cwd, hash: fingerprint(cwd, ['.']), reason });
   return { cwd, state, hash, revise };
 }
 
@@ -49,7 +64,8 @@ test('cross-package API migration: dependencies gate work and tests gate complet
   assert.equal(completionIssues(state, cwd, hash).review.length, 1);
   state.reviewEvidence = { runId: state.runId, revision: state.revision, fingerprint: hash };
   assert.ok(Object.values(completionIssues(state, cwd, hash)).every(items => items.length === 0));
-  state.status = 'verified'; state.handoff = { review: 'old review' };
+  state.status = 'verified';
+  state.handoff = { review: 'old review' };
   updateStepStatus(state, 'contract', 'pending');
   assert.deepEqual(state.stepStatus, { step0: 'pending', step1: 'pending', step2: 'pending', step3: 'pending' });
   assert.equal(state.status, 'implementing');
@@ -110,8 +126,14 @@ test('failed evidence cannot be washed away through multiple revisions or blocke
   assert.deepEqual(next.evidence, {});
   assert.equal(next.verificationStarted, true);
   next.status = 'blocked';
-  assert.throws(() => revisePlan(next, { verification: 'none', checks: [], acceptance: [], steps: ['Answer'] }, { cwd, hash, reason: 'Try downgrade' }), /Cannot downgrade/);
-  assert.throws(() => revisePlan(next, { acceptance: [{ requirement: 'Only compilation matters now', checks: ['unit'] }] }, { cwd, hash, reason: 'Try weaker scope' }), /remove acceptance/);
+  assert.throws(
+    () => revisePlan(next, { verification: 'none', checks: [], acceptance: [], steps: ['Answer'] }, { cwd, hash, reason: 'Try downgrade' }),
+    /Cannot downgrade/,
+  );
+  assert.throws(
+    () => revisePlan(next, { acceptance: [{ requirement: 'Only compilation matters now', checks: ['unit'] }] }, { cwd, hash, reason: 'Try weaker scope' }),
+    /remove acceptance/,
+  );
   assert.equal(next.revisions[0].evidence.unit.passed, false, 'original failure remains auditable');
 });
 
@@ -128,7 +150,8 @@ test('failed, stale and forged evidence is never rebound to a new revision', t =
 
 test('legacy step progress follows unique labels and resets ambiguous duplicates', t => {
   const { state, revise } = fixture(t);
-  state.plan.steps = ['Inspect', 'Build', 'Review']; state.stepStatus = { step0: 'done', step1: 'active' };
+  state.plan.steps = ['Inspect', 'Build', 'Review'];
+  state.stepStatus = { step0: 'done', step1: 'active' };
   const next = revise({ steps: ['New investigation', 'Inspect', 'Build', 'Review'] });
   assert.deepEqual(next.stepStatus, { step1: 'done', step2: 'active' });
   const ambiguous = revise({ steps: ['Inspect', 'Inspect', 'Review'] });
@@ -139,14 +162,25 @@ test('plan validation rejects malformed steps, missing references and dependency
   const { state, cwd } = fixture(t);
   const base = state.plan;
   for (const steps of [
-    [], [null], [{}], [' '], [{ id: 'bad id', title: 'X' }],
-    [{ id: 'x', title: 'X' }, { id: 'x', title: 'Y' }],
+    [],
+    [null],
+    [{}],
+    [' '],
+    [{ id: 'bad id', title: 'X' }],
+    [
+      { id: 'x', title: 'X' },
+      { id: 'x', title: 'Y' },
+    ],
     [{ id: 'x', title: 'X', dependsOn: ['missing'] }],
     [{ id: 'x', title: 'X', dependsOn: ['x'] }],
-    [{ id: 'x', title: 'X', dependsOn: ['y'] }, { id: 'y', title: 'Y', dependsOn: ['x'] }],
+    [
+      { id: 'x', title: 'X', dependsOn: ['y'] },
+      { id: 'y', title: 'Y', dependsOn: ['x'] },
+    ],
     [{ id: 'x', title: 'X', dependsOn: 'y' }],
     [{ id: 'x', title: 'X', checks: ['missing'] }],
-  ]) assert.throws(() => validatePlan({ ...base, steps }, cwd));
+  ])
+    assert.throws(() => validatePlan({ ...base, steps }, cwd));
   for (const patch of [{ checks: [null] }, { checks: [{ ...base.checks[0], argv: 'node' }] }, { acceptance: [null] }, { artifacts: '.' }]) {
     assert.throws(() => validatePlan({ ...base, ...patch }, cwd));
   }
@@ -190,7 +224,12 @@ test('declared reports must be files and unfinished work prevents completion', t
 });
 
 test('polite implementation requests are not informational receipts', () => {
-  for (const prompt of ['Could you fix this?', 'Can you refactor the billing package?', 'Please migrate the schema?', 'Could you identify and fix flaws in the planning system?']) {
+  for (const prompt of [
+    'Could you fix this?',
+    'Can you refactor the billing package?',
+    'Please migrate the schema?',
+    'Could you identify and fix flaws in the planning system?',
+  ]) {
     assert.equal(looksInformational(prompt), false, prompt);
   }
   assert.equal(looksInformational('Why is the billing package failing?'), true);
@@ -207,7 +246,11 @@ test('new and remapped requirements need executions after their introduction, no
   assert.deepEqual(pendingRequirements(again, hash), ['Safe cancellation']);
   again.evidence.unit = { ...evidenceIdentity(again, again.plan.checks[0]), passed: true, fingerprint: hash, executedRevision: again.revision };
   assert.deepEqual(pendingRequirements(again, hash), []);
-  const remapped = revisePlan(again, { acceptance: [acceptance[0], { ...acceptance[1], checks: ['integration'] }] }, { cwd, hash, reason: 'Use integration assertions' });
+  const remapped = revisePlan(
+    again,
+    { acceptance: [acceptance[0], { ...acceptance[1], checks: ['integration'] }] },
+    { cwd, hash, reason: 'Use integration assertions' },
+  );
   assert.deepEqual(pendingRequirements(remapped, hash), ['Safe cancellation']);
 });
 

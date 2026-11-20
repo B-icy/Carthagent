@@ -8,10 +8,12 @@ import { resolveShipAccessToken } from '../lib/ship-auth.mjs';
 import { CARTHAGENT_SHIP_PROVIDER_ID } from '../lib/providers/names.mjs';
 
 const plan = { goal: 'g', acceptance: [], checks: [], outputs: [], assumptions: [], design: 'd', workflow: 'w' };
-const jevPayload = model => JSON.stringify({
-  model, answers: { srp: { type: 'noul', noul: 0.62 }, di: { type: 'noul', noul: 0.1 }, tests: { type: 'noul', noul: 0.3 } },
-  usage: { input_tokens: 120, output_tokens: 9, cost: 0 },
-});
+const jevPayload = model =>
+  JSON.stringify({
+    model,
+    answers: { srp: { type: 'noul', noul: 0.62 }, di: { type: 'noul', noul: 0.1 }, tests: { type: 'noul', noul: 0.3 } },
+    usage: { input_tokens: 120, output_tokens: 9, cost: 0 },
+  });
 
 function agentDir(t, credential) {
   const dir = mkdtempSync(join(tmpdir(), 'ctg-ship-auth-'));

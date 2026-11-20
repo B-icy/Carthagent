@@ -2,12 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import {
-  CTG_DEVELOPMENT_RUNTIME_PATCH_SHA256,
-  CTG_RUNTIME_LOCK_SHA256,
-  CTG_RUNTIME_PATCH_SHA256,
-  CTG_RUNTIME_SOURCE,
-} from '../lib/opencode/runtime.mjs';
+import { CTG_DEVELOPMENT_RUNTIME_PATCH_SHA256, CTG_RUNTIME_LOCK_SHA256, CTG_RUNTIME_PATCH_SHA256, CTG_RUNTIME_SOURCE } from '../lib/opencode/runtime.mjs';
 
 const releasedPath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v15.patch';
 const candidatePath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v16.patch';
@@ -19,17 +14,19 @@ function additions(patch, path) {
   const marker = `diff --git a/${path} b/${path}\n`;
   const parts = patch.split(marker);
   assert.equal(parts.length, 2, `candidate must contain exactly one diff for ${path}`);
-  return parts[1].split('\ndiff --git ')[0].split('\n')
+  return parts[1]
+    .split('\ndiff --git ')[0]
+    .split('\n')
     .filter(line => line.startsWith('+') && !line.startsWith('+++'))
-    .map(line => line.slice(1)).join('\n');
+    .map(line => line.slice(1))
+    .join('\n');
 }
 
 test('v15 patch stays immutable; the 1.1.2 runtime pin selects reviewed v18', () => {
   assert.equal(sha256(read(releasedPath)), 'eb6feae3931d78a2ff572b63a2186c63f0300ca2ee4b7808d96bb270c65ec3f0');
   assert.equal(CTG_RUNTIME_PATCH_SHA256, sha256(read(promotedPath)));
   assert.equal(CTG_RUNTIME_PATCH_SHA256, '636e01c3da517c64a5f90fb1ea6a682a25fbcb2b63372a8fd2c32ec11fe706dd');
-  assert.equal(CTG_DEVELOPMENT_RUNTIME_PATCH_SHA256,
-    sha256(read('docs/patches/opencode-v2.0.32-session-ui-development-v20.patch')));
+  assert.equal(CTG_DEVELOPMENT_RUNTIME_PATCH_SHA256, sha256(read('docs/patches/opencode-v2.0.32-session-ui-development-v20.patch')));
   const release = JSON.parse(read('lib/opencode/runtime-release.json'));
   assert.equal(release.patchSha256, CTG_RUNTIME_PATCH_SHA256);
   assert.equal(release.sourceRevision, CTG_RUNTIME_SOURCE);
@@ -95,26 +92,32 @@ test('combined v16 carries invocation-context adaptation and direct/nested quest
     'expect(event.data.form.metadata).toEqual(',
     'concurrency: "unbounded"',
     'expect(yield* forms.list()).toEqual([])',
-  ]) assert.ok(regression.includes(marker), `missing invocation regression: ${marker}`);
+  ])
+    assert.ok(regression.includes(marker), `missing invocation regression: ${marker}`);
 });
 
 test('combined v16 changes only the four reviewed files relative to v15', () => {
   // Full-index object IDs differ in formatting from v15, not source content.
   // Compare complete diff sections (including new files), ignoring only that
   // metadata line. Actual apply/tree equivalence is recorded independently.
-  const sections = patch => new Map(patch.split(/(?=^diff --git )/m).filter(Boolean).map(section => [
-    section.split('\n')[0], section.replace(/^index .*\n/gm, ''),
-  ]));
+  const sections = patch =>
+    new Map(
+      patch
+        .split(/(?=^diff --git )/m)
+        .filter(Boolean)
+        .map(section => [section.split('\n')[0], section.replace(/^index .*\n/gm, '')]),
+    );
   const released = sections(read(releasedPath).toString('utf8'));
   const candidate = sections(read(candidatePath).toString('utf8'));
-  const changed = [...new Set([...released.keys(), ...candidate.keys()])]
-    .filter(key => released.get(key) !== candidate.get(key)).sort();
+  const changed = [...new Set([...released.keys(), ...candidate.keys()])].filter(key => released.get(key) !== candidate.get(key)).sort();
   const intended = [
     'packages/core/test/plugin/promise-tool.test.ts',
     'packages/plugin/src/promise/adapter.ts',
     'packages/tui/src/routes/session/form.tsx',
     'packages/tui/test/cli/tui/form.test.tsx',
-  ].map(path => `diff --git a/${path} b/${path}`).sort();
+  ]
+    .map(path => `diff --git a/${path} b/${path}`)
+    .sort();
   assert.deepEqual(changed, intended);
   const newFiles = [...released].filter(([, section]) => /^new file mode /m.test(section));
   assert.equal(newFiles.length, 40, 'all reviewed untracked upstream files remain in the complete patch');
@@ -129,7 +132,10 @@ test('combined v16 carries bounded form scrolling and interaction regressions', 
   }
   const regression = additions(patch, 'packages/tui/test/cli/tui/form.test.tsx');
   for (const marker of [
-    'long form pages without losing choices', '[120, 40]', '[90, 28]', '[70, 22]',
+    'long form pages without losing choices',
+    '[120, 40]',
+    '[90, 28]',
+    '[70, 22]',
     'reveals an offscreen choice before activating it',
     'long email field remains editable, validates, and resets scrolling on review',
     'long multiselect reaches custom input and confirmation',
@@ -137,6 +143,9 @@ test('combined v16 carries bounded form scrolling and interaction regressions', 
     'confirmation scrolls with arrows and pages after a terminal resize',
     'custom choice follows consecutive fields with different option counts',
     'growing custom editor remains visible',
-    'expect(prompt.replies).toEqual([])', 'mockMouse.scroll', 'café 日本語',
-  ]) assert.ok(regression.includes(marker), `missing form regression: ${marker}`);
+    'expect(prompt.replies).toEqual([])',
+    'mockMouse.scroll',
+    'café 日本語',
+  ])
+    assert.ok(regression.includes(marker), `missing form regression: ${marker}`);
 });

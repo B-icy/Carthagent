@@ -6,7 +6,10 @@ test('clipboardCommands picks the platform clipboard tool', () => {
   assert.deepEqual(clipboardCommands('darwin', {}), [['pbpaste', []]]);
   assert.equal(clipboardCommands('win32', {})[0][0], 'powershell.exe');
   const linux = clipboardCommands('linux', {});
-  assert.deepEqual(linux.map(c => c[0]), ['wl-paste', 'xclip', 'xsel']);
+  assert.deepEqual(
+    linux.map(c => c[0]),
+    ['wl-paste', 'xclip', 'xsel'],
+  );
 });
 
 test('clipboardCommands adds PowerShell for WSL', () => {
@@ -19,9 +22,15 @@ test('clipboardCommands adds PowerShell for WSL', () => {
 test('clipboardWriteCommands picks the platform clipboard tool', () => {
   assert.deepEqual(clipboardWriteCommands('darwin', {}), [['pbcopy', []]]);
   const win32 = clipboardWriteCommands('win32', {});
-  assert.deepEqual(win32.map(c => c[0]), ['powershell.exe']);
+  assert.deepEqual(
+    win32.map(c => c[0]),
+    ['powershell.exe'],
+  );
   const linux = clipboardWriteCommands('linux', {});
-  assert.deepEqual(linux.map(c => c[0]), ['wl-copy', 'xclip', 'xsel']);
+  assert.deepEqual(
+    linux.map(c => c[0]),
+    ['wl-copy', 'xclip', 'xsel'],
+  );
 });
 
 test('clipboardWriteCommands adds PowerShell for WSL', () => {
@@ -46,11 +55,19 @@ test('writeClipboard pipes text to child stdin and resolves true', async () => {
 });
 
 test('Windows and WSL clipboard routes declare Unicode encodings', () => {
-  for (const [platform, env] of [['win32', {}], ['linux', { WSL_INTEROP: 'yes' }]]) {
+  for (const [platform, env] of [
+    ['win32', {}],
+    ['linux', { WSL_INTEROP: 'yes' }],
+  ]) {
     const commands = clipboardWriteCommands(platform, env);
     assert.ok(!commands.some(c => c[0] === 'clip.exe'));
     assert.match(commands.find(c => c[0] === 'powershell.exe')[1].at(-1), /InputEncoding.*UTF8Encoding/);
-    assert.match(clipboardCommands(platform, env).find(c => c[0] === 'powershell.exe')[1].at(-1), /OutputEncoding.*UTF8Encoding/);
+    assert.match(
+      clipboardCommands(platform, env)
+        .find(c => c[0] === 'powershell.exe')[1]
+        .at(-1),
+      /OutputEncoding.*UTF8Encoding/,
+    );
   }
 });
 
@@ -58,7 +75,8 @@ test('clipboard subprocess receives exact UTF-8 Unicode bytes without BOM', asyn
   const text = '● MESSAGES │ café ✓\n┬ · 日本語 😀';
   {
     const expected = Buffer.from(text, 'utf8').toString('hex');
-    const script = 'const chunks=[]; process.stdin.on("data", c=>chunks.push(c)); process.stdin.on("end",()=>{process.exitCode=Buffer.concat(chunks).toString("hex")===process.argv[1]?0:1;});';
+    const script =
+      'const chunks=[]; process.stdin.on("data", c=>chunks.push(c)); process.stdin.on("end",()=>{process.exitCode=Buffer.concat(chunks).toString("hex")===process.argv[1]?0:1;});';
     assert.equal(await writeClipboard(text, { commands: [[process.execPath, ['-e', script, expected]]] }), true);
   }
 });

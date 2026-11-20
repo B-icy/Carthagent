@@ -12,7 +12,15 @@ test('picker reads past the startup snapshot and thinking sees delayed discovery
   let models = [{ provider: 'anthropic', id: 'claude-opus-5' }];
   let calls = 0;
   const state = {};
-  const load = createModelLoader({ async send() { calls++; return { models }; } }, state);
+  const load = createModelLoader(
+    {
+      async send() {
+        calls++;
+        return { models };
+      },
+    },
+    state,
+  );
   await Promise.all([load(), load()]);
   assert.equal(calls, 1);
   models = [...models, { provider: 'anthropic', id: 'claude-opus-5-5', reasoning: true }];
@@ -25,7 +33,15 @@ test('picker reads past the startup snapshot and thinking sees delayed discovery
 test('model loader preserves last good list on RPC failure but accepts an empty registry', async () => {
   let response = { models: [{ provider: 'anthropic', id: 'a' }] };
   const state = {};
-  const load = createModelLoader({ async send() { if (response instanceof Error) throw response; return response; } }, state);
+  const load = createModelLoader(
+    {
+      async send() {
+        if (response instanceof Error) throw response;
+        return response;
+      },
+    },
+    state,
+  );
   const first = await load();
   response = new Error('restarting');
   assert.deepEqual(await load(), first);
@@ -39,7 +55,12 @@ test('owned catalog supplies Opus 5.5 limits without a pi catalog', async () => 
   assert.equal(opus.maxTokens, 128_000);
   assert.ok(opus.reasoning);
   const config = anthropicDiscoveryProviderConfig({ fetchImpl: async () => Response.json({ data: [{ id: opus.id }] }) });
-  const models = await config.refreshModels({ allowNetwork: true, credential: { type: 'api_key', key: 'test' }, signal: new AbortController().signal, stored: { models: [{ id: opus.id, contextWindow: 200_000, maxTokens: 64_000 }] } });
+  const models = await config.refreshModels({
+    allowNetwork: true,
+    credential: { type: 'api_key', key: 'test' },
+    signal: new AbortController().signal,
+    stored: { models: [{ id: opus.id, contextWindow: 200_000, maxTokens: 64_000 }] },
+  });
   assert.equal(models[0].contextWindow, opus.contextWindow);
 });
 
@@ -47,19 +68,27 @@ test('real runtime refresh uses provider discovery, never pi.dev, including non-
   const previous = globalThis.fetch;
   const calls = [];
   const dir = await mkdtemp(join(tmpdir(), 'ctg-registry-'));
-  globalThis.fetch = async url => { calls.push(String(url)); throw new Error(`Unexpected fetch: ${url}`); };
+  globalThis.fetch = async url => {
+    calls.push(String(url));
+    throw new Error(`Unexpected fetch: ${url}`);
+  };
   try {
     const runtime = await ModelRuntime.create({ authPath: join(dir, 'auth.json'), modelsPath: null, refreshOnCreate: false });
-    registerSubscriptionProviders(runtime, { fetchImpl: async url => {
-      calls.push(String(url));
-      return Response.json({ data: [{ id: 'claude-opus-5-5' }] });
-    } });
+    registerSubscriptionProviders(runtime, {
+      fetchImpl: async url => {
+        calls.push(String(url));
+        return Response.json({ data: [{ id: 'claude-opus-5-5' }] });
+      },
+    });
     await runtime.setRuntimeApiKey('anthropic', 'test');
     await runtime.refresh({ allowNetwork: false });
     assert.equal(runtime.getModels('anthropic').find(model => model.id === 'claude-opus-5-5').contextWindow, 1_000_000);
     await runtime.refresh({ allowNetwork: true });
     assert.ok(calls.some(url => url.startsWith('https://api.anthropic.com/v1/models')));
-    assert.ok(calls.every(url => !url.includes('pi.dev')), calls.join('\n'));
+    assert.ok(
+      calls.every(url => !url.includes('pi.dev')),
+      calls.join('\n'),
+    );
     assert.ok(runtime.getModels('anthropic').some(model => model.id === 'claude-opus-5-5'));
   } finally {
     globalThis.fetch = previous;

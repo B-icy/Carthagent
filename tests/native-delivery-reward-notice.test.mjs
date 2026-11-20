@@ -7,7 +7,10 @@ test('a verified delivery surfaces the reward claim once per run, and never clai
   let delivery = { status: 'verified', runId: 'run-1' };
   const lookups = [];
   const notice = createDeliveryRewardNotice({
-    delivery: async sessionID => { lookups.push(sessionID); return delivery; },
+    delivery: async sessionID => {
+      lookups.push(sessionID);
+      return delivery;
+    },
     notify: (message, sessionID) => notices.push([message, sessionID]),
   });
   assert.equal(await notice.onSucceeded({ data: { sessionID: 's1' } }), true);
@@ -25,7 +28,10 @@ test('unverified, missing or failing deliveries stay quiet', async () => {
   const notices = [];
   const results = [{ status: 'blocked', runId: 'r' }, { status: 'unavailable' }, { status: 'verified' }, undefined];
   const notice = createDeliveryRewardNotice({
-    delivery: async () => { if (!results.length) throw new Error('rpc down'); return results.shift(); },
+    delivery: async () => {
+      if (!results.length) throw new Error('rpc down');
+      return results.shift();
+    },
     notify: message => notices.push(message),
   });
   for (let i = 0; i < 5; i++) assert.equal(await notice.onSucceeded({ data: { sessionID: 's' } }), false);
@@ -36,9 +42,15 @@ test('unverified, missing or failing deliveries stay quiet', async () => {
 test('bursts of completion events for one session share one lookup', async () => {
   let calls = 0;
   let release;
-  const gate = new Promise(resolve => { release = resolve; });
+  const gate = new Promise(resolve => {
+    release = resolve;
+  });
   const notice = createDeliveryRewardNotice({
-    delivery: async () => { calls++; await gate; return { status: 'verified', runId: 'r' }; },
+    delivery: async () => {
+      calls++;
+      await gate;
+      return { status: 'verified', runId: 'r' };
+    },
     notify: () => {},
   });
   const first = notice.onSucceeded({ data: { sessionID: 's' } });

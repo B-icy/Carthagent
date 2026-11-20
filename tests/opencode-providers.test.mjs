@@ -1,6 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readLegacyCarthagentCredential, refreshSingleFlight, refreshNativeCredential, credentialStorageKey, nativeCredentialFile, nativeCredentialDatabaseFile, readNativeOAuthCredential, pruneRefreshReceipts, refreshRejected, REFRESH_RETRY_WINDOW_MS } from '../lib/opencode/credentials.mjs';
+import {
+  readLegacyCarthagentCredential,
+  refreshSingleFlight,
+  refreshNativeCredential,
+  credentialStorageKey,
+  nativeCredentialFile,
+  nativeCredentialDatabaseFile,
+  readNativeOAuthCredential,
+  pruneRefreshReceipts,
+  refreshRejected,
+  REFRESH_RETRY_WINDOW_MS,
+} from '../lib/opencode/credentials.mjs';
 import { CloudClient } from '../lib/cloud/client.mjs';
 import { createSessionIdentity, managedRequestIdentity, sessionRunMode, shipTelemetryHeaders } from '../plugins/carthagent/src/server/telemetry.ts';
 import { registerProviders, providerConstants } from '../plugins/carthagent/src/server/providers.ts';
@@ -20,7 +31,11 @@ test('provider shares actual legacy auth.json coordination lease and rejects old
   let db;
   t.after(async () => {
     // after hooks run FIFO: close SQLite before Windows unlinks its files.
-    try { db?.close(); } finally { await rm(directory, { recursive: true, force: true }); }
+    try {
+      db?.close();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
   const env = { XDG_DATA_HOME: directory, OPENCODE_DB: join(directory, 'native.sqlite') };
   const vaultFile = nativeCredentialDatabaseFile(env, 'ctg.2.0.32');
@@ -38,9 +53,18 @@ test('provider shares actual legacy auth.json coordination lease and rejects old
   t.after(release);
   let httpCalls = 0;
   const fake = fakeContext();
-  const cleanup = await registerProviders(fake.ctx, { env, fetchImpl: async () => { httpCalls++; throw Error('HTTP must not run'); } });
+  const cleanup = await registerProviders(fake.ctx, {
+    env,
+    fetchImpl: async () => {
+      httpCalls++;
+      throw Error('HTTP must not run');
+    },
+  });
   t.after(cleanup);
-  const result = fake.integrationTransforms[0][0].refresh(credential).then(() => 'unexpected success', error => error);
+  const result = fake.integrationTransforms[0][0].refresh(credential).then(
+    () => 'unexpected success',
+    error => error,
+  );
   await new Promise(resolve => setTimeout(resolve, 100));
   assert.equal(httpCalls, 0, 'new provider must honor the old process lease');
   const receipt = JSON.stringify({ pid: process.pid, owner: 'legacy-owner', from: digest, to: 'legacy-rotation', stage: 'complete', createdAt: Date.now() });
@@ -66,7 +90,11 @@ test('expired native resolution refreshes once without reentering resolve and pr
   const directory = await mkdtemp(join(os.tmpdir(), 'ctg-provider-reentry-'));
   let db;
   t.after(async () => {
-    try { db?.close(); } finally { await rm(directory, { recursive: true, force: true }); }
+    try {
+      db?.close();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
   const credentialFile = join(directory, 'native.sqlite');
   db = new DatabaseSync(credentialFile);
@@ -77,17 +105,20 @@ test('expired native resolution refreshes once without reentering resolve and pr
   const fake = fakeContext();
   let resolves = 0;
   let refreshes = 0;
-  const cleanup = await registerProviders(fake.ctx, { credentialFile, env: { CARTHAGENT_CLOUD_URL: 'https://cloud.test' },
+  const cleanup = await registerProviders(fake.ctx, {
+    credentialFile,
+    env: { CARTHAGENT_CLOUD_URL: 'https://cloud.test' },
     fetchImpl: async (url, init) => {
       assert.equal(String(url), 'https://cloud.test/v1/token/refresh');
       assert.ok(init.signal, 'refresh fetch must have a bounded abort signal');
       assert.equal(JSON.parse(init.body).refreshToken, 'old-refresh');
       refreshes++;
       return Response.json({ accessToken: 'rotated-access', refreshToken: 'rotated-refresh', expiresIn: 3600 });
-    } });
+    },
+  });
   t.after(cleanup);
   const method = fake.integrationTransforms[0][0];
-  fake.ctx.integration.connection.active = async id => id === 'carthagent-cloud' ? connection : undefined;
+  fake.ctx.integration.connection.active = async id => (id === 'carthagent-cloud' ? connection : undefined);
   fake.ctx.integration.connection.resolve = async () => {
     resolves++;
     assert.ok(resolves <= 2, 'refresh reread must not call resolve recursively');
@@ -105,17 +136,24 @@ test('expired native resolution refreshes once without reentering resolve and pr
   assert.equal(JSON.parse(db.prepare('SELECT value FROM credential').get().value).refresh, 'rotated-refresh');
   assert.equal(fake.storage.size, 0, 'plugin storage must not contain credentials');
   db.prepare('UPDATE credential SET value = ?').run('{"type":"oauth","refresh":"secret-invalid"}');
-  await assert.rejects(readNativeOAuthCredential({ credentialFile, credentialID: connection.id, integrationID: 'carthagent-cloud', methodID: 'carthagent-device' }), error => {
-    assert.doesNotMatch(error.message, /secret-invalid/);
-    return /Unsupported native credential/.test(error.message);
-  });
+  await assert.rejects(
+    readNativeOAuthCredential({ credentialFile, credentialID: connection.id, integrationID: 'carthagent-cloud', methodID: 'carthagent-device' }),
+    error => {
+      assert.doesNotMatch(error.message, /secret-invalid/);
+      return /Unsupported native credential/.test(error.message);
+    },
+  );
 });
 
 test('refresh pins original A despite active B before lock and during receipt wait; legacy receipts fail closed', async t => {
   const directory = await mkdtemp(join(os.tmpdir(), 'ctg-refresh-account-'));
   let db;
   t.after(async () => {
-    try { db?.close(); } finally { await rm(directory, { recursive: true, force: true }); }
+    try {
+      db?.close();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
   const credentialFile = join(directory, 'native.sqlite');
   db = new DatabaseSync(credentialFile);
@@ -123,9 +161,14 @@ test('refresh pins original A despite active B before lock and during receipt wa
   const a = { type: 'oauth', methodID: 'carthagent-device', access: 'a', refresh: 'refresh-a', expires: 1 };
   const b = { ...a, access: 'b', refresh: 'refresh-b' };
   const insert = (id, value) => db.prepare('INSERT INTO credential VALUES (?, ?, ?)').run(id, 'carthagent-cloud', JSON.stringify(value));
-  insert('A', a); insert('B', b);
+  insert('A', a);
+  insert('B', b);
   const fake = fakeContext();
-  const cleanup = await registerProviders(fake.ctx, { credentialFile, env: {}, fetchImpl: async () => Response.json({ accessToken: 'new-a', refreshToken: 'new-refresh-a', expiresIn: 3600 }) });
+  const cleanup = await registerProviders(fake.ctx, {
+    credentialFile,
+    env: {},
+    fetchImpl: async () => Response.json({ accessToken: 'new-a', refreshToken: 'new-refresh-a', expiresIn: 3600 }),
+  });
   t.after(cleanup);
   // Any refresh-time active lookup would select the wrong account.
   fake.ctx.integration.connection.active = async () => ({ type: 'credential', id: 'B' });
@@ -140,18 +183,39 @@ test('refresh pins original A despite active B before lock and during receipt wa
   db.prepare('UPDATE credential SET value = ? WHERE id = ?').run(JSON.stringify(a), 'A');
   const capture = await readNativeOAuthCredential({ credentialFile, integrationID: 'carthagent-cloud', methodID: a.methodID, refreshToken: a.refresh });
   assert.equal(capture, 'A');
-  await writeFile(pending, JSON.stringify({ pid: process.pid, owner: 'fixture', from: digest, stage: 'complete', createdAt: Date.now(), credentialID: capture }));
+  await writeFile(
+    pending,
+    JSON.stringify({ pid: process.pid, owner: 'fixture', from: digest, stage: 'complete', createdAt: Date.now(), credentialID: capture }),
+  );
   let reads = 0;
-  const waited = await refreshNativeCredential({ credential: a, credentialFile, credentialID: capture, timeout: 500,
+  const waited = await refreshNativeCredential({
+    credential: a,
+    credentialFile,
+    credentialID: capture,
+    timeout: 500,
     reread: async () => {
       if (++reads === 3) db.prepare('UPDATE credential SET value = ? WHERE id = ?').run(JSON.stringify(result), 'A');
       return readNativeOAuthCredential({ credentialFile, credentialID: capture, integrationID: 'carthagent-cloud', methodID: a.methodID });
-    }, refresh: () => { throw Error('must not rotate twice'); } });
+    },
+    refresh: () => {
+      throw Error('must not rotate twice');
+    },
+  });
   assert.equal(waited.access, 'new-a');
   assert.ok(reads >= 3);
   await writeFile(pending, JSON.stringify({ pid: process.pid, owner: 'old-host', from: digest, stage: 'complete', createdAt: Date.now() }));
-  await assert.rejects(refreshNativeCredential({ credential: a, credentialFile, credentialID: capture,
-    reread: async () => result, refresh: () => { throw Error('must not refresh'); } }), /Unbound or different/);
+  await assert.rejects(
+    refreshNativeCredential({
+      credential: a,
+      credentialFile,
+      credentialID: capture,
+      reread: async () => result,
+      refresh: () => {
+        throw Error('must not refresh');
+      },
+    }),
+    /Unbound or different/,
+  );
   await rm(pending);
   db.prepare('UPDATE credential SET value = ? WHERE id = ?').run(JSON.stringify(a), 'A');
   insert('duplicate-A', a);
@@ -170,17 +234,19 @@ function fakeContext({ integrations = ['carthagent-cloud', 'anthropic', 'openai-
   const storage = new Map();
   const registrations = name => {
     activeRegistrations.add(name);
-    return { async dispose() {
-      disposeCalls.push(name);
-      activeRegistrations.delete(name);
-      if (name.startsWith('hook:')) {
-        const hookName = name.slice('hook:'.length);
-        const index = hooks.findIndex(hook => hook.name === hookName);
-        if (index >= 0) hooks.splice(index, 1);
-      }
-      this.disposed = true;
-      if (disposeFailure === name) throw new Error(`dispose failed: ${name}`);
-    } };
+    return {
+      async dispose() {
+        disposeCalls.push(name);
+        activeRegistrations.delete(name);
+        if (name.startsWith('hook:')) {
+          const hookName = name.slice('hook:'.length);
+          const index = hooks.findIndex(hook => hook.name === hookName);
+          if (index >= 0) hooks.splice(index, 1);
+        }
+        this.disposed = true;
+        if (disposeFailure === name) throw new Error(`dispose failed: ${name}`);
+      },
+    };
   };
   const ctx = {
     app: { name: 'fixture', version: '2.0.32', channel: 'ctg.2.0.32' },
@@ -190,9 +256,17 @@ function fakeContext({ integrations = ['carthagent-cloud', 'anthropic', 'openai-
         const editor = {
           list: () => [],
           remove() {},
-          add(record) { providerTransforms.push(record); },
-          get(id) { return integrations.includes(id) ? { provider: { id }, models: new Map() } : undefined; },
-          models: { set(id, value) { models.set(id, value); } },
+          add(record) {
+            providerTransforms.push(record);
+          },
+          get(id) {
+            return integrations.includes(id) ? { provider: { id }, models: new Map() } : undefined;
+          },
+          models: {
+            set(id, value) {
+              models.set(id, value);
+            },
+          },
         };
         callback(editor);
         if (failAt === 'provider.transform') throw new Error('injected provider transform failure');
@@ -206,9 +280,16 @@ function fakeContext({ integrations = ['carthagent-cloud', 'anthropic', 'openai-
         const methods = [];
         const editor = {
           list: () => integrations.map(id => ({ id, name: id })),
-          get: id => integrations.includes(id) ? ({ id, name: id }) : undefined,
-          update() {}, remove() {},
-          method: { update(value) { methods.push(value); }, list: () => [], remove() {} },
+          get: id => (integrations.includes(id) ? { id, name: id } : undefined),
+          update() {},
+          remove() {},
+          method: {
+            update(value) {
+              methods.push(value);
+            },
+            list: () => [],
+            remove() {},
+          },
         };
         callback(editor);
         if (failAt === 'integration.transform') throw new Error('injected integration transform failure');
@@ -216,8 +297,12 @@ function fakeContext({ integrations = ['carthagent-cloud', 'anthropic', 'openai-
         return registrations('integration.transform');
       },
       connection: {
-        async active(id) { return connections[id]?.connection; },
-        async resolve(connection) { return connection.credential; },
+        async active(id) {
+          return connections[id]?.connection;
+        },
+        async resolve(connection) {
+          return connection.credential;
+        },
       },
     },
     session: {
@@ -232,10 +317,19 @@ function fakeContext({ integrations = ['carthagent-cloud', 'anthropic', 'openai-
       },
     },
     storage: {
-      async get(key) { return storage.get(key); },
-      async set(key, value) { storage.set(key, value); },
+      async get(key) {
+        return storage.get(key);
+      },
+      async set(key, value) {
+        storage.set(key, value);
+      },
     },
-    event: { async *subscribe({ signal } = {}) { events.push('subscribed'); if (!signal?.aborted) await new Promise(resolve => signal?.addEventListener('abort', resolve, { once: true })); } },
+    event: {
+      async *subscribe({ signal } = {}) {
+        events.push('subscribed');
+        if (!signal?.aborted) await new Promise(resolve => signal?.addEventListener('abort', resolve, { once: true }));
+      },
+    },
   };
   return { ctx, hooks, events, providerTransforms, integrationTransforms, storage, activeRegistrations, disposeCalls };
 }
@@ -246,18 +340,40 @@ test('session telemetry uses stable session-derived thread IDs and request-kind 
   assert.equal(alpha, identities.thread('ses_native_non_uuid'));
   assert.notEqual(alpha, identities.thread('ses_other'));
   assert.match(alpha, /^[0-9a-f-]{36}$/);
-  assert.equal(managedRequestIdentity({ sessionID: 's', kind: 'primary', body: '{}', secret: 'x' }),
-    managedRequestIdentity({ sessionID: 's', kind: 'primary', body: '{}', secret: 'x' }));
-  assert.notEqual(managedRequestIdentity({ sessionID: 's', kind: 'primary', body: '{}', secret: 'x' }),
-    managedRequestIdentity({ sessionID: 's', kind: 'title', body: '{}', secret: 'x' }));
+  assert.equal(
+    managedRequestIdentity({ sessionID: 's', kind: 'primary', body: '{}', secret: 'x' }),
+    managedRequestIdentity({ sessionID: 's', kind: 'primary', body: '{}', secret: 'x' }),
+  );
+  assert.notEqual(
+    managedRequestIdentity({ sessionID: 's', kind: 'primary', body: '{}', secret: 'x' }),
+    managedRequestIdentity({ sessionID: 's', kind: 'title', body: '{}', secret: 'x' }),
+  );
   assert.notEqual(identities.request('same-session', 'primary'), identities.request('same-session', 'primary'));
-  const headers = shipTelemetryHeaders({ sessionID: 'ses_native_non_uuid', kind: 'generate', body: '{}', env: {}, agentDir: '/missing' , identity: identities, requestSecret: 'x', version: 'test' });
+  const headers = shipTelemetryHeaders({
+    sessionID: 'ses_native_non_uuid',
+    kind: 'generate',
+    body: '{}',
+    env: {},
+    agentDir: '/missing',
+    identity: identities,
+    requestSecret: 'x',
+    version: 'test',
+  });
   assert.equal(headers['x-carthagent-thread-id'], alpha);
   assert.equal(headers['x-carthagent-turn'], '1');
   assert.ok(headers['x-carthagent-request-id']);
   assert.equal(headers['x-carthagent-version'], 'test');
   assert.equal(headers['x-carthagent-run-mode'], undefined);
-  const printed = shipTelemetryHeaders({ sessionID: 'ses_native_non_uuid', kind: 'generate', body: '{}', env: {}, agentDir: '/missing', identity: identities, runMode: 'print', version: 'test' });
+  const printed = shipTelemetryHeaders({
+    sessionID: 'ses_native_non_uuid',
+    kind: 'generate',
+    body: '{}',
+    env: {},
+    agentDir: '/missing',
+    identity: identities,
+    runMode: 'print',
+    version: 'test',
+  });
   assert.equal(printed['x-carthagent-run-mode'], 'print');
 });
 
@@ -275,17 +391,28 @@ test('parallel token refresh callers share one rotation result and failures can 
   let release;
   const work = refreshSingleFlight('credential-1:refresh-A', async () => {
     calls++;
-    await new Promise(resolve => { release = resolve; });
+    await new Promise(resolve => {
+      release = resolve;
+    });
     return { access: 'next', refresh: 'rotated' };
   });
-  const concurrent = refreshSingleFlight('credential-1:refresh-A', async () => { calls++; return null; });
+  const concurrent = refreshSingleFlight('credential-1:refresh-A', async () => {
+    calls++;
+    return null;
+  });
   await Promise.resolve();
   assert.equal(calls, 1);
   release();
   assert.deepEqual(await Promise.all([work, concurrent]), [
-    { access: 'next', refresh: 'rotated' }, { access: 'next', refresh: 'rotated' },
+    { access: 'next', refresh: 'rotated' },
+    { access: 'next', refresh: 'rotated' },
   ]);
-  await assert.rejects(refreshSingleFlight('credential-2', async () => { throw new Error('failed'); }), /failed/);
+  await assert.rejects(
+    refreshSingleFlight('credential-2', async () => {
+      throw new Error('failed');
+    }),
+    /failed/,
+  );
   assert.equal(await refreshSingleFlight('credential-2', async () => 'recovered'), 'recovered');
 });
 
@@ -300,16 +427,26 @@ test('native SQLite vault rereads after cross-process lease acquisition and rota
       if (child.exitCode === null && child.signalCode === null) child.kill();
     }
     await Promise.all(childClosures);
-    try { db?.close(); } finally { await rm(directory, { recursive: true, force: true }); }
+    try {
+      db?.close();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
   const vault = join(directory, 'native.sqlite');
   const profile = vault;
   db = new DatabaseSync(vault);
   db.exec('PRAGMA journal_mode=WAL; CREATE TABLE credential (id TEXT PRIMARY KEY, integration_id TEXT, value TEXT)');
-  db.prepare('INSERT INTO credential VALUES (?, ?, ?)').run('cred_fixture', 'carthagent-cloud', JSON.stringify({ type: 'oauth', methodID: 'carthagent-device', refresh: 'issued-old-token', access: 'old-access', expires: 1 }));
+  db.prepare('INSERT INTO credential VALUES (?, ?, ?)').run(
+    'cred_fixture',
+    'carthagent-cloud',
+    JSON.stringify({ type: 'oauth', methodID: 'carthagent-device', refresh: 'issued-old-token', access: 'old-access', expires: 1 }),
+  );
   const moduleUrl = new URL('../lib/opencode/credentials.mjs', import.meta.url).href;
   const worker = join(directory, 'worker.mjs');
-  await writeFile(worker, `
+  await writeFile(
+    worker,
+    `
     import { readFile, writeFile } from 'node:fs/promises';
     import { DatabaseSync } from 'node:sqlite';
     import { refreshNativeCredential, readNativeOAuthCredential } from ${JSON.stringify(moduleUrl)};
@@ -341,42 +478,74 @@ test('native SQLite vault rereads after cross-process lease acquisition and rota
     }
     await writeFile(resultFile, JSON.stringify({ refresh: result.refresh, access: result.access }));
     console.log(JSON.stringify({ name, refreshed: true }));
-  `);
+  `,
+  );
   const rotating = join(directory, 'rotating');
   const resultFiles = ['one', 'two'].map(name => join(directory, `${name}.result`));
   for (const [index, name] of ['one', 'two'].entries()) {
-    const child = spawn(process.execPath, [worker, vault, profile, name, join(directory, 'go'), rotating, resultFiles[index]], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, [worker, vault, profile, name, join(directory, 'go'), rotating, resultFiles[index]], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
     children.push(child);
     childClosures.push(new Promise(resolve => child.once('close', resolve)));
   }
-  const outputsPromise = Promise.all(children.map(child => new Promise((resolve, reject) => {
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', chunk => { stdout += chunk; });
-    child.stderr.on('data', chunk => { stderr += chunk; });
-    child.once('error', reject);
-    child.once('close', code => code === 0 ? resolve(JSON.parse(stdout.trim())) : reject(new Error(stderr)));
-  })));
+  const outputsPromise = Promise.all(
+    children.map(
+      child =>
+        new Promise((resolve, reject) => {
+          let stdout = '';
+          let stderr = '';
+          child.stdout.on('data', chunk => {
+            stdout += chunk;
+          });
+          child.stderr.on('data', chunk => {
+            stderr += chunk;
+          });
+          child.once('error', reject);
+          child.once('close', code => (code === 0 ? resolve(JSON.parse(stdout.trim())) : reject(new Error(stderr))));
+        }),
+    ),
+  );
   await writeFile(join(directory, 'go'), 'start');
   const waitForFile = async file => {
     const deadline = Date.now() + 5_000;
     while (Date.now() < deadline) {
-      try { return await readFile(file, 'utf8'); } catch { await new Promise(resolve => setTimeout(resolve, 10)); }
+      try {
+        return await readFile(file, 'utf8');
+      } catch {
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
     }
     throw new Error('Timed out waiting for cross-process refresh fixture state.');
   };
   await waitForFile(rotating);
   const outputs = await outputsPromise;
-  assert.deepEqual(outputs.map(output => output.refreshed), [true, true]);
+  assert.deepEqual(
+    outputs.map(output => output.refreshed),
+    [true, true],
+  );
   for (const resultFile of resultFiles) {
     assert.deepEqual(JSON.parse(await readFile(resultFile, 'utf8')), { refresh: 'rotated-token', access: 'new-access' });
   }
-  const persisted = await readNativeOAuthCredential({ credentialFile: vault, credentialID: 'cred_fixture', integrationID: 'carthagent-cloud', methodID: 'carthagent-device' });
+  const persisted = await readNativeOAuthCredential({
+    credentialFile: vault,
+    credentialID: 'cred_fixture',
+    integrationID: 'carthagent-cloud',
+    methodID: 'carthagent-device',
+  });
   assert.equal(persisted.refresh, 'rotated-token');
   assert.equal(persisted.access, 'new-access');
   const lockFiles = await (await import('node:fs/promises')).readdir(directory);
-  assert.equal(lockFiles.some(entry => entry.includes('.ctg-refresh-') && entry.endsWith('.lock')), false, 'completed lease should be released');
-  assert.equal(lockFiles.filter(entry => entry.endsWith('.lock.pending')).length, 0, 'the pending receipt is removed after the native vault shows the matching rotation');
+  assert.equal(
+    lockFiles.some(entry => entry.includes('.ctg-refresh-') && entry.endsWith('.lock')),
+    false,
+    'completed lease should be released',
+  );
+  assert.equal(
+    lockFiles.filter(entry => entry.endsWith('.lock.pending')).length,
+    0,
+    'the pending receipt is removed after the native vault shows the matching rotation',
+  );
   for (const entry of lockFiles) {
     if (!entry.includes('ctg-refresh-')) continue;
     const contents = await readFile(join(directory, entry), 'utf8').catch(() => '');
@@ -392,15 +561,25 @@ test('native refresh waits are bounded and never retry an uncertain rotation', a
   const digest = createHash('sha256').update(`${credential.methodID}\0${credential.refresh}`).digest('hex').slice(0, 32);
   const lock = `${profile}.ctg-refresh-${digest}.lock`;
   const pending = `${lock}.pending`;
-  await writeFile(pending, JSON.stringify({ pid: process.pid, owner: 'test-owner', from: digest, stage: 'complete', to: 'not-the-old-digest', createdAt: Date.now() }), { mode: 0o600 });
+  await writeFile(
+    pending,
+    JSON.stringify({ pid: process.pid, owner: 'test-owner', from: digest, stage: 'complete', to: 'not-the-old-digest', createdAt: Date.now() }),
+    { mode: 0o600 },
+  );
   let refreshCalls = 0;
-  await assert.rejects(refreshNativeCredential({
-    credential,
-    credentialFile: profile,
-    timeout: 80,
-    reread: async () => credential,
-    refresh: async () => { refreshCalls++; return credential; },
-  }), /Timed out waiting for Carthagent runtime to persist/);
+  await assert.rejects(
+    refreshNativeCredential({
+      credential,
+      credentialFile: profile,
+      timeout: 80,
+      reread: async () => credential,
+      refresh: async () => {
+        refreshCalls++;
+        return credential;
+      },
+    }),
+    /Timed out waiting for Carthagent runtime to persist/,
+  );
   assert.equal(refreshCalls, 0, 'a contender must not submit the old single-use token again');
   const receipt = await readFile(pending, 'utf8');
   assert.doesNotMatch(receipt, /issued-old-token|old-access/);
@@ -414,23 +593,33 @@ test('native refresh fails closed when its owner crashed before vault persistenc
   const digest = createHash('sha256').update(`${credential.methodID}\0${credential.refresh}`).digest('hex').slice(0, 32);
   const pending = `${profile}.ctg-refresh-${digest}.lock.pending`;
   for (const attemptedAt of [undefined, Date.now() - REFRESH_RETRY_WINDOW_MS - 1]) {
-    await writeFile(pending, JSON.stringify({
-      pid: Number.MAX_SAFE_INTEGER,
-      owner: 'crashed-owner',
-      from: digest,
-      stage: 'refreshing',
-      createdAt: Date.now(),
-      attemptedAt,
-    }), { mode: 0o600 });
+    await writeFile(
+      pending,
+      JSON.stringify({
+        pid: Number.MAX_SAFE_INTEGER,
+        owner: 'crashed-owner',
+        from: digest,
+        stage: 'refreshing',
+        createdAt: Date.now(),
+        attemptedAt,
+      }),
+      { mode: 0o600 },
+    );
 
     let refreshCalls = 0;
-    await assert.rejects(refreshNativeCredential({
-      credential,
-      credentialFile: profile,
-      processAliveImpl: () => false,
-      reread: async () => credential,
-      refresh: async () => { refreshCalls++; return credential; },
-    }), /did not confirm an earlier sign-in refresh.*\/login/);
+    await assert.rejects(
+      refreshNativeCredential({
+        credential,
+        credentialFile: profile,
+        processAliveImpl: () => false,
+        reread: async () => credential,
+        refresh: async () => {
+          refreshCalls++;
+          return credential;
+        },
+      }),
+      /did not confirm an earlier sign-in refresh.*\/login/,
+    );
     assert.equal(refreshCalls, 0, 'do not replay a potentially consumed refresh token after the grace window');
     assert.equal(await readFile(pending, 'utf8').then(Boolean), true, 'preserve the receipt for recovery diagnostics');
   }
@@ -452,10 +641,17 @@ test('an uncertain refresh is retried with the same token inside the grace windo
   const presented = [];
   const sleeps = [];
   const result = await refreshNativeCredential({
-    credential, credentialFile: profile,
+    credential,
+    credentialFile: profile,
     reread: async () => credential,
-    sleep: async ms => { sleeps.push(ms); },
-    refresh: async current => { presented.push(current.refresh); if (presented.length < 3) throw networkReset(); return rotated; },
+    sleep: async ms => {
+      sleeps.push(ms);
+    },
+    refresh: async current => {
+      presented.push(current.refresh);
+      if (presented.length < 3) throw networkReset();
+      return rotated;
+    },
   });
   assert.deepEqual(result, rotated);
   assert.deepEqual(presented, ['issued-old-token', 'issued-old-token', 'issued-old-token']);
@@ -470,18 +666,33 @@ test('a later call resumes a failed uncertain refresh inside the window, never e
   let clock = 1_000_000;
   const now = () => clock;
   let calls = 0;
-  await assert.rejects(refreshNativeCredential({
-    credential, credentialFile: profile, now, retryDelays: [],
-    reread: async () => credential,
-    refresh: async () => { calls++; throw networkReset(); },
-  }), /socket connection was closed/);
+  await assert.rejects(
+    refreshNativeCredential({
+      credential,
+      credentialFile: profile,
+      now,
+      retryDelays: [],
+      reread: async () => credential,
+      refresh: async () => {
+        calls++;
+        throw networkReset();
+      },
+    }),
+    /socket connection was closed/,
+  );
   const failed = JSON.parse(await readFile(pending, 'utf8'));
   assert.deepEqual([failed.stage, failed.attemptedAt], ['failed', 1_000_000]);
   clock += 10_000;
   const resumed = await refreshNativeCredential({
-    credential, credentialFile: profile, now, retryDelays: [],
+    credential,
+    credentialFile: profile,
+    now,
+    retryDelays: [],
     reread: async () => credential,
-    refresh: async () => { calls++; return rotated; },
+    refresh: async () => {
+      calls++;
+      return rotated;
+    },
   });
   assert.deepEqual(resumed, rotated);
   assert.equal(calls, 2);
@@ -489,11 +700,20 @@ test('a later call resumes a failed uncertain refresh inside the window, never e
 
   // A failed receipt older than the window fails closed without presenting the token.
   await writeFile(pending, JSON.stringify({ ...failed, owner: 'old', attemptedAt: clock - REFRESH_RETRY_WINDOW_MS }));
-  await assert.rejects(refreshNativeCredential({
-    credential, credentialFile: profile, now, retryDelays: [],
-    reread: async () => credential,
-    refresh: async () => { calls++; return rotated; },
-  }), /safe retry window has passed/);
+  await assert.rejects(
+    refreshNativeCredential({
+      credential,
+      credentialFile: profile,
+      now,
+      retryDelays: [],
+      reread: async () => credential,
+      refresh: async () => {
+        calls++;
+        return rotated;
+      },
+    }),
+    /safe retry window has passed/,
+  );
   assert.equal(calls, 2);
 });
 
@@ -502,12 +722,32 @@ test('a crashed owner inside the window is resumed; a live owner is waited for, 
   const receipt = { pid: Number.MAX_SAFE_INTEGER, owner: 'crashed', from: digest, stage: 'refreshing', createdAt: Date.now(), attemptedAt: Date.now() };
   await writeFile(pending, JSON.stringify(receipt));
   let calls = 0;
-  const result = await refreshNativeCredential({ credential, credentialFile: profile, processAliveImpl: () => false,
-    reread: async () => credential, refresh: async () => { calls++; return rotated; } });
+  const result = await refreshNativeCredential({
+    credential,
+    credentialFile: profile,
+    processAliveImpl: () => false,
+    reread: async () => credential,
+    refresh: async () => {
+      calls++;
+      return rotated;
+    },
+  });
   assert.deepEqual([result, calls], [rotated, 1]);
   await writeFile(pending, JSON.stringify(receipt));
-  await assert.rejects(refreshNativeCredential({ credential, credentialFile: profile, timeout: 80, processAliveImpl: () => true,
-    reread: async () => credential, refresh: async () => { calls++; return rotated; } }), /Timed out waiting/);
+  await assert.rejects(
+    refreshNativeCredential({
+      credential,
+      credentialFile: profile,
+      timeout: 80,
+      processAliveImpl: () => true,
+      reread: async () => credential,
+      refresh: async () => {
+        calls++;
+        return rotated;
+      },
+    }),
+    /Timed out waiting/,
+  );
   assert.equal(calls, 1, 'a live owner may still be mid-request');
 });
 
@@ -515,12 +755,23 @@ test('retries stop at the grace window even when more delays are configured', as
   const { profile, credential, pending } = await refreshFixture(t, 'window');
   let clock = 0;
   let calls = 0;
-  await assert.rejects(refreshNativeCredential({
-    credential, credentialFile: profile, now: () => clock, retryDelays: [20_000, 20_000, 20_000],
-    sleep: async ms => { clock += ms; },
-    reread: async () => credential,
-    refresh: async () => { calls++; throw networkReset(); },
-  }), /socket connection was closed/);
+  await assert.rejects(
+    refreshNativeCredential({
+      credential,
+      credentialFile: profile,
+      now: () => clock,
+      retryDelays: [20_000, 20_000, 20_000],
+      sleep: async ms => {
+        clock += ms;
+      },
+      reread: async () => credential,
+      refresh: async () => {
+        calls++;
+        throw networkReset();
+      },
+    }),
+    /socket connection was closed/,
+  );
   assert.equal(calls, 2, 'the third attempt would fall outside the window');
   assert.equal(JSON.parse(await readFile(pending, 'utf8')).stage, 'failed');
 });
@@ -529,18 +780,32 @@ test('a 4xx refresh answer proves no rotation: clears the receipt and asks for /
   const { profile, credential, rotated, pending } = await refreshFixture(t, 'rejected');
   let calls = 0;
   const rejected = status => Object.assign(new Error(status === 401 ? 'invalid_grant' : 'rate_limited'), { code: 'x', status });
-  await assert.rejects(refreshNativeCredential({
-    credential, credentialFile: profile,
-    reread: async () => credential,
-    refresh: async () => { calls++; throw rejected(401); },
-  }), error => /sign-in expired or was revoked.*\/login/.test(error.message) && error.cause?.status === 401);
+  await assert.rejects(
+    refreshNativeCredential({
+      credential,
+      credentialFile: profile,
+      reread: async () => credential,
+      refresh: async () => {
+        calls++;
+        throw rejected(401);
+      },
+    }),
+    error => /sign-in expired or was revoked.*\/login/.test(error.message) && error.cause?.status === 401,
+  );
   assert.equal(calls, 1, 'a definitive rejection is never retried');
   await assert.rejects(readFile(pending), { code: 'ENOENT' });
-  await assert.rejects(refreshNativeCredential({
-    credential, credentialFile: profile,
-    reread: async () => credential,
-    refresh: async () => { calls++; throw rejected(429); },
-  }), /rate_limited/);
+  await assert.rejects(
+    refreshNativeCredential({
+      credential,
+      credentialFile: profile,
+      reread: async () => credential,
+      refresh: async () => {
+        calls++;
+        throw rejected(429);
+      },
+    }),
+    /rate_limited/,
+  );
   await assert.rejects(readFile(pending), { code: 'ENOENT' });
   const result = await refreshNativeCredential({ credential, credentialFile: profile, reread: async () => credential, refresh: async () => rotated });
   assert.deepEqual(result, rotated, 'nothing blocks the next refresh');
@@ -548,30 +813,52 @@ test('a 4xx refresh answer proves no rotation: clears the receipt and asks for /
 
 test('refresh requests avoid pooled connections and expose HTTP status for classification', async () => {
   const seen = [];
-  const client = new CloudClient({ baseUrl: 'https://cloud.test', fetchImpl: async (url, init) => {
-    seen.push(init);
-    return seen.length === 1 ? Response.json({ error: 'invalid_grant' }, { status: 401 }) : Response.json({ accessToken: 'a', refreshToken: 'r', expiresIn: 60 });
-  } });
+  const client = new CloudClient({
+    baseUrl: 'https://cloud.test',
+    fetchImpl: async (url, init) => {
+      seen.push(init);
+      return seen.length === 1
+        ? Response.json({ error: 'invalid_grant' }, { status: 401 })
+        : Response.json({ accessToken: 'a', refreshToken: 'r', expiresIn: 60 });
+    },
+  });
   await assert.rejects(client.refresh({ refreshToken: 'x' }), error => error.status === 401 && refreshRejected(error));
   await client.refresh({ refreshToken: 'x' });
   assert.equal(seen[0].keepalive, false);
   assert.equal(refreshRejected(networkReset()), false);
   assert.equal(refreshRejected({ status: 503 }), false);
   const other = [];
-  await new CloudClient({ baseUrl: 'https://cloud.test', fetchImpl: async (url, init) => { other.push(init); return Response.json({}); } }).account({ accessToken: 't' });
+  await new CloudClient({
+    baseUrl: 'https://cloud.test',
+    fetchImpl: async (url, init) => {
+      other.push(init);
+      return Response.json({});
+    },
+  }).account({ accessToken: 't' });
   assert.equal('keepalive' in other[0], false, 'other requests keep connection reuse');
 });
 
 test('stale refresh receipts are pruned; live, recent and unreadable-vault receipts are kept', async t => {
   const directory = await mkdtemp(join(os.tmpdir(), 'ctg-refresh-prune-'));
   let db;
-  t.after(async () => { try { db?.close(); } finally { await rm(directory, { recursive: true, force: true }); } });
+  t.after(async () => {
+    try {
+      db?.close();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
   const coordinationFile = join(directory, 'auth.json');
   const vaultFile = join(directory, 'native.sqlite');
   db = new DatabaseSync(vaultFile);
   db.exec('CREATE TABLE credential (id TEXT PRIMARY KEY, integration_id TEXT, value TEXT)');
-  db.prepare('INSERT INTO credential VALUES (?, ?, ?)').run('A', 'carthagent-cloud', JSON.stringify({ type: 'oauth', methodID: 'carthagent-device', refresh: 'live-token', access: 'a', expires: 1 }));
-  db.close(); db = undefined;
+  db.prepare('INSERT INTO credential VALUES (?, ?, ?)').run(
+    'A',
+    'carthagent-cloud',
+    JSON.stringify({ type: 'oauth', methodID: 'carthagent-device', refresh: 'live-token', access: 'a', expires: 1 }),
+  );
+  db.close();
+  db = undefined;
   const digestOf = token => createHash('sha256').update(`carthagent-device\0${token}`).digest('hex').slice(0, 32);
   const file = token => `${coordinationFile}.ctg-refresh-${digestOf(token)}.lock.pending`;
   const { utimes } = await import('node:fs/promises');
@@ -579,11 +866,14 @@ test('stale refresh receipts are pruned; live, recent and unreadable-vault recei
   for (const token of ['live-token', 'rotated-away', 'recent-orphan']) await writeFile(file(token), '{}');
   await writeFile(`${file('crashed')}.owner.failed.tmp`, '{}');
   await writeFile(join(directory, 'unrelated.lock.pending'), '{}');
-  for (const name of [file('live-token'), file('rotated-away'), `${file('crashed')}.owner.failed.tmp`, join(directory, 'unrelated.lock.pending')]) await utimes(name, old, old);
+  for (const name of [file('live-token'), file('rotated-away'), `${file('crashed')}.owner.failed.tmp`, join(directory, 'unrelated.lock.pending')])
+    await utimes(name, old, old);
   assert.equal(await pruneRefreshReceipts({ coordinationFile, vaultFile }), 2);
   const { readdir } = await import('node:fs/promises');
-  assert.deepEqual((await readdir(directory)).filter(entry => entry.endsWith('.pending')).sort(),
-    [file('live-token'), file('recent-orphan'), join(directory, 'unrelated.lock.pending')].map(name => name.slice(directory.length + 1)).sort());
+  assert.deepEqual(
+    (await readdir(directory)).filter(entry => entry.endsWith('.pending')).sort(),
+    [file('live-token'), file('recent-orphan'), join(directory, 'unrelated.lock.pending')].map(name => name.slice(directory.length + 1)).sort(),
+  );
   // Without a readable vault, nothing short of the refresh lifetime is removed.
   await utimes(file('recent-orphan'), old, old);
   assert.equal(await pruneRefreshReceipts({ coordinationFile, vaultFile: join(directory, 'missing.sqlite') }), 0);
@@ -601,14 +891,18 @@ test('native refresh accepts a vault rotation persisted just before its owner ex
   const digest = createHash('sha256').update(`${credential.methodID}\0${credential.refresh}`).digest('hex').slice(0, 32);
   const rotatedDigest = createHash('sha256').update(`${rotated.methodID}\0${rotated.refresh}`).digest('hex').slice(0, 32);
   const pending = `${profile}.ctg-refresh-${digest}.lock.pending`;
-  await writeFile(pending, JSON.stringify({
-    pid: Number.MAX_SAFE_INTEGER,
-    owner: 'exited-owner',
-    from: digest,
-    to: rotatedDigest,
-    stage: 'complete',
-    createdAt: Date.now(),
-  }), { mode: 0o600 });
+  await writeFile(
+    pending,
+    JSON.stringify({
+      pid: Number.MAX_SAFE_INTEGER,
+      owner: 'exited-owner',
+      from: digest,
+      to: rotatedDigest,
+      stage: 'complete',
+      createdAt: Date.now(),
+    }),
+    { mode: 0o600 },
+  );
 
   let reads = 0;
   let refreshCalls = 0;
@@ -617,8 +911,11 @@ test('native refresh accepts a vault rotation persisted just before its owner ex
     credentialFile: profile,
     timeout: 500,
     processAliveImpl: () => false,
-    reread: async () => ++reads >= 3 ? rotated : credential,
-    refresh: async () => { refreshCalls++; throw new Error('must not rotate again'); },
+    reread: async () => (++reads >= 3 ? rotated : credential),
+    refresh: async () => {
+      refreshCalls++;
+      throw new Error('must not rotate again');
+    },
   });
 
   assert.deepEqual(result, rotated);
@@ -652,8 +949,11 @@ test('provider registration rolls back every completed stage in reverse order af
     assert.match(error.errors[1].message, /dispose failed/);
     return true;
   });
-  assert.deepEqual(failingCleanup.disposeCalls, ['hook:http.request', 'provider.transform', 'integration.transform'],
-    'cleanup proceeds after an individual dispose failure');
+  assert.deepEqual(
+    failingCleanup.disposeCalls,
+    ['hook:http.request', 'provider.transform', 'integration.transform'],
+    'cleanup proceeds after an individual dispose failure',
+  );
   assert.equal(failingCleanup.activeRegistrations.size, 0);
   assert.deepEqual(failingCleanup.hooks, []);
 });
@@ -661,12 +961,21 @@ test('provider registration rolls back every completed stage in reverse order af
 test('CTG device-auth generations cancel polling, expire, and clean up on unload', async () => {
   const requests = [];
   const controller = createDeviceAuthController({
-    env: { CARTHAGENT_CLOUD_URL: 'https://cloud.test' }, agentDir: '/tmp/device-auth-test',
+    env: { CARTHAGENT_CLOUD_URL: 'https://cloud.test' },
+    agentDir: '/tmp/device-auth-test',
     fetchImpl: async (url, options) => {
       requests.push({ url: String(url), options });
-      if (String(url).endsWith('/v1/device/authorizations')) return new Response(JSON.stringify({
-        deviceCode: 'device', userCode: 'ABCD', verificationUri: 'https://verify.test', expiresIn: 30, interval: 1,
-      }), { status: 201 });
+      if (String(url).endsWith('/v1/device/authorizations'))
+        return new Response(
+          JSON.stringify({
+            deviceCode: 'device',
+            userCode: 'ABCD',
+            verificationUri: 'https://verify.test',
+            expiresIn: 30,
+            interval: 1,
+          }),
+          { status: 201 },
+        );
       return new Promise((resolve, reject) => {
         options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
       });
@@ -694,8 +1003,12 @@ test('legacy credential migration reads Ship OAuth and BYOK without writing Pi s
   const source = JSON.stringify({
     'carthagent-cloud': { type: 'oauth', access: 'a', refresh: 'r', expires: 123 },
   });
-  assert.deepEqual(await readLegacyCarthagentCredential({ agentDir: '/unused', readFileImpl: async () => source }),
-    { type: 'oauth', access: 'a', refresh: 'r', expires: 123 });
+  assert.deepEqual(await readLegacyCarthagentCredential({ agentDir: '/unused', readFileImpl: async () => source }), {
+    type: 'oauth',
+    access: 'a',
+    refresh: 'r',
+    expires: 123,
+  });
   assert.equal(credentialStorageKey('carthagent-cloud'), 'ctg.credentials/carthagent-cloud');
   assert.equal(nativeCredentialFile({ XDG_DATA_HOME: '/profile/data' }), join('/profile/data', 'opencode', 'auth.json'));
   assert.equal(nativeCredentialFile({}, 'darwin', '/home/test'), join('/home/test', 'Library', 'Application Support', 'opencode', 'auth.json'));
@@ -704,18 +1017,32 @@ test('legacy credential migration reads Ship OAuth and BYOK without writing Pi s
 
 test('startup waits a bounded time for first Cloud discovery so cold headless runs see Cloud models', async () => {
   const token = `x.${Buffer.from(JSON.stringify({ sub: 'acct', sid: 'sid', scope: 'gateway:invoke' })).toString('base64url')}.x`;
-  const connections = { 'carthagent-cloud': { connection: { id: 'ship', credential: { type: 'oauth', access: token, refresh: 'r', expires: Date.now() + 100000 } } } };
+  const connections = {
+    'carthagent-cloud': { connection: { id: 'ship', credential: { type: 'oauth', access: token, refresh: 'r', expires: Date.now() + 100000 } } },
+  };
   let release;
-  const gate = new Promise(resolve => { release = resolve; });
+  const gate = new Promise(resolve => {
+    release = resolve;
+  });
   const fetchImpl = async url => {
-    if (String(url).endsWith('/models')) { await gate; return Response.json({ data: [{ id: 'gpt-6-luna' }] }); }
+    if (String(url).endsWith('/models')) {
+      await gate;
+      return Response.json({ data: [{ id: 'gpt-6-luna' }] });
+    }
     throw new Error(`unexpected URL ${url}`);
   };
   // Discovery finishes before the wait bound: registration must not resolve first.
   const fast = fakeContext({ integrations: ['carthagent-cloud'], connections });
   let resolved = false;
-  const registration = registerProviders(fast.ctx, { env: { CARTHAGENT_CODING_AGENT_DIR: '/missing' }, fetchImpl,
-    openBrowser: () => false, initialDiscoveryWaitMs: 5_000 }).then(cleanup => { resolved = true; return cleanup; });
+  const registration = registerProviders(fast.ctx, {
+    env: { CARTHAGENT_CODING_AGENT_DIR: '/missing' },
+    fetchImpl,
+    openBrowser: () => false,
+    initialDiscoveryWaitMs: 5_000,
+  }).then(cleanup => {
+    resolved = true;
+    return cleanup;
+  });
   await new Promise(resolve => setTimeout(resolve, 50));
   assert.equal(resolved, false, 'plugin activation waits for the in-flight first discovery');
   release();
@@ -725,9 +1052,12 @@ test('startup waits a bounded time for first Cloud discovery so cold headless ru
   // A hung Cloud must not block startup past the bound.
   const slow = fakeContext({ integrations: ['carthagent-cloud'], connections });
   const started = Date.now();
-  const cleanupSlow = await registerProviders(slow.ctx, { env: { CARTHAGENT_CODING_AGENT_DIR: '/missing' },
+  const cleanupSlow = await registerProviders(slow.ctx, {
+    env: { CARTHAGENT_CODING_AGENT_DIR: '/missing' },
     fetchImpl: async (_url, init) => new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(init.signal.reason))),
-    openBrowser: () => false, initialDiscoveryWaitMs: 30 });
+    openBrowser: () => false,
+    initialDiscoveryWaitMs: 30,
+  });
   assert.ok(Date.now() - started < 2_000, 'startup is bounded when discovery hangs');
   await cleanupSlow();
 });
@@ -737,8 +1067,11 @@ test('fresh native sign-in hides legacy import when no stable credential exists'
   t.after(() => rm(directory, { recursive: true, force: true }));
   const fake = fakeContext({});
   const cleanup = await registerProviders(fake.ctx, {
-    env: { CARTHAGENT_CLOUD_URL: 'https://cloud.test' }, agentDir: directory,
-    fetchImpl: async () => { throw new Error('registration must not call the network'); },
+    env: { CARTHAGENT_CLOUD_URL: 'https://cloud.test' },
+    agentDir: directory,
+    fetchImpl: async () => {
+      throw new Error('registration must not call the network');
+    },
   });
   t.after(cleanup);
   const method = fake.integrationTransforms[0][0];
@@ -757,14 +1090,25 @@ test('native sign-in starts fresh device authorization after opt-in legacy migra
   const browserUrls = [];
   let generation = 0;
   const cleanup = await registerProviders(fake.ctx, {
-    env: { CARTHAGENT_CLOUD_URL: 'https://cloud.test' }, agentDir: directory, now: () => 1000,
-    openBrowser: url => { browserUrls.push(url); return false; },
+    env: { CARTHAGENT_CLOUD_URL: 'https://cloud.test' },
+    agentDir: directory,
+    now: () => 1000,
+    openBrowser: url => {
+      browserUrls.push(url);
+      return false;
+    },
     fetchImpl: async (url, init) => {
       requests.push({ url: String(url), body: JSON.parse(init.body) });
       if (String(url).endsWith('/v1/device/authorizations')) {
         generation++;
-        return Response.json({ deviceCode: `device-${generation}`, userCode: `CODE-${generation}`,
-          verificationUri: 'https://verify.test', verificationUriComplete: `https://verify.test/${generation}`, expiresIn: 60, interval: 1 });
+        return Response.json({
+          deviceCode: `device-${generation}`,
+          userCode: `CODE-${generation}`,
+          verificationUri: 'https://verify.test',
+          verificationUriComplete: `https://verify.test/${generation}`,
+          expiresIn: 60,
+          interval: 1,
+        });
       }
       assert.equal(String(url), 'https://cloud.test/v1/device/token');
       const device = JSON.parse(init.body).deviceCode;
@@ -788,8 +1132,13 @@ test('native sign-in starts fresh device authorization after opt-in legacy migra
     assert.equal(authorization.expiresAt, 61_000);
     assert.match(authorization.instructions, new RegExp(`CODE-${expected}`));
     const credential = await authorization.callback;
-    assert.deepEqual(credential, { type: 'oauth', methodID: 'carthagent-device',
-      access: `access-device-${expected}`, refresh: `refresh-device-${expected}`, expires: 3_601_000 });
+    assert.deepEqual(credential, {
+      type: 'oauth',
+      methodID: 'carthagent-device',
+      access: `access-device-${expected}`,
+      refresh: `refresh-device-${expected}`,
+      expires: 3_601_000,
+    });
     connections['carthagent-cloud'].connection.credential = credential;
     assert.deepEqual(await fake.ctx.integration.connection.resolve(await fake.ctx.integration.connection.active('carthagent-cloud')), credential);
   }
@@ -807,9 +1156,13 @@ test('provider registration uses native provider transforms and cleanup; refresh
     anthropic: { connection: { id: 'claude', credential: { type: 'oauth', access: 'claude-token' } } },
     'openai-codex': { connection: { id: 'codex', credential: { type: 'oauth', access: 'codex-token' } } },
   };
-  const fake = fakeContext({ integrations: ['carthagent-cloud', 'anthropic', 'openai-codex'], connections, sessions: {
-    ses_headless_run: { id: 'ses_headless_run', location: { directory: '/project' }, metadata: { 'carthagent.runMode': 'print' } },
-  } });
+  const fake = fakeContext({
+    integrations: ['carthagent-cloud', 'anthropic', 'openai-codex'],
+    connections,
+    sessions: {
+      ses_headless_run: { id: 'ses_headless_run', location: { directory: '/project' }, metadata: { 'carthagent.runMode': 'print' } },
+    },
+  });
   const fetchCalls = [];
   const fetchImpl = async (url, init) => {
     fetchCalls.push([String(url), init]);
@@ -817,20 +1170,28 @@ test('provider registration uses native provider transforms and cleanup; refresh
       return new Response(JSON.stringify({ data: [{ id: 'gpt-6-luna' }, { id: 'unknown-model', name: 'Unknown' }] }), { status: 200 });
     }
     if (String(url).includes('api.anthropic.com')) return new Response(JSON.stringify({ data: [{ id: 'claude-test', type: 'model' }] }), { status: 200 });
-    if (String(url).includes('chatgpt.com')) return new Response(JSON.stringify({ models: [{ slug: 'codex-test', supported_reasoning_levels: ['low', 'high'] }] }), { status: 200 });
+    if (String(url).includes('chatgpt.com'))
+      return new Response(JSON.stringify({ models: [{ slug: 'codex-test', supported_reasoning_levels: ['low', 'high'] }] }), { status: 200 });
     throw new Error(`unexpected URL ${url}`);
   };
   const cleanup = await registerProviders(fake.ctx, {
-    env: { CARTHAGENT_CODING_AGENT_DIR: '/missing' }, fetchImpl,
-    openBrowser: () => false, requestSecret: 'test-secret',
+    env: { CARTHAGENT_CODING_AGENT_DIR: '/missing' },
+    fetchImpl,
+    openBrowser: () => false,
+    requestSecret: 'test-secret',
   });
   assert.equal(typeof cleanup, 'function');
-  assert.deepEqual(fake.integrationTransforms[0].map(item => item.integrationID), ['carthagent-cloud', 'carthagent-cloud']);
+  assert.deepEqual(
+    fake.integrationTransforms[0].map(item => item.integrationID),
+    ['carthagent-cloud', 'carthagent-cloud'],
+  );
   assert.equal(fake.integrationTransforms[0][0].method.id, 'carthagent-device');
   assert.equal(fake.integrationTransforms[0][0].method.form, undefined, 'without a stable credential, fresh browser sign-in has no import prompt');
   assert.equal(fake.integrationTransforms[0][1].method.type, 'env');
-  assert.equal(fake.providerTransforms.find(item => item.info?.id === providerConstants.SHIP_PROVIDER_ID).info.package,
-    '@opencode/ai/providers/openai-compatible');
+  assert.equal(
+    fake.providerTransforms.find(item => item.info?.id === providerConstants.SHIP_PROVIDER_ID).info.package,
+    '@opencode/ai/providers/openai-compatible',
+  );
   assert.ok(fake.hooks.some(item => item.name === 'http.request' && item.options.providerID === 'carthagent-cloud'));
   assert.ok(fake.hooks.some(item => item.name === 'http.response'));
   const hooksByName = Object.fromEntries(fake.hooks.map(item => [item.name, item]));
@@ -840,28 +1201,52 @@ test('provider registration uses native provider transforms and cleanup; refresh
   const nextModelRequest = { ...nativeSession, headers: {} };
   await hooksByName['model.request'].callback(nextModelRequest);
   assert.ok(modelRequest.headers['x-carthagent-request-id']);
-  assert.notEqual(modelRequest.headers['x-carthagent-request-id'], nextModelRequest.headers['x-carthagent-request-id'],
-    'separate native requests in one session must have distinct idempotency identities');
+  assert.notEqual(
+    modelRequest.headers['x-carthagent-request-id'],
+    nextModelRequest.headers['x-carthagent-request-id'],
+    'separate native requests in one session must have distinct idempotency identities',
+  );
   const auxiliaryRequest = { ...nativeSession, kind: 'title', headers: {} };
   await hooksByName['model.request'].callback(auxiliaryRequest);
-  assert.notEqual(modelRequest.headers['x-carthagent-request-id'], auxiliaryRequest.headers['x-carthagent-request-id'],
-    'auxiliary request kinds must have independent identities');
+  assert.notEqual(
+    modelRequest.headers['x-carthagent-request-id'],
+    auxiliaryRequest.headers['x-carthagent-request-id'],
+    'auxiliary request kinds must have independent identities',
+  );
   const request = new Request('https://gateway.example/v1/chat/completions', { method: 'POST', body: JSON.stringify({ model: 'gpt-6-luna', messages: [] }) });
-  const hookedRequestEvent = { ...nativeSession, request: new Request(request, { headers: { 'x-carthagent-request-id': modelRequest.headers['x-carthagent-request-id'] } }) };
+  const hookedRequestEvent = {
+    ...nativeSession,
+    request: new Request(request, { headers: { 'x-carthagent-request-id': modelRequest.headers['x-carthagent-request-id'] } }),
+  };
   await hooksByName['http.request'].callback(hookedRequestEvent);
   assert.equal(hookedRequestEvent.request.headers.get('x-carthagent-thread-id')?.length, 36);
-  assert.equal(hookedRequestEvent.request.headers.get('x-carthagent-run-mode'), 'interactive',
-    'sessions without a launcher stamp are TUI sessions');
+  assert.equal(hookedRequestEvent.request.headers.get('x-carthagent-run-mode'), 'interactive', 'sessions without a launcher stamp are TUI sessions');
   assert.equal(hookedRequestEvent.request.headers.get('Idempotency-Key'), modelRequest.headers['x-carthagent-request-id']);
-  const headlessEvent = { ...nativeSession, sessionID: 'ses_headless_run', request: new Request('https://gateway.example/v1/chat/completions', { method: 'POST', body: JSON.stringify({ model: 'gpt-6-luna', messages: [] }) }) };
+  const headlessEvent = {
+    ...nativeSession,
+    sessionID: 'ses_headless_run',
+    request: new Request('https://gateway.example/v1/chat/completions', { method: 'POST', body: JSON.stringify({ model: 'gpt-6-luna', messages: [] }) }),
+  };
   await hooksByName['http.request'].callback(headlessEvent);
   assert.equal(headlessEvent.request.headers.get('x-carthagent-run-mode'), 'print', 'headless launches report print mode');
-  const retry = new Request('https://gateway.example/v1/chat/completions', { method: 'POST', headers: { 'x-carthagent-request-id': modelRequest.headers['x-carthagent-request-id'] }, body: JSON.stringify({ model: 'gpt-6-luna', messages: [] }) });
+  const retry = new Request('https://gateway.example/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'x-carthagent-request-id': modelRequest.headers['x-carthagent-request-id'] },
+    body: JSON.stringify({ model: 'gpt-6-luna', messages: [] }),
+  });
   const retryRequestEvent = { ...nativeSession, request: retry };
   await hooksByName['http.request'].callback(retryRequestEvent);
-  assert.equal(retryRequestEvent.request.headers.get('Idempotency-Key'), hookedRequestEvent.request.headers.get('Idempotency-Key'),
-    'transport retry identity must remain stable');
-  const retryEvent = { ...nativeSession, attempt: 1, decision: { retry: true, delay: 0 }, error: { type: 'provider.rate-limit', message: 'slow down', status: 429 } };
+  assert.equal(
+    retryRequestEvent.request.headers.get('Idempotency-Key'),
+    hookedRequestEvent.request.headers.get('Idempotency-Key'),
+    'transport retry identity must remain stable',
+  );
+  const retryEvent = {
+    ...nativeSession,
+    attempt: 1,
+    decision: { retry: true, delay: 0 },
+    error: { type: 'provider.rate-limit', message: 'slow down', status: 429 },
+  };
   await hooksByName.retry.callback(retryEvent);
   assert.deepEqual(retryEvent.decision, { retry: false });
   await new Promise(resolve => setTimeout(resolve, 30));
@@ -872,21 +1257,40 @@ test('provider registration uses native provider transforms and cleanup; refresh
 
 test('managed requests retry once with the same idempotency key only when dropped before a response', async () => {
   const token = `x.${Buffer.from(JSON.stringify({ sub: 'acct', sid: 'sid', scope: 'gateway:invoke' })).toString('base64url')}.x`;
-  const connections = { 'carthagent-cloud': { connection: { id: 'ship', credential: { type: 'oauth', access: token, refresh: 'refresh', expires: Date.now() + 100000 } } } };
+  const connections = {
+    'carthagent-cloud': { connection: { id: 'ship', credential: { type: 'oauth', access: token, refresh: 'refresh', expires: Date.now() + 100000 } } },
+  };
   const fake = fakeContext({ integrations: ['carthagent-cloud'], connections });
   let transform;
   const original = fake.ctx.provider.transform;
-  fake.ctx.provider.transform = async callback => { transform = callback; return original(callback); };
+  fake.ctx.provider.transform = async callback => {
+    transform = callback;
+    return original(callback);
+  };
   const providers = [];
   fake.ctx.provider.reload = async () => {
-    transform({ list: () => [], remove() {}, add(record) { providers.push(record.info); }, get: () => undefined, models: { set() {} } });
+    transform({
+      list: () => [],
+      remove() {},
+      add(record) {
+        providers.push(record.info);
+      },
+      get: () => undefined,
+      models: { set() {} },
+    });
   };
   let clock = 1_000;
   const fetchImpl = async url => {
     if (String(url).endsWith('/models')) return new Response(JSON.stringify({ data: [{ id: 'gpt-6-luna' }] }), { status: 200 });
     throw new Error(`unexpected URL ${url}`);
   };
-  const cleanup = await registerProviders(fake.ctx, { env: { CARTHAGENT_CODING_AGENT_DIR: '/missing' }, fetchImpl, now: () => clock, openBrowser: () => false, requestSecret: 'test-secret' });
+  const cleanup = await registerProviders(fake.ctx, {
+    env: { CARTHAGENT_CODING_AGENT_DIR: '/missing' },
+    fetchImpl,
+    now: () => clock,
+    openBrowser: () => false,
+    requestSecret: 'test-secret',
+  });
   const hooks = Object.fromEntries(fake.hooks.map(item => [item.name, item.callback]));
   const session = { sessionID: 'ses_drop', kind: 'primary', model: { providerID: 'carthagent-cloud' } };
   const dropped = { type: 'provider.transport', message: 'ECONNRESET: The socket connection was closed unexpectedly.' };
@@ -894,8 +1298,15 @@ test('managed requests retry once with the same idempotency key only when droppe
   const send = async (kind = 'primary') => {
     const modelRequest = { ...session, kind, headers: {} };
     await hooks['model.request'](modelRequest);
-    const event = { ...session, kind, request: new Request('https://api.carthagent.xyz/v1/chat/completions', {
-      method: 'POST', headers: modelRequest.headers, body: '{"model":"gpt-6-luna","messages":[]}' }) };
+    const event = {
+      ...session,
+      kind,
+      request: new Request('https://api.carthagent.xyz/v1/chat/completions', {
+        method: 'POST',
+        headers: modelRequest.headers,
+        body: '{"model":"gpt-6-luna","messages":[]}',
+      }),
+    };
     await hooks['http.request'](event);
     return event.request;
   };
@@ -917,7 +1328,10 @@ test('managed requests retry once with the same idempotency key only when droppe
   assert.equal(second.headers.get('X-Client-Request-Id'), first.headers.get('X-Client-Request-Id'));
   assert.deepEqual(await retry(dropped), { retry: false }, 'the same request is never retried twice');
 
-  const reused = await respond(second, new Response(JSON.stringify({ error: { message: 'idempotency_key_reused', code: 'idempotency_key_reused' } }), { status: 400 }));
+  const reused = await respond(
+    second,
+    new Response(JSON.stringify({ error: { message: 'idempotency_key_reused', code: 'idempotency_key_reused' } }), { status: 400 }),
+  );
   const body = await reused.json();
   assert.equal(body.error.code, 'idempotency_key_reused');
   assert.match(body.error.message, /not sent again to avoid a double charge/);
@@ -925,12 +1339,18 @@ test('managed requests retry once with the same idempotency key only when droppe
   const fresh = await send();
   assert.notEqual(fresh.headers.get('Idempotency-Key'), first.headers.get('Idempotency-Key'), 'the next turn gets a new key');
   await respond(fresh, new Response('data: {}\n\n', { status: 200 }));
-  assert.deepEqual(await retry({ ...dropped, message: 'Connection lost while reading the response', status: 200 }), { retry: false },
-    'a drop after the response started is not retried');
+  assert.deepEqual(
+    await retry({ ...dropped, message: 'Connection lost while reading the response', status: 200 }),
+    { retry: false },
+    'a drop after the response started is not retried',
+  );
 
   await send();
-  assert.deepEqual(await retry({ type: 'provider.internal', message: 'upstream failed', status: 502, response: { body: '{}' } }), { retry: false },
-    'HTTP errors are never retried');
+  assert.deepEqual(
+    await retry({ type: 'provider.internal', message: 'upstream failed', status: 502, response: { body: '{}' } }),
+    { retry: false },
+    'HTTP errors are never retried',
+  );
   assert.deepEqual(await retry(dropped, 'ses_other'), { retry: false }, 'a session with no request in flight is not retried');
 
   const titled = await send('title');
@@ -941,7 +1361,11 @@ test('managed requests retry once with the same idempotency key only when droppe
   assert.deepEqual(await retry(dropped), { retry: true, delay: 1_000 });
   clock += 60_000;
   const late = await send();
-  assert.notEqual(late.headers.get('Idempotency-Key'), stale.headers.get('Idempotency-Key'), 'a retry that never started does not leak its key into a later turn');
+  assert.notEqual(
+    late.headers.get('Idempotency-Key'),
+    stale.headers.get('Idempotency-Key'),
+    'a retry that never started does not leak its key into a later turn',
+  );
 
   await new Promise(resolve => setTimeout(resolve, 30));
   const managed = providers.findLast(info => info.id === 'carthagent-cloud');
@@ -953,12 +1377,18 @@ test('direct Experiential keys keep native retries and timeouts', async () => {
   const connections = { 'carthagent-cloud': { connection: { id: 'ship', credential: { type: 'key', key: 'sk-direct' } } } };
   const fake = fakeContext({ integrations: ['carthagent-cloud'], connections });
   const cleanup = await registerProviders(fake.ctx, {
-    env: { CARTHAGENT_CODING_AGENT_DIR: '/missing' }, openBrowser: () => false,
+    env: { CARTHAGENT_CODING_AGENT_DIR: '/missing' },
+    openBrowser: () => false,
     fetchImpl: async () => new Response(JSON.stringify({ data: [] }), { status: 200 }),
   });
   const hook = fake.hooks.find(item => item.name === 'retry').callback;
-  const event = { sessionID: 'ses_direct', model: { providerID: 'carthagent-cloud' }, attempt: 2,
-    error: { type: 'provider.transport', message: 'ECONNRESET' }, decision: { retry: true, delay: 5_000 } };
+  const event = {
+    sessionID: 'ses_direct',
+    model: { providerID: 'carthagent-cloud' },
+    attempt: 2,
+    error: { type: 'provider.transport', message: 'ECONNRESET' },
+    decision: { retry: true, delay: 5_000 },
+  };
   await hook(event);
   assert.deepEqual(event.decision, { retry: true, delay: 5_000 });
   assert.equal(fake.providerTransforms.find(item => item.info?.id === 'carthagent-cloud').info.settings.headerTimeout, undefined);

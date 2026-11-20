@@ -15,8 +15,14 @@ try {
   const options = {};
   const steps = [];
   for (let i = 0; i < args.length; i += 2) {
-    const key = args[i], value = args[i + 1];
-    if (!['--endpoint', '--root', '--page', '--url', '--wait-ms', '--assert', '--assert-text', '--click', '--screenshot'].includes(key) || value === undefined || value.startsWith('--')) throw Error(`Unsupported or missing option: ${key}`);
+    const key = args[i],
+      value = args[i + 1];
+    if (
+      !['--endpoint', '--root', '--page', '--url', '--wait-ms', '--assert', '--assert-text', '--click', '--screenshot'].includes(key) ||
+      value === undefined ||
+      value.startsWith('--')
+    )
+      throw Error(`Unsupported or missing option: ${key}`);
     if (key === '--assert' || key === '--click') steps.push({ selector: value, action: key === '--click' ? 'click' : undefined });
     else if (key === '--assert-text') {
       const split = value.indexOf(':');
@@ -43,10 +49,25 @@ try {
     result = options.endpoint
       ? await webdriverCheck({ endpoint: options.endpoint, url, steps, waitMs, screenshot: options.screenshot && resolve(options.screenshot) })
       : await cdpCheck({ url, steps, waitMs, screenshot: options.screenshot && resolve(options.screenshot) });
+  } catch (error) {
+    error.category ||= 'driver';
+    throw error;
   }
-  catch (error) { error.category ||= 'driver'; throw error; }
   console.log(JSON.stringify(result));
 } catch (error) {
-  console.error(JSON.stringify({ pass: false, error: error.message, category: error.category || 'configuration', stepIndex: error.stepIndex, selector: error.selector, expected: error.expected, browserErrors: error.browserErrors, droppedBrowserErrors: error.droppedBrowserErrors }));
+  console.error(
+    JSON.stringify({
+      pass: false,
+      error: error.message,
+      category: error.category || 'configuration',
+      stepIndex: error.stepIndex,
+      selector: error.selector,
+      expected: error.expected,
+      browserErrors: error.browserErrors,
+      droppedBrowserErrors: error.droppedBrowserErrors,
+    }),
+  );
   process.exitCode = 1;
-} finally { server?.close(); }
+} finally {
+  server?.close();
+}

@@ -4,9 +4,16 @@ import { fileURLToPath } from 'node:url';
 import { mostRecentSession } from '../../lib/engine.mjs';
 const root = dirname(fileURLToPath(import.meta.url));
 const path = process.argv[2] || mostRecentSession(join(root, 'workspace'));
-if (!path) { console.log('No session yet'); process.exit(0); }
-const entries = readFileSync(path, 'utf8').trim().split('\n').map(line => JSON.parse(line));
-const calls = [], errors = [];
+if (!path) {
+  console.log('No session yet');
+  process.exit(0);
+}
+const entries = readFileSync(path, 'utf8')
+  .trim()
+  .split('\n')
+  .map(line => JSON.parse(line));
+const calls = [],
+  errors = [];
 let usage = { input: 0, output: 0, totalTokens: 0, reportedCost: 0 };
 for (const entry of entries) {
   const m = entry.message;

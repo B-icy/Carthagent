@@ -22,19 +22,33 @@ async function serverFixture(t, envOverrides = {}) {
     // The passive release check doubles as the install ping; keep test
     // servers off the production control plane unless a test opts in.
     env: { ...process.env, CARTHAGENT_WORKSPACE: cwd, CARTHAGENT_PORT: '0', CARTHAGENT_SERVER_TOKEN: token, CARTHAGENT_NO_UPDATE_CHECK: '1', ...envOverrides },
-    stdio: ['ignore', 'pipe', 'pipe']
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
-  t.after(() => { child.kill('SIGTERM'); rmSync(cwd, { recursive: true, force: true }); });
+  t.after(() => {
+    child.kill('SIGTERM');
+    rmSync(cwd, { recursive: true, force: true });
+  });
   const url = await new Promise((resolveReady, reject) => {
     const timer = setTimeout(() => reject(new Error('server startup timeout')), 5000);
     let output = '';
     child.stdout.on('data', chunk => {
       output += chunk.toString();
       const endpoint = output.match(/carthagent dashboard: (http:\/\/127\.0\.0\.1:\d+)\//);
-      if (endpoint) { clearTimeout(timer); resolveReady(endpoint[1]); }
+      if (endpoint) {
+        clearTimeout(timer);
+        resolveReady(endpoint[1]);
+      }
     });
-    child.on('error', error => { clearTimeout(timer); reject(error); });
-    child.on('exit', code => { if (code) { clearTimeout(timer); reject(new Error(`server exited ${code}`)); } });
+    child.on('error', error => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.on('exit', code => {
+      if (code) {
+        clearTimeout(timer);
+        reject(new Error(`server exited ${code}`));
+      }
+    });
   });
   return { cwd, token, url };
 }
@@ -49,7 +63,7 @@ test('dashboard rejects an occupied port without announcing readiness', async t 
 const json = (token, body) => ({
   method: 'POST',
   headers: { 'content-type': 'application/json', 'x-carthagent-token': token },
-  body: JSON.stringify(body)
+  body: JSON.stringify(body),
 });
 
 async function approvedPost(server, path, body) {
@@ -93,7 +107,11 @@ test('dashboard status reports an available update from the release cache', asyn
   writeFileSync(cachePath, JSON.stringify({ checkedAt: Date.now(), release: { version: '99.0.0', tag: 'v99.0.0' } }));
   const channelPath = join(dir, 'update-channel.json');
   writeFileSync(channelPath, JSON.stringify({ version: 1, channel: 'stable' }));
-  const server = await serverFixture(t, { CARTHAGENT_NO_UPDATE_CHECK: '', CARTHAGENT_UPDATE_CHECK_FILE: cachePath, CARTHAGENT_UPDATE_CHANNEL_FILE: channelPath });
+  const server = await serverFixture(t, {
+    CARTHAGENT_NO_UPDATE_CHECK: '',
+    CARTHAGENT_UPDATE_CHECK_FILE: cachePath,
+    CARTHAGENT_UPDATE_CHANNEL_FILE: channelPath,
+  });
   let body = {};
   for (let i = 0; i < 50 && !body.update; i++) {
     body = await (await fetch(`${server.url}/api/status`, { headers: { 'x-carthagent-token': server.token } })).json();
@@ -113,9 +131,12 @@ test('dashboard omits update info when the check is disabled', async t => {
 test('dashboard persists plans and executes checks in the selected workspace', async t => {
   const server = await serverFixture(t);
   const plan = {
-    goal: 'Server fixture', assumptions: [], artifacts: ['.'], steps: ['Run'],
+    goal: 'Server fixture',
+    assumptions: [],
+    artifacts: ['.'],
+    steps: ['Run'],
     acceptance: [{ requirement: 'Runs', checks: ['smoke'] }],
-    checks: [{ id: 'smoke', kind: 'runtime', argv: [process.execPath, 'app.mjs'], timeoutSeconds: 10 }]
+    checks: [{ id: 'smoke', kind: 'runtime', argv: [process.execPath, 'app.mjs'], timeoutSeconds: 10 }],
   };
   const saved = await fetch(`${server.url}/api/plan/set`, json(server.token, { plan }));
   assert.equal(saved.status, 200, await saved.text());
@@ -131,10 +152,24 @@ test('dashboard persists plans and executes checks in the selected workspace', a
 test('dashboard preserves command evidence but rejects new-requirement coverage until rerun and records reviews', async t => {
   const server = await serverFixture(t);
   const post = (path, body) => approvedPost(server, path, body);
-  const plan = { goal: 'Review API', artifacts: ['.'], steps: ['Run'], acceptance: [{ requirement: 'Runs', checks: ['smoke'] }], checks: [{ id: 'smoke', kind: 'runtime', argv: [process.execPath, 'app.mjs'], timeoutSeconds: 10 }] };
+  const plan = {
+    goal: 'Review API',
+    artifacts: ['.'],
+    steps: ['Run'],
+    acceptance: [{ requirement: 'Runs', checks: ['smoke'] }],
+    checks: [{ id: 'smoke', kind: 'runtime', argv: [process.execPath, 'app.mjs'], timeoutSeconds: 10 }],
+  };
   assert.equal((await post('plan/set', { plan })).status, 200);
   assert.equal((await post('checks/run', { id: 'all' })).status, 200);
-  assert.equal((await post('plan/revise', { reason: 'New boundary', patch: { acceptance: [...plan.acceptance, { requirement: 'Boundary behavior', checks: ['smoke'] }] } })).status, 200);
+  assert.equal(
+    (
+      await post('plan/revise', {
+        reason: 'New boundary',
+        patch: { acceptance: [...plan.acceptance, { requirement: 'Boundary behavior', checks: ['smoke'] }] },
+      })
+    ).status,
+    200,
+  );
   const status = await (await fetch(`${server.url}/api/status`, { headers: { 'x-carthagent-token': server.token } })).json();
   assert.deepEqual(status.pendingChecks, []);
   assert.deepEqual(status.completionIssues.unverifiedRequirements, ['Boundary behavior']);
@@ -143,7 +178,19 @@ test('dashboard preserves command evidence but rejects new-requirement coverage 
   const inspected = await post('review', { action: 'inspect' });
   assert.equal(inspected.status, 200);
   const { result } = await inspected.json();
-  assert.equal((await post('review', { action: 'record', captureId: result.id, coverage: ['Runs', 'Boundary behavior'].map(requirement => ({ requirement, assertions: 'Fixture command exits zero' })), probes: ['node app.mjs: ok'], findings: [], limitations: ['Fixture coverage only'] })).status, 200);
+  assert.equal(
+    (
+      await post('review', {
+        action: 'record',
+        captureId: result.id,
+        coverage: ['Runs', 'Boundary behavior'].map(requirement => ({ requirement, assertions: 'Fixture command exits zero' })),
+        probes: ['node app.mjs: ok'],
+        findings: [],
+        limitations: ['Fixture coverage only'],
+      })
+    ).status,
+    200,
+  );
   const finished = await post('finish', { status: 'verified' });
   assert.equal(finished.status, 200);
   const { state } = await finished.json();
@@ -157,11 +204,23 @@ test('dashboard rejects plan replacement and finish during checks and releases a
   const started = join(server.cwd, 'artifacts', 'started');
   const release = join(server.cwd, 'artifacts', 'release');
   const plan = {
-    goal: 'Concurrent café check', assumptions: [], artifacts: ['.'], steps: ['Run'],
+    goal: 'Concurrent café check',
+    assumptions: [],
+    artifacts: ['.'],
+    steps: ['Run'],
     acceptance: [{ requirement: 'Runs', checks: ['smoke'] }],
-    checks: [{ id: 'smoke', kind: 'runtime', argv: [process.execPath, '-e',
-      `const fs = require('node:fs'); fs.writeFileSync(${JSON.stringify(started)}, 'yes'); const timer = setInterval(() => { if (fs.existsSync(${JSON.stringify(release)})) { clearInterval(timer); process.exitCode = 1; } }, 20);`
-    ], timeoutSeconds: 5 }]
+    checks: [
+      {
+        id: 'smoke',
+        kind: 'runtime',
+        argv: [
+          process.execPath,
+          '-e',
+          `const fs = require('node:fs'); fs.writeFileSync(${JSON.stringify(started)}, 'yes'); const timer = setInterval(() => { if (fs.existsSync(${JSON.stringify(release)})) { clearInterval(timer); process.exitCode = 1; } }, 20);`,
+        ],
+        timeoutSeconds: 5,
+      },
+    ],
   };
   const post = (path, body) => approvedPost(server, path, body);
   assert.equal((await post('plan/set', { plan })).status, 200);
@@ -194,7 +253,10 @@ test('dashboard revisions preserve evidence and enforce output and step completi
   const post = (path, body) => approvedPost(server, path, body);
   const status = async () => (await fetch(`${server.url}/api/status`, { headers: { 'x-carthagent-token': server.token } })).json();
   const plan = {
-    goal: 'Migration report', assumptions: [], artifacts: ['app.mjs'], steps: ['Run'],
+    goal: 'Migration report',
+    assumptions: [],
+    artifacts: ['app.mjs'],
+    steps: ['Run'],
     outputs: ['artifacts/report.json'],
     acceptance: [{ requirement: 'Runs', checks: ['smoke'] }],
     checks: [{ id: 'smoke', kind: 'runtime', argv: [process.execPath, 'app.mjs'], timeoutSeconds: 10 }],
@@ -216,10 +278,17 @@ test('dashboard revisions preserve evidence and enforce output and step completi
   mkdirSync(join(server.cwd, 'artifacts'));
   writeFileSync(join(server.cwd, 'artifacts/report.json'), '{}');
   assert.equal((await post('finish', { status: 'verified' })).status, 200);
-  assert.equal((await post('plan/revise', { reason: 'Review a discovered caller', patch: { steps: [{ id: 'review', title: 'Review caller', checks: ['smoke'] }] } })).status, 200);
+  assert.equal(
+    (await post('plan/revise', { reason: 'Review a discovered caller', patch: { steps: [{ id: 'review', title: 'Review caller', checks: ['smoke'] }] } }))
+      .status,
+    200,
+  );
   assert.deepEqual((await status()).completionIssues.incompleteSteps, ['review']);
   assert.equal((await post('finish', { status: 'verified' })).status, 400);
-  assert.equal((await post('plan/revise', { reason: 'Try dropping requirement', patch: { acceptance: [{ requirement: 'Less work', checks: ['smoke'] }] } })).status, 400);
+  assert.equal(
+    (await post('plan/revise', { reason: 'Try dropping requirement', patch: { acceptance: [{ requirement: 'Less work', checks: ['smoke'] }] } })).status,
+    400,
+  );
 });
 
 test('dashboard is self-contained and does not render API data with innerHTML', async () => {
@@ -236,29 +305,51 @@ test('dashboard is self-contained and does not render API data with innerHTML', 
     { selector: '#update-badge' },
     { eval: 'document.getElementById("update-badge").hidden', expect: true },
     { selector: '#planning-view' },
-    { eval: `(() => { const select = document.querySelector('#planning-view'); select.value = 'architecture'; select.dispatchEvent(new Event('change')); return document.querySelector('#d2').hidden; })()`, expect: true },
-    { eval: `(() => { const select = document.querySelector('#planning-view'); select.value = 'workflow'; select.dispatchEvent(new Event('change')); return document.querySelector('#planning-detail').textContent.includes('No active action recorded'); })()`, expect: true },
+    {
+      eval: `(() => { const select = document.querySelector('#planning-view'); select.value = 'architecture'; select.dispatchEvent(new Event('change')); return document.querySelector('#d2').hidden; })()`,
+      expect: true,
+    },
+    {
+      eval: `(() => { const select = document.querySelector('#planning-view'); select.value = 'workflow'; select.dispatchEvent(new Event('change')); return document.querySelector('#planning-detail').textContent.includes('No active action recorded'); })()`,
+      expect: true,
+    },
     { selector: '.brand', text: /Carthagent/ },
     { eval: 'document.documentElement.dataset.theme', expect: 'carthage' },
-    { eval: `(() => { const option = document.querySelector('[data-theme-value="paper"]'); option.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true })); return document.documentElement.dataset.theme; })()`, expect: 'paper' },
+    {
+      eval: `(() => { const option = document.querySelector('[data-theme-value="paper"]'); option.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true })); return document.documentElement.dataset.theme; })()`,
+      expect: 'paper',
+    },
     { action: 'click', selector: '[data-theme-value="carthage"]', then: { eval: 'localStorage.getItem("carthagent-theme")', expect: 'carthage' } },
     { console: 'error-free' },
   ]);
   assert.equal(rendered.pass, true, rendered.failures.join('\n'));
 });
 
-
 test('raw HTTP and CLI cannot run arbitrary checks before tested-plan approval', async t => {
   const server = await serverFixture(t);
-  const plan = { goal: 'Gate', artifacts: ['.'], steps: ['Run'], acceptance: [{ requirement: 'Runs', checks: ['smoke'] }], checks: [{ id: 'smoke', kind: 'runtime', argv: [process.execPath, '-e', 'require("node:fs").writeFileSync("bypass.txt", "bad")'], timeoutSeconds: 10 }] };
+  const plan = {
+    goal: 'Gate',
+    artifacts: ['.'],
+    steps: ['Run'],
+    acceptance: [{ requirement: 'Runs', checks: ['smoke'] }],
+    checks: [{ id: 'smoke', kind: 'runtime', argv: [process.execPath, '-e', 'require("node:fs").writeFileSync("bypass.txt", "bad")'], timeoutSeconds: 10 }],
+  };
   const saved = await fetch(`${server.url}/api/plan/set`, json(server.token, { plan }));
   assert.equal(saved.status, 200);
-  assert.equal(existsSync(join(server.cwd, '.harness', 'workspace.lock')), false, 'a completed synchronous mutation releases its lease before its response is consumed');
+  assert.equal(
+    existsSync(join(server.cwd, '.harness', 'workspace.lock')),
+    false,
+    'a completed synchronous mutation releases its lease before its response is consumed',
+  );
   const blocked = await fetch(`${server.url}/api/checks/run`, json(server.token, { id: 'all' }));
   assert.notEqual(blocked.status, 200);
   const blockedBody = await blocked.text();
   assert.match(blockedBody, /Implementation locked/);
-  assert.equal(existsSync(join(server.cwd, '.harness', 'workspace.lock')), false, 'a rejected mutation also releases its lease before its response is consumed');
+  assert.equal(
+    existsSync(join(server.cwd, '.harness', 'workspace.lock')),
+    false,
+    'a rejected mutation also releases its lease before its response is consumed',
+  );
   const cli = spawnSync(process.execPath, [join(root, 'bin/ctg.mjs'), 'check', 'all'], { cwd: server.cwd, encoding: 'utf8' });
   assert.notEqual(cli.status, 0);
   assert.match(cli.stderr, /Implementation locked/);

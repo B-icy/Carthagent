@@ -7,9 +7,18 @@ export default Plugin.define({
   async setup(context) {
     const cleanups: Plugin.Cleanup[] = [];
     const dispose = async () => {
-      const results = await Promise.allSettled(cleanups.splice(0).reverse().map((cleanup) => Promise.resolve().then(cleanup)));
+      const results = await Promise.allSettled(
+        cleanups
+          .splice(0)
+          .reverse()
+          .map(cleanup => Promise.resolve().then(cleanup)),
+      );
       const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
-      if (failures.length) throw new AggregateError(failures.map((result) => result.reason), 'Carthagent terminal cleanup failed');
+      if (failures.length)
+        throw new AggregateError(
+          failures.map(result => result.reason),
+          'Carthagent terminal cleanup failed',
+        );
     };
     try {
       for (const definition of [diagnostics, workspace]) {
@@ -18,8 +27,11 @@ export default Plugin.define({
       }
       return dispose;
     } catch (error) {
-      try { await dispose(); }
-      catch (cleanupError) { throw new AggregateError([error, cleanupError], 'Carthagent terminal setup failed'); }
+      try {
+        await dispose();
+      } catch (cleanupError) {
+        throw new AggregateError([error, cleanupError], 'Carthagent terminal setup failed');
+      }
       throw error;
     }
   },

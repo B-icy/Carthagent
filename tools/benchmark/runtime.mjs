@@ -5,7 +5,13 @@ export const ENGINE_RUNTIME = 'opencode-2';
 export const isolatedHome = config => join(config, 'home');
 export function safeEnv(extra = {}, home = undefined) {
   const allowed = { PATH: process.env.PATH || '', LANG: process.env.LANG || 'C.UTF-8', CI: '1', NODE_ENV: 'production' };
-  if (home) { mkdirSync(home, { recursive: true }); allowed.HOME = home; allowed.XDG_CONFIG_HOME = join(home, '.config'); allowed.XDG_DATA_HOME = join(home, '.local/share'); allowed.XDG_CACHE_HOME = join(home, '.cache'); }
+  if (home) {
+    mkdirSync(home, { recursive: true });
+    allowed.HOME = home;
+    allowed.XDG_CONFIG_HOME = join(home, '.config');
+    allowed.XDG_DATA_HOME = join(home, '.local/share');
+    allowed.XDG_CACHE_HOME = join(home, '.cache');
+  }
   return { ...allowed, ...extra };
 }
 export const sha = value => createHash('sha256').update(value).digest('hex');
@@ -17,7 +23,11 @@ export function provisionTools(config) {
 }
 export async function stopGroup(child, graceMs = 250) {
   if (!child?.pid) return;
-  try { process.kill(-child.pid, 'SIGTERM'); } catch {}
+  try {
+    process.kill(-child.pid, 'SIGTERM');
+  } catch {}
   await new Promise(r => setTimeout(r, graceMs));
-  try { process.kill(-child.pid, 'SIGKILL'); } catch {}
+  try {
+    process.kill(-child.pid, 'SIGKILL');
+  } catch {}
 }

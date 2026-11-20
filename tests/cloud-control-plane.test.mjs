@@ -14,9 +14,11 @@ test('CLI session client-name migration upgrades an existing SQLite schema', () 
     scopes TEXT NOT NULL, expires_at INTEGER NOT NULL, revoked_at TEXT, created_at TEXT NOT NULL, last_used_at TEXT
   )`);
   db.exec(readFileSync(fileURLToPath(new URL('../migrations/003_cloud_cli_session_client_name.sql', import.meta.url)), 'utf8'));
-  db.prepare(`INSERT INTO cli_sessions
+  db.prepare(
+    `INSERT INTO cli_sessions
     (id, account_id, refresh_token_hash, scopes, expires_at, created_at)
-    VALUES ('session', 'account', 'hash', 'account:read', 1, '2025-01-01T00:00:00.000Z')`).run();
+    VALUES ('session', 'account', 'hash', 'account:read', 1, '2025-01-01T00:00:00.000Z')`,
+  ).run();
   assert.equal(db.prepare('SELECT client_name FROM cli_sessions').get().client_name, 'Carthagent CLI');
 });
 
@@ -26,9 +28,13 @@ function fixture(overrides = {}) {
   const now = new Date('2026-01-01T00:00:00.000Z');
   const ledger = new CloudLedger({ id: () => `ledger-${++id}`, clock: () => now });
   const control = new CloudControlPlane({
-    ledger, clock: () => now, id: () => `control-${++id}`,
-    random: size => Buffer.alloc(size, ++random), tokenSecret: 'test-token-secret',
-    publicUrl: 'https://cloud.test', ...overrides,
+    ledger,
+    clock: () => now,
+    id: () => `control-${++id}`,
+    random: size => Buffer.alloc(size, ++random),
+    tokenSecret: 'test-token-secret',
+    publicUrl: 'https://cloud.test',
+    ...overrides,
   });
   return { control, ledger, now };
 }
@@ -71,12 +77,31 @@ test('account details expose content-free grants, sessions, usage, and account-s
   const one = control.issueSession(account.accountId, undefined, 'laptop');
   const two = control.issueSession(account.accountId, undefined, 'desktop');
   const secondClaims = control.verifyAccessToken(two.accessToken);
-  ledger.appendEntry({ accountId: account.accountId, kind: 'charge', amountNanoUsd: -10, idempotencyKey: 'usage-1', gatewayRequestId: 'request-1', gatewayAttemptId: 'attempt-1', metadata: { alias: 'code', inputTokens: 2, outputTokens: 3, status: 'completed' } });
+  ledger.appendEntry({
+    accountId: account.accountId,
+    kind: 'charge',
+    amountNanoUsd: -10,
+    idempotencyKey: 'usage-1',
+    gatewayRequestId: 'request-1',
+    gatewayAttemptId: 'attempt-1',
+    metadata: { alias: 'code', inputTokens: 2, outputTokens: 3, status: 'completed' },
+  });
   const details = control.account(account.accountId);
   assert.equal(details.email, 'account@example.com');
   assert.equal(details.grants[0].source, 'verified_trial');
   assert.deepEqual(details.sessions.map(session => session.client_name).sort(), ['desktop', 'laptop']);
-  assert.deepEqual(control.usage(account.accountId), [{ createdAt: control.nowIso(), alias: 'code', inputTokens: 2, outputTokens: 3, status: 'completed', chargeNanoUsd: 10, gatewayRequestId: 'request-1', gatewayAttemptId: 'attempt-1' }]);
+  assert.deepEqual(control.usage(account.accountId), [
+    {
+      createdAt: control.nowIso(),
+      alias: 'code',
+      inputTokens: 2,
+      outputTokens: 3,
+      status: 'completed',
+      chargeNanoUsd: 10,
+      gatewayRequestId: 'request-1',
+      gatewayAttemptId: 'attempt-1',
+    },
+  ]);
   assert.deepEqual(control.revokeAccountSession({ accountId: account.accountId, sessionId: secondClaims.sid }), { revoked: true, sessionId: secondClaims.sid });
   assert.throws(() => control.verifyAccessToken(two.accessToken), /revoked_token/);
   assert.doesNotThrow(() => control.verifyAccessToken(one.accessToken));
@@ -97,10 +122,18 @@ test('authoritative invoice webhook grants Builder credit exactly once', () => {
   const { control, ledger } = fixture({ stripeWebhookSecret: secret, stripePriceId: 'price_builder' });
   const account = control.createUserAccount({ email: 'builder@example.com' });
   const event = {
-    id: 'evt_invoice_1', type: 'invoice.paid', data: { object: {
-      id: 'in_1', customer: 'cus_1', subscription: 'sub_1', period_start: 1_767_225_600,
-      period_end: 1_769_904_000, metadata: { accountId: account.accountId },
-    } },
+    id: 'evt_invoice_1',
+    type: 'invoice.paid',
+    data: {
+      object: {
+        id: 'in_1',
+        customer: 'cus_1',
+        subscription: 'sub_1',
+        period_start: 1_767_225_600,
+        period_end: 1_769_904_000,
+        metadata: { accountId: account.accountId },
+      },
+    },
   };
   const payload = JSON.stringify(event);
   const timestamp = 1_767_225_600;
@@ -114,7 +147,10 @@ test('authoritative invoice webhook grants Builder credit exactly once', () => {
 test('Checkout resolves plan selectors against the configured catalog', async () => {
   const calls = [];
   const stripe = {
-    createCheckoutSession: async input => { calls.push(input.line_items); return { id: 'cs_1', url: 'https://checkout.test' }; },
+    createCheckoutSession: async input => {
+      calls.push(input.line_items);
+      return { id: 'cs_1', url: 'https://checkout.test' };
+    },
     createPortalSession: async () => ({ id: 'bps_1', url: 'https://portal.test' }),
   };
   const { control } = fixture({ stripe, stripePriceId: 'price_builder', planCatalog: { pro: 'price_pro' } });
@@ -129,8 +165,14 @@ test('Checkout resolves plan selectors against the configured catalog', async ()
 test('Checkout and portal use server-owned plan and customer references', async () => {
   const calls = [];
   const stripe = {
-    createCheckoutSession: async input => { calls.push(['checkout', input]); return { id: 'cs_1', url: 'https://checkout.test' }; },
-    createPortalSession: async input => { calls.push(['portal', input]); return { id: 'bps_1', url: 'https://portal.test' }; },
+    createCheckoutSession: async input => {
+      calls.push(['checkout', input]);
+      return { id: 'cs_1', url: 'https://checkout.test' };
+    },
+    createPortalSession: async input => {
+      calls.push(['portal', input]);
+      return { id: 'bps_1', url: 'https://portal.test' };
+    },
   };
   const { control } = fixture({ stripe, stripePriceId: 'price_server_owned' });
   const account = control.createUserAccount({ email: 'pay@example.com' });

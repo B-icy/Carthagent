@@ -7,32 +7,37 @@ export default Plugin.define({
   setup(context) {
     context.keymap.layer(() => ({
       mode: 'global',
-      commands: [{
-        id: 'carthagent.health',
-        title: 'Carthagent runtime status',
-        palette: true,
-        slash: { name: 'ctg-status' },
-        async run() {
-          try {
-            const result = await context.client.rpc(Carthagent).health({}, {
-              location: context.location ?? context.data.location.default(),
-              signal: AbortSignal.timeout(10_000),
-            });
-            const health = result as { hostVersion: string; directory: string };
-            context.ui.toast.show({
-              title: 'Carthagent',
-              message: `Carthagent ${health.hostVersion} · ${context.ui.format.path(health.directory)}`,
-              variant: 'success',
-            });
-          } catch (error) {
-            context.ui.toast.show({
-              title: 'Carthagent runtime unavailable',
-              message: error instanceof Error ? error.message : 'Could not read runtime status',
-              variant: 'error',
-            });
-          }
+      commands: [
+        {
+          id: 'carthagent.health',
+          title: 'Carthagent runtime status',
+          palette: true,
+          slash: { name: 'ctg-status' },
+          async run() {
+            try {
+              const result = await context.client.rpc(Carthagent).health(
+                {},
+                {
+                  location: context.location ?? context.data.location.default(),
+                  signal: AbortSignal.timeout(10_000),
+                },
+              );
+              const health = result as { hostVersion: string; directory: string };
+              context.ui.toast.show({
+                title: 'Carthagent',
+                message: `Carthagent ${health.hostVersion} · ${context.ui.format.path(health.directory)}`,
+                variant: 'success',
+              });
+            } catch (error) {
+              context.ui.toast.show({
+                title: 'Carthagent runtime unavailable',
+                message: error instanceof Error ? error.message : 'Could not read runtime status',
+                variant: 'error',
+              });
+            }
+          },
         },
-      }],
+      ],
     }));
   },
 });

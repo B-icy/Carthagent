@@ -10,8 +10,8 @@ export default [
     languageOptions: { globals: { ...globals.node, ...globals.browser } },
     rules: {
       'no-unused-vars': ['error', { args: 'none', caughtErrors: 'none', varsIgnorePattern: '^_' }],
-      'no-empty': ['error', { allowEmptyCatch: true }]
-    }
+      'no-empty': ['error', { allowEmptyCatch: true }],
+    },
   },
   {
     files: ['plugins/**/*.ts', 'plugins/**/*.tsx'],

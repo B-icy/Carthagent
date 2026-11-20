@@ -6,12 +6,38 @@ import { trimHistoryMedia, IMAGE_BUDGET } from '../plugins/carthagent/src/server
 // INF-01: a 2.1 MB screenshot read by a tool made every later Cloud request
 // fail with request_too_large (gateway byte budget 600,000), even on --continue.
 const png = bytes => `data:image/png;base64,${'A'.repeat(bytes)}`;
-const readResult = (id, bytes, name = 'shot.png') => ({ role: 'tool', content: [{ type: 'tool-result', id, name: 'read', result: { type: 'content', value: [{ type: 'text', text: 'Image read successfully' }, { type: 'file', uri: png(bytes), mime: 'image/png', name }] } }] });
-const userImage = bytes => ({ role: 'user', content: [{ type: 'text', text: 'look' }, { type: 'media', media: { source: { type: 'base64', data: 'A'.repeat(bytes), mediaType: 'image/png' } } }] });
+const readResult = (id, bytes, name = 'shot.png') => ({
+  role: 'tool',
+  content: [
+    {
+      type: 'tool-result',
+      id,
+      name: 'read',
+      result: {
+        type: 'content',
+        value: [
+          { type: 'text', text: 'Image read successfully' },
+          { type: 'file', uri: png(bytes), mime: 'image/png', name },
+        ],
+      },
+    },
+  ],
+});
+const userImage = bytes => ({
+  role: 'user',
+  content: [
+    { type: 'text', text: 'look' },
+    { type: 'media', media: { source: { type: 'base64', data: 'A'.repeat(bytes), mediaType: 'image/png' } } },
+  ],
+});
 const size = messages => JSON.stringify(messages).length;
 
 test('an oversized tool screenshot is replaced by a note; text and the call pairing survive', () => {
-  const messages = [{ role: 'user', content: [{ type: 'text', text: 'open big.png' }] }, readResult('call-1', 2_800_000, 'big.png'), { role: 'user', content: [{ type: 'text', text: 'continue' }] }];
+  const messages = [
+    { role: 'user', content: [{ type: 'text', text: 'open big.png' }] },
+    readResult('call-1', 2_800_000, 'big.png'),
+    { role: 'user', content: [{ type: 'text', text: 'continue' }] },
+  ];
   const { messages: out, omitted } = trimHistoryMedia(messages);
   assert.equal(omitted, 1);
   assert.ok(size(out) < 600_000, 'request now fits the gateway budget');
@@ -45,5 +71,8 @@ test('small images, URLs and image-free histories pass through unchanged', () =>
 
 test('the Cloud provider registers the trim as a context hook scoped to carthagent-cloud', () => {
   const source = readFileSync(new URL('../plugins/carthagent/src/server/providers.ts', import.meta.url), 'utf8');
-  assert.match(source, /hook\('context', async event => \{\n\s+if \(event\.model\.providerID !== EXPERIENTIAL_PROVIDER_ID\) return;\n\s+const trimmed = trimHistoryMedia\(event\.messages\);/);
+  assert.match(
+    source,
+    /hook\('context', async event => \{\n\s+if \(event\.model\.providerID !== EXPERIENTIAL_PROVIDER_ID\) return;\n\s+const trimmed = trimHistoryMedia\(event\.messages\);/,
+  );
 });

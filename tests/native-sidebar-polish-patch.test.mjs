@@ -7,11 +7,17 @@ const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8'
 const digest = value => createHash('sha256').update(value).digest('hex');
 const published = read('docs/patches/opencode-v2.0.32-session-ui-combined-v18.patch');
 const staged = read('docs/patches/opencode-v2.0.32-session-ui-combined-v20.patch');
-const sections = patch => new Map(patch.split(/(?=^diff --git )/m).filter(Boolean).map(section => {
-  const path = section.match(/^diff --git a\/(\S+) b\/\1\n/)?.[1];
-  assert.ok(path);
-  return [path, section.replace(/^index .*\n/gm, '')];
-}));
+const sections = patch =>
+  new Map(
+    patch
+      .split(/(?=^diff --git )/m)
+      .filter(Boolean)
+      .map(section => {
+        const path = section.match(/^diff --git a\/(\S+) b\/\1\n/)?.[1];
+        assert.ok(path);
+        return [path, section.replace(/^index .*\n/gm, '')];
+      }),
+  );
 
 test('v20 is staged beside the published v18 runtime patch', () => {
   assert.equal(digest(published), '636e01c3da517c64a5f90fb1ea6a682a25fbcb2b63372a8fd2c32ec11fe706dd');
@@ -49,7 +55,8 @@ test('v20 removes the separator overlays that drew through titles and keeps regr
     'compact hover tooltip paints over the main pane without bleed-through',
     'short folder paths show in place without a tooltip',
     'opening on Home keeps the folders at the top until the user leaves the draft',
-  ]) assert.ok(tests.includes(name), name);
+  ])
+    assert.ok(tests.includes(name), name);
   assert.match(tabs, /^\+.*if \(newTab\(\) && startedOnDraft && !leftDraft\) return/m);
 });
 

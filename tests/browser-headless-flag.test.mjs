@@ -11,14 +11,17 @@ test('screenshots launch Chromium-family browsers with --headless', { skip: proc
   const dir = mkdtempSync(join(tmpdir(), 'ctg-fake-chrome-'));
   const log = join(dir, 'argv.json');
   const fake = join(dir, 'chrome');
-  writeFileSync(fake, `#!/usr/bin/env node
+  writeFileSync(
+    fake,
+    `#!/usr/bin/env node
 const fs = require('node:fs');
 const args = process.argv.slice(2);
 fs.writeFileSync(${JSON.stringify(log)}, JSON.stringify(args));
 if (!args.includes('--headless')) { process.stderr.write('Missing X server or $DISPLAY\\n'); process.exit(1); }
 const shot = args.find(a => a.startsWith('--screenshot=')).slice(13);
 fs.writeFileSync(shot, 'png');
-`);
+`,
+  );
   chmodSync(fake, 0o755);
   const out = join(dir, 'shot.png');
   const result = await browserScreenshot('http://127.0.0.1:9/', out, { browser: fake, timeoutMs: 10000 });

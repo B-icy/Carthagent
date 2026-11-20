@@ -14,17 +14,44 @@ type CloudPort = { request(path: string, options: { method: string; accessToken:
 type Pending = VoyagesPending & { key: string };
 type State = { quotes: VoyagesQuote[]; pending?: Pending; rewardPreview?: { sessionID: string; runId: string; snapshot: string } };
 class Failure extends Error {
-  constructor(readonly code: string, readonly status = 0, readonly uncertain = false) { super(code); }
+  constructor(
+    readonly code: string,
+    readonly status = 0,
+    readonly uncertain = false,
+  ) {
+    super(code);
+  }
 }
-const codes = new Set(('authentication_required invalid_token expired_token revoked_token reauthentication_required insufficient_scope milestone_locked purchase_required insufficient_coins profile_not_found not_found not_available version_conflict already_owned quote_expired terms_changed quote_consumed key_conflict rate_limited quote_limit voyages_unavailable internal_error invalid_body unknown_field version_required invalid_name invalid_config invalid_item invalid_id invalid_key wallet_limit').split(' '));
-const noDebit = new Set(('invalid_body unknown_field invalid_id invalid_key milestone_locked insufficient_coins not_found not_available already_owned quote_expired terms_changed authentication_required invalid_token expired_token revoked_token reauthentication_required insufficient_scope').split(' '));
-for (const code of ['delivery_ineligible', 'delivery_changed', 'delivery_conflict', 'snapshot_claimed', 'reward_daily_limit', 'progression_limit', 'invalid_delivery']) codes.add(code);
+const codes = new Set(
+  'authentication_required invalid_token expired_token revoked_token reauthentication_required insufficient_scope milestone_locked purchase_required insufficient_coins profile_not_found not_found not_available version_conflict already_owned quote_expired terms_changed quote_consumed key_conflict rate_limited quote_limit voyages_unavailable internal_error invalid_body unknown_field version_required invalid_name invalid_config invalid_item invalid_id invalid_key wallet_limit'.split(
+    ' ',
+  ),
+);
+const noDebit = new Set(
+  'invalid_body unknown_field invalid_id invalid_key milestone_locked insufficient_coins not_found not_available already_owned quote_expired terms_changed authentication_required invalid_token expired_token revoked_token reauthentication_required insufficient_scope'.split(
+    ' ',
+  ),
+);
+for (const code of [
+  'delivery_ineligible',
+  'delivery_changed',
+  'delivery_conflict',
+  'snapshot_claimed',
+  'reward_daily_limit',
+  'progression_limit',
+  'invalid_delivery',
+])
+  codes.add(code);
 type Journal = { get(file: string): Promise<unknown>; set(file: string, state: State): Promise<void> };
 const fileJournal: Journal = {
   async get(file) {
     let handle;
-    try { handle = await open(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined; throw error; }
+    try {
+      handle = await open(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+      throw error;
+    }
     try {
       const details = await handle.stat();
       check(details.isFile() && details.size <= 65536);
@@ -32,45 +59,106 @@ const fileJournal: Journal = {
       const { bytesRead } = await handle.read(bytes, 0, bytes.length, 0);
       check(bytesRead <= 65536 && bytesRead === details.size);
       return JSON.parse(bytes.toString('utf8', 0, bytesRead));
-    } finally { await handle.close(); }
+    } finally {
+      await handle.close();
+    }
   },
   async set(file, state) {
-    const contents = JSON.stringify(state); check(Buffer.byteLength(contents) <= 65536);
+    const contents = JSON.stringify(state);
+    check(Buffer.byteLength(contents) <= 65536);
     await atomicWrite(file, contents, 0o600);
     // Persist the rename as well as the file bytes on POSIX filesystems.
     if (process.platform !== 'win32') {
       const directory = await open(join(file, '..'), 'r');
-      try { await directory.sync(); } finally { await directory.close(); }
+      try {
+        await directory.sync();
+      } finally {
+        await directory.close();
+      }
     }
   },
 };
-function check(ok: unknown): asserts ok { if (!ok) throw new Failure('invalid_response'); }
-function obj(value: unknown): Record<string, unknown> { check(value && typeof value === 'object' && !Array.isArray(value)); return value as Record<string, unknown>; }
-function str(value: unknown, max = 128): string { check(typeof value === 'string' && value.length > 0 && value.length <= max && !/[\u0000-\u001f\u007f]/.test(value)); return value; }
-function int(value: unknown, min = 0): number { check(typeof value === 'number' && Number.isSafeInteger(value) && value >= min); return value; }
-function num(value: unknown): number { check(typeof value === 'number' && Number.isFinite(value) && value >= 0); return value; }
-function key(value: unknown): string { const result = str(value, 64); check(/^[a-zA-Z0-9_-]+$/.test(result)); return result; }
-function fullItem(value: unknown): string { const result = str(value); const parts = result.split(':'); const [slot, item] = parts; check(parts.length === 2 && voyagesSlots.includes(slot as typeof voyagesSlots[number]) && item); key(item); return result; }
-function choice(value: unknown, choices: readonly string[]): string { check(choices.includes(value as string)); return value as string; }
+function check(ok: unknown): asserts ok {
+  if (!ok) throw new Failure('invalid_response');
+}
+function obj(value: unknown): Record<string, unknown> {
+  check(value && typeof value === 'object' && !Array.isArray(value));
+  return value as Record<string, unknown>;
+}
+function str(value: unknown, max = 128): string {
+  check(typeof value === 'string' && value.length > 0 && value.length <= max && !/[\u0000-\u001f\u007f]/.test(value));
+  return value;
+}
+function int(value: unknown, min = 0): number {
+  check(typeof value === 'number' && Number.isSafeInteger(value) && value >= min);
+  return value;
+}
+function num(value: unknown): number {
+  check(typeof value === 'number' && Number.isFinite(value) && value >= 0);
+  return value;
+}
+function key(value: unknown): string {
+  const result = str(value, 64);
+  check(/^[a-zA-Z0-9_-]+$/.test(result));
+  return result;
+}
+function fullItem(value: unknown): string {
+  const result = str(value);
+  const parts = result.split(':');
+  const [slot, item] = parts;
+  check(parts.length === 2 && voyagesSlots.includes(slot as (typeof voyagesSlots)[number]) && item);
+  key(item);
+  return result;
+}
+function choice(value: unknown, choices: readonly string[]): string {
+  check(choices.includes(value as string));
+  return value as string;
+}
 function profile(value: unknown): VoyagesProfile {
-  const p = obj(value), c = obj(p.config);
+  const p = obj(value),
+    c = obj(p.config);
   const config = Object.fromEntries(voyagesSlots.map(slot => [slot, key(c[slot])])) as VoyagesProfile['config'];
   config.skin = choice(c.skin, voyagesAppearance.skin);
   config.hair = choice(c.hair, voyagesAppearance.hair);
   config.pattern = choice(c.pattern, voyagesAppearance.pattern);
   check(Array.isArray(p.owned) && p.owned.length <= 10000);
-  const owned = p.owned.map(fullItem); check(new Set(owned).size === owned.length);
-  return { version: int(p.version, 1), name: str(p.name, 20), shipName: str(p.shipName, 28), coins: int(p.coins), totalXp: int(p.totalXp), level: int(p.level, 1), xpIntoLevel: int(p.xpIntoLevel), xpForLevel: int(p.xpForLevel, 1), km: num(p.km), weeklyKm: num(p.weeklyKm), config, owned };
+  const owned = p.owned.map(fullItem);
+  check(new Set(owned).size === owned.length);
+  return {
+    version: int(p.version, 1),
+    name: str(p.name, 20),
+    shipName: str(p.shipName, 28),
+    coins: int(p.coins),
+    totalXp: int(p.totalXp),
+    level: int(p.level, 1),
+    xpIntoLevel: int(p.xpIntoLevel),
+    xpForLevel: int(p.xpForLevel, 1),
+    km: num(p.km),
+    weeklyKm: num(p.weeklyKm),
+    config,
+    owned,
+  };
 }
 function item(value: unknown, owned: ReadonlySet<string>): VoyagesItem {
   const v = obj(value);
   check(typeof v.requiresPurchase === 'boolean' && typeof v.available === 'boolean' && typeof v.eligible === 'boolean');
-  const id = fullItem(v.item), itemKey = key(v.itemKey);
+  const id = fullItem(v.item),
+    itemKey = key(v.itemKey);
   check(id === `${v.slot}:${itemKey}`);
   // Retired paid equipment remains owned; a missing offer price is not zero.
   check(v.price !== null || owned.has(id));
-  check(v.reason === null || typeof v.reason === 'string' && v.reason.length <= 128 && !/[\u0000-\u001f\u007f]/.test(v.reason));
-  return { item: id, name: str(v.name), slot: v.slot as VoyagesItem['slot'], itemKey, price: v.price === null ? null : int(v.price), requiresPurchase: v.requiresPurchase, available: v.available, eligible: v.eligible, reason: v.reason as string | null };
+  check(v.reason === null || (typeof v.reason === 'string' && v.reason.length <= 128 && !/[\u0000-\u001f\u007f]/.test(v.reason)));
+  return {
+    item: id,
+    name: str(v.name),
+    slot: v.slot as VoyagesItem['slot'],
+    itemKey,
+    price: v.price === null ? null : int(v.price),
+    requiresPurchase: v.requiresPurchase,
+    available: v.available,
+    eligible: v.eligible,
+    reason: v.reason as string | null,
+  };
 }
 function quote(value: unknown): VoyagesQuote {
   const q = obj(value);
@@ -89,7 +177,10 @@ function safe(error: unknown, uncertain = false): Failure {
 }
 
 /** No credentials enter RPC DTOs. Native resolve owns serialized OAuth refresh. */
-export function createVoyagesRpcHandlers(ctx: Port, options: { cloudClient?: CloudPort; baseUrl?: string; now?: () => number; profileRoot?: string; journal?: Journal } = {}) {
+export function createVoyagesRpcHandlers(
+  ctx: Port,
+  options: { cloudClient?: CloudPort; baseUrl?: string; now?: () => number; profileRoot?: string; journal?: Journal } = {},
+) {
   const baseUrl = (options.baseUrl ?? cloudControlUrl()).replace(/\/+$/, '');
   const cloud: CloudPort = options.cloudClient ?? new CloudClient({ baseUrl });
   const now = options.now ?? Date.now;
@@ -101,9 +192,15 @@ export function createVoyagesRpcHandlers(ctx: Port, options: { cloudClient?: Clo
     const active = await ctx.integration.connection.active('carthagent-cloud');
     if (!active || active.type !== 'credential' || active.method !== 'oauth') throw new Failure('authentication_required', 401);
     let credential;
-    try { credential = await ctx.integration.connection.resolve(active); } catch { throw new Failure('authentication_required', 401); }
+    try {
+      credential = await ctx.integration.connection.resolve(active);
+    } catch {
+      throw new Failure('authentication_required', 401);
+    }
     if (credential?.type !== 'oauth' || credential.methodID !== 'carthagent-device' || !credential.access) throw new Failure('authentication_required', 401);
-    const accountKey = createHash('sha256').update(JSON.stringify([baseUrl, active.id])).digest('hex');
+    const accountKey = createHash('sha256')
+      .update(JSON.stringify([baseUrl, active.id]))
+      .digest('hex');
     return { id: active.id, token: credential.access, accountKey, scope: join(directory, accountKey) };
   }
   type Access = Awaited<ReturnType<typeof access>>;
@@ -122,7 +219,8 @@ export function createVoyagesRpcHandlers(ctx: Port, options: { cloudClient?: Clo
     // Always read fresh after acquiring the profile-wide cross-process lock.
     const raw = await journal.get(`${a.scope}.json`);
     if (raw === undefined) return { quotes: [] };
-    const s = obj(raw); check(Array.isArray(s.quotes) && s.quotes.length <= 20);
+    const s = obj(raw);
+    check(Array.isArray(s.quotes) && s.quotes.length <= 20);
     const quotes = s.quotes.map(quote).filter(q => Date.parse(q.expiresAt) > now());
     let rewardPreview: State['rewardPreview'];
     if (s.rewardPreview !== undefined) {
@@ -131,7 +229,11 @@ export function createVoyagesRpcHandlers(ctx: Port, options: { cloudClient?: Clo
     }
     if (s.pending === undefined) return { quotes, ...(rewardPreview ? { rewardPreview } : {}) };
     const p = obj(s.pending);
-    return { quotes, pending: { quoteId: str(p.quoteId), key: str(p.key), item: fullItem(p.item), price: int(p.price) }, ...(rewardPreview ? { rewardPreview } : {}) };
+    return {
+      quotes,
+      pending: { quoteId: str(p.quoteId), key: str(p.key), item: fullItem(p.item), price: int(p.price) },
+      ...(rewardPreview ? { rewardPreview } : {}),
+    };
   }
   const write = (a: Access, state: State) => journal.set(`${a.scope}.json`, state);
   function run<T>(fn: (input: Record<string, unknown>, call: Call, a: Access) => Promise<T>) {
@@ -139,7 +241,10 @@ export function createVoyagesRpcHandlers(ctx: Port, options: { cloudClient?: Clo
       try {
         call.signal.throwIfAborted();
         const a = await access();
-        return await withFileLock(`${a.scope}.lock`, async () => { await current(a, call.signal); return fn(obj(input), call, a); });
+        return await withFileLock(`${a.scope}.lock`, async () => {
+          await current(a, call.signal);
+          return fn(obj(input), call, a);
+        });
       } catch (error) {
         const e = safe(error);
         return call.error('voyagesError', e.code, { code: e.code, status: e.status, uncertain: e.uncertain });
@@ -161,15 +266,20 @@ export function createVoyagesRpcHandlers(ctx: Port, options: { cloudClient?: Clo
       // expiry/debit. Thus 409 quote_expired proves this pair never committed.
       // Auth, key conflicts and all other replay errors remain uncertain.
       if ((!replay && e.status >= 400 && e.status < 500 && noDebit.has(e.code)) || (replay && e.status === 409 && e.code === 'quote_expired')) {
-        try { await write(a, { quotes: [], ...(state.rewardPreview ? { rewardPreview: state.rewardPreview } : {}) }); } catch { throw new Failure('storage_failed', 0, true); }
+        try {
+          await write(a, { quotes: [], ...(state.rewardPreview ? { rewardPreview: state.rewardPreview } : {}) });
+        } catch {
+          throw new Failure('storage_failed', 0, true);
+        }
         throw e;
       }
       throw safe(error, true);
     }
   }
   async function versioned(a: Access, path: string, input: Record<string, unknown>, call: Call, method: string) {
-    try { return { profile: profile((await request(a, path, call.signal, method, input)).profile) }; }
-    catch (error) {
+    try {
+      return { profile: profile((await request(a, path, call.signal, method, input)).profile) };
+    } catch (error) {
       const e = safe(error);
       // Never retry a versioned write. Unknown outcomes require profile reconcile.
       throw safe(error, e.status === 0 || e.status >= 500);
@@ -185,7 +295,11 @@ export function createVoyagesRpcHandlers(ctx: Port, options: { cloudClient?: Clo
       const prior = state.rewardPreview;
       let source: Awaited<ReturnType<typeof rewardSource>> | undefined;
       let sourceError: unknown;
-      try { source = await rewardSource(input.sessionID, call.signal); } catch (error) { sourceError = error; }
+      try {
+        source = await rewardSource(input.sessionID, call.signal);
+      } catch (error) {
+        sourceError = error;
+      }
       if (prior && prior.sessionID === input.sessionID && (!source || source.runId === prior.runId)) {
         try {
           const existing = rewardResult(await request(a, `delivery-rewards/${encodeURIComponent(prior.runId)}`, call.signal), prior.runId, true);
@@ -196,13 +310,28 @@ export function createVoyagesRpcHandlers(ctx: Port, options: { cloudClient?: Clo
       }
       if (!source) throw sourceError;
       const policy = obj((await request(a, 'delivery-rewards/policy', call.signal)).policy);
-      check(policy.version === 'verified-delivery-beta-v1' && policy.basis === 'local_harness_attested' && policy.coins === 25 && policy.xp === 100 && policy.km === 1 && policy.dailyLimit === 3);
+      check(
+        policy.version === 'verified-delivery-beta-v1' &&
+          policy.basis === 'local_harness_attested' &&
+          policy.coins === 25 &&
+          policy.xp === 100 &&
+          policy.km === 1 &&
+          policy.dailyLimit === 3,
+      );
       await write(a, { ...state, rewardPreview: { sessionID: str(input.sessionID), runId: source.runId, snapshot: source.snapshot } });
-      return { runId: source.runId, snapshot: source.snapshot, coins: int(policy.coins, 1), xp: int(policy.xp, 1), km: int(policy.km, 1), dailyLimit: int(policy.dailyLimit, 1) };
+      return {
+        runId: source.runId,
+        snapshot: source.snapshot,
+        coins: int(policy.coins, 1),
+        xp: int(policy.xp, 1),
+        km: int(policy.km, 1),
+        dailyLimit: int(policy.dailyLimit, 1),
+      };
     }),
     claimReward: run(async (input, call, a) => {
       const preview = (await read(a)).rewardPreview;
-      if (!preview || preview.sessionID !== input.sessionID || preview.runId !== input.runId || preview.snapshot !== input.snapshot) throw new Failure('reward_preview_required');
+      if (!preview || preview.sessionID !== input.sessionID || preview.runId !== input.runId || preview.snapshot !== input.snapshot)
+        throw new Failure('reward_preview_required');
       // Read the receipt first: a committed claim remains recoverable after
       // source changes or restart. Only an explicit 404 permits a new claim.
       try {
@@ -217,7 +346,9 @@ export function createVoyagesRpcHandlers(ctx: Port, options: { cloudClient?: Clo
         const result = await request(a, 'delivery-rewards', call.signal, 'POST', source);
         check(typeof result.replayed === 'boolean');
         return rewardResult(result, source.runId, result.replayed as boolean);
-      } catch (error) { throw safe(error, !(error as { status?: number })?.status || (error as { status?: number }).status! >= 500); }
+      } catch (error) {
+        throw safe(error, !(error as { status?: number })?.status || (error as { status?: number }).status! >= 500);
+      }
     }),
     snapshot: run(async (_input, call, a) => {
       const bootstrap = await request(a, 'bootstrap', call.signal);
@@ -226,13 +357,23 @@ export function createVoyagesRpcHandlers(ctx: Port, options: { cloudClient?: Clo
       const shop = await request(a, 'shop', call.signal);
       check(Array.isArray(shop.items) && shop.items.length <= 10000);
       const owned = new Set(p.owned);
-      const items = shop.items.map(value => item(value, owned)); check(new Set(items.map(i => i.item)).size === items.length);
-      const state = await read(a); await current(a, call.signal);
+      const items = shop.items.map(value => item(value, owned));
+      check(new Set(items.map(i => i.item)).size === items.length);
+      const state = await read(a);
+      await current(a, call.signal);
       const pending = state.pending;
-      return { accountKey: a.accountKey, profile: p, items, ...(pending ? { pending: { quoteId: pending.quoteId, item: pending.item, price: pending.price } } : {}) };
+      return {
+        accountKey: a.accountKey,
+        profile: p,
+        items,
+        ...(pending ? { pending: { quoteId: pending.quoteId, item: pending.item, price: pending.price } } : {}),
+      };
     }),
     customize: run(async (input, call, a) => versioned(a, 'profile', input, call, 'PATCH')),
-    equip: run(async (input, call, a) => { selection(input); return versioned(a, 'equip', input, call, 'POST'); }),
+    equip: run(async (input, call, a) => {
+      selection(input);
+      return versioned(a, 'equip', input, call, 'POST');
+    }),
     quote: run(async (input, call, a) => {
       selection(input);
       const state = await read(a);
@@ -264,14 +405,36 @@ export function createVoyagesRpcHandlers(ctx: Port, options: { cloudClient?: Clo
   };
   function rewardResult(result: Record<string, unknown>, runId: string, replayed: boolean) {
     const r = obj(result.reward);
-    check(r.runId === runId && r.basis === 'local_harness_attested' && r.policyVersion === 'verified-delivery-beta-v1' && r.coins === 25 && r.xp === 100 && r.km === 1);
+    check(
+      r.runId === runId &&
+        r.basis === 'local_harness_attested' &&
+        r.policyVersion === 'verified-delivery-beta-v1' &&
+        r.coins === 25 &&
+        r.xp === 100 &&
+        r.km === 1,
+    );
     check(Number.isFinite(Date.parse(str(r.awardedAt))));
-    return { reward: { id: str(r.id), runId: str(r.runId), policyVersion: str(r.policyVersion), coins: int(r.coins, 1), xp: int(r.xp, 1), km: int(r.km, 1), awardedAt: str(r.awardedAt), basis: str(r.basis) }, replayed };
+    return {
+      reward: {
+        id: str(r.id),
+        runId: str(r.runId),
+        policyVersion: str(r.policyVersion),
+        coins: int(r.coins, 1),
+        xp: int(r.xp, 1),
+        km: int(r.km, 1),
+        awardedAt: str(r.awardedAt),
+        basis: str(r.basis),
+      },
+      replayed,
+    };
   }
   async function rewardSource(sessionID: unknown, signal: AbortSignal) {
     if (!ctx.location || !ctx.session || !ctx.worktree) throw new Failure('delivery_ineligible');
-    try { return await verifiedRewardSource({ location: ctx.location, session: ctx.session, worktree: ctx.worktree }, str(sessionID), signal); }
-    catch (error) { throw new Failure(error instanceof Error && ['delivery_changed', 'not_owned'].includes(error.message) ? error.message : 'delivery_ineligible'); }
+    try {
+      return await verifiedRewardSource({ location: ctx.location, session: ctx.session, worktree: ctx.worktree }, str(sessionID), signal);
+    } catch (error) {
+      throw new Failure(error instanceof Error && ['delivery_changed', 'not_owned'].includes(error.message) ? error.message : 'delivery_ineligible');
+    }
   }
 }
 

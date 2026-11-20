@@ -12,12 +12,8 @@ import { createManualProjects } from './native-manual-projects.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 
-export async function prepareManualKit(
-  directory,
-  { assetsDirectory, packages = 128, runtimeManifest, manifestSha256: expectedManifestSha256 } = {},
-) {
-  if (!Number.isInteger(packages) || packages < 2 || packages > 1024)
-    throw Error('packages must be an integer from 2 to 1024');
+export async function prepareManualKit(directory, { assetsDirectory, packages = 128, runtimeManifest, manifestSha256: expectedManifestSha256 } = {}) {
+  if (!Number.isInteger(packages) || packages < 2 || packages > 1024) throw Error('packages must be an integer from 2 to 1024');
   const kit = resolve(directory);
   await mkdir(kit, { mode: 0o700 });
   try {
@@ -41,16 +37,14 @@ export async function prepareManualKit(
       expectedChannel: `ctg.${manifest.compatibilityVersion}`,
       baseUrl: `https://github.com/B-icy/Carthagent/releases/download/v${manifest.releaseVersion}`,
       cacheRoot: join(kit, 'runtimes'),
-      ...(assets ? { fetchImpl: async (url) => {
-        if (
-          decodeURIComponent(new URL(url).pathname.split('/').at(-1)) !==
-          asset.name
-        )
-          throw Error('Unexpected runtime asset requested');
-        return new Response(
-          Readable.toWeb(createReadStream(join(assets, asset.name))),
-        );
-      } } : {}),
+      ...(assets
+        ? {
+            fetchImpl: async url => {
+              if (decodeURIComponent(new URL(url).pathname.split('/').at(-1)) !== asset.name) throw Error('Unexpected runtime asset requested');
+              return new Response(Readable.toWeb(createReadStream(join(assets, asset.name))));
+            },
+          }
+        : {}),
     });
     const { identity } = await preflightNativeTestRuntimeArtifact({
       ownedRoot,
@@ -73,8 +67,7 @@ export async function prepareManualKit(
       createdAt: new Date().toISOString(),
       releaseVersion: manifest.releaseVersion,
       manifestSource: runtimeManifest ? 'explicit-pinned-candidate' : 'packaged-release',
-      sourceCommit:
-        source.status === 0 ? source.stdout.trim() : 'source-tarball',
+      sourceCommit: source.status === 0 ? source.stdout.trim() : 'source-tarball',
       sourceDirty: status.status === 0 ? Boolean(status.stdout.trim()) : null,
       target,
       runtime: `runtimes/${manifest.releaseVersion}/${target}`,
@@ -83,10 +76,7 @@ export async function prepareManualKit(
       projects: projects.projects,
       packages,
     };
-    await writeFile(
-      join(kit, 'manual-kit.json'),
-      JSON.stringify(record, null, 2) + '\n',
-    );
+    await writeFile(join(kit, 'manual-kit.json'), JSON.stringify(record, null, 2) + '\n');
     await writeFile(join(kit, '.gitignore'), '*\n');
     const manifestArgs = runtimeManifest ? ` --manifest ${JSON.stringify(manifestPath)} --manifest-sha256 ${manifestSha256}` : '';
     console.log(
@@ -99,10 +89,7 @@ export async function prepareManualKit(
   }
 }
 
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(resolve(process.argv[1])).href
-) {
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const [directory, ...args] = process.argv.slice(2);
   if (!directory || args.includes('--help'))
     throw Error(
@@ -111,8 +98,7 @@ if (
   const options = {};
   for (let i = 0; i < args.length; i += 2) {
     const value = args[i + 1];
-    if (!value || !['--assets', '--packages', '--manifest', '--manifest-sha256'].includes(args[i]))
-      throw Error(`Invalid option ${args[i]}`);
+    if (!value || !['--assets', '--packages', '--manifest', '--manifest-sha256'].includes(args[i])) throw Error(`Invalid option ${args[i]}`);
     if (args[i] === '--assets') options.assetsDirectory = value;
     else if (args[i] === '--packages') options.packages = Number(value);
     else if (args[i] === '--manifest') options.runtimeManifest = value;

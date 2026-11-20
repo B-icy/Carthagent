@@ -16,29 +16,59 @@ try {
   await writeFile(join(host.cwd, 'source.txt'), 'original\n');
   await host.active();
   const session = await host.client.session.create({ location: host.location, model: host.model, title: 'Report projection' }, host.request());
-  const read = async () => (await host.client.rpc.call({
-    rpcID: 'carthagent.workspace', method: 'delivery', input: { sessionID: session.id }, location: host.location,
-  }, host.request())).output;
+  const read = async () =>
+    (
+      await host.client.rpc.call(
+        {
+          rpcID: 'carthagent.workspace',
+          method: 'delivery',
+          input: { sessionID: session.id },
+          location: host.location,
+        },
+        host.request(),
+      )
+    ).output;
   const check = { id: 'unit', kind: 'test', argv: ['node', '--test'], timeoutSeconds: 20 };
   const plan = {
-    goal: 'Show authoritative report data', verification: 'required', artifacts: ['.'], outputs: [],
+    goal: 'Show authoritative report data',
+    verification: 'required',
+    artifacts: ['.'],
+    outputs: [],
     steps: [{ id: 'implement', title: 'Implement the report view', dependsOn: [], checks: ['unit'] }],
-    acceptance: [{ requirement: 'Report is visible', checks: ['unit'] }], checks: [check],
-    design: { components: [{ id: 'core', responsibility: 'Project report state', layer: 'core', excludes: ['UI'], dependencies: [], requirements: ['Report is visible'] }], ports: [] },
+    acceptance: [{ requirement: 'Report is visible', checks: ['unit'] }],
+    checks: [check],
+    design: {
+      components: [
+        { id: 'core', responsibility: 'Project report state', layer: 'core', excludes: ['UI'], dependencies: [], requirements: ['Report is visible'] },
+      ],
+      ports: [],
+    },
   };
   // Fixture report receipts exercise projection/schema handling; they are not
   // evidence of real check execution or a substitute for delivery enforcement.
   const runId = 'projection-fixture';
   const state = {
-    runId, revision: 1, status: 'implementing', workflowMode: 'standard', plan,
+    runId,
+    revision: 1,
+    status: 'implementing',
+    workflowMode: 'standard',
+    plan,
     stepStatus: { step0: 'done' },
     reviewEvidence: { runId, revision: 1, fingerprint: fingerprint(host.cwd, ['.']) },
-    evidence: { unit: {
-      runId, revision: 1, executedRevision: 1, checkDigest: checkDigest(check),
-      fingerprint: fingerprint(host.cwd, ['.']), passed: true, durationMs: 2, code: 0,
-      outputTail: 'PRIVATE_REPORT_LOG_SENTINEL',
-      logPath: join(host.cwd, '.harness', session.id, runId, 'logs', 'unit.log'),
-    } },
+    evidence: {
+      unit: {
+        runId,
+        revision: 1,
+        executedRevision: 1,
+        checkDigest: checkDigest(check),
+        fingerprint: fingerprint(host.cwd, ['.']),
+        passed: true,
+        durationMs: 2,
+        code: 0,
+        outputTail: 'PRIVATE_REPORT_LOG_SENTINEL',
+        logPath: join(host.cwd, '.harness', session.id, runId, 'logs', 'unit.log'),
+      },
+    },
   };
   const report = createReport(host.cwd, state, session.id);
   selectReport(host.cwd, report.path);
@@ -66,9 +96,17 @@ try {
   selectReport(host.cwd, report.path);
   await writeFile(report.path, '{corrupt');
   assert.deepEqual(await read(), { status: 'invalid' });
-  console.log(JSON.stringify({ host: identity.runtimeVersion, compatibilityVersion: identity.compatibilityVersion,
-    ...(identity.binarySha256 ? { binarySha256: identity.binarySha256 } : {}),
-    deliveryOutputSchema: 'passed', freshness: 'passed', verifiedFailClosed: 'passed', ownership: 'passed' }));
+  console.log(
+    JSON.stringify({
+      host: identity.runtimeVersion,
+      compatibilityVersion: identity.compatibilityVersion,
+      ...(identity.binarySha256 ? { binarySha256: identity.binarySha256 } : {}),
+      deliveryOutputSchema: 'passed',
+      freshness: 'passed',
+      verifiedFailClosed: 'passed',
+      ownership: 'passed',
+    }),
+  );
 } finally {
   await host.close();
 }
@@ -79,17 +117,30 @@ const schemaHost = await nativeFixture({ plugin: join(import.meta.dirname, 'nati
 const schemaIdentity = schemaHost.runtimeIdentity;
 try {
   await schemaHost.active('carthagent-report-fixture');
-  const probe = method => schemaHost.client.rpc.call({
-    rpcID: 'carthagent.report-schema-probe', method, input: {}, location: schemaHost.location,
-  }, schemaHost.request());
+  const probe = method =>
+    schemaHost.client.rpc.call(
+      {
+        rpcID: 'carthagent.report-schema-probe',
+        method,
+        input: {},
+        location: schemaHost.location,
+      },
+      schemaHost.request(),
+    );
   await assert.rejects(probe('incompleteVerified'), error => error.type === 'rpc.invalid_output');
   assert.deepEqual((await probe('invalidWithFullFields')).output, { status: 'invalid' });
   assert.deepEqual((await probe('validUnavailable')).output, { status: 'unavailable' });
   assert.deepEqual((await probe('validInvalid')).output, { status: 'invalid' });
   assert.equal((await probe('validActive')).output.status, 'active');
-  console.log(JSON.stringify({ host: schemaIdentity.runtimeVersion, compatibilityVersion: schemaIdentity.compatibilityVersion,
-    ...(schemaIdentity.binarySha256 ? { binarySha256: schemaIdentity.binarySha256 } : {}),
-    reportSchemaVariants: 'passed', incompleteVerified: 'rejected' }));
+  console.log(
+    JSON.stringify({
+      host: schemaIdentity.runtimeVersion,
+      compatibilityVersion: schemaIdentity.compatibilityVersion,
+      ...(schemaIdentity.binarySha256 ? { binarySha256: schemaIdentity.binarySha256 } : {}),
+      reportSchemaVariants: 'passed',
+      incompleteVerified: 'rejected',
+    }),
+  );
 } finally {
   await schemaHost.close();
 }

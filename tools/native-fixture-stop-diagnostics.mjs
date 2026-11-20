@@ -4,11 +4,16 @@ import { promisify } from 'node:util';
 // Never emit free-form log text: even an otherwise harmless line can contain
 // credentials, headers, or a partial secret at the bounded buffer's edge.
 export function sanitizedNativeOutputTail(output) {
-  return String(output).slice(-16384).split(/\r?\n/).slice(-20).map(line => ({
-    level: line.match(/\b(INFO|WARN|ERROR|DEBUG|TRACE)\b/)?.[1] ?? 'unknown',
-    markers: ['shutdown', 'stopping', 'stopped', 'closed', 'exit', 'signal', 'timeout', 'error', 'dispose', 'disposing']
-      .filter(marker => new RegExp(`\\b${marker}\\b`, 'i').test(line)),
-  }));
+  return String(output)
+    .slice(-16384)
+    .split(/\r?\n/)
+    .slice(-20)
+    .map(line => ({
+      level: line.match(/\b(INFO|WARN|ERROR|DEBUG|TRACE)\b/)?.[1] ?? 'unknown',
+      markers: ['shutdown', 'stopping', 'stopped', 'closed', 'exit', 'signal', 'timeout', 'error', 'dispose', 'disposing'].filter(marker =>
+        new RegExp(`\\b${marker}\\b`, 'i').test(line),
+      ),
+    }));
 }
 
 export async function fixtureStopDiagnostics({ child, output, elapsedMs }, { run = promisify(execFile), platform = process.platform } = {}) {
@@ -25,7 +30,12 @@ export async function fixtureStopDiagnostics({ child, output, elapsedMs }, { run
   const windows = platform === 'win32';
   const command = windows ? 'powershell.exe' : 'ps';
   const args = windows
-    ? ['-NoProfile', '-NonInteractive', '-Command', `$p = Get-Process -Id ${child.pid} -ErrorAction SilentlyContinue; if ($null -ne $p) { Write-Output ("pid={0} responding={1}" -f $p.Id, $p.Responding) }`]
+    ? [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `$p = Get-Process -Id ${child.pid} -ErrorAction SilentlyContinue; if ($null -ne $p) { Write-Output ("pid={0} responding={1}" -f $p.Id, $p.Responding) }`,
+      ]
     : ['-p', String(child.pid), '-o', 'pid=,ppid=,stat=,etime=,time='];
   try {
     // Cold PowerShell startup on shared Windows runners can exceed two seconds.

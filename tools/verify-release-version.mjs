@@ -50,7 +50,7 @@ const binPath = packageJson.bin?.ctg;
 if (typeof binPath !== 'string' || binPath.startsWith('./')) {
   throw new Error(`package.json bin.ctg must be a plain relative path npm publish keeps (got ${JSON.stringify(binPath)})`);
 }
-if (!packInfo[0].files.some(file => file.path === binPath && (file.mode & 0o111))) {
+if (!packInfo[0].files.some(file => file.path === binPath && file.mode & 0o111)) {
   throw new Error(`Packed npm package must contain executable ${binPath} for the ctg command`);
 }
 

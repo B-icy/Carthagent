@@ -12,8 +12,11 @@ export async function registerSessionControls(ctx: Context) {
     const before = pending.get(sessionID) ?? Promise.resolve();
     const current = before.catch(() => undefined).then(action);
     pending.set(sessionID, current);
-    try { return await current; }
-    finally { if (pending.get(sessionID) === current) pending.delete(sessionID); }
+    try {
+      return await current;
+    } finally {
+      if (pending.get(sessionID) === current) pending.delete(sessionID);
+    }
   };
   const key = (sessionID: string) => `controls/${sessionID}`;
   const settings = async (sessionID: string) => {
@@ -23,16 +26,20 @@ export async function registerSessionControls(ctx: Context) {
     return { framing: effectiveSessionOptions(session, ctx.options).guide };
   };
   try {
-    const prompt = await ctx.session.hook('prompt', async (event) => {
+    const prompt = await ctx.session.hook('prompt', async event => {
       const session = await ctx.session.get({ sessionID: event.sessionID });
       const options = effectiveSessionOptions(session, ctx.options);
       if (!isShipAgent(session.agent)) return;
       const saved = await settings(event.sessionID);
       if (event.metadata?.['ctg.raw'] === true || event.metadata?.['ctg.framed'] === true) return;
-      if (!shouldFrame(event.prompt.text, {
-        enabled: saved.framing,
-        delivery: options.delivery,
-      }) || unframe(event.prompt.text) !== null) return;
+      if (
+        !shouldFrame(event.prompt.text, {
+          enabled: saved.framing,
+          delivery: options.delivery,
+        }) ||
+        unframe(event.prompt.text) !== null
+      )
+        return;
       const original = event.prompt.text;
       // Small edits get the fast-lane template unless strict workflow, user validators or --no-fast-lane say otherwise.
       const extra = options as { fastLane?: boolean; validators?: string };
@@ -53,7 +60,8 @@ export async function registerSessionControls(ctx: Context) {
         return exclusive(sessionID, async () => {
           call.signal.throwIfAborted();
           const session = await ctx.session.get({ sessionID }, { signal: call.signal });
-          if (session.location.directory !== ctx.location.directory) return call.error('wrong_workspace', 'Session belongs to another workspace location', { sessionID });
+          if (session.location.directory !== ctx.location.directory)
+            return call.error('wrong_workspace', 'Session belongs to another workspace location', { sessionID });
           const saved = await settings(sessionID);
           const next = enabled ?? !saved.framing;
           await ctx.storage.set(key(sessionID), { ...saved, framing: next });
@@ -65,14 +73,21 @@ export async function registerSessionControls(ctx: Context) {
         return exclusive(sessionID, async () => {
           call.signal.throwIfAborted();
           const session = await ctx.session.get({ sessionID }, { signal: call.signal });
-          if (session.location.directory !== ctx.location.directory) return call.error('wrong_workspace', 'Session belongs to another workspace location', { sessionID });
+          if (session.location.directory !== ctx.location.directory)
+            return call.error('wrong_workspace', 'Session belongs to another workspace location', { sessionID });
           // The native compact API has no notes field. Queue a durable control
           // message before it so notes survive disconnect and cannot leak to a
           // different session through a process-global one-shot hook.
-          if (notes) await ctx.session.synthetic({
-            sessionID, delivery: 'queue', description: 'User compaction instructions',
-            text: `User instructions for the next context summary:\n${notes}`,
-          }, { signal: call.signal });
+          if (notes)
+            await ctx.session.synthetic(
+              {
+                sessionID,
+                delivery: 'queue',
+                description: 'User compaction instructions',
+                text: `User instructions for the next context summary:\n${notes}`,
+              },
+              { signal: call.signal },
+            );
           await ctx.session.compact({ sessionID, delivery: 'queue' }, { signal: call.signal });
           return { admitted: true };
         });
@@ -80,8 +95,10 @@ export async function registerSessionControls(ctx: Context) {
     });
     cleanups.push(() => registration.dispose());
   } catch (error) {
-    await Promise.allSettled(cleanups.reverse().map((dispose) => dispose()));
+    await Promise.allSettled(cleanups.reverse().map(dispose => dispose()));
     throw error;
   }
-  return async () => { for (const dispose of cleanups.reverse()) await dispose(); };
+  return async () => {
+    for (const dispose of cleanups.reverse()) await dispose();
+  };
 }

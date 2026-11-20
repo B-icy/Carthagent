@@ -23,24 +23,69 @@ export default Plugin.define({
       const probe = await context.rpc.register(SchemaProbe, {
         incompleteVerified: async () => ({ status: 'verified' }),
         invalidWithFullFields: async () => ({
-          status: 'invalid', freshness: 'current', completion: 'ready', gate: 'open',
-          runId: 'forged-run', revision: 1, fingerprint: 'a'.repeat(64),
-          plan: {}, workflow: {}, architecture: {}, evidence: [], truncation: {},
+          status: 'invalid',
+          freshness: 'current',
+          completion: 'ready',
+          gate: 'open',
+          runId: 'forged-run',
+          revision: 1,
+          fingerprint: 'a'.repeat(64),
+          plan: {},
+          workflow: {},
+          architecture: {},
+          evidence: [],
+          truncation: {},
         }),
         validUnavailable: async () => ({ status: 'unavailable' }),
         validInvalid: async () => ({ status: 'invalid' }),
         validActive: async () => ({
-          status: 'active', freshness: 'current', completion: 'incomplete', gate: 'open',
-          runId: 'active-run', revision: 1, fingerprint: 'a'.repeat(64),
-          plan: { goal: 'Goal', verification: 'required', acceptance: [], artifacts: [], outputs: [], assumptions: [], checks: [], steps: [], scenarios: [], risks: [] },
+          status: 'active',
+          freshness: 'current',
+          completion: 'incomplete',
+          gate: 'open',
+          runId: 'active-run',
+          revision: 1,
+          fingerprint: 'a'.repeat(64),
+          plan: {
+            goal: 'Goal',
+            verification: 'required',
+            acceptance: [],
+            artifacts: [],
+            outputs: [],
+            assumptions: [],
+            checks: [],
+            steps: [],
+            scenarios: [],
+            risks: [],
+          },
           workflow: { authored: false, semantics: '', nodes: [], edges: [] },
-          architecture: { nodes: [], edges: [], ports: [] }, evidence: [],
-          truncation: Object.fromEntries(['checks', 'acceptance', 'steps', 'artifacts', 'outputs', 'assumptions', 'scenarios', 'risks', 'workflowNodes', 'workflowEdges', 'architectureNodes', 'architectureEdges', 'architecturePorts'].map(key => [key, { returned: 0, total: 0 }])),
+          architecture: { nodes: [], edges: [], ports: [] },
+          evidence: [],
+          truncation: Object.fromEntries(
+            [
+              'checks',
+              'acceptance',
+              'steps',
+              'artifacts',
+              'outputs',
+              'assumptions',
+              'scenarios',
+              'risks',
+              'workflowNodes',
+              'workflowEdges',
+              'architectureNodes',
+              'architectureEdges',
+              'architecturePorts',
+            ].map(key => [key, { returned: 0, total: 0 }]),
+          ),
         }),
       });
       return async () => {
-        try { await probe.dispose(); }
-        finally { await disposeWorkspace(); }
+        try {
+          await probe.dispose();
+        } finally {
+          await disposeWorkspace();
+        }
       };
     } catch (error) {
       await disposeWorkspace();

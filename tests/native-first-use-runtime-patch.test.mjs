@@ -63,8 +63,7 @@ test('combined v17 changes only the final reviewed first-use paths and preserves
   const baseline = sections(read(baselinePath));
   const candidate = sections(read(candidatePath));
   for (const path of baseline.keys()) assert.ok(candidate.has(path), `complete patch lost baseline path: ${path}`);
-  const changed = [...new Set([...baseline.keys(), ...candidate.keys()])]
-    .filter(path => baseline.get(path) !== candidate.get(path)).sort();
+  const changed = [...new Set([...baseline.keys(), ...candidate.keys()])].filter(path => baseline.get(path) !== candidate.get(path)).sort();
   assert.deepEqual(changed, [...allowed].sort());
   const added = [...baseline].filter(([, section]) => /^new file mode /m.test(section));
   assert.equal(added.length, 40, 'reviewed v16 added-file inventory must stay complete');

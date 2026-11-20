@@ -16,51 +16,79 @@ test('navigation is allowed before approval but unknown tools stay locked; scan 
   for (const value of ['-1', '0', '1.2', 'x']) assert.throws(() => buildEngineArgs({ codegraphMaxFiles: value }), /positive/);
 });
 test('graph pages enumerate all candidates; filters disambiguate call-site scope', async t => {
-  const dir = mkdtempSync(join(tmpdir(), 'graph-pages-')); t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const dir = mkdtempSync(join(tmpdir(), 'graph-pages-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
   writeFileSync(join(dir, 'a.ts'), 'class A { run() { save(); save(); } }');
   writeFileSync(join(dir, 'b.ts'), 'class B { run() { save(); } }');
   const index = await createCodeIndex(dir);
   const first = queryCodeIndex(index, { op: 'callers', name: 'save', limit: 1 });
-  assert.equal(first.total, 3); assert.equal(first.truncated, true); assert.equal(first.nextOffset, 1);
+  assert.equal(first.total, 3);
+  assert.equal(first.truncated, true);
+  assert.equal(first.nextOffset, 1);
   assert.match(first.semantics, /not resolved/);
   const rest = queryCodeIndex(index, { op: 'callers', name: 'save', offset: 1, limit: 2 });
-  assert.equal(rest.returned, 2); assert.equal(rest.nextOffset, null);
+  assert.equal(rest.returned, 2);
+  assert.equal(rest.nextOffset, null);
   const scoped = queryCodeIndex(index, { op: 'callers', name: 'save', path: 'b.ts', container: 'B' });
-  assert.equal(scoped.total, 1); assert.equal(scoped.results[0].file, 'b.ts');
+  assert.equal(scoped.total, 1);
+  assert.equal(scoped.results[0].file, 'b.ts');
   assert.equal(queryCodeIndex(index, { op: 'definition', name: 'run', container: 'A' }).total, 1);
   assert.equal(queryCodeIndex(index, { op: 'definition', name: 'run', path: join(dir, 'a.ts') }).total, 1);
   assert.throws(() => queryCodeIndex(index, { op: 'symbols', name: 'run', path: dir }), /directory/);
   assert.match(queryCodeIndex(index, { op: 'symbols', name: 'absent' }).next, /find\/ls/);
 });
 test('coverage counts remain stable across refreshes and disclose capped indexing', async t => {
-  const dir = mkdtempSync(join(tmpdir(), 'graph-coverage-')); t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const dir = mkdtempSync(join(tmpdir(), 'graph-coverage-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
   for (const file of ['a', 'b', 'c']) writeFileSync(join(dir, file + '.ts'), `function ${file}() {}`);
   const index = await createCodeIndex(dir, { maxFiles: 1 });
-  const before = index.stats(); await index.refresh(); await index.refresh();
-  assert.equal(index.stats().skipped, 2); assert.equal(index.stats().discovered, 3);
-  assert.equal(index.stats().complete, false); assert.equal(index.stats().parsed, before.parsed);
+  const before = index.stats();
+  await index.refresh();
+  await index.refresh();
+  assert.equal(index.stats().skipped, 2);
+  assert.equal(index.stats().discovered, 3);
+  assert.equal(index.stats().complete, false);
+  assert.equal(index.stats().parsed, before.parsed);
   assert.equal(queryCodeIndex(index, { op: 'symbols', name: 'a' }).coverage.complete, false);
 });
 test('unreadable directories mark coverage incomplete', { skip: process.platform === 'win32' || process.getuid?.() === 0 }, async t => {
   const dir = mkdtempSync(join(tmpdir(), 'graph-unreadable-'));
   writeFileSync(join(dir, 'a.ts'), 'function a() {}');
-  mkdirSync(join(dir, 'private')); writeFileSync(join(dir, 'private', 'b.ts'), 'function hidden() {}');
+  mkdirSync(join(dir, 'private'));
+  writeFileSync(join(dir, 'private', 'b.ts'), 'function hidden() {}');
   chmodSync(join(dir, 'private'), 0o000);
-  t.after(() => { chmodSync(join(dir, 'private'), 0o755); rmSync(dir, { recursive: true, force: true }); });
+  t.after(() => {
+    chmodSync(join(dir, 'private'), 0o755);
+    rmSync(dir, { recursive: true, force: true });
+  });
   const index = await createCodeIndex(dir);
-  assert.equal(index.stats().unreadable, 1); assert.equal(index.stats().complete, false);
-  assert.deepEqual(queryCodeIndex(index, { op: 'definition', name: 'hidden' }).coverage, { files: 1, discovered: 1, skipped: 0, unreadable: 1, parseErrors: 0, complete: false });
-  chmodSync(join(dir, 'private'), 0o755); await index.refresh();
-  assert.equal(index.stats().unreadable, 0); assert.equal(index.stats().complete, true);
+  assert.equal(index.stats().unreadable, 1);
+  assert.equal(index.stats().complete, false);
+  assert.deepEqual(queryCodeIndex(index, { op: 'definition', name: 'hidden' }).coverage, {
+    files: 1,
+    discovered: 1,
+    skipped: 0,
+    unreadable: 1,
+    parseErrors: 0,
+    complete: false,
+  });
+  chmodSync(join(dir, 'private'), 0o755);
+  await index.refresh();
+  assert.equal(index.stats().unreadable, 0);
+  assert.equal(index.stats().complete, true);
 });
 test('oversized graph records keep a parseable envelope and pagination', async t => {
-  const dir = mkdtempSync(join(tmpdir(), 'graph-oversized-')); t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const dir = mkdtempSync(join(tmpdir(), 'graph-oversized-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
   writeFileSync(join(dir, 'big.ts'), `function ${'x'.repeat(30000)}() {}\nfunction xsmall() {}`);
   const index = await createCodeIndex(dir);
   const serialized = boundedCodeNavResult(index, { op: 'symbols', name: 'x' });
   assert.ok(Buffer.byteLength(serialized) <= 23000);
   const page = JSON.parse(serialized);
-  assert.equal(page.total, 2); assert.equal(page.returned, 1); assert.equal(page.nextOffset, 1);
-  assert.match(page.clipped, /shortened/); assert.match(page.results[0].name, /30000 chars/);
+  assert.equal(page.total, 2);
+  assert.equal(page.returned, 1);
+  assert.equal(page.nextOffset, 1);
+  assert.match(page.clipped, /shortened/);
+  assert.match(page.results[0].name, /30000 chars/);
   assert.equal(JSON.parse(boundedCodeNavResult(index, { op: 'symbols', name: 'x', offset: 1 })).results[0].name, 'xsmall');
 });

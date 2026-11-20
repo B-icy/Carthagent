@@ -4,7 +4,10 @@ import { NATIVE_LOGIN_PROVIDERS, nativeLoginProvider, nativeLoginProviders, nati
 import { cliHelp } from '../lib/opencode/cli.mjs';
 
 test('native login policy stays small, named, ordered and excludes upstream providers', () => {
-  assert.deepEqual(NATIVE_LOGIN_PROVIDERS.map(provider => provider.id), ['carthagent-cloud', 'anthropic', 'xai', 'openai', 'google']);
+  assert.deepEqual(
+    NATIVE_LOGIN_PROVIDERS.map(provider => provider.id),
+    ['carthagent-cloud', 'anthropic', 'xai', 'openai', 'google'],
+  );
   assert.equal(nativeLoginProvider('opencode'), undefined);
   assert.equal(nativeLoginProvider('opencode-go'), undefined);
   assert.equal(nativeLoginProvider('openrouter'), undefined);
@@ -21,7 +24,10 @@ test('curated login rows preserve actual methods and do not invent subscription 
   const anthropic = { id: 'anthropic', name: 'Anthropic', methods: [{ type: 'key' }] };
   const ship = { id: 'carthagent-cloud', name: 'internal', methods: [{ type: 'oauth', id: 'carthagent-device' }] };
   const rows = nativeLoginProviders([{ id: 'opencode', methods: [] }, anthropic, ship]);
-  assert.deepEqual(rows.map(row => row.id), ['carthagent-cloud', 'anthropic']);
+  assert.deepEqual(
+    rows.map(row => row.id),
+    ['carthagent-cloud', 'anthropic'],
+  );
   assert.equal(rows[0].name, 'Carthagent Cloud');
   assert.deepEqual(rows[1].methods, [{ type: 'key' }]);
   assert.equal(anthropic.name, 'Anthropic');

@@ -32,10 +32,13 @@ function fixture(t, { bunVersion = '1.4.2' } = {}) {
   const record = join(base, 'record.json');
   const bun = join(tools, 'bun');
   // Test double: reports version, or records invocation cwd/args/env instead of running OpenCode.
-  writeFileSync(bun, `#!/bin/sh
+  writeFileSync(
+    bun,
+    `#!/bin/sh
 if [ "$1" = "--version" ]; then echo ${bunVersion}; exit 0; fi
 exec "${process.execPath}" -e 'require("node:fs").writeFileSync(process.argv[1], JSON.stringify({ cwd: process.cwd(), args: process.argv.slice(2), env: process.env }))' "${record}" "$@"
-`);
+`,
+  );
   chmodSync(bun, 0o755);
   const profile = join(base, 'private profile');
   const workspace = join(base, 'empty workspace');
@@ -91,7 +94,14 @@ posixTest('defaults the workspace to the caller directory and resolves relative 
 posixTest('passes only the isolated allowlist and never inherits credentials', t => {
   const f = fixture(t);
   const result = run(f, [...required(f), '--workspace', f.workspace], {
-    env: { OPENAI_API_KEY: 'synthetic-not-a-secret', ANTHROPIC_API_KEY: 'synthetic', OPENCODE_CONFIG: '/elsewhere', HOME: '/home/ordinary', XDG_CONFIG_HOME: '/home/ordinary/.config', COLORTERM: 'truecolor' },
+    env: {
+      OPENAI_API_KEY: 'synthetic-not-a-secret',
+      ANTHROPIC_API_KEY: 'synthetic',
+      OPENCODE_CONFIG: '/elsewhere',
+      HOME: '/home/ordinary',
+      XDG_CONFIG_HOME: '/home/ordinary/.config',
+      COLORTERM: 'truecolor',
+    },
   });
   assert.equal(result.status, 0, result.stderr);
   const env = result.recorded.env;
@@ -130,16 +140,20 @@ posixTest('creates the private profile with BSD chmod argument parsing and a das
   const shims = join(f.base, 'bsd shims');
   mkdirSync(shims);
   // BSD chmod stops option parsing at the mode, so a later `--` is a missing file operand.
-  writeFileSync(join(shims, 'chmod'), `#!/bin/sh
+  writeFileSync(
+    join(shims, 'chmod'),
+    `#!/bin/sh
 mode=$1; shift
 for operand in "$@"; do
   case "$operand" in --|-*) echo "chmod: $operand: No such file or directory" >&2; exit 1 ;; esac
 done
 exec /bin/chmod "$mode" "$@"
-`);
+`,
+  );
   chmodSync(join(shims, 'chmod'), 0o755);
   const result = run(f, ['--source', f.source, '--profile', '-dash profile', '--bun', f.bun, '--workspace', f.workspace], {
-    cwd: f.base, env: { PATH: `${shims}:/usr/bin:/bin` },
+    cwd: f.base,
+    env: { PATH: `${shims}:/usr/bin:/bin` },
   });
   assert.equal(result.status, 0, result.stderr);
   const profile = join(f.base, '-dash profile');
@@ -186,7 +200,8 @@ posixTest('accepts a config that references the plugin through its physical path
   mkdirSync(config, { recursive: true });
   writeFileSync(join(config, 'opencode.json'), JSON.stringify({ plugins: [plugin] }));
   const result = sh(join(alias, 'script/ctg/source-preview.sh'), [...required(f), '--workspace', f.workspace], {
-    cwd: f.outside, env: { PATH: '/usr/bin:/bin' },
+    cwd: f.outside,
+    env: { PATH: '/usr/bin:/bin' },
   });
   assert.equal(result.status, 0, result.stderr);
   assert.doesNotMatch(result.stderr, /warning/);

@@ -31,46 +31,83 @@ export function createNativeFixture({ respond, inspect } = {}) {
   });
   return {
     server,
-    get calls() { return calls; },
-    listen: () => new Promise((resolve, reject) => {
-      server.once('error', reject);
-      server.listen(0, '127.0.0.1', () => {
-        server.off('error', reject);
-        resolve(`http://127.0.0.1:${server.address().port}/v1`);
-      });
-    }),
-    close: () => new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())),
+    get calls() {
+      return calls;
+    },
+    listen: () =>
+      new Promise((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(0, '127.0.0.1', () => {
+          server.off('error', reject);
+          resolve(`http://127.0.0.1:${server.address().port}/v1`);
+        });
+      }),
+    close: () => new Promise((resolve, reject) => server.close(error => (error ? reject(error) : resolve()))),
   };
 }
 
 export function toolCall(response, { id = 'fixture-call', name, arguments: input }) {
-  response.write(`data: ${JSON.stringify({
-    id: 'fixture-response', object: 'chat.completion.chunk', created: 1, model: 'fixture',
-    choices: [{ index: 0, delta: { role: 'assistant', tool_calls: [{
-      index: 0, id, type: 'function', function: { name, arguments: JSON.stringify(input) },
-    }] }, finish_reason: 'tool_calls' }],
-  })}\n\n`);
+  response.write(
+    `data: ${JSON.stringify({
+      id: 'fixture-response',
+      object: 'chat.completion.chunk',
+      created: 1,
+      model: 'fixture',
+      choices: [
+        {
+          index: 0,
+          delta: {
+            role: 'assistant',
+            tool_calls: [
+              {
+                index: 0,
+                id,
+                type: 'function',
+                function: { name, arguments: JSON.stringify(input) },
+              },
+            ],
+          },
+          finish_reason: 'tool_calls',
+        },
+      ],
+    })}\n\n`,
+  );
 }
 
 export function assistantText(response, text) {
-  response.write(`data: ${JSON.stringify({
-    id: 'fixture-response', object: 'chat.completion.chunk', created: 1, model: 'fixture',
-    choices: [{ index: 0, delta: { role: 'assistant', content: text }, finish_reason: 'stop' }],
-  })}\n\n`);
+  response.write(
+    `data: ${JSON.stringify({
+      id: 'fixture-response',
+      object: 'chat.completion.chunk',
+      created: 1,
+      model: 'fixture',
+      choices: [{ index: 0, delta: { role: 'assistant', content: text }, finish_reason: 'stop' }],
+    })}\n\n`,
+  );
 }
 
 export function streamText(res, text = 'Fixture response complete.') {
   res.writeHead(200, { 'content-type': 'text/event-stream' });
-  const chunk = (delta, finish_reason = null) => `data: ${JSON.stringify({
-    id: 'fixture', object: 'chat.completion.chunk', created: 1, model: 'fixture',
-    choices: [{ index: 0, delta, finish_reason }],
-    ...(finish_reason ? { usage: { prompt_tokens: 20, completion_tokens: 5, total_tokens: 25 } } : {}),
-  })}\n\n`;
+  const chunk = (delta, finish_reason = null) =>
+    `data: ${JSON.stringify({
+      id: 'fixture',
+      object: 'chat.completion.chunk',
+      created: 1,
+      model: 'fixture',
+      choices: [{ index: 0, delta, finish_reason }],
+      ...(finish_reason ? { usage: { prompt_tokens: 20, completion_tokens: 5, total_tokens: 25 } } : {}),
+    })}\n\n`;
   res.write(chunk({ role: 'assistant', content: text }));
   res.end(`${chunk({}, 'stop')}data: [DONE]\n\n`);
 }
 
-export async function resolveFixtureRuntime({ productRuntime, options = {}, env = process.env, packageRoot = root, testRuntimeLoader = loadNativeTestRuntime } = {}) {
+export async function resolveFixtureRuntime({
+  productRuntime,
+  options = {},
+  env = process.env,
+  packageRoot = root,
+  testRuntimeLoader = loadNativeTestRuntime,
+} = {}) {
   const ownedRoot = env.CTG_OWNED_OPENCODE_RUNTIME;
   const trustedManifestPath = env.CTG_TEST_RUNTIME_RELEASE_MANIFEST ?? join(packageRoot, 'lib/opencode/runtime-release.json');
 
@@ -79,7 +116,9 @@ export async function resolveFixtureRuntime({ productRuntime, options = {}, env 
   if (ownedRoot) {
     const expectedManifest = JSON.parse(await readFile(trustedManifestPath, 'utf8'));
     const executableName = process.platform === 'win32' ? 'opencode.exe' : 'opencode';
-    const explicitBinary = env.CTG_OPENCODE_BIN ?? join(resolve(ownedRoot), `cli-${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch}`, 'bin', executableName);
+    const explicitBinary =
+      env.CTG_OPENCODE_BIN ??
+      join(resolve(ownedRoot), `cli-${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch}`, 'bin', executableName);
     await testRuntimeLoader({ binary: explicitBinary, ownedRoot, expectedManifest, env });
   }
 
@@ -104,41 +143,74 @@ export async function resolveFixtureRuntime({ productRuntime, options = {}, env 
       lockSha256: selected.lockSha256,
     };
     for (const [key, actual] of Object.entries(productIdentity)) {
-      const expected = key === 'sourceRevision' ? verified.sourceRevision
-        : key === 'patchSha256' ? verified.patchSha256
-          : key === 'lockSha256' ? verified.lockSha256 : verified[key];
+      const expected =
+        key === 'sourceRevision'
+          ? verified.sourceRevision
+          : key === 'patchSha256'
+            ? verified.patchSha256
+            : key === 'lockSha256'
+              ? verified.lockSha256
+              : verified[key];
       if (expected !== undefined && actual !== expected) {
         throw new Error(`Product runtime identity ${key} disagrees with trusted native-test identity: ${actual} != ${expected}`);
       }
     }
-    return { binary, runtimeIdentity: Object.freeze({
-      ...verified,
-      kind: selected.kind,
-      compatibilityVersion: NATIVE_TEST_COMPATIBILITY_VERSION,
-      runtimeVersion: selected.version,
-      binarySha256: verified.binarySha256 ?? selected.binarySha256 ?? createHash('sha256').update(await readFile(binary)).digest('hex'),
-      ...(selected.capabilities ? { capabilities: selected.capabilities } : {}),
-    }) };
+    return {
+      binary,
+      runtimeIdentity: Object.freeze({
+        ...verified,
+        kind: selected.kind,
+        compatibilityVersion: NATIVE_TEST_COMPATIBILITY_VERSION,
+        runtimeVersion: selected.version,
+        binarySha256:
+          verified.binarySha256 ??
+          selected.binarySha256 ??
+          createHash('sha256')
+            .update(await readFile(binary))
+            .digest('hex'),
+        ...(selected.capabilities ? { capabilities: selected.capabilities } : {}),
+      }),
+    };
   }
 
-  const binary = env.CTG_OPENCODE_BIN ?? (ownedRoot
-    ? join(resolve(ownedRoot), `cli-${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch}`, 'bin', process.platform === 'win32' ? 'opencode.exe' : 'opencode')
-    : join(packageRoot, 'node_modules/@opencode/cli/bin/opencode.exe'));
+  const binary =
+    env.CTG_OPENCODE_BIN ??
+    (ownedRoot
+      ? join(
+          resolve(ownedRoot),
+          `cli-${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch}`,
+          'bin',
+          process.platform === 'win32' ? 'opencode.exe' : 'opencode',
+        )
+      : join(packageRoot, 'node_modules/@opencode/cli/bin/opencode.exe'));
   const expectedManifest = ownedRoot ? JSON.parse(await readFile(trustedManifestPath, 'utf8')) : undefined;
   const identity = await testRuntimeLoader({ binary, ownedRoot, expectedManifest, env });
-  return { binary: identity.binary, runtimeIdentity: Object.freeze({
-    ...identity,
-    compatibilityVersion: identity.compatibilityVersion,
-    runtimeVersion: identity.runtimeVersion,
-    kind: ownedRoot ? 'ctg-owned' : 'upstream-compatible',
-  }) };
+  return {
+    binary: identity.binary,
+    runtimeIdentity: Object.freeze({
+      ...identity,
+      compatibilityVersion: identity.compatibilityVersion,
+      runtimeVersion: identity.runtimeVersion,
+      kind: ownedRoot ? 'ctg-owned' : 'upstream-compatible',
+    }),
+  };
 }
 
-export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'), pluginOptions, plugins: additionalPlugins = [], pluginExpected = plugin ? 'active' : 'absent', verifyInventory = false, provenance, respond = (_body, res) => streamText(res), env: extraEnv = {}, preserveTemp = false } = {}) {
+export async function nativeFixture({
+  plugin = join(root, 'plugins/carthagent'),
+  pluginOptions,
+  plugins: additionalPlugins = [],
+  pluginExpected = plugin ? 'active' : 'absent',
+  verifyInventory = false,
+  provenance,
+  respond = (_body, res) => streamText(res),
+  env: extraEnv = {},
+  preserveTemp = false,
+} = {}) {
   const { OpenCode } = await import('@opencode/client');
   const pluginEntries = [
     ...(plugin ? [pluginOptions ? { package: resolve(plugin), options: pluginOptions } : resolve(plugin)] : []),
-    ...additionalPlugins.map(entry => typeof entry === 'string' ? resolve(entry) : { ...entry, package: resolve(entry.package) }),
+    ...additionalPlugins.map(entry => (typeof entry === 'string' ? resolve(entry) : { ...entry, package: resolve(entry.package) })),
   ];
   const productRuntime = await import('../lib/opencode/runtime.mjs');
   const { binary: runtimeBinary, runtimeIdentity } = await resolveFixtureRuntime({ productRuntime });
@@ -178,14 +250,22 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
     try {
       if (childDetached) process.kill(-child.pid, 'SIGTERM');
       else child.kill('SIGTERM');
-    } catch { child.kill('SIGTERM'); }
+    } catch {
+      child.kill('SIGTERM');
+    }
     const timer = setTimeout(() => {
       try {
         if (childDetached) process.kill(-child.pid, 'SIGKILL');
         else child.kill('SIGKILL');
-      } catch { child.kill('SIGKILL'); }
+      } catch {
+        child.kill('SIGKILL');
+      }
     }, 5000);
-    try { await exited; } finally { clearTimeout(timer); }
+    try {
+      await exited;
+    } finally {
+      clearTimeout(timer);
+    }
   };
   const close = async ({ preserveTemp: keepTemp = preserveTemp } = {}) => {
     await stop();
@@ -197,37 +277,51 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
   const start = async () => {
     if (child && child.exitCode === null && child.signalCode === null) throw Error('Fixture host already running');
     output = '';
-    const env = Object.fromEntries(['PATH', 'SystemRoot', 'WINDIR', 'COMSPEC', 'PATHEXT', 'LANG', 'LC_ALL']
-      .filter(key => process.env[key]).map(key => [key, process.env[key]]));
+    const env = Object.fromEntries(
+      ['PATH', 'SystemRoot', 'WINDIR', 'COMSPEC', 'PATHEXT', 'LANG', 'LC_ALL'].filter(key => process.env[key]).map(key => [key, process.env[key]]),
+    );
     if (process.env.NODE_OPTIONS) env.NODE_OPTIONS = process.env.NODE_OPTIONS;
     Object.assign(env, {
       ...extraEnv,
-      HOME: join(temp, 'home'), USERPROFILE: join(temp, 'home'),
+      HOME: join(temp, 'home'),
+      USERPROFILE: join(temp, 'home'),
       CARTHAGENT_CODING_AGENT_DIR: join(temp, 'home/.carthagent/agent'),
       PI_CODING_AGENT_DIR: join(temp, 'home/.carthagent/agent'),
-      APPDATA: join(temp, 'appdata'), LOCALAPPDATA: join(temp, 'localappdata'),
-      XDG_CONFIG_HOME: join(temp, 'config'), XDG_DATA_HOME: join(temp, 'data'),
-      XDG_CACHE_HOME: join(temp, 'cache'), XDG_STATE_HOME: join(temp, 'state'),
-      OPENCODE_DB: join(temp, 'database.sqlite'), OPENCODE_SERVER_PASSWORD: password,
+      APPDATA: join(temp, 'appdata'),
+      LOCALAPPDATA: join(temp, 'localappdata'),
+      XDG_CONFIG_HOME: join(temp, 'config'),
+      XDG_DATA_HOME: join(temp, 'data'),
+      XDG_CACHE_HOME: join(temp, 'cache'),
+      XDG_STATE_HOME: join(temp, 'state'),
+      OPENCODE_DB: join(temp, 'database.sqlite'),
+      OPENCODE_SERVER_PASSWORD: password,
       OPENCODE_CONFIG_PROJECT_DISABLE: 'true',
     });
     if (verifyInventory) {
       env.NODE_PATH = join(root, 'node_modules');
     }
     childDetached = !verifyInventory;
-    child = spawn(runtimeBinary, ['serve', '--hostname', '127.0.0.1', '--port', '0',
-      ...(extraEnv.CTG_NATIVE_DEBUG === '1' ? ['--print-logs', '--log-level', 'debug'] : [])],
-      { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], detached: childDetached });
+    child = spawn(
+      runtimeBinary,
+      ['serve', '--hostname', '127.0.0.1', '--port', '0', ...(extraEnv.CTG_NATIVE_DEBUG === '1' ? ['--print-logs', '--log-level', 'debug'] : [])],
+      { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], detached: childDetached },
+    );
     baseUrl = await new Promise((done, reject) => {
       const timer = setTimeout(() => reject(Error(`Host startup timeout: ${output}`)), 30_000);
       const collect = chunk => {
         output = (output + chunk).slice(-16384);
         const url = output.match(/http:\/\/127\.0\.0\.1:\d+/)?.[0];
-        if (url) { clearTimeout(timer); done(url); }
+        if (url) {
+          clearTimeout(timer);
+          done(url);
+        }
       };
       child.stdout.on('data', collect);
       child.stderr.on('data', collect);
-      child.once('error', error => { clearTimeout(timer); reject(error); });
+      child.once('error', error => {
+        clearTimeout(timer);
+        reject(error);
+      });
       child.once('exit', (code, signal) => {
         if (code !== 0) hostErrors.push({ code, signal, output });
         clearTimeout(timer);
@@ -256,9 +350,14 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
           pluginObservation = assertPluginCondition(inventory.data, pluginExpected === 'active');
           break;
         } catch (error) {
-          if (inventory.data.some(item => (item?.id === 'carthagent' ||
-              (typeof item?.id === 'string' && item.id.startsWith('carthagent.'))) && item.state?.status === 'error') ||
-              pluginExpected === 'absent' || Date.now() + 100 >= deadline) throw error;
+          if (
+            inventory.data.some(
+              item => (item?.id === 'carthagent' || (typeof item?.id === 'string' && item.id.startsWith('carthagent.'))) && item.state?.status === 'error',
+            ) ||
+            pluginExpected === 'absent' ||
+            Date.now() + 100 >= deadline
+          )
+            throw error;
           await new Promise(resolve => setTimeout(resolve, 100));
         }
       }
@@ -275,7 +374,12 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
         const { assertDependencyPackageIdentity, hashDependencyInstall, hashDependencyPackages } = await import('./native-paired-guards.mjs');
         verifySnapshotIdentity(provenance, provenance, { verifyArtifactFiles: false });
         const binary = runtimeIdentity.binary;
-        if (provenance.binarySha256 !== createHash('sha256').update(await readFile(binary)).digest('hex')) {
+        if (
+          provenance.binarySha256 !==
+          createHash('sha256')
+            .update(await readFile(binary))
+            .digest('hex')
+        ) {
           throw new Error('Native fixture binary hash does not match selected executable');
         }
         // Baseline fixtures intentionally pass plugin=null; resolve dependency
@@ -283,7 +387,8 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
         const sourceRoot = resolveFixtureSourceRoot(plugin, root);
         const dependencyRoot = provenance.dependencyNodeModulesRealpath;
         const dependencies = hashDependencyPackages(dependencyRoot, join(sourceRoot, 'package.json'), sourceRoot);
-        if (JSON.stringify(dependencies) !== JSON.stringify(provenance.dependencyPackages)) throw new Error('Native fixture dependency package identity mismatch');
+        if (JSON.stringify(dependencies) !== JSON.stringify(provenance.dependencyPackages))
+          throw new Error('Native fixture dependency package identity mismatch');
         const installIdentity = hashDependencyInstall(dependencyRoot);
         assertDependencyPackageIdentity({ realpath: provenance.dependencyInstallRealpath, treeSha256: provenance.dependencyInstallSha256 }, installIdentity);
       }
@@ -291,33 +396,60 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
     return client;
   };
   try {
-    await Promise.all(['project', 'project-alpha', 'home', 'config/opencode', 'data', 'state', 'cache', 'appdata', 'localappdata']
-      .map(directory => mkdir(join(temp, directory), { recursive: true })));
+    await Promise.all(
+      ['project', 'project-alpha', 'home', 'config/opencode', 'data', 'state', 'cache', 'appdata', 'localappdata'].map(directory =>
+        mkdir(join(temp, directory), { recursive: true }),
+      ),
+    );
     provider.listen(0, '127.0.0.1');
     await once(provider, 'listening');
-    await writeFile(join(config, 'opencode.json'), JSON.stringify({
-      plugins: pluginEntries,
-      update: 'disable', model: 'ctg-fixture/fixture',
-      default_agent: 'build',
-      providers: { 'ctg-fixture': {
-        package: '@opencode/ai/providers/openai-compatible',
-        settings: { baseURL: `http://127.0.0.1:${provider.address().port}/v1`, apiKey: 'offline-fixture' },
-        models: { fixture: { limit: { context: 32000, output: 1024 }, cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 } } },
-      } },
-    }));
+    await writeFile(
+      join(config, 'opencode.json'),
+      JSON.stringify({
+        plugins: pluginEntries,
+        update: 'disable',
+        model: 'ctg-fixture/fixture',
+        default_agent: 'build',
+        providers: {
+          'ctg-fixture': {
+            package: '@opencode/ai/providers/openai-compatible',
+            settings: { baseURL: `http://127.0.0.1:${provider.address().port}/v1`, apiKey: 'offline-fixture' },
+            models: { fixture: { limit: { context: 32000, output: 1024 }, cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 } } },
+          },
+        },
+      }),
+    );
     await start();
   } catch (error) {
     await close({ preserveTemp: false });
     throw error;
   }
   return {
-    temp, cwd, baseUrl, password, requests, providerErrors, hostErrors, request, start, stop, close,
+    temp,
+    cwd,
+    baseUrl,
+    password,
+    requests,
+    providerErrors,
+    hostErrors,
+    request,
+    start,
+    stop,
+    close,
     serverPid: () => child?.pid ?? null,
-    pluginObservation, pluginInventory, pluginHealth, provenance, runtimeIdentity,
+    pluginObservation,
+    pluginInventory,
+    pluginHealth,
+    provenance,
+    runtimeIdentity,
     model: { providerID: 'ctg-fixture', id: 'fixture' },
     location: { directory: cwd },
-    get client() { return client; },
-    get output() { return output; },
+    get client() {
+      return client;
+    },
+    get output() {
+      return output;
+    },
     async outcome(sessionID) {
       await client.session.wait({ sessionID }, request());
       const deadline = Date.now() + 5000;
@@ -332,7 +464,8 @@ export async function nativeFixture({ plugin = join(root, 'plugins/carthagent'),
     async active(pluginOrLocation = { directory: cwd }, at = { directory: cwd }) {
       const pluginID = typeof pluginOrLocation === 'string' ? pluginOrLocation : 'carthagent';
       const location = typeof pluginOrLocation === 'string' ? at : pluginOrLocation;
-      if (pluginID !== 'carthagent') await client.session.create({ location, model:{providerID:'ctg-fixture',id:'fixture'}, title:`${pluginID} activation probe` }, request());
+      if (pluginID !== 'carthagent')
+        await client.session.create({ location, model: { providerID: 'ctg-fixture', id: 'fixture' }, title: `${pluginID} activation probe` }, request());
       const deadline = Date.now() + 15_000;
       while (true) {
         const inventory = await client.plugin.list({ location }, request());

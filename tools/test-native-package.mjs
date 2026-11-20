@@ -27,7 +27,12 @@ const run = (command, args, options = {}) => {
 // OpenCode data location under this invocation's temporary directory.
 const env = { ...process.env };
 for (const key of Object.keys(env)) {
-  if (/^(?:CTG_OPENCODE_|CTG_OWNED_OPENCODE_RUNTIME$|CTG_RUNTIME_(?!GITHUB_TOKEN$)|CTG_TEST_|OPENCODE_|CARTHAGENT_(?:AGENT_DIR|CODING_AGENT_DIR|CONFIG|CLI)|PI_CODING_AGENT_DIR$)/i.test(key)) delete env[key];
+  if (
+    /^(?:CTG_OPENCODE_|CTG_OWNED_OPENCODE_RUNTIME$|CTG_RUNTIME_(?!GITHUB_TOKEN$)|CTG_TEST_|OPENCODE_|CARTHAGENT_(?:AGENT_DIR|CODING_AGENT_DIR|CONFIG|CLI)|PI_CODING_AGENT_DIR$)/i.test(
+      key,
+    )
+  )
+    delete env[key];
 }
 const isolatedHome = join(temp, 'runtime-home');
 Object.assign(env, {
@@ -52,15 +57,18 @@ try {
   const npmEnv = withoutRuntimeGithubToken(env);
   const packed = JSON.parse(run('npm', ['pack', '--json', '--pack-destination', temp], { env: npmEnv }));
   const tarball = join(temp, packed[0].filename);
-  const paths = packed[0].files.map((file) => file.path);
+  const paths = packed[0].files.map(file => file.path);
   assert.ok(paths.includes('plugins/carthagent/index.ts'), 'pack must include plugin server entrypoint');
   assert.ok(paths.includes('plugins/carthagent/tui.ts'), 'pack must include plugin TUI entrypoint');
   assert.ok(paths.includes('tests/native-cli-host-smoke.mjs'), 'pack must include the production-backed native CLI smoke');
   assert.ok(paths.includes('tools/test-native-refresh-reentry.mjs'), 'pack must include the expired native OAuth refresh regression');
-  assert.ok(paths.includes('tests/fixtures/native-discovery-plugin/server.ts'), 'pack must include the exact project-discovery fixture required by the native CLI smoke');
+  assert.ok(
+    paths.includes('tests/fixtures/native-discovery-plugin/server.ts'),
+    'pack must include the exact project-discovery fixture required by the native CLI smoke',
+  );
   assert.ok(paths.includes('tests/fixtures/archive-plugin/index.ts'), 'pack must retain the separately allowlisted archive fixture');
   assert.ok(!paths.includes('tests/fixtures/plan-advisor-corpus.json'), 'pack must not broaden fixture inclusion beyond explicitly required package fixtures');
-  assert.ok(!paths.some((path) => /(^|\/)node_modules(\/|$)/.test(path)), 'pack must not include node_modules');
+  assert.ok(!paths.some(path => /(^|\/)node_modules(\/|$)/.test(path)), 'pack must not include node_modules');
   assert.ok(packed[0].size < 30_000_000, `unexpectedly large package tarball: ${packed[0].size} bytes`);
 
   const install = join(temp, 'install');
@@ -104,13 +112,22 @@ try {
   assert.equal(JSON.parse(await readFile(join(install, 'node_modules/web-tree-sitter-legacy/package.json'), 'utf8')).version, '0.22.6');
   const releaseManifestPath = join(installed, 'lib/opencode/runtime-release.json');
   let releaseManifest;
-  try { releaseManifest = JSON.parse(await readFile(releaseManifestPath, 'utf8')); }
-  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  try {
+    releaseManifest = JSON.parse(await readFile(releaseManifestPath, 'utf8'));
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
 
   // Ask the installed package's *default* resolver and identity reporter.
   // The JSON explicitly distinguishes preview upstream-compatible packages
   // from packages whose resolver acquired the pinned CTG-owned runtime.
-  const resolution = JSON.parse(run(process.execPath, ['--input-type=module', '-e', `
+  const resolution = JSON.parse(
+    run(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `
     import { pathToFileURL } from 'node:url';
     const runtime = await import(pathToFileURL(process.argv[1]).href);
     const { loadNativeTestRuntime } = await import(pathToFileURL(process.argv[2]).href);
@@ -133,7 +150,14 @@ try {
     }
     const verified = await loadNativeTestRuntime({ binary, ownedRoot, expectedManifest });
     console.log(JSON.stringify({ binary, ownedRoot: ownedRoot ?? null, identity, verified, cacheIsolated: Boolean(ownedRoot) }));
-  `, join(installed, 'lib/opencode/runtime.mjs'), join(installed, 'tools/native-runtime-identity.mjs'), releaseManifestPath], { cwd: install, env }).trim());
+  `,
+        join(installed, 'lib/opencode/runtime.mjs'),
+        join(installed, 'tools/native-runtime-identity.mjs'),
+        releaseManifestPath,
+      ],
+      { cwd: install, env },
+    ).trim(),
+  );
   const binary = resolve(resolution.binary);
   assert.ok((await stat(binary)).isFile(), 'default resolver must select a materialized runtime executable');
   assert.ok(resolution.identity && typeof resolution.identity.kind === 'string', 'default resolver must report runtime identity');
@@ -141,20 +165,29 @@ try {
     assert.ok(releaseManifest, 'owned runtime identity requires a package-pinned release manifest');
     assert.ok(resolution.ownedRoot, 'owned runtime identity must report the acquired runtime root');
     assert.equal(resolution.identity.version, releaseManifest.runtimeVersion, 'owned runtime version must match the package-pinned release');
-    assert.equal(resolution.identity.binaryPath && resolve(resolution.identity.binaryPath), binary, 'reported owned identity must name the selected executable');
+    assert.equal(
+      resolution.identity.binaryPath && resolve(resolution.identity.binaryPath),
+      binary,
+      'reported owned identity must name the selected executable',
+    );
     assert.equal(resolution.verified.binary, binary, 'independent verifier must select the exact default-resolved executable');
-    assert.equal(resolution.verified.binarySha256, releaseManifest.assets[resolution.identity.platform].executableSha256,
-      'independent verifier must match executable bytes against the installed trusted release manifest');
+    assert.equal(
+      resolution.verified.binarySha256,
+      releaseManifest.assets[resolution.identity.platform].executableSha256,
+      'independent verifier must match executable bytes against the installed trusted release manifest',
+    );
     assert.equal(resolution.verified.sourceRevision, releaseManifest.sourceRevision, 'independent verifier must check runtime source provenance');
     assert.equal(resolution.verified.patchSha256, releaseManifest.patchSha256, 'independent verifier must check runtime patch provenance');
     assert.equal(resolution.verified.lockSha256, releaseManifest.lockSha256, 'independent verifier must check runtime lock provenance');
-    assert.equal(resolution.cacheIsolated, true, 'default acquisition cache must remain inside this test\'s isolated profile');
+    assert.equal(resolution.cacheIsolated, true, "default acquisition cache must remain inside this test's isolated profile");
   } else {
     assert.equal(resolution.identity.kind, 'upstream-compatible', 'unknown runtime identity cannot satisfy installed package acceptance');
     assert.equal(resolution.identity.version, '2.0.32', 'preview upstream runtime must match the explicitly supported compatibility version');
     assert.equal(resolution.verified.runtimeVersion, '2.0.32', 'independent verifier must validate upstream compatibility exactly');
-    assert.ok(!releaseManifest && !requireOwnedRuntime,
-      'a release package manifest or --require-owned requires the default resolver to acquire its package-pinned CTG runtime; upstream-compatible mode is preview-only');
+    assert.ok(
+      !releaseManifest && !requireOwnedRuntime,
+      'a release package manifest or --require-owned requires the default resolver to acquire its package-pinned CTG runtime; upstream-compatible mode is preview-only',
+    );
   }
 
   assert.throws(
@@ -166,14 +199,25 @@ try {
   // imports (including @opencode/client) resolve only through that install.
   const probes = [];
   const acceptanceTests = [
-    'test-native-ship-walkthrough.mjs', 'test-native-default-cli.mjs',
-    'test-owned-host-controls.mjs', 'test-native-glyph-pty.mjs',
-    'test-native-terminal-semantics-installed.mjs', 'test-native-visual-clear-installed.mjs',
-    'test-native-host.mjs', 'test-native-ship-models.mjs', 'test-native-refresh-reentry.mjs',
-    'test-native-controls.mjs', 'test-native-outcomes.mjs',
-    'test-native-product.mjs', 'test-native-runtime.mjs', 'test-native-tasks.mjs',
-    'test-native-review.mjs', 'test-native-swe-host.mjs', 'test-native-pty.mjs',
-    'test-native-evaluation.mjs', 'test-native-swe.mjs',
+    'test-native-ship-walkthrough.mjs',
+    'test-native-default-cli.mjs',
+    'test-owned-host-controls.mjs',
+    'test-native-glyph-pty.mjs',
+    'test-native-terminal-semantics-installed.mjs',
+    'test-native-visual-clear-installed.mjs',
+    'test-native-host.mjs',
+    'test-native-ship-models.mjs',
+    'test-native-refresh-reentry.mjs',
+    'test-native-controls.mjs',
+    'test-native-outcomes.mjs',
+    'test-native-product.mjs',
+    'test-native-runtime.mjs',
+    'test-native-tasks.mjs',
+    'test-native-review.mjs',
+    'test-native-swe-host.mjs',
+    'test-native-pty.mjs',
+    'test-native-evaluation.mjs',
+    'test-native-swe.mjs',
     'test-native-report.mjs',
     'test-native-delivery-host.mjs',
     '../tests/codegraph.test.mjs',
@@ -181,13 +225,19 @@ try {
   ];
   assert.ok(!focused || acceptanceTests.includes(focused), `Unknown installed acceptance probe: ${focused}`);
   const tests = focused ? [focused] : acceptanceTests;
-  const cases = tests.flatMap(test => test === 'test-native-delivery-host.mjs'
-    ? ['standard', 'strict', 'budget', 'raw', 'mixed', 'concurrent'].map(scenario => ({ test, scenario }))
-    : [{ test }]);
+  const cases = tests.flatMap(test =>
+    test === 'test-native-delivery-host.mjs'
+      ? ['standard', 'strict', 'budget', 'raw', 'mixed', 'concurrent'].map(scenario => ({ test, scenario }))
+      : [{ test }],
+  );
   for (const { test, scenario } of cases) {
     const identity = { test, ...(scenario ? { scenario } : {}), runtime: resolution.identity };
-    const ownedProbe = ['test-owned-host-controls.mjs', 'test-native-glyph-pty.mjs',
-      'test-native-terminal-semantics-installed.mjs', 'test-native-visual-clear-installed.mjs'].includes(test);
+    const ownedProbe = [
+      'test-owned-host-controls.mjs',
+      'test-native-glyph-pty.mjs',
+      'test-native-terminal-semantics-installed.mjs',
+      'test-native-visual-clear-installed.mjs',
+    ].includes(test);
     if (ownedProbe && resolution.identity.kind !== 'ctg-owned') {
       const result = { ...identity, status: 'skipped', reason: 'owned-runtime probe is outside upstream-compatible preview scope' };
       probes.push(result);
@@ -218,7 +268,11 @@ try {
         // The trusted harness may need to reacquire a missing default runtime.
         // Runtime identity/version, host, PTY, workspace, and npm children
         // independently strip the optional transport credential.
-        env: { ...env, CTG_NATIVE_SCENARIO: scenario ?? '', CTG_NATIVE_PLAN_PTY: scenario === 'standard' && resolution.identity.kind === 'ctg-owned' && process.platform === 'linux' ? '1' : '' },
+        env: {
+          ...env,
+          CTG_NATIVE_SCENARIO: scenario ?? '',
+          CTG_NATIVE_PLAN_PTY: scenario === 'standard' && resolution.identity.kind === 'ctg-owned' && process.platform === 'linux' ? '1' : '',
+        },
         cwd: install,
       });
     } catch (error) {
@@ -229,15 +283,21 @@ try {
     probes.push(result);
     console.log(JSON.stringify(result));
   }
-  console.log(JSON.stringify({
-    scope: focused ? 'focused' : 'full',
-    acceptance: resolution.identity.kind === 'ctg-owned' ? 'owned-runtime' : 'preview-upstream-compatible',
-    tarball: packed[0].filename,
-    unpackedSize: packed[0].unpackedSize,
-    runtime: resolution.identity,
-    binary,
-    probes,
-  }, null, 2));
+  console.log(
+    JSON.stringify(
+      {
+        scope: focused ? 'focused' : 'full',
+        acceptance: resolution.identity.kind === 'ctg-owned' ? 'owned-runtime' : 'preview-upstream-compatible',
+        tarball: packed[0].filename,
+        unpackedSize: packed[0].unpackedSize,
+        runtime: resolution.identity,
+        binary,
+        probes,
+      },
+      null,
+      2,
+    ),
+  );
 } finally {
   await rm(temp, { recursive: true, force: true });
 }

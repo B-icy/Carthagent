@@ -42,12 +42,18 @@ const assertions = [];
 for (const s of optAll('--assert')) assertions.push({ selector: s });
 for (const s of optAll('--assert-count')) {
   const m = s.match(/^(.+):(\d+)$/);
-  if (!m) { console.error(`bad --assert-count: ${s} (want "selector:N")`); process.exit(2); }
+  if (!m) {
+    console.error(`bad --assert-count: ${s} (want "selector:N")`);
+    process.exit(2);
+  }
   assertions.push({ selector: m[1], count: +m[2] });
 }
 for (const s of optAll('--assert-text')) {
   const m = s.match(/^([^:]+):(.+)$/s);
-  if (!m) { console.error(`bad --assert-text: ${s} (want "selector:text")`); process.exit(2); }
+  if (!m) {
+    console.error(`bad --assert-text: ${s} (want "selector:text")`);
+    process.exit(2);
+  }
   assertions.push({ selector: m[1], text: m[2] });
 }
 // --click '#a' --then-text '#word:_A' — click then assert text on another element
@@ -57,9 +63,7 @@ if (clicks.length) {
   clicks.forEach((sel, i) => {
     const t = thenTexts[i];
     const m = t && t.match(/^([^:]+):(.+)$/s);
-    assertions.push(m
-      ? { action: 'click', selector: sel, then: { selector: m[1], text: m[2] } }
-      : { action: 'click', selector: sel, then: { selector: sel } });
+    assertions.push(m ? { action: 'click', selector: sel, then: { selector: m[1], text: m[2] } } : { action: 'click', selector: sel, then: { selector: sel } });
   });
 }
 for (const s of optAll('--eval')) assertions.push({ eval: s });
@@ -88,10 +92,11 @@ try {
     const abs = isAbsolute(shot) ? shot : resolve(root, shot);
     mkdirSync(dirname(abs), { recursive: true });
     const wait = opt('--wait');
-    const win = (opt('--window', '1280x800').split('x').map(Number));
-    const browser = findBrowser() ?? await ensureBundledBrowser().catch(() => null);
+    const win = opt('--window', '1280x800').split('x').map(Number);
+    const browser = findBrowser() ?? (await ensureBundledBrowser().catch(() => null));
     summary.screenshot = await browserScreenshot(url, abs, {
-      width: win[0] || 1280, height: win[1] || 800,
+      width: win[0] || 1280,
+      height: win[1] || 800,
       waitSeconds: wait != null ? +wait : undefined,
       browser,
     });
@@ -101,7 +106,7 @@ try {
     }
   }
 
-  const pass = (summary.dom ? summary.dom.pass : true);
+  const pass = summary.dom ? summary.dom.pass : true;
   console.log(JSON.stringify({ ...summary, pass }, null, 2));
   process.exit(pass ? 0 : 1);
 } finally {

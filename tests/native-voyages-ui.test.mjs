@@ -1,30 +1,61 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { canEquip, createActionGuard, createVoyagesState, handleVoyagesEvent, voyagesCatalogLabel, voyagesErrorCode, voyagesEventAction } from '../plugins/carthagent/src/ui/voyages-state.mjs';
+import {
+  canEquip,
+  createActionGuard,
+  createVoyagesState,
+  handleVoyagesEvent,
+  voyagesCatalogLabel,
+  voyagesErrorCode,
+  voyagesEventAction,
+} from '../plugins/carthagent/src/ui/voyages-state.mjs';
 
 const item = { item: 'hat:beanie', itemKey: 'beanie', name: 'Beanie', slot: 'hat', price: 5, requiresPurchase: true, available: true, eligible: true };
 const snapshot = () => ({ profile: { version: 2, name: 'Captain', shipName: 'Ship', coins: 10, config: { hat: 'none' }, owned: [] }, items: [{ ...item }] });
-const deferred = () => { let resolve; const promise = new Promise((r) => { resolve = r; }); return { promise, resolve }; };
+const deferred = () => {
+  let resolve;
+  const promise = new Promise(r => {
+    resolve = r;
+  });
+  return { promise, resolve };
+};
 function fixture(overrides = {}) {
   const writes = [];
   const api = {
     snapshot: async () => snapshot(),
-    customize: async (input) => { writes.push(['customize', input]); },
-    equip: async (input) => { writes.push(['equip', input]); },
+    customize: async input => {
+      writes.push(['customize', input]);
+    },
+    equip: async input => {
+      writes.push(['equip', input]);
+    },
     quote: async () => ({ quote: { id: 'q1', item: item.item, price: 5, expiresAt: new Date(20000).toISOString() } }),
-    purchase: async (input) => { writes.push(['purchase', input]); },
-    retryPurchase: async (input) => { writes.push(['retry', input]); },
+    purchase: async input => {
+      writes.push(['purchase', input]);
+    },
+    retryPurchase: async input => {
+      writes.push(['retry', input]);
+    },
     ...overrides,
   };
   let latest;
-  const controller = createVoyagesState({ api, now: () => 10000, changed: (next) => { latest = next; } });
+  const controller = createVoyagesState({
+    api,
+    now: () => 10000,
+    changed: next => {
+      latest = next;
+    },
+  });
   return { controller, writes, api, view: () => latest };
 }
 
 test('canceling customization, equip, purchase and pending retry performs zero writes', async () => {
   const { controller, view, writes } = fixture();
   await controller.refresh();
-  await controller.customize(async () => ({ name: 'Preview' }), async () => false);
+  await controller.customize(
+    async () => ({ name: 'Preview' }),
+    async () => false,
+  );
   view().snapshot.profile.owned.push(item.item);
   await controller.equip(item, async () => false);
   view().snapshot.profile.owned = [];
@@ -37,17 +68,27 @@ test('canceling customization, equip, purchase and pending retry performs zero w
 test('reward preview cancellation/account switch never claims; confirmed claim refreshes and replay reports no duplicate', async () => {
   const preview = { runId: 'run', snapshot: 'a'.repeat(64), coins: 25, xp: 100, km: 1, dailyLimit: 3 };
   let calls = 0;
-  const f = fixture({ previewReward: async () => preview, claimReward: async input => {
-    assert.deepEqual(input, { sessionID: 'session', runId: preview.runId, snapshot: preview.snapshot });
-    return { reward: { coins: 25, xp: 100, km: 1 }, replayed: calls++ > 0 };
-  } });
+  const f = fixture({
+    previewReward: async () => preview,
+    claimReward: async input => {
+      assert.deepEqual(input, { sessionID: 'session', runId: preview.runId, snapshot: preview.snapshot });
+      return { reward: { coins: 25, xp: 100, km: 1 }, replayed: calls++ > 0 };
+    },
+  });
   await f.controller.refresh();
-  await f.controller.claimReward('session', async () => false); assert.equal(calls, 0);
-  await f.controller.claimReward('session', async () => { f.controller.invalidate(); return true; }); assert.equal(calls, 0);
+  await f.controller.claimReward('session', async () => false);
+  assert.equal(calls, 0);
+  await f.controller.claimReward('session', async () => {
+    f.controller.invalidate();
+    return true;
+  });
+  assert.equal(calls, 0);
   await f.controller.refresh();
-  await f.controller.claimReward('session', async () => true); assert.equal(calls, 1);
+  await f.controller.claimReward('session', async () => true);
+  assert.equal(calls, 1);
   assert.match(f.view().notice, /\+25 coins.*\+100 XP.*\+1 km/);
-  await f.controller.claimReward('session', async () => true); assert.equal(calls, 2);
+  await f.controller.claimReward('session', async () => true);
+  assert.equal(calls, 2);
   assert.match(f.view().notice, /already rewarded.*No duplicate/);
 });
 
@@ -55,9 +96,18 @@ test('quote expiry during confirmation prevents purchase', async () => {
   const { controller, api, writes } = fixture();
   let now = 10000;
   let uiView;
-  const ui = createVoyagesState({ api, now: () => now, changed: (next) => { uiView = next; } });
+  const ui = createVoyagesState({
+    api,
+    now: () => now,
+    changed: next => {
+      uiView = next;
+    },
+  });
   await ui.refresh();
-  await ui.purchase(item, async () => { now = 21000; return true; });
+  await ui.purchase(item, async () => {
+    now = 21000;
+    return true;
+  });
   assert.deepEqual(writes, []);
   assert.match(uiView.error, /no success assumed/);
   assert.match(uiView.error, /^quote_expired\./);
@@ -66,11 +116,18 @@ test('quote expiry during confirmation prevents purchase', async () => {
 });
 
 test('invalid quote, insufficient funds and ineligible item never purchase', async () => {
-  for (const quote of [ { item: 'hat:other', price: 5 }, { item: item.item, price: 11 }, { item: item.item, price: -1 } ]) {
+  for (const quote of [
+    { item: 'hat:other', price: 5 },
+    { item: item.item, price: 11 },
+    { item: item.item, price: -1 },
+  ]) {
     let confirmed = false;
     const { controller, writes } = fixture({ quote: async () => ({ quote: { ...quote, id: 'q1', expiresAt: new Date(20000).toISOString() } }) });
     await controller.refresh();
-    await controller.purchase(item, async () => { confirmed = true; return true; });
+    await controller.purchase(item, async () => {
+      confirmed = true;
+      return true;
+    });
     assert.equal(confirmed, false);
     assert.deepEqual(writes, []);
   }
@@ -83,7 +140,9 @@ test('invalid quote, insufficient funds and ineligible item never purchase', asy
 test('network/auth failures clear protected state and never report success', async () => {
   const { controller, view, api } = fixture();
   await controller.refresh();
-  api.snapshot = async () => { throw new Error('secret unsafe detail'); };
+  api.snapshot = async () => {
+    throw new Error('secret unsafe detail');
+  };
   await controller.refresh();
   assert.equal(view().snapshot, undefined);
   assert.equal(view().notice, '');
@@ -100,7 +159,11 @@ test('signed-out, expired and revoked sessions show sign-in guidance instead of 
     revoked_token: /^Your Carthagent Cloud sign-in was revoked\./,
   };
   for (const [code, expected] of Object.entries(cases)) {
-    const { controller, view } = fixture({ snapshot: async () => { throw { type: 'voyagesError', message: 'private token', data: { code, status: 401, uncertain: false } }; } });
+    const { controller, view } = fixture({
+      snapshot: async () => {
+        throw { type: 'voyagesError', message: 'private token', data: { code, status: 401, uncertain: false } };
+      },
+    });
     await controller.refresh();
     assert.match(view().error, expected, code);
     assert.match(view().error, /Sign in/, code);
@@ -109,23 +172,36 @@ test('signed-out, expired and revoked sessions show sign-in guidance instead of 
     assert.equal(view().notice, '');
   }
   // A write rejected for auth still states nothing was assumed to succeed.
-  const { controller, view, writes } = fixture({ purchase: async () => { throw { type: 'voyagesError', data: { code: 'expired_token', status: 401, uncertain: false } }; } });
+  const { controller, view, writes } = fixture({
+    purchase: async () => {
+      throw { type: 'voyagesError', data: { code: 'expired_token', status: 401, uncertain: false } };
+    },
+  });
   await controller.refresh();
   await controller.purchase(item, async () => true);
   assert.deepEqual(writes, []);
   assert.match(view().error, /sign-in expired.*no success assumed/i);
   assert.equal(view().notice, '');
   // Non-auth failures keep their code and refresh guidance.
-  const other = fixture({ snapshot: async () => { throw { type: 'voyagesError', data: { code: 'voyages_unavailable', status: 503, uncertain: false } }; } });
+  const other = fixture({
+    snapshot: async () => {
+      throw { type: 'voyagesError', data: { code: 'voyages_unavailable', status: 503, uncertain: false } };
+    },
+  });
   await other.controller.refresh();
   assert.match(other.view().error, /^voyages_unavailable\. Refresh required; no success assumed\./);
 });
 
 test('unaffordable authoritative quote explains insufficient coins without confirmation or debit', async () => {
-  const { controller, view, writes } = fixture({ quote: async () => ({ quote: { id: 'q1', item: item.item, price: 40, expiresAt: new Date(20000).toISOString() } }) });
+  const { controller, view, writes } = fixture({
+    quote: async () => ({ quote: { id: 'q1', item: item.item, price: 40, expiresAt: new Date(20000).toISOString() } }),
+  });
   await controller.refresh();
   let confirmations = 0;
-  await controller.purchase(item, async () => { confirmations++; return true; });
+  await controller.purchase(item, async () => {
+    confirmations++;
+    return true;
+  });
   assert.equal(confirmations, 0);
   assert.deepEqual(writes, []);
   assert.match(view().error, /^insufficient_coins\. Not enough coins/);
@@ -138,9 +214,13 @@ test('account switch and disposal ignore stale callbacks and dialog confirmation
     const pending = deferred();
     const { controller, view, writes } = fixture();
     await controller.refresh();
-    const action = controller.customize(async () => ({ name: 'Other' }), () => pending.promise);
+    const action = controller.customize(
+      async () => ({ name: 'Other' }),
+      () => pending.promise,
+    );
     await Promise.resolve();
-    if (dispose) controller.dispose(); else controller.invalidate();
+    if (dispose) controller.dispose();
+    else controller.invalidate();
     pending.resolve(true);
     await action;
     assert.deepEqual(writes, []);
@@ -159,7 +239,10 @@ test('account switch and disposal ignore stale callbacks and dialog confirmation
 test('uncertain purchase reconciles pending but never reports success or retries automatically', async () => {
   let purchases = 0;
   const { controller, view } = fixture({
-    purchase: async () => { purchases++; throw { type: 'voyagesError', message: 'network_error', data: { code: 'network_error', uncertain: true, status: 0 } }; },
+    purchase: async () => {
+      purchases++;
+      throw { type: 'voyagesError', message: 'network_error', data: { code: 'network_error', uncertain: true, status: 0 } };
+    },
     snapshot: async () => ({ ...snapshot(), ...(purchases ? { pending: { quoteId: 'q1', item: item.item, price: 5 } } : {}) }),
   });
   await controller.refresh();
@@ -186,7 +269,10 @@ test('busy guard covers asynchronous dialogs and writes', async () => {
   const pending = deferred();
   const { controller, writes } = fixture();
   await controller.refresh();
-  const first = controller.customize(async () => ({ name: 'Preview' }), () => pending.promise);
+  const first = controller.customize(
+    async () => ({ name: 'Preview' }),
+    () => pending.promise,
+  );
   await controller.purchase(item, async () => true);
   await controller.refresh();
   pending.resolve(true);
@@ -195,14 +281,27 @@ test('busy guard covers asynchronous dialogs and writes', async () => {
 });
 
 test('native RPC error envelope exposes only validated structured Voyages codes', async () => {
-  assert.equal(voyagesErrorCode({ type: 'voyagesError', message: 'unsafe token', data: { code: 'terms_changed', status: 409, uncertain: false } }), 'terms_changed');
-  for (const error of [new Error('secret'), { type: 'other', data: { code: 'terms_changed' } }, { type: 'voyagesError', data: { code: 'secret value\n' } }, { type: 'voyagesError', data: {} }]) {
+  assert.equal(
+    voyagesErrorCode({ type: 'voyagesError', message: 'unsafe token', data: { code: 'terms_changed', status: 409, uncertain: false } }),
+    'terms_changed',
+  );
+  for (const error of [
+    new Error('secret'),
+    { type: 'other', data: { code: 'terms_changed' } },
+    { type: 'voyagesError', data: { code: 'secret value\n' } },
+    { type: 'voyagesError', data: {} },
+  ]) {
     assert.equal(voyagesErrorCode(error), 'voyages_request_failed');
   }
   const { controller, view, api } = fixture();
   await controller.refresh();
-  api.customize = async () => { throw { type: 'voyagesError', message: 'unsafe detail', data: { code: 'version_conflict', status: 409, uncertain: false } }; };
-  await controller.customize(async () => ({ name: 'Draft' }), async () => true);
+  api.customize = async () => {
+    throw { type: 'voyagesError', message: 'unsafe detail', data: { code: 'version_conflict', status: 409, uncertain: false } };
+  };
+  await controller.customize(
+    async () => ({ name: 'Draft' }),
+    async () => true,
+  );
   assert.match(view().error, /^version_conflict\./);
   assert.doesNotMatch(view().error, /unsafe/);
   assert.equal(view().notice, '');
@@ -226,24 +325,40 @@ test('credential event immediately clears old profile/dialog and freshly loads s
   const { controller, view, api, writes } = fixture();
   await controller.refresh();
   const confirmation = deferred();
-  const action = controller.customize(async () => ({ name: 'Old account draft' }), () => confirmation.promise);
+  const action = controller.customize(
+    async () => ({ name: 'Old account draft' }),
+    () => confirmation.promise,
+  );
   await Promise.resolve();
   const nextAccount = deferred();
   let signal;
-  api.snapshot = (abortSignal) => { signal = abortSignal; return nextAccount.promise; };
+  api.snapshot = abortSignal => {
+    signal = abortSignal;
+    return nextAccount.promise;
+  };
   let closed = 0;
-  const reloading = handleVoyagesEvent(controller, { type: 'credential.switched', data: { integrationID: 'carthagent-cloud', credentialID: 'new' } }, { directory: '/selected' }, () => { closed++; });
+  const reloading = handleVoyagesEvent(
+    controller,
+    { type: 'credential.switched', data: { integrationID: 'carthagent-cloud', credentialID: 'new' } },
+    { directory: '/selected' },
+    () => {
+      closed++;
+    },
+  );
   assert.equal(view().snapshot, undefined);
   assert.equal(closed, 1);
   assert.ok(signal instanceof AbortSignal);
   confirmation.resolve(true);
   await action;
   assert.deepEqual(writes, []);
-  const next = snapshot(); next.profile.name = 'New account';
+  const next = snapshot();
+  next.profile.name = 'New account';
   nextAccount.resolve(next);
   await reloading;
   assert.equal(view().snapshot.profile.name, 'New account');
-  await handleVoyagesEvent(controller, { type: 'credential.switched', data: { integrationID: 'anthropic' } }, { directory: '/selected' }, () => { closed++; });
+  await handleVoyagesEvent(controller, { type: 'credential.switched', data: { integrationID: 'anthropic' } }, { directory: '/selected' }, () => {
+    closed++;
+  });
   assert.equal(closed, 1);
   assert.equal(view().snapshot.profile.name, 'New account');
   handleVoyagesEvent(controller, { type: 'server.disconnected' }, { directory: '/selected' });
@@ -256,7 +371,10 @@ test('retired null prices stay unknown, never quote/purchase or imply free equip
     let quotes = 0;
     const { controller, view, writes } = fixture({
       snapshot: async () => ({ ...snapshot(), items: [retired] }),
-      quote: async () => { quotes++; throw new Error('must not quote'); },
+      quote: async () => {
+        quotes++;
+        throw new Error('must not quote');
+      },
     });
     await controller.refresh();
     assert.equal(view().snapshot.items[0].price, null);
@@ -281,7 +399,7 @@ test('pending retry stays bound to Q1 when another TUI replaces server pending w
   let pending = { quoteId: 'q1', item: item.item, price: 5 };
   const { controller, writes } = fixture({ snapshot: async () => ({ ...snapshot(), pending }) });
   await controller.refresh();
-  await controller.retry(async (shown) => {
+  await controller.retry(async shown => {
     assert.equal(shown.quoteId, 'q1');
     pending = { quoteId: 'q2', item: 'hat:other', price: 8 };
     return true;
@@ -294,24 +412,44 @@ test('human wait longer than a minute does not expire name/equip confirmation; t
   let time = 0;
   const timers = [];
   const writes = [];
-  const current = snapshot(); current.profile.owned.push(item.item);
+  const current = snapshot();
+  current.profile.owned.push(item.item);
   const ui = createVoyagesState({
     now: () => time,
-    timeoutSignal: () => { const abort = new AbortController(); timers.push({ time, abort }); return abort.signal; },
+    timeoutSignal: () => {
+      const abort = new AbortController();
+      timers.push({ time, abort });
+      return abort.signal;
+    },
     api: {
       snapshot: async () => current,
-      customize: async (input, signal) => { assert.equal(signal.aborted, false); writes.push(input); },
-      equip: async (input, signal) => { assert.equal(signal.aborted, false); writes.push(input); },
+      customize: async (input, signal) => {
+        assert.equal(signal.aborted, false);
+        writes.push(input);
+      },
+      equip: async (input, signal) => {
+        assert.equal(signal.aborted, false);
+        writes.push(input);
+      },
     },
   });
   await ui.refresh();
-  await ui.customize(async () => {
-    assert.equal(timers.length, 1);
-    time = 120000;
-    timers[0].abort.abort();
-    return { name: 'After a long wait' };
-  }, async () => { time += 120000; return true; });
-  await ui.equip(item, async () => { time += 120000; return true; });
+  await ui.customize(
+    async () => {
+      assert.equal(timers.length, 1);
+      time = 120000;
+      timers[0].abort.abort();
+      return { name: 'After a long wait' };
+    },
+    async () => {
+      time += 120000;
+      return true;
+    },
+  );
+  await ui.equip(item, async () => {
+    time += 120000;
+    return true;
+  });
   assert.equal(writes.length, 2);
   assert.equal(timers[1].time, 240000);
   assert.equal(timers[3].time, 360000);
@@ -322,9 +460,16 @@ test('per-request timeout is reported visibly, not silently dropped as an expire
   let latest;
   const failed = deferred();
   const ui = createVoyagesState({
-    timeoutSignal: () => { const abort = new AbortController(); timers.push(abort); return abort.signal; },
-    changed: (next) => { latest = next; if (next.error) failed.resolve(); },
-    api: { snapshot: (signal) => new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true })) },
+    timeoutSignal: () => {
+      const abort = new AbortController();
+      timers.push(abort);
+      return abort.signal;
+    },
+    changed: next => {
+      latest = next;
+      if (next.error) failed.resolve();
+    },
+    api: { snapshot: signal => new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true })) },
   });
   const loading = ui.refresh();
   timers[0].abort(new DOMException('Timed out', 'TimeoutError'));
@@ -345,7 +490,14 @@ test('ineligible or already-claimed rewards explain why instead of raw codes, an
     ['snapshot_claimed', /already earned a reward/],
   ]) {
     let claims = 0;
-    const f = fixture({ previewReward: async () => { throw { type: 'voyagesError', data: { code, status: 409, uncertain: false } }; }, claimReward: async () => { claims++; } });
+    const f = fixture({
+      previewReward: async () => {
+        throw { type: 'voyagesError', data: { code, status: 409, uncertain: false } };
+      },
+      claimReward: async () => {
+        claims++;
+      },
+    });
     await f.controller.refresh();
     await f.controller.claimReward('s1', async () => true);
     assert.match(f.view().error, pattern, code);
@@ -353,7 +505,6 @@ test('ineligible or already-claimed rewards explain why instead of raw codes, an
     assert.equal(claims, 0);
   }
 });
-
 
 test('catalog labels: owned items show no price and mark the equipped one; shop items keep price and shortfall', async () => {
   const { controller, view } = fixture();
@@ -385,7 +536,10 @@ test('a held Enter cannot chain Buy into Equip: item actions settle after each d
   const guard = createActionGuard(() => now, 600);
   assert.equal(guard.ready(), true);
   guard.settle();
-  now += 100; assert.equal(guard.ready(), false, 'auto-repeat right after Buy is ignored');
-  now += 499; assert.equal(guard.ready(), false);
-  now += 1; assert.equal(guard.ready(), true, 'a deliberate press after the pause works');
+  now += 100;
+  assert.equal(guard.ready(), false, 'auto-repeat right after Buy is ignored');
+  now += 499;
+  assert.equal(guard.ready(), false);
+  now += 1;
+  assert.equal(guard.ready(), true, 'a deliberate press after the pause works');
 });

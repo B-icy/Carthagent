@@ -13,7 +13,8 @@ function review(s, extra = {}) {
   return recordPlanReview(s, 'hash', { ...fixtureReview(s.plan), captureId: capture.id, ...extra });
 }
 test('blocking findings cannot be laundered by an empty second review or same-revision resolution', () => {
-  const s = state(); validatePlanning(s, 'hash');
+  const s = state();
+  validatePlanning(s, 'hash');
   const receipt = review(s, { findings: [{ severity: 'blocking', description: 'Failure contract contradicts caller' }] });
   const id = receipt.findings[0].id;
   assert.throws(() => approvePlanning(s, 'hash'), /blocking/);
@@ -29,7 +30,8 @@ test('blocking findings cannot be laundered by an empty second review or same-re
   assert.ok(s.planning.history.some(e => e.receipt?.findings?.some(f => f.id === id)));
 });
 test('review errors distinguish a missing capture from a stale captureId and name the current id', () => {
-  const s = state(); validatePlanning(s, 'hash');
+  const s = state();
+  validatePlanning(s, 'hash');
   assert.throws(() => recordPlanReview(s, 'hash', fixtureReview(s.plan)), /No current plan capture/);
   const capture = inspectPlanning(s, 'hash');
   assert.throws(() => recordPlanReview(s, 'hash', fixtureReview(s.plan)), new RegExp(`must be the id from the latest inspect result \\(${capture.id}\\)`));
@@ -42,7 +44,8 @@ test('review errors distinguish a missing capture from a stale captureId and nam
   assert.ok(s.planning.approval);
 });
 test('inspection receipts bind revision/snapshot and cannot pretend to be independent', () => {
-  const s = state(); validatePlanning(s, 'hash');
+  const s = state();
+  validatePlanning(s, 'hash');
   const capture = inspectPlanning(s, 'hash');
   const content = { ...fixtureReview(s.plan), captureId: capture.id, provenance: 'independent human review' };
   assert.throws(() => recordPlanReview(s, 'changed', content), /Validate/);

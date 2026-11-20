@@ -1,10 +1,41 @@
 /** One inventory for native OpenCode slash/palette discovery and dispatch. */
 export type CommandId =
-  | "help" | "resume" | "new" | "restart" | "theme" | "model" | "thinking"
-  | "compact" | "autocompact" | "review" | "export" | "copy" | "stats"
-  | "clear" | "abort" | "raw" | "guide" | "workflow" | "architecture" | "evidence"
-  | "login" | "account" | "usage" | "billing" | "logout-cloud" | "archive" | "demo" | "voyages" | "quests" | "goal"
-  | "ctg-workspace" | "ctg-open" | "ctg-preview" | "ctg-review" | "ctg-worktree" | "ctg-task";
+  | "help"
+  | "resume"
+  | "new"
+  | "restart"
+  | "theme"
+  | "model"
+  | "thinking"
+  | "compact"
+  | "autocompact"
+  | "review"
+  | "export"
+  | "copy"
+  | "stats"
+  | "clear"
+  | "abort"
+  | "raw"
+  | "guide"
+  | "workflow"
+  | "architecture"
+  | "evidence"
+  | "login"
+  | "account"
+  | "usage"
+  | "billing"
+  | "logout-cloud"
+  | "archive"
+  | "demo"
+  | "voyages"
+  | "quests"
+  | "goal"
+  | "ctg-workspace"
+  | "ctg-open"
+  | "ctg-preview"
+  | "ctg-review"
+  | "ctg-worktree"
+  | "ctg-task";
 
 export interface CarthagentCommand {
   id: CommandId;
@@ -40,7 +71,13 @@ export const COMMANDS: readonly CarthagentCommand[] = [
   { id: "stats", name: "stats", hostSlash: true, description: "This session's tokens and cost" },
   { id: "clear", name: "clear", description: "Clear the screen; history is kept" },
   { id: "abort", name: "abort", description: "Stop the running turn" },
-  { id: "goal", name: "goal", args: "[<objective>|resume|clear]", submitSlash: true, description: "Keep working on an objective across turns until it is done" },
+  {
+    id: "goal",
+    name: "goal",
+    args: "[<objective>|resume|clear]",
+    submitSlash: true,
+    description: "Keep working on an objective across turns until it is done",
+  },
   { id: "raw", name: "raw", advanced: true, args: "<prompt>", description: "Advanced: send without delivery framing" },
   { id: "guide", name: "guide", advanced: true, args: "[task]", description: "Advanced: toggle delivery framing" },
   { id: "workflow", name: "workflow", description: "Delivery plan steps and progress" },
@@ -90,7 +127,11 @@ export function slashRegistrations(command: CarthagentCommand): SlashRegistratio
 }
 
 /** Host-owned commands surfaced by /help so newcomers see one short starting list. */
-export interface HostHelpEntry { id: string; name: string; description: string }
+export interface HostHelpEntry {
+  id: string;
+  name: string;
+  description: string;
+}
 export const HOST_ESSENTIALS: readonly HostHelpEntry[] = [
   { id: "provider.connect", name: "connect", description: "Use your own provider for free: Claude, OpenAI, Gemini…" },
   { id: "session.new", name: "new", description: "Start a new session" },
@@ -103,24 +144,45 @@ export const HOST_ESSENTIALS: readonly HostHelpEntry[] = [
 export const PLUGIN_ESSENTIALS: readonly CommandId[] = ["login", "model", "demo", "review", "evidence", "account"];
 
 export type HelpTarget = { type: "plugin"; command: CarthagentCommand } | { type: "host"; id: string };
-export interface HelpOption { title: string; description: string; category: string; value: string }
+export interface HelpOption {
+  title: string;
+  description: string;
+  category: string;
+  value: string;
+}
 
 /** /help options: a short "Start here" list first, then Carthagent commands, then advanced ones. */
 export function helpOptions(commands: readonly CarthagentCommand[] = COMMANDS): HelpOption[] {
   const label = (command: CarthagentCommand) => `/${command.name}${command.args ? ` ${command.args}` : ""}`;
-  const essentials = PLUGIN_ESSENTIALS.map((id) => commands.find((command) => command.id === id)).filter((command): command is CarthagentCommand => Boolean(command));
+  const essentials = PLUGIN_ESSENTIALS.map((id) => commands.find((command) => command.id === id)).filter((command): command is CarthagentCommand =>
+    Boolean(command),
+  );
   const start: HelpOption[] = [
     ...essentials.slice(0, 1).map((command) => ({ title: label(command), description: command.description, category: "Start here", value: command.name })),
-    ...HOST_ESSENTIALS.slice(0, 1).map((entry) => ({ title: `/${entry.name}`, description: entry.description, category: "Start here", value: `host:${entry.id}` })),
+    ...HOST_ESSENTIALS.slice(0, 1).map((entry) => ({
+      title: `/${entry.name}`,
+      description: entry.description,
+      category: "Start here",
+      value: `host:${entry.id}`,
+    })),
     ...essentials.slice(1).map((command) => ({ title: label(command), description: command.description, category: "Start here", value: command.name })),
-    ...HOST_ESSENTIALS.slice(1).map((entry) => ({ title: `/${entry.name}`, description: entry.description, category: "Start here", value: `host:${entry.id}` })),
+    ...HOST_ESSENTIALS.slice(1).map((entry) => ({
+      title: `/${entry.name}`,
+      description: entry.description,
+      category: "Start here",
+      value: `host:${entry.id}`,
+    })),
   ];
   const listed = new Set<string>(essentials.map((command) => command.id));
   const rest = commands.filter((command) => !listed.has(command.id) && !command.hidden && command.id !== "help");
   return [
     ...start,
-    ...rest.filter((command) => !command.advanced).map((command) => ({ title: label(command), description: command.description, category: "More commands", value: command.name })),
-    ...rest.filter((command) => command.advanced).map((command) => ({ title: label(command), description: command.description, category: "Advanced", value: command.name })),
+    ...rest
+      .filter((command) => !command.advanced)
+      .map((command) => ({ title: label(command), description: command.description, category: "More commands", value: command.name })),
+    ...rest
+      .filter((command) => command.advanced)
+      .map((command) => ({ title: label(command), description: command.description, category: "Advanced", value: command.name })),
   ];
 }
 
@@ -158,7 +220,7 @@ const AUTH_FAILURE = /OAuth connection is required|not authenticated|unauthentic
 /** Native promise RPC rejects with plain { _tag, type, message, data } objects, not Error instances. */
 export function commandErrorMessage(error: unknown): string {
   if (typeof error === "string") return error || "Command failed without details.";
-  const record = error && typeof error === "object" ? error as { _tag?: unknown; type?: unknown; message?: unknown } : undefined;
+  const record = error && typeof error === "object" ? (error as { _tag?: unknown; type?: unknown; message?: unknown }) : undefined;
   const message = typeof record?.message === "string" ? record.message : "";
   if (/expired or was revoked/i.test(message)) return SESSION_ENDED;
   if (record?.type === "unauthenticated" || record?._tag === "UnauthorizedError" || AUTH_FAILURE.test(message)) return SIGN_IN_REQUIRED;
@@ -176,13 +238,11 @@ export const NATIVE_COMMAND_COLLISIONS = ["themes", "settings"] as const;
 export const NATIVE_SESSION_COMMANDS = ["clear"] as const;
 
 export function pluginSlashAvailable(name: string, route: { readonly type: string }) {
-  return !(route.type === "session" && NATIVE_SESSION_COMMANDS.includes(name as typeof NATIVE_SESSION_COMMANDS[number]));
+  return !(route.type === "session" && NATIVE_SESSION_COMMANDS.includes(name as (typeof NATIVE_SESSION_COMMANDS)[number]));
 }
 
 /** Where a Voyages slash command goes. `/voyages` is the hub its name and the "Voyages" tab promise; daily goals stay on `/quests`. */
-export type VoyagesCommandRoute =
-  | { kind: "navigate"; name: "voyages" | "daily-quests"; data: Record<string, unknown> }
-  | { kind: "error"; message: string };
+export type VoyagesCommandRoute = { kind: "navigate"; name: "voyages" | "daily-quests"; data: Record<string, unknown> } | { kind: "error"; message: string };
 export function voyagesCommandRoute(id: "voyages" | "quests", arg: string, sessionID?: string): VoyagesCommandRoute {
   const session = sessionID ? { sessionID } : {};
   if (id === "quests") return { kind: "navigate", name: "daily-quests", data: session };

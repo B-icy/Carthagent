@@ -16,7 +16,21 @@ test('Voyages keeps wrapping summary rows out of the action layout and exposes n
 
 test('Voyages keeps profile progress, artwork and status in the scroll viewport with guarded keyboard actions', () => {
   const summary = source.slice(source.indexOf('<scrollbox'), source.indexOf('</scrollbox>'));
-  for (const field of ['profile.name', 'profile.shipName', 'profile.coins', 'profile.level', 'profile.xpIntoLevel', 'profile.xpForLevel', 'profile.km', 'profile.config', 'VoyagesPreview', 'snapshot().pending', 'view().busy', 'view().error', 'view().notice']) {
+  for (const field of [
+    'profile.name',
+    'profile.shipName',
+    'profile.coins',
+    'profile.level',
+    'profile.xpIntoLevel',
+    'profile.xpForLevel',
+    'profile.km',
+    'profile.config',
+    'VoyagesPreview',
+    'snapshot().pending',
+    'view().busy',
+    'view().error',
+    'view().notice',
+  ]) {
     assert.ok(summary.includes(field), `${field} must remain readable in the scrolling summary`);
   }
   const choices = source.slice(source.indexOf('<select '));

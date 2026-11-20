@@ -8,7 +8,7 @@ const candidates = [
   process.env.PYTHON,
   join(root, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'),
   process.platform === 'win32' ? 'python.exe' : 'python3',
-  'python'
+  'python',
 ].filter(Boolean);
 
 function resolveExecutable(candidate) {

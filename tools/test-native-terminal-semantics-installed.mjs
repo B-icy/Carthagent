@@ -11,8 +11,7 @@ import { assertTerminalSemanticsProof, resolveInstalledRuntime } from './install
 
 assert.equal(process.platform, 'linux', 'installed terminal-semantics acceptance is currently a Linux controlled-PTY claim');
 for (const key of Object.keys(process.env)) {
-  assert.ok(!/^CTG_(?:OPENCODE_BIN|OWNED_OPENCODE_RUNTIME|TEST_RUNTIME_)/i.test(key),
-    `${key} must not override installed default runtime acceptance`);
+  assert.ok(!/^CTG_(?:OPENCODE_BIN|OWNED_OPENCODE_RUNTIME|TEST_RUNTIME_)/i.test(key), `${key} must not override installed default runtime acceptance`);
 }
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const manifestPath = join(root, 'lib/opencode/runtime-release.json');
@@ -20,7 +19,9 @@ const manifest = JSON.parse(await (await import('node:fs/promises')).readFile(ma
 const { binary, identity } = await resolveInstalledRuntime(resolveOpenCode, runtimeIdentity, manifestPath);
 assert.equal(identity.kind, 'ctg-owned', 'terminal semantics acceptance requires default installed CTG-owned runtime');
 const verified = await loadNativeTestRuntime({
-  binary, ownedRoot: dirname(dirname(dirname(binary))), expectedManifest: manifest,
+  binary,
+  ownedRoot: dirname(dirname(dirname(binary))),
+  expectedManifest: manifest,
 });
 assert.equal(verified.binary, binary);
 assert.equal(verified.binarySha256, identity.binarySha256);
@@ -28,7 +29,10 @@ assert.equal(verified.binarySha256, identity.binarySha256);
 const python = process.env.PYTHON ?? (process.platform === 'win32' ? 'python' : 'python3');
 const env = withoutRuntimeGithubToken(process.env);
 const result = spawnSync(python, [join(root, 'tools/native-terminal-semantics.py'), '--binary', binary], {
-  cwd: root, encoding: 'utf8', timeout: 180_000, env,
+  cwd: root,
+  encoding: 'utf8',
+  timeout: 180_000,
+  env,
 });
 if (result.error) throw result.error;
 if (result.stdout) process.stdout.write(result.stdout);

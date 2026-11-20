@@ -6,8 +6,11 @@ import { fileURLToPath } from 'node:url';
 import { sha } from './runtime.mjs';
 
 export function inspectRequest(payload) {
-  const issues = [], pending = new Set(), seen = new Set();
-  let toolCalls = 0, toolResults = 0;
+  const issues = [],
+    pending = new Set(),
+    seen = new Set();
+  let toolCalls = 0,
+    toolResults = 0;
   for (const [index, message] of payload.messages.entries()) {
     if (message.role === 'tool') {
       toolResults++;
@@ -20,12 +23,18 @@ export function inspectRequest(payload) {
       if (seen.has(call.id)) issues.push(`message ${index}: duplicate tool id`);
       seen.add(call.id);
       pending.add(call.id);
-      try { JSON.parse(call.function.arguments); } catch { issues.push(`message ${index}: invalid tool arguments`); }
+      try {
+        JSON.parse(call.function.arguments);
+      } catch {
+        issues.push(`message ${index}: invalid tool arguments`);
+      }
     }
   }
   if (pending.size) issues.push('Missing final tool results');
   return {
-    toolCalls, toolResults, issues,
+    toolCalls,
+    toolResults,
+    issues,
     model: payload.model,
     stream: payload.stream,
     maxTokens: payload.max_tokens,

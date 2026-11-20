@@ -16,22 +16,37 @@ function buildZip(entries) {
     const raw = Buffer.from(data);
     const stored = method === 8 ? deflateRawSync(raw) : raw;
     const lh = Buffer.alloc(30);
-    lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4); lh.writeUInt16LE(0, 6);
-    lh.writeUInt16LE(method, 8); lh.writeUInt16LE(0, 10); lh.writeUInt16LE(0, 12);
-    lh.writeUInt32LE(0, 14); lh.writeUInt32LE(stored.length, 18); lh.writeUInt32LE(raw.length, 22);
-    lh.writeUInt16LE(nameBuf.length, 26); lh.writeUInt16LE(0, 28);
+    lh.writeUInt32LE(0x04034b50, 0);
+    lh.writeUInt16LE(20, 4);
+    lh.writeUInt16LE(0, 6);
+    lh.writeUInt16LE(method, 8);
+    lh.writeUInt16LE(0, 10);
+    lh.writeUInt16LE(0, 12);
+    lh.writeUInt32LE(0, 14);
+    lh.writeUInt32LE(stored.length, 18);
+    lh.writeUInt32LE(raw.length, 22);
+    lh.writeUInt16LE(nameBuf.length, 26);
+    lh.writeUInt16LE(0, 28);
     local.push(lh, nameBuf, stored);
     const ch = Buffer.alloc(46);
-    ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(20, 4); ch.writeUInt16LE(20, 6);
-    ch.writeUInt16LE(method, 10); ch.writeUInt32LE(stored.length, 20); ch.writeUInt32LE(raw.length, 24);
-    ch.writeUInt16LE(nameBuf.length, 28); ch.writeUInt32LE(offset, 42);
+    ch.writeUInt32LE(0x02014b50, 0);
+    ch.writeUInt16LE(20, 4);
+    ch.writeUInt16LE(20, 6);
+    ch.writeUInt16LE(method, 10);
+    ch.writeUInt32LE(stored.length, 20);
+    ch.writeUInt32LE(raw.length, 24);
+    ch.writeUInt16LE(nameBuf.length, 28);
+    ch.writeUInt32LE(offset, 42);
     central.push(Buffer.concat([ch, nameBuf]));
     offset += 30 + nameBuf.length + stored.length;
   }
   const cd = Buffer.concat(central);
   const eocd = Buffer.alloc(22);
-  eocd.writeUInt32LE(0x06054b50, 0); eocd.writeUInt16LE(entries.length, 8);
-  eocd.writeUInt16LE(entries.length, 10); eocd.writeUInt32LE(cd.length, 12); eocd.writeUInt32LE(offset, 16);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(entries.length, 8);
+  eocd.writeUInt16LE(entries.length, 10);
+  eocd.writeUInt32LE(cd.length, 12);
+  eocd.writeUInt32LE(offset, 16);
   return Buffer.concat([...local, cd, eocd]);
 }
 
@@ -40,10 +55,13 @@ test.after(() => rmSync(tmp, { recursive: true, force: true }));
 
 test('extractZip extracts stored and deflated entries', () => {
   const zip = join(tmp, 'ok.zip');
-  writeFileSync(zip, buildZip([
-    { name: 'pkg/a.txt', data: 'stored café', method: 0 },
-    { name: 'pkg/deep/b.txt', data: 'deflated café '.repeat(50), method: 8 },
-  ]));
+  writeFileSync(
+    zip,
+    buildZip([
+      { name: 'pkg/a.txt', data: 'stored café', method: 0 },
+      { name: 'pkg/deep/b.txt', data: 'deflated café '.repeat(50), method: 8 },
+    ]),
+  );
   const out = join(tmp, 'out');
   const files = extractZip(zip, out);
   assert.equal(files.length, 2);
@@ -75,7 +93,10 @@ test('findBrowser honors CARTHAGENT_BROWSER, bundled path, then system/firefox',
 });
 
 test('isSandboxFailure matches AppArmor/userns sandbox errors only', () => {
-  assert.equal(isSandboxFailure('! If you are running on Ubuntu 23.10+ or another Linux distro that has disabled unprivileged user namespaces with AppArmor'), true);
+  assert.equal(
+    isSandboxFailure('! If you are running on Ubuntu 23.10+ or another Linux distro that has disabled unprivileged user namespaces with AppArmor'),
+    true,
+  );
   assert.equal(isSandboxFailure('cannot run as root without --no-sandbox'), true);
   assert.equal(isSandboxFailure('DevTools listening on ws://127.0.0.1'), false);
   assert.equal(isSandboxFailure(''), false);
@@ -86,6 +107,11 @@ test('ensureBundledBrowser short-circuits when binary exists and honors base', a
   const bin = bundledBinaryPath({ base });
   mkdirSync(join(bin, '..'), { recursive: true });
   writeFileSync(bin, 'fake');
-  const resolved = await ensureBundledBrowser({ base, fetchImpl: async () => { throw Error('must not fetch'); } });
+  const resolved = await ensureBundledBrowser({
+    base,
+    fetchImpl: async () => {
+      throw Error('must not fetch');
+    },
+  });
   assert.equal(resolved, bin);
 });

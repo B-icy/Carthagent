@@ -3,20 +3,66 @@ import assert from 'node:assert/strict';
 import { validateDesign, validatePlanning, inspectPlanning, recordPlanReview, approvePlanning, planningStatus, startImplementation } from '../lib/planning.mjs';
 
 export function designedState() {
-  return { runId: 'run', revision: 1, plan: {
-    goal: 'Tested design', verification: 'required', artifacts: ['.'], steps: ['Implement'],
-    acceptance: [{ requirement: 'Correct result', checks: ['unit'] }],
-    checks: [{ id: 'unit', kind: 'test', argv: ['node', '--version'], timeoutSeconds: 10 }],
-    design: { components: [{ id: 'policy', responsibility: 'Compute result', excludes: ['Persistence'], layer: 'core', dependencies: [], externalDependencies: [], requirements: ['Correct result'] }], ports: [], risks: [], scenarios: [
-      { id: 'valid', requirement: 'Correct result', kind: 'positive', path: ['policy'], input: 'valid input', expected: 'correct value', assertion: 'value equals expected', checks: ['unit'] },
-      { id: 'invalid', requirement: 'Correct result', kind: 'failure', path: ['policy'], input: 'invalid input', expected: 'typed error', assertion: 'throws specified error', checks: ['unit'] },
-    ] },
-  } };
+  return {
+    runId: 'run',
+    revision: 1,
+    plan: {
+      goal: 'Tested design',
+      verification: 'required',
+      artifacts: ['.'],
+      steps: ['Implement'],
+      acceptance: [{ requirement: 'Correct result', checks: ['unit'] }],
+      checks: [{ id: 'unit', kind: 'test', argv: ['node', '--version'], timeoutSeconds: 10 }],
+      design: {
+        components: [
+          {
+            id: 'policy',
+            responsibility: 'Compute result',
+            excludes: ['Persistence'],
+            layer: 'core',
+            dependencies: [],
+            externalDependencies: [],
+            requirements: ['Correct result'],
+          },
+        ],
+        ports: [],
+        risks: [],
+        scenarios: [
+          {
+            id: 'valid',
+            requirement: 'Correct result',
+            kind: 'positive',
+            path: ['policy'],
+            input: 'valid input',
+            expected: 'correct value',
+            assertion: 'value equals expected',
+            checks: ['unit'],
+          },
+          {
+            id: 'invalid',
+            requirement: 'Correct result',
+            kind: 'failure',
+            path: ['policy'],
+            input: 'invalid input',
+            expected: 'typed error',
+            assertion: 'throws specified error',
+            checks: ['unit'],
+          },
+        ],
+      },
+    },
+  };
 }
 export function reviewed(state, hash = 'source') {
   validatePlanning(state, hash);
   const capture = inspectPlanning(state, hash);
-  recordPlanReview(state, hash, { captureId: capture.id, challenges: ['Who owns failure behavior? Policy owns typed errors, not persistence.'], walkthroughs: state.plan.design.scenarios.map(s => ({ scenario: s.id, trace: `${s.input} -> policy -> ${s.expected}`, assertion: s.assertion })), findings: [], limitations: ['Model-authored review does not establish implementation correctness.'] });
+  recordPlanReview(state, hash, {
+    captureId: capture.id,
+    challenges: ['Who owns failure behavior? Policy owns typed errors, not persistence.'],
+    walkthroughs: state.plan.design.scenarios.map(s => ({ scenario: s.id, trace: `${s.input} -> policy -> ${s.expected}`, assertion: s.assertion })),
+    findings: [],
+    limitations: ['Model-authored review does not establish implementation correctness.'],
+  });
   approvePlanning(state, hash);
   return state;
 }
@@ -36,7 +82,10 @@ test('approval cannot bypass validation, scenarios, blocking findings or fresh i
   assert.throws(() => approvePlanning(state, 'source'), /validation/);
   validatePlanning(state, 'source');
   const capture = inspectPlanning(state, 'source');
-  assert.throws(() => recordPlanReview(state, 'source', { captureId: capture.id, challenges: ['challenge'], findings: [], walkthroughs: [], limitations: [] }), /every scenario/);
+  assert.throws(
+    () => recordPlanReview(state, 'source', { captureId: capture.id, challenges: ['challenge'], findings: [], walkthroughs: [], limitations: [] }),
+    /every scenario/,
+  );
   reviewed(state);
   assert.equal(planningStatus(state, 'source').locked, false);
   assert.equal(planningStatus(state, 'changed').locked, true);
@@ -58,7 +107,8 @@ test('informational plans and forged receipt fields cannot grant mutation', () =
   assert.equal(planningStatus(state, 'source').locked, true);
 });
 test('malformed designs fail diagnostically and component cycles are blocked', () => {
-  for (const design of [null, [], {}, { components: [null], ports: [], scenarios: [], risks: [] }]) assert.ok(validateDesign({ ...designedState().plan, design }).length);
+  for (const design of [null, [], {}, { components: [null], ports: [], scenarios: [], risks: [] }])
+    assert.ok(validateDesign({ ...designedState().plan, design }).length);
   const state = designedState();
   state.plan.design.components[0].dependencies = ['policy'];
   assert.ok(validateDesign(state.plan).some(f => f.code === 'cycle'));

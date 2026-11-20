@@ -75,7 +75,10 @@ test('loginProviderList skips providers without a login method', () => {
     { id: 'deepseek', name: 'DeepSeek', auth: { apiKey: {} } },
   ]);
   const rows = loginProviderList(runtime);
-  assert.deepEqual(rows.map(r => r.id), ['anthropic', 'deepseek']);
+  assert.deepEqual(
+    rows.map(r => r.id),
+    ['anthropic', 'deepseek'],
+  );
   assert.deepEqual(rows[0].types, ['oauth', 'api_key']);
   assert.deepEqual(rows[1].types, ['api_key']);
 });
@@ -89,10 +92,13 @@ test('loginProviderList keeps stable product ordering regardless of connected st
       { id: 'anthropic', name: 'Anthropic', auth: { apiKey: {} } },
       { id: 'alpha', name: 'Alpha', auth: { apiKey: {} } },
     ],
-    { zeta: { configured: true }, openrouter: { configured: true } }
+    { zeta: { configured: true }, openrouter: { configured: true } },
   );
   const rows = loginProviderList(runtime);
-  assert.deepEqual(rows.map(r => r.id), ['carthagent-cloud', 'anthropic', 'openrouter', 'alpha', 'zeta']);
+  assert.deepEqual(
+    rows.map(r => r.id),
+    ['carthagent-cloud', 'anthropic', 'openrouter', 'alpha', 'zeta'],
+  );
   assert.equal(rows[0].recommended, true);
   assert.deepEqual(rows[0].types, ['oauth', 'api_key']);
   assert.equal(rows[1].configured, false);
@@ -106,23 +112,40 @@ test('loginProviderFocus prefers the active provider without reordering rows', (
   ];
   assert.equal(loginProviderFocus(rows), 0);
   assert.equal(loginProviderFocus(rows, 'anthropic'), 1);
-  assert.deepEqual(rows.map(row => row.id), ['carthagent-cloud', 'anthropic']);
+  assert.deepEqual(
+    rows.map(row => row.id),
+    ['carthagent-cloud', 'anthropic'],
+  );
 });
 
 test('loginProviderList tolerates a runtime that throws on auth status', () => {
   const runtime = {
     getProviders: () => [{ id: 'x', name: 'X', auth: { apiKey: {} } }],
-    getProviderAuthStatus: () => { throw new Error('boom'); },
+    getProviderAuthStatus: () => {
+      throw new Error('boom');
+    },
   };
-  assert.deepEqual(loginProviderList(runtime).map(r => r.id), ['x']);
+  assert.deepEqual(
+    loginProviderList(runtime).map(r => r.id),
+    ['x'],
+  );
 });
 
 test('filterLoginProviders matches id or name, case-insensitively', () => {
-  const rows = [{ id: 'anthropic', name: 'Anthropic' }, { id: 'google', name: 'Google Gemini' }];
+  const rows = [
+    { id: 'anthropic', name: 'Anthropic' },
+    { id: 'google', name: 'Google Gemini' },
+  ];
   assert.equal(filterLoginProviders(rows, '').length, 2);
   assert.equal(filterLoginProviders(rows, '   ').length, 2);
-  assert.deepEqual(filterLoginProviders(rows, 'anth').map(r => r.id), ['anthropic']);
-  assert.deepEqual(filterLoginProviders(rows, 'GEM').map(r => r.id), ['google']);
+  assert.deepEqual(
+    filterLoginProviders(rows, 'anth').map(r => r.id),
+    ['anthropic'],
+  );
+  assert.deepEqual(
+    filterLoginProviders(rows, 'GEM').map(r => r.id),
+    ['google'],
+  );
   assert.deepEqual(filterLoginProviders(rows, 'zzz'), []);
 });
 
@@ -162,8 +185,13 @@ test('loginAndRefresh exposes dynamic provider models immediately after login', 
   const calls = [];
   const signal = new AbortController().signal;
   const runtime = {
-    login: async (...args) => { calls.push(['login', ...args]); return { type: 'api_key', key: 'k' }; },
-    refresh: async options => { calls.push(['refresh', options]); },
+    login: async (...args) => {
+      calls.push(['login', ...args]);
+      return { type: 'api_key', key: 'k' };
+    },
+    refresh: async options => {
+      calls.push(['refresh', options]);
+    },
   };
   const result = await loginAndRefresh(runtime, 'carthagent-cloud', 'api_key', { signal });
   assert.equal(result.key, 'k');
@@ -175,16 +203,21 @@ test('Cloud account helpers use the runtime OAuth credential for account and bil
   const calls = [];
   const runtime = {
     isUsingOAuth: () => false,
-    checkAuth: async id => id === 'carthagent-cloud' ? { source: 'OAuth', type: 'oauth' } : null,
+    checkAuth: async id => (id === 'carthagent-cloud' ? { source: 'OAuth', type: 'oauth' } : null),
     getAuth: async () => ({ auth: { apiKey: 'access-token' } }),
   };
   const fetchImpl = async (url, options) => {
     calls.push({ url, options });
-    return new Response(JSON.stringify(url.includes('/account/usage')
-      ? { accountId: 'acct', data: [{ alias: 'gpt-5.6-luna', inputTokens: 2, outputTokens: 3, createdAt: '2027-01-01T00:00:00.000Z' }] }
-      : url.endsWith('/account')
-        ? { accountId: 'acct', balance: { availableNanoUsd: 1_000_000_000 }, subscription: { status: 'none' }, sessions: [] }
-        : { url: 'https://stripe.test' }), { status: 200 });
+    return new Response(
+      JSON.stringify(
+        url.includes('/account/usage')
+          ? { accountId: 'acct', data: [{ alias: 'gpt-5.6-luna', inputTokens: 2, outputTokens: 3, createdAt: '2027-01-01T00:00:00.000Z' }] }
+          : url.endsWith('/account')
+            ? { accountId: 'acct', balance: { availableNanoUsd: 1_000_000_000 }, subscription: { status: 'none' }, sessions: [] }
+            : { url: 'https://stripe.test' },
+      ),
+      { status: 200 },
+    );
   };
   const env = { CARTHAGENT_CLOUD_URL: 'https://cloud.test' };
   const account = await loadCloudAccount(runtime, { env, fetchImpl });
@@ -208,17 +241,11 @@ test('loadAuthRuntime lazily imports vendored engine and discovers OAuth/API pro
   assert.ok(providers.length >= 41);
   assert.equal(providers[0].id, 'carthagent-cloud');
   assert.equal(providers[0].recommended, true);
-  const oauthProviders = providers.filter(p => p.types.includes('oauth')).map(p => p.id).sort();
-  assert.deepEqual(oauthProviders, [
-    'anthropic',
-    'carthagent-cloud',
-    'github-copilot',
-    'kimi-coding',
-    'openai-codex',
-    'openrouter',
-    'radius',
-    'xai',
-  ]);
+  const oauthProviders = providers
+    .filter(p => p.types.includes('oauth'))
+    .map(p => p.id)
+    .sort();
+  assert.deepEqual(oauthProviders, ['anthropic', 'carthagent-cloud', 'github-copilot', 'kimi-coding', 'openai-codex', 'openrouter', 'radius', 'xai']);
 });
 
 test('vendor engine does not install redundant engine or schema packages', () => {

@@ -21,24 +21,39 @@ const id = { type: 'string', minLength: 1, maxLength: 128 } as const;
 const fingerprint = { type: 'string', minLength: 64, maxLength: 64 } as const;
 const goal = { type: 'string', maxLength: 1024 } as const;
 const check = {
-  type: 'object', properties: {
-    id, before: { type: 'string', enum: ['not_run', 'failed'] },
+  type: 'object',
+  properties: {
+    id,
+    before: { type: 'string', enum: ['not_run', 'failed'] },
     after: { type: 'string', enum: ['passed', 'failed', 'not_run'] },
-    revision: fingerprint, result: goal,
-  }, required: ['id', 'before', 'after', 'revision', 'result'], additionalProperties: false,
+    revision: fingerprint,
+    result: goal,
+  },
+  required: ['id', 'before', 'after', 'revision', 'result'],
+  additionalProperties: false,
 } as const;
 const finding = {
-  type: 'object', properties: { id, issue: { type: 'string', maxLength: 768 }, evidence: { type: 'string', maxLength: 1536 }, resolution: goal },
-  required: ['id', 'issue', 'evidence', 'resolution'], additionalProperties: false,
+  type: 'object',
+  properties: { id, issue: { type: 'string', maxLength: 768 }, evidence: { type: 'string', maxLength: 1536 }, resolution: goal },
+  required: ['id', 'issue', 'evidence', 'resolution'],
+  additionalProperties: false,
 } as const;
 const report = {
-  type: 'object', properties: {
+  type: 'object',
+  properties: {
     origin: { type: 'string', enum: ['session'] },
-    runId: id, revision: fingerprint, planRevision: { type: 'integer', minimum: 1, maximum: Number.MAX_SAFE_INTEGER },
-    freshness: { type: 'string', enum: ['current', 'stale'] }, goal, change: { type: 'string', maxLength: 3072 },
-    checks: { type: 'array', items: check, maxItems: 12 }, findings: { type: 'array', items: finding, maxItems: 5 },
+    runId: id,
+    revision: fingerprint,
+    planRevision: { type: 'integer', minimum: 1, maximum: Number.MAX_SAFE_INTEGER },
+    freshness: { type: 'string', enum: ['current', 'stale'] },
+    goal,
+    change: { type: 'string', maxLength: 3072 },
+    checks: { type: 'array', items: check, maxItems: 12 },
+    findings: { type: 'array', items: finding, maxItems: 5 },
     truncated: { type: 'boolean' },
-  }, required: ['runId', 'revision', 'planRevision', 'freshness', 'goal', 'change', 'checks', 'findings', 'truncated'], additionalProperties: false,
+  },
+  required: ['runId', 'revision', 'planRevision', 'freshness', 'goal', 'change', 'checks', 'findings', 'truncated'],
+  additionalProperties: false,
 } as const;
 
 /** Read-only local boundary, deliberately separate from authenticated/cloud RPCs. */

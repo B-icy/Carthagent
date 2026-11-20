@@ -4,28 +4,43 @@ import assert from 'node:assert/strict';
 import { advisePlan, evaluateAdvisor } from '../lib/plan-advisor.mjs';
 import { createJevAdvisor } from '../lib/jev-advisor.mjs';
 
-const payload = (p = 0.8) => ({ model: 'jev-fixture', answers: Object.fromEntries(['srp', 'di', 'tests'].map(k => [k, { type: 'noul', noul: p }])), usage: { input_tokens: 100, output_tokens: 0 } });
+const payload = (p = 0.8) => ({
+  model: 'jev-fixture',
+  answers: Object.fromEntries(['srp', 'di', 'tests'].map(k => [k, { type: 'noul', noul: p }])),
+  usage: { input_tokens: 100, output_tokens: 0 },
+});
 test('no-key baseline makes no provider calls and injected advisory cannot mutate plan', async () => {
   const plan = { goal: 'Original', design: {} };
   assert.equal((await advisePlan(plan)).mode, 'disabled');
-  const result = await advisePlan(plan, { advisor: { classify: async p => { p.goal = 'Injected'; return { probabilities: { srp: 0.9, di: 0.1, tests: 0.8 }, costUsd: null }; } } });
+  const result = await advisePlan(plan, {
+    advisor: {
+      classify: async p => {
+        p.goal = 'Injected';
+        return { probabilities: { srp: 0.9, di: 0.1, tests: 0.8 }, costUsd: null };
+      },
+    },
+  });
   assert.equal(plan.goal, 'Original');
   assert.equal(result.authority, 'none');
   assert.equal(result.findings.length, 2);
   assert.equal(result.costUsd, null);
 });
 test('Jev adapter uses documented typed request, bounded response and explicit pricing', async () => {
-  const advisor = createJevAdvisor({ apiKey: 'fixture-key', inputPricePerMillion: 0.042, fetchImpl: async (url, options) => {
-    assert.equal(url, 'https://api.typesafe.ai/v1/systemone');
-    assert.equal(options.redirect, 'error');
-    const body = JSON.parse(options.body);
-    assert.equal(body.questions.srp.type, 'noul');
-    assert.equal(body.state.credentials, undefined);
-    return new Response(JSON.stringify(payload()));
-  } });
+  const advisor = createJevAdvisor({
+    apiKey: 'fixture-key',
+    inputPricePerMillion: 0.042,
+    fetchImpl: async (url, options) => {
+      assert.equal(url, 'https://api.typesafe.ai/v1/systemone');
+      assert.equal(options.redirect, 'error');
+      const body = JSON.parse(options.body);
+      assert.equal(body.questions.srp.type, 'noul');
+      assert.equal(body.state.credentials, undefined);
+      return new Response(JSON.stringify(payload()));
+    },
+  });
   const result = await advisePlan({ goal: 'Plan', credentials: 'must not be sent' }, { advisor });
   assert.equal(result.mode, 'shadow');
-  assert.equal(result.costUsd, 100 * 0.042 / 1e6);
+  assert.equal(result.costUsd, (100 * 0.042) / 1e6);
 });
 test('timeout, malformed/oversized data, missing key and HTTP failures do not grant authority or leak errors', async () => {
   assert.throws(() => createJevAdvisor(), /key/);
@@ -34,7 +49,9 @@ test('timeout, malformed/oversized data, missing key and HTTP failures do not gr
     async () => new Response(JSON.stringify(payload(2))),
     async () => new Response('x'.repeat(70000)),
     async () => new Response('secret token', { status: 503 }),
-    async () => { throw Error('sensitive-provider-error'); },
+    async () => {
+      throw Error('sensitive-provider-error');
+    },
     async () => new Promise(() => {}),
   ]) {
     const result = await advisePlan({}, { advisor: createJevAdvisor({ apiKey: 'key', timeoutMs: 20, fetchImpl }) });
@@ -45,7 +62,9 @@ test('timeout, malformed/oversized data, missing key and HTTP failures do not gr
 });
 test('real HTTP transport handles streamed responses and aborts delayed bodies', async t => {
   let resolveSlowResponseClosed;
-  const slowResponseClosed = new Promise(resolve => { resolveSlowResponseClosed = resolve; });
+  const slowResponseClosed = new Promise(resolve => {
+    resolveSlowResponseClosed = resolve;
+  });
   const server = createServer((req, res) => {
     req.resume();
     res.writeHead(200, { 'content-type': 'application/json' });
@@ -55,10 +74,14 @@ test('real HTTP transport handles streamed responses and aborts delayed bodies',
       return;
     }
     const body = JSON.stringify(payload());
-    res.write(body.slice(0, 30)); res.end(body.slice(30));
+    res.write(body.slice(0, 30));
+    res.end(body.slice(30));
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  t.after(() => { server.closeAllConnections(); server.close(); });
+  t.after(() => {
+    server.closeAllConnections();
+    server.close();
+  });
   const url = `http://127.0.0.1:${server.address().port}`;
   const advisor = (path, timeoutMs) => createJevAdvisor({ apiKey: 'fixture', timeoutMs, fetchImpl: (_url, options) => fetch(url + path, options) });
   // Leave room for local server startup under suite load; keep the intentional
@@ -69,9 +92,13 @@ test('real HTTP transport handles streamed responses and aborts delayed bodies',
   try {
     await Promise.race([
       slowResponseClosed,
-      new Promise((_, reject) => { closeTimeout = setTimeout(() => reject(Error('Timed-out response was not closed by abort')), 1000); }),
+      new Promise((_, reject) => {
+        closeTimeout = setTimeout(() => reject(Error('Timed-out response was not closed by abort')), 1000);
+      }),
     ]);
-  } finally { clearTimeout(closeTimeout); }
+  } finally {
+    clearTimeout(closeTimeout);
+  }
 });
 
 test('shadow evaluation reports false negatives, false positives, Brier and unknown costs honestly', async () => {

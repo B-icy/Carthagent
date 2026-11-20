@@ -15,9 +15,11 @@ try {
   const version = await new Promise((resolve, reject) => {
     const process = child.spawn(binary, ['--version'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
-    process.stdout.setEncoding('utf8').on('data', chunk => { output += chunk; });
+    process.stdout.setEncoding('utf8').on('data', chunk => {
+      output += chunk;
+    });
     process.once('error', reject);
-    process.once('close', code => code === 0 ? resolve(output.trim()) : reject(new Error(`owned CLI exited ${code}`)));
+    process.once('close', code => (code === 0 ? resolve(output.trim()) : reject(new Error(`owned CLI exited ${code}`))));
   });
   if (version !== 'opencode v0.0.0-ctg.2.0.32') throw new Error(`Unexpected owned CLI identity: ${version}`);
   const files = await import('node:fs/promises');

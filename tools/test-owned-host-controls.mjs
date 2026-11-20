@@ -71,9 +71,12 @@ const provider = createServer(async (req, res) => {
     const marker = userText.includes('OWNED_SHELL_SESSION_A') ? 'A' : userText.includes('OWNED_SHELL_SESSION_B') ? 'B' : null;
     assert.ok(marker, `shell tool call has no known originating prompt marker: ${userText}`);
     providerToolCalls.set(marker, callID);
-    const chunk = (delta, finish_reason = null) => `data: ${JSON.stringify({ id: `same-command-${requests.length}`, object: 'chat.completion.chunk', created: 1, model: 'fixture', choices: [{ index: 0, delta, finish_reason }] })}\n\n`;
+    const chunk = (delta, finish_reason = null) =>
+      `data: ${JSON.stringify({ id: `same-command-${requests.length}`, object: 'chat.completion.chunk', created: 1, model: 'fixture', choices: [{ index: 0, delta, finish_reason }] })}\n\n`;
     res.writeHead(200, { 'content-type': 'text/event-stream' });
-    res.end(`${chunk({ role: 'assistant', tool_calls: [{ index: 0, id: callID, type: 'function', function: { name: 'shell', arguments: JSON.stringify({ command: 'printf owned-identical-shell' }) } }] })}${chunk({}, 'tool_calls')}data: [DONE]\n\n`);
+    res.end(
+      `${chunk({ role: 'assistant', tool_calls: [{ index: 0, id: callID, type: 'function', function: { name: 'shell', arguments: JSON.stringify({ command: 'printf owned-identical-shell' }) } }] })}${chunk({}, 'tool_calls')}data: [DONE]\n\n`,
+    );
     return;
   }
   stream(res, `reply:${String(user?.content ?? '').slice(0, 60)}`);
@@ -96,12 +99,21 @@ const start = async () => {
     const collect = chunk => {
       output = (output + chunk.toString()).slice(-8000);
       const url = output.match(/http:\/\/127\.0\.0\.1:\d+/)?.[0];
-      if (url) { clearTimeout(timer); resolve(url); }
+      if (url) {
+        clearTimeout(timer);
+        resolve(url);
+      }
     };
     child.stdout.on('data', collect);
     child.stderr.on('data', collect);
-    child.once('error', error => { clearTimeout(timer); reject(error); });
-    child.once('exit', code => { clearTimeout(timer); reject(Error(`owned server exited ${code}: ${output}`)); });
+    child.once('error', error => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.once('exit', code => {
+      clearTimeout(timer);
+      reject(Error(`owned server exited ${code}: ${output}`));
+    });
   });
   client = OpenCode.make({ baseUrl, headers: { authorization: `Basic ${Buffer.from(`opencode:${password}`).toString('base64')}` } });
   const info = await client.server.info(request());
@@ -114,14 +126,26 @@ const stop = async () => {
   let exited = once(child, 'exit');
   child.kill('SIGTERM');
   let timer;
-  const graceful = await Promise.race([exited.then(() => true), new Promise(resolve => { timer = setTimeout(() => resolve(false), 5000); })]);
+  const graceful = await Promise.race([
+    exited.then(() => true),
+    new Promise(resolve => {
+      timer = setTimeout(() => resolve(false), 5000);
+    }),
+  ]);
   clearTimeout(timer);
   if (graceful) return;
   child.kill('SIGKILL');
   let forceTimer;
   try {
-    await Promise.race([exited, new Promise((_, reject) => { forceTimer = setTimeout(() => reject(new Error('Owned host did not exit after SIGKILL')), 5000); })]);
-  } finally { clearTimeout(forceTimer); }
+    await Promise.race([
+      exited,
+      new Promise((_, reject) => {
+        forceTimer = setTimeout(() => reject(new Error('Owned host did not exit after SIGKILL')), 5000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(forceTimer);
+  }
 };
 
 try {
@@ -137,11 +161,13 @@ try {
     update: 'disable',
     model: 'ctg-fixture/fixture',
     default_agent: 'build',
-    providers: { 'ctg-fixture': {
-      package: '@opencode/ai/providers/openai-compatible',
-      settings: { baseURL: providerUrl, apiKey: 'offline-fixture' },
-      models: { fixture: { limit: { context: 32_000, output: 1024 }, cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 } } },
-    } },
+    providers: {
+      'ctg-fixture': {
+        package: '@opencode/ai/providers/openai-compatible',
+        settings: { baseURL: providerUrl, apiKey: 'offline-fixture' },
+        models: { fixture: { limit: { context: 32_000, output: 1024 }, cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 } } },
+      },
+    },
   };
   await provisionRuntime({ root, profile });
   client = await start();
@@ -178,27 +204,50 @@ try {
   const summaryIndex = requests.findIndex(body => JSON.stringify(body.messages).includes('You MUST use this format for your response'));
   const initialOverflowIndex = requests.findIndex(body => JSON.stringify(body.messages).includes('OWNED_OVERFLOW sessionB'));
   const retryIndex = requests.findIndex((body, index) => index > summaryIndex && JSON.stringify(body.messages).includes('OWNED_OVERFLOW sessionB'));
-  assert.ok(initialOverflowIndex >= 0 && summaryIndex > initialOverflowIndex && retryIndex > summaryIndex,
-    `expected overflow → summary → retry provider requests, got ${JSON.stringify(requests.map(body => body.messages))}`);
+  assert.ok(
+    initialOverflowIndex >= 0 && summaryIndex > initialOverflowIndex && retryIndex > summaryIndex,
+    `expected overflow → summary → retry provider requests, got ${JSON.stringify(requests.map(body => body.messages))}`,
+  );
   assert.equal((await restarted.session.get({ sessionID: second.id }, request())).outcome, 'succeeded');
 
-  const same1 = await restarted.session.create({ location, model, title: 'Concurrent identical shell A', metadata: { 'ctg.autoCompaction': false } }, request());
-  const same2 = await restarted.session.create({ location, model, title: 'Concurrent identical shell B', metadata: { 'ctg.autoCompaction': false } }, request());
+  const same1 = await restarted.session.create(
+    { location, model, title: 'Concurrent identical shell A', metadata: { 'ctg.autoCompaction': false } },
+    request(),
+  );
+  const same2 = await restarted.session.create(
+    { location, model, title: 'Concurrent identical shell B', metadata: { 'ctg.autoCompaction': false } },
+    request(),
+  );
   const prompts = [
     { session: same1, marker: 'A' },
     { session: same2, marker: 'B' },
   ];
   const pluginList = await restarted.plugin.list({ location }, request());
-  assert.ok(pluginList.data.some(plugin => plugin.id === 'ctg.owned-shell-observer' && plugin.state.status === 'active'), JSON.stringify(pluginList.data));
+  assert.ok(
+    pluginList.data.some(plugin => plugin.id === 'ctg.owned-shell-observer' && plugin.state.status === 'active'),
+    JSON.stringify(pluginList.data),
+  );
   await Promise.all([
-    restarted.session.prompt({ sessionID: same1.id, text: 'OWNED_SHELL_SESSION_A Run shell command: node -e "process.stdout.write(\'owned-identical-shell\')"' }, request()),
-    restarted.session.prompt({ sessionID: same2.id, text: 'OWNED_SHELL_SESSION_B Run shell command: node -e "process.stdout.write(\'owned-identical-shell\')"' }, request()),
+    restarted.session.prompt(
+      { sessionID: same1.id, text: 'OWNED_SHELL_SESSION_A Run shell command: node -e "process.stdout.write(\'owned-identical-shell\')"' },
+      request(),
+    ),
+    restarted.session.prompt(
+      { sessionID: same2.id, text: 'OWNED_SHELL_SESSION_B Run shell command: node -e "process.stdout.write(\'owned-identical-shell\')"' },
+      request(),
+    ),
   ]);
   await Promise.all([restarted.session.wait({ sessionID: same1.id }, request()), restarted.session.wait({ sessionID: same2.id }, request())]);
   for (const { session } of prompts) assert.equal((await restarted.session.get({ sessionID: session.id }, request())).outcome, 'succeeded');
   let capturedText;
-  try { capturedText = await readFile(captureFile, 'utf8'); }
-  catch (error) { throw new Error(`shell observer did not record a hook event; provider requests=${JSON.stringify(requests.map(body => body.messages?.slice(-2)))}; session tools=${JSON.stringify(await Promise.all([same1, same2].map(session => restarted.message.list({ sessionID: session.id }, request()))))}`, { cause: error }); }
+  try {
+    capturedText = await readFile(captureFile, 'utf8');
+  } catch (error) {
+    throw new Error(
+      `shell observer did not record a hook event; provider requests=${JSON.stringify(requests.map(body => body.messages?.slice(-2)))}; session tools=${JSON.stringify(await Promise.all([same1, same2].map(session => restarted.message.list({ sessionID: session.id }, request()))))}`,
+      { cause: error },
+    );
+  }
   const shellEvents = capturedText.trim().split('\n').filter(Boolean).map(JSON.parse);
   const attributed = shellEvents.filter(event => event.command.includes('owned-identical-shell'));
   assert.equal(attributed.length, 2, JSON.stringify(shellEvents));
@@ -209,21 +258,31 @@ try {
     assert.equal(observed.origin, 'tool');
     assert.equal(observed.callID, providerToolCalls.get(marker), `hook call ID matches the native provider call ID for marker ${marker}`);
     const history = await restarted.message.list({ sessionID: session.id }, request());
-    const toolParts = history.data.flatMap(message => message.parts ?? message.content ?? []).filter(part => part.type === 'tool' && part.id === providerToolCalls.get(marker));
+    const toolParts = history.data
+      .flatMap(message => message.parts ?? message.content ?? [])
+      .filter(part => part.type === 'tool' && part.id === providerToolCalls.get(marker));
     assert.equal(toolParts.length, 1, `durable tool transcript correlates to provider call for session ${session.id}: ${JSON.stringify(history.data)}`);
     assert.equal(toolParts[0].state.status, 'completed', JSON.stringify(toolParts[0]));
     assert.equal(toolParts[0].state.input.command, observed.command);
     assert.ok(toolParts[0].state.content.some(part => part.type === 'text' && part.text.includes('owned-identical-shell')));
   }
 
-  console.log(JSON.stringify({
-    host: { compatibilityVersion: preflight?.identity.compatibilityVersion ?? identity.compatibilityVersion, runtimeVersion: identity.version, binarySha256: identity.binarySha256 },
-    runtimeSelection: installedDefault ? 'installed package default resolver; trusted manifest verified' : 'explicit, trusted-preflighted CTG_OWNED_OPENCODE_RUNTIME staging artifact',
-    sameDatabaseServiceRestart: 'passed',
-    autoCompaction: { off: 'overflow failed with one provider attempt and no compaction', on: 'compaction request and successful retry observed' },
-    concurrentIdenticalShell: 'real runtime events correlated to distinct sessionID/origin/callID',
-    loopbackProviderRequests: requests.length,
-  }));
+  console.log(
+    JSON.stringify({
+      host: {
+        compatibilityVersion: preflight?.identity.compatibilityVersion ?? identity.compatibilityVersion,
+        runtimeVersion: identity.version,
+        binarySha256: identity.binarySha256,
+      },
+      runtimeSelection: installedDefault
+        ? 'installed package default resolver; trusted manifest verified'
+        : 'explicit, trusted-preflighted CTG_OWNED_OPENCODE_RUNTIME staging artifact',
+      sameDatabaseServiceRestart: 'passed',
+      autoCompaction: { off: 'overflow failed with one provider attempt and no compaction', on: 'compaction request and successful retry observed' },
+      concurrentIdenticalShell: 'real runtime events correlated to distinct sessionID/origin/callID',
+      loopbackProviderRequests: requests.length,
+    }),
+  );
 } finally {
   await stop();
   provider.closeAllConnections();
@@ -232,7 +291,8 @@ try {
 }
 
 function stream(res, text) {
-  const chunk = (delta, finish_reason = null, usage) => `data: ${JSON.stringify({ id: `owned-${requests.length}`, object: 'chat.completion.chunk', created: 1, model: 'fixture', choices: [{ index: 0, delta, finish_reason }], ...(usage ? { usage } : {}) })}\n\n`;
+  const chunk = (delta, finish_reason = null, usage) =>
+    `data: ${JSON.stringify({ id: `owned-${requests.length}`, object: 'chat.completion.chunk', created: 1, model: 'fixture', choices: [{ index: 0, delta, finish_reason }], ...(usage ? { usage } : {}) })}\n\n`;
   res.writeHead(200, { 'content-type': 'text/event-stream' });
   res.end(`${chunk({ role: 'assistant', content: text })}${chunk({}, 'stop', { prompt_tokens: 30, completion_tokens: 10, total_tokens: 40 })}data: [DONE]\n\n`);
 }

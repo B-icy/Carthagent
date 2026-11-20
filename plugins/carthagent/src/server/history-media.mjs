@@ -12,19 +12,20 @@ export const IMAGE_BUDGET = 250_000;
 
 const DATA_URI = /^data:([^;,]+)?(?:;[^,]*)?,/;
 
-const inlineFileBytes = part => part?.type === 'file' && typeof part.uri === 'string' && DATA_URI.test(part.uri) ? part.uri.length : 0;
+const inlineFileBytes = part => (part?.type === 'file' && typeof part.uri === 'string' && DATA_URI.test(part.uri) ? part.uri.length : 0);
 
 function inlineMediaBytes(part) {
   if (part?.type !== 'media') return 0;
   const source = part.media?.source;
   if (source?.type === 'base64' && typeof source.data === 'string') return source.data.length;
-  if (source?.type === 'bytes' && source.data?.length) return Math.ceil(source.data.length * 4 / 3);
+  if (source?.type === 'bytes' && source.data?.length) return Math.ceil((source.data.length * 4) / 3);
   return 0;
 }
 
 const kb = bytes => `${Math.round(bytes / 1024)} KB`;
 
-const note = (name, bytes) => `[Image ${name ? `${name} ` : ''}omitted from this request (${kb(bytes)}): it is too large to resend to Carthagent Cloud. The file is unchanged on disk. To look at it again, resize it first (for example a ≤1280px JPEG under 200 KB) or inspect the page or DOM as text instead.]`;
+const note = (name, bytes) =>
+  `[Image ${name ? `${name} ` : ''}omitted from this request (${kb(bytes)}): it is too large to resend to Carthagent Cloud. The file is unchanged on disk. To look at it again, resize it first (for example a ≤1280px JPEG under 200 KB) or inspect the page or DOM as text instead.]`;
 
 /**
  * Return messages whose inline images fit `budget` bytes, newest kept first.
@@ -40,15 +41,22 @@ export function trimHistoryMedia(messages, { budget = IMAGE_BUDGET } = {}) {
       const media = inlineMediaBytes(part);
       if (media) found.push([m, p, -1, media, part.media?.name || part.filename]);
       const value = part?.type === 'tool-result' && part.result?.type === 'content' && Array.isArray(part.result.value) ? part.result.value : [];
-      value.forEach((item, v) => { const bytes = inlineFileBytes(item); if (bytes) found.push([m, p, v, bytes, item.name]); });
+      value.forEach((item, v) => {
+        const bytes = inlineFileBytes(item);
+        if (bytes) found.push([m, p, v, bytes, item.name]);
+      });
     });
   });
   let used = 0;
   const drop = new Set();
   let omittedBytes = 0;
   for (const entry of [...found].reverse()) {
-    if (used + entry[3] <= budget) { used += entry[3]; continue; }
-    drop.add(entry); omittedBytes += entry[3];
+    if (used + entry[3] <= budget) {
+      used += entry[3];
+      continue;
+    }
+    drop.add(entry);
+    omittedBytes += entry[3];
   }
   if (!drop.size) return { messages, omitted: 0, omittedBytes: 0 };
   const byMessage = new Map();

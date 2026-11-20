@@ -44,10 +44,10 @@ export async function generateOwnedRuntimeRelease({
   const acquireOwnedRuntime = acquireRuntime ?? (await import('../lib/opencode/runtime-artifact.mjs')).acquireOwnedRuntime;
 
   const entries = await readdir(directory, { withFileTypes: true });
-  if (entries.some((entry) => !entry.isFile())) {
+  if (entries.some(entry => !entry.isFile())) {
     throw new Error('Assets directory may contain only regular archive and build-record files');
   }
-  const files = entries.map((entry) => entry.name).sort();
+  const files = entries.map(entry => entry.name).sort();
   const expectedFiles = Object.values(REQUIRED_RUNTIME_TARGETS)
     .flatMap(([, , archiveName]) => [archiveName, `${archiveName}.build.json`])
     .sort();
@@ -69,7 +69,7 @@ export async function generateOwnedRuntimeRelease({
 
       // The fetch shim exposes only the exact local archive requested by the
       // approved acquisition API. No network request or release upload occurs.
-      const fetchImpl = async (url) => {
+      const fetchImpl = async url => {
         const requestedName = decodeURIComponent(new URL(url).pathname.split('/').at(-1) ?? '');
         if (requestedName !== name) return new Response('not found', { status: 404 });
         return new Response(archiveBytes, { status: 200, headers: { 'content-length': String(archiveBytes.length) } });
@@ -127,7 +127,10 @@ export async function generateOwnedRuntimeRelease({
 }
 
 function validateReleaseVersion(value) {
-  if (typeof value !== 'string' || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/.test(value)) {
+  if (
+    typeof value !== 'string' ||
+    !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/.test(value)
+  ) {
     throw new TypeError('releaseVersion must be a canonical semantic version without a v prefix');
   }
 }
@@ -155,28 +158,27 @@ async function readPinnedBuildInputs(repoRoot) {
 }
 
 function validateBuildRecord(record, { key, platform, arch, provenance }) {
-  if (!record || record.version !== 1 || record.target !== key
-    || record.platform !== platform || record.arch !== arch
-    || record.sourceRevision !== provenance.sourceRevision
-    || record.patchSha256?.toLowerCase() !== provenance.patchSha256
-    || record.lockSha256?.toLowerCase() !== provenance.lockSha256
-    || record.compatibilityVersion !== provenance.compatibilityVersion
-    || record.runtimeVersion !== provenance.runtimeVersion
-    || typeof record.executableSha256 !== 'string'
-    || !/^[a-f0-9]{64}$/i.test(record.executableSha256)) {
+  if (
+    !record ||
+    record.version !== 1 ||
+    record.target !== key ||
+    record.platform !== platform ||
+    record.arch !== arch ||
+    record.sourceRevision !== provenance.sourceRevision ||
+    record.patchSha256?.toLowerCase() !== provenance.patchSha256 ||
+    record.lockSha256?.toLowerCase() !== provenance.lockSha256 ||
+    record.compatibilityVersion !== provenance.compatibilityVersion ||
+    record.runtimeVersion !== provenance.runtimeVersion ||
+    typeof record.executableSha256 !== 'string' ||
+    !/^[a-f0-9]{64}$/i.test(record.executableSha256)
+  ) {
     throw new Error(`Build record for ${key} does not match the pinned recipe and target`);
   }
 }
 
 async function validateRuntimeTree(root, { key, executablePath, runtimeVersion }) {
   const expectedDirectories = new Set(['', `cli-${key}`, `cli-${key}/bin`]);
-  const expectedFiles = new Set([
-    'LICENSE',
-    'SHA256SUMS',
-    'ctg-runtime.json',
-    executablePath,
-    `cli-${key}/package.json`,
-  ]);
+  const expectedFiles = new Set(['LICENSE', 'SHA256SUMS', 'ctg-runtime.json', executablePath, `cli-${key}/package.json`]);
   const actualDirectories = new Set();
   const actualFiles = new Set();
   const visit = async (directory, relative) => {
@@ -206,12 +208,18 @@ async function validateRuntimeTree(root, { key, executablePath, runtimeVersion }
   const packageMetadata = JSON.parse(await readFile(path.join(root, `cli-${key}/package.json`), 'utf8'));
   const [, platform, arch] = key.match(/^(linux|darwin|windows)-(x64|arm64)$/) ?? [];
   const packageOs = platform === 'windows' ? 'win32' : platform;
-  if (packageMetadata.name !== `@opencode/cli-${key}`
-    || packageMetadata.version !== runtimeVersion
-    || packageMetadata.os?.length !== 1 || packageMetadata.os[0] !== packageOs
-    || packageMetadata.cpu?.length !== 1 || packageMetadata.cpu[0] !== arch) {
+  if (
+    packageMetadata.name !== `@opencode/cli-${key}` ||
+    packageMetadata.version !== runtimeVersion ||
+    packageMetadata.os?.length !== 1 ||
+    packageMetadata.os[0] !== packageOs ||
+    packageMetadata.cpu?.length !== 1 ||
+    packageMetadata.cpu[0] !== arch
+  ) {
     throw new Error(`Runtime archive package metadata does not match ${key} and ${runtimeVersion}`);
   }
 }
 
-function sha256(bytes) { return createHash('sha256').update(bytes).digest('hex'); }
+function sha256(bytes) {
+  return createHash('sha256').update(bytes).digest('hex');
+}
