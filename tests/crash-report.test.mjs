@@ -5,6 +5,7 @@ import { EventEmitter } from 'node:events';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   buildCrashReport,
   crashFingerprint,
@@ -19,7 +20,7 @@ import {
 } from '../lib/crash-report.mjs';
 
 const cli = { isCommand: name => ['doctor', 'update', 'review', 'tui', 'serve'].includes(name), aliases: { upgrade: 'update', web: 'serve' } };
-const ctg = new URL('../bin/ctg.mjs', import.meta.url).pathname;
+const ctg = fileURLToPath(new URL('../bin/ctg.mjs', import.meta.url));
 const crashModule = new URL('../lib/crash-report.mjs', import.meta.url).href;
 
 function tempDir(t) {

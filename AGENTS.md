@@ -31,8 +31,8 @@ npm run quality
 ```
 
 `quality` runs ESLint and Prettier (`lint`), the syntax and TypeScript checks
-(`build`), and the Node test suite. TypeScript and ESLint results are cached in
-`node_modules/.cache/ctg/`. It does not include every integration suite. Run the
+(`build`), and the Node test suite. TypeScript and ESLint results are cached under
+node_modules/.cache/ctg, which CI restores between runs. It does not include every integration suite. Run the
 gates that cover the area changed:
 
 - Python: `npm run test:python` (Python 3.11 and Pillow 11.3.0 in CI).

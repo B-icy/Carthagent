@@ -11,7 +11,9 @@ const UNLINKED_MARKER = ['FIX', 'ME'].join('');
 
 async function preCommit(repo) {
   const { out, err, io } = captureOutput();
-  const createLinter = () => new ESLint({ cwd: repo.root, overrideConfigFile: true, overrideConfig: [{ files: ['**/*.mjs'], rules: { 'no-var': 'error' } }] });
+  // The hook resolves the repository root to its real path (/private/var on macOS, long names on
+  // Windows); ESLint skips files outside its cwd, so the linter must use the root the hook passes.
+  const createLinter = ({ cwd }) => new ESLint({ cwd, overrideConfigFile: true, overrideConfig: [{ files: ['**/*.mjs'], rules: { 'no-var': 'error' } }] });
   const status = await runPreCommit({ cwd: repo.root, createLinter, ...io });
   return { status, out: out.join('\n'), err: err.join('\n') };
 }

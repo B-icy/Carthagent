@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { existsSync, globSync, readFileSync, statSync } from 'node:fs';
-import { basename, dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const ROOT = resolve(import.meta.dirname, '..');
@@ -127,7 +127,7 @@ function checkLink(target, context) {
   const [rawPath, fragment] = target.split('#');
   const path = decodeURIComponent(rawPath);
   const file = path ? resolve(dirname(context.file), path) : context.file;
-  if (path && !existsSync(file)) return `broken link ${target}: ${relative(context.root, file)} does not exist`;
+  if (path && !existsSync(file)) return `broken link ${target}: ${relative(context.root, file).split(sep).join('/')} does not exist`;
   if (!fragment || !file.endsWith('.md') || statSync(file).isDirectory()) return null;
   const anchors = anchorsOf(file === context.file ? context.text : readFileSync(file, 'utf8'));
   return anchors.has(fragment.toLowerCase()) || anchors.has(fragment) ? null : `broken link ${target}: no heading or anchor #${fragment}`;

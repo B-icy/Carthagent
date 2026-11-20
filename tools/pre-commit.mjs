@@ -46,7 +46,7 @@ export async function prettierFailures({ root, files, reader }) {
 export async function eslintFailures({ root, files, reader, createLinter }) {
   const lintable = files.filter(file => hasExtension(ESLINT_EXTENSIONS, file));
   if (!lintable.length) return [];
-  const linter = createLinter ? createLinter() : new (await loadDevDependency('eslint')).ESLint({ cwd: root, applySuppressions: true });
+  const linter = createLinter ? createLinter({ cwd: root }) : new (await loadDevDependency('eslint')).ESLint({ cwd: root, applySuppressions: true });
   const results = [];
   for (const file of lintable) {
     const filePath = path.join(root, file);
