@@ -16,7 +16,9 @@ const slate = { day: "2026-10-30", endsAt: "2026-10-31T00:00:00Z", coins: 10, le
   { id: "reviews-1", metric: "reviews", title: "Run a code review", target: 1, progress: 1, completed: true, coins: 10, xp: 50 },
 ] };
 
-async function fixture({ width = 30, height = 36, authenticated = true, hint = false } = {}) {
+const missingLocation = () => Object.assign(new Error("Location not found"), { _tag: "LocationNotFoundError", name: "LocationNotFoundError" });
+
+async function fixture({ width = 30, height = 36, authenticated = true, hint = false, sessionDirectory = "/test-project" } = {}) {
   const [active, setActive] = createSignal(true);
   const [focused, setFocused] = createSignal(false);
   const [compact, setCompact] = createSignal(false);
@@ -31,13 +33,14 @@ async function fixture({ width = 30, height = 36, authenticated = true, hint = f
     theme: resolveThemeDocument(parseThemeDocument(theme), "dark"),
     location: { directory: "/test-project" },
     data: {
-      session: { get: () => ({ location: { directory: "/test-project" } }) },
+      session: { get: () => ({ location: { directory: sessionDirectory } }) },
       location: { default: () => ({ directory: "/test-project" }) },
       listen: (next: typeof listener) => { listener = next; return () => { listening = false; }; },
     },
-    client: { rpc: (definition: unknown) => ({ snapshot: () => {
+    client: { rpc: (definition: unknown) => ({ snapshot: (_input: unknown, options: { location: { directory: string } }) => {
       calls.push(definition === Voyages ? "profile" : "daily");
-      const response = authenticated ? (responseGate ?? Promise.resolve()).then(() => definition === Voyages ? profile : slate) : Promise.reject({ type: "voyagesError", data: { code: "authentication_required" } });
+      // The server rejects a deleted folder before any handler runs.
+      const response = options.location.directory !== "/test-project" ? Promise.reject(missingLocation()) : authenticated ? (responseGate ?? Promise.resolve()).then(() => definition === Voyages ? profile : slate) : Promise.reject({ type: "voyagesError", data: { code: "authentication_required" } });
       responses.push(response);
       return response;
     } }) },
@@ -86,6 +89,17 @@ test.each([30, 18])("real Voyages navigator renders account and assignment summa
     expect(f.routes).toHaveLength(0);
   } finally { f.app.renderer.destroy(); }
   expect(f.listening()).toBe(false);
+});
+
+test("a session whose folder was deleted still loads account-level Voyages from the launch location", async () => {
+  const f = await fixture({ sessionDirectory: "/deleted-worktree" });
+  try {
+    await f.settle();
+    const frame = f.app.captureCharFrame();
+    expect(frame).toContain("10 coins");
+    expect(frame).not.toContain("Could not load voyages");
+    expect(f.calls).toEqual(["profile", "daily", "profile", "daily"]);
+  } finally { f.app.renderer.destroy(); }
 });
 
 test("rail focus owns arrows/Enter; palette or modal mode cannot trigger a route", async () => {
