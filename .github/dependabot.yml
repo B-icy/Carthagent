@@ -1,0 +1,50 @@
+# Dependency update automation. Every ecosystem waits at least 7 days after a
+# release before proposing it (14 for majors), matching min-release-age in
+# .npmrc, so a compromised or yanked release has time to be caught upstream.
+version: 2
+updates:
+  - package-ecosystem: npm
+    # The root lockfile covers the plugins/carthagent workspace.
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+    commit-message:
+      prefix: deps
+      prefix-development: deps-dev
+    groups:
+      lint-and-format:
+        patterns: ['eslint', '@eslint/*', 'typescript-eslint', 'globals', 'prettier', 'knip', 'jscpd']
+      typescript:
+        patterns: ['typescript', '@types/*']
+    ignore:
+      # The owned runtime, its TUI stack and parser are pinned to the version
+      # compiled into the checksummed runtime archives
+      # (lib/opencode/runtime-release.json). Bump them only together with a
+      # runtime rebuild; see docs/opencode-owned-runtime.md.
+      - dependency-name: '@opencode/*'
+      - dependency-name: '@opentui/*'
+      - dependency-name: 'solid-js'
+      - dependency-name: 'seroval'
+      - dependency-name: 'web-tree-sitter'
+      - dependency-name: 'web-tree-sitter-legacy'
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    labels: [dependencies, 'area: ci']
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ['*']

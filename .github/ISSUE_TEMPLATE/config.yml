@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Installation and usage guide
+    url: https://github.com/B-icy/Carthagent#readme
+    about: Install, update channels and the native CLI.
+  - name: Security vulnerability
+    url: https://github.com/B-icy/Carthagent/security/advisories/new
+    about: Report security issues privately, not as a public issue.

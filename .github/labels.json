@@ -1,0 +1,42 @@
+{
+  "$comment": "Source of truth for repository labels. Sync with `npm run labels:sync` (or the Sync labels workflow on main). Labels not listed here are left untouched.",
+  "labels": [
+    { "name": "bug", "color": "d73a4a", "description": "Something isn't working" },
+    { "name": "enhancement", "color": "a2eeef", "description": "New feature or request" },
+    { "name": "documentation", "color": "0075ca", "description": "Improvements or additions to documentation" },
+    { "name": "chore", "color": "c5def5", "description": "Maintenance, refactoring or tooling with no user-facing change" },
+    { "name": "security", "color": "b60205", "description": "Security fix or hardening" },
+    { "name": "performance", "color": "fbca04", "description": "Speed, memory or resource usage" },
+    { "name": "test", "color": "bfd4f2", "description": "Test coverage, flakiness or test infrastructure" },
+    { "name": "dependencies", "color": "0366d6", "description": "Dependency updates" },
+    { "name": "accessibility", "color": "f143ab", "description": "Barrier affecting people with disabilities" },
+
+    { "name": "priority: P0", "color": "b60205", "description": "Critical: broken install, data loss, billing or security; drop everything" },
+    { "name": "priority: P1", "color": "d93f0b", "description": "High: major feature broken without workaround; next release" },
+    { "name": "priority: P2", "color": "fbca04", "description": "Medium: degraded behavior with a workaround" },
+    { "name": "priority: P3", "color": "0e8a16", "description": "Low: polish, minor annoyance or nice to have" },
+
+    { "name": "area: cli", "color": "5319e7", "description": "bin/ctg.mjs, command routing, headless and JSON output" },
+    { "name": "area: native-tui", "color": "5319e7", "description": "Native TUI plugin UI (plugins/carthagent/src/ui, tui.tsx)" },
+    { "name": "area: plugin-server", "color": "5319e7", "description": "Native plugin server and RPC (plugins/carthagent/src/server, *-rpc.ts)" },
+    { "name": "area: runtime", "color": "5319e7", "description": "CTG-owned runtime, patches, vendor and runtime provisioning" },
+    { "name": "area: delivery", "color": "5319e7", "description": "Ship/delivery engine, planning, checks and review" },
+    { "name": "area: cloud", "color": "5319e7", "description": "Carthagent Cloud client, sign-in, credentials and billing" },
+    { "name": "area: voyages", "color": "5319e7", "description": "Voyages profile, wallet, shop and daily goals" },
+    { "name": "area: browser", "color": "5319e7", "description": "Browser automation, WebDriver and CDP tooling" },
+    { "name": "area: web-dashboard", "color": "5319e7", "description": "Local web dashboard (server.mjs, public/)" },
+    { "name": "area: ci", "color": "5319e7", "description": "GitHub Actions, quality gates and repository tooling" },
+    { "name": "area: release", "color": "5319e7", "description": "Packaging, release workflows, installers and update channels" },
+
+    { "name": "status: triage", "color": "ededed", "description": "New; needs priority and area" },
+    { "name": "status: needs-repro", "color": "ededed", "description": "Cannot act until it is reproduced" },
+    { "name": "status: blocked", "color": "000000", "description": "Waiting on an external dependency or decision" },
+
+    { "name": "source: crash-report", "color": "f9d0c4", "description": "Filed from a local ctg crash report" },
+    { "name": "source: ci-alert", "color": "f9d0c4", "description": "Opened automatically by a failing workflow on main" },
+    { "name": "source: release-health", "color": "f9d0c4", "description": "Opened automatically by the scheduled release health check" },
+
+    { "name": "release-notes: skip", "color": "ffffff", "description": "Exclude this PR from generated release notes" },
+    { "name": "breaking-change", "color": "b60205", "description": "Requires user action or migration on upgrade" }
+  ]
+}
