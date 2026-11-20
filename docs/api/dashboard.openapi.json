@@ -1,0 +1,1919 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Carthagent local dashboard API",
+    "version": "1.1.2",
+    "summary": "Local HTTP API served by server.mjs (`npm start`) for the browser dashboard.",
+    "description": "The dashboard binds to 127.0.0.1 only, on `CARTHAGENT_PORT` (default 3000; 0 picks an ephemeral port). It operates on the workspace in `CARTHAGENT_WORKSPACE` (default: the current directory) and persists delivery state as report files under that workspace. Every `/api/*` request must send the session token in the `x-carthagent-token` header; the token is `CARTHAGENT_SERVER_TOKEN` when set, otherwise a random value printed once in the startup URL (`/?token=...`). Requests that send an `Origin` header must come from the dashboard origin itself. Request bodies are JSON (`express.json`, 1 MB limit); malformed JSON or oversize bodies are rejected by Express before reaching a handler (400/413). All `/api/*` responses carry `cache-control: no-store`. Mutating endpoints (`/api/design`, `/api/plan/set`, `/api/plan/revise`, `/api/checks/run`, `/api/review`, `/api/finish`) first take a cross-process workspace lease and answer 409 when it is unavailable. Non-API GET requests serve the static dashboard from `public/` and fall back to `public/index.html`; they are not part of this API.",
+    "license": {
+      "name": "See LICENSE",
+      "url": "https://github.com/B-icy/Carthagent/blob/main/LICENSE"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:{port}",
+      "variables": {
+        "port": {
+          "default": "3000",
+          "description": "CARTHAGENT_PORT"
+        }
+      }
+    }
+  ],
+  "security": [
+    {
+      "dashboardToken": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "status",
+      "description": "Read the active delivery state."
+    },
+    {
+      "name": "plan",
+      "description": "Validate, render, set and revise the delivery plan."
+    },
+    {
+      "name": "delivery",
+      "description": "Design approval, checks, review and handoff."
+    },
+    {
+      "name": "docs",
+      "description": "Bundled documentation."
+    }
+  ],
+  "paths": {
+    "/api/status": {
+      "get": {
+        "operationId": "getStatus",
+        "tags": [
+          "status"
+        ],
+        "summary": "Read the active delivery state",
+        "description": "Reloads the newest report for the workspace (unless checks are running), fingerprints the workspace and returns the plan, evidence, pending checks and planning gate.",
+        "x-carthagent-auth": "dashboard-token",
+        "responses": {
+          "200": {
+            "description": "Current delivery state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong `x-carthagent-token` header. Body is `{\"error\":\"Unauthorized\"}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The request carried an `Origin` header other than `http://127.0.0.1:<port>` or `http://localhost:<port>`. Body is `{\"error\":\"Origin not allowed\"}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Reading or fingerprinting the workspace failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/plan/validate": {
+      "post": {
+        "operationId": "validatePlan",
+        "tags": [
+          "plan"
+        ],
+        "summary": "Validate a plan without saving it",
+        "x-carthagent-auth": "dashboard-token",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "plan"
+                ],
+                "properties": {
+                  "plan": {
+                    "$ref": "#/components/schemas/Plan"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The plan is valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "valid",
+                    "plan",
+                    "d2"
+                  ],
+                  "properties": {
+                    "valid": {
+                      "const": true
+                    },
+                    "plan": {
+                      "$ref": "#/components/schemas/Plan"
+                    },
+                    "d2": {
+                      "type": "string",
+                      "description": "D2 diagram source for the plan workflow."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The plan is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "valid",
+                    "error"
+                  ],
+                  "properties": {
+                    "valid": {
+                      "const": false
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "First validation failure."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong `x-carthagent-token` header. Body is `{\"error\":\"Unauthorized\"}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The request carried an `Origin` header other than `http://127.0.0.1:<port>` or `http://localhost:<port>`. Body is `{\"error\":\"Origin not allowed\"}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/plan/d2": {
+      "post": {
+        "operationId": "renderPlanD2",
+        "tags": [
+          "plan"
+        ],
+        "summary": "Render a plan as D2 diagram source",
+        "description": "Renders without validating the plan.",
+        "x-carthagent-auth": "dashboard-token",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "plan"
+                ],
+                "properties": {
+                  "plan": {
+                    "$ref": "#/components/schemas/Plan"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Rendered diagram.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "d2"
+                  ],
+                  "properties": {
+                    "d2": {
+                      "type": "string",
+                      "description": "D2 diagram source."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The plan could not be rendered.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong `x-carthagent-token` header. Body is `{\"error\":\"Unauthorized\"}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The request carried an `Origin` header other than `http://127.0.0.1:<port>` or `http://localhost:<port>`. Body is `{\"error\":\"Origin not allowed\"}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/plan/set": {
+      "post": {
+        "operationId": "setPlan",
+        "tags": [
+          "plan"
+        ],
+        "summary": "Start a delivery with a new plan, or replace the active plan",
+        "description": "Verification defaults to `required`. When a plan is active and not finished, harness-required checks (`required_*`) are re-bound and the change is recorded as a revision; otherwise a new run and report are created. The report becomes the selected workspace report.",
+        "x-carthagent-auth": "dashboard-token",
+        "x-carthagent-workspace-lease": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "plan"
+                ],
+                "properties": {
+                  "plan": {
+                    "$ref": "#/components/schemas/Plan"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Plan saved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "plan",
+                    "d2",
+                    "report"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "plan": {
+                      "$ref": "#/components/schemas/Plan"
+                    },
+                    "d2": {
+                      "type": "string"
+                    },
+                    "report": {
+                      "type": "string",
+                      "description": "Absolute path of the report file."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The plan or revision is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong `x-carthagent-token` header. Body is `{\"error\":\"Unauthorized\"}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The request carried an `Origin` header other than `http://127.0.0.1:<port>` or `http://localhost:<port>`. Body is `{\"error\":\"Origin not allowed\"}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Another process holds the workspace lease (for example a concurrent `ctg check`), or checks are running or queued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/plan/revise": {
+      "post": {
+        "operationId": "revisePlan",
+        "tags": [
+          "plan"
+        ],
+        "summary": "Apply a patch to the active plan as a new revision",
+        "x-carthagent-auth": "dashboard-token",
+        "x-carthagent-workspace-lease": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "patch",
+                  "reason"
+                ],
+                "properties": {
+                  "patch": {
+                    "$ref": "#/components/schemas/PlanPatch"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "description": "Why the plan changes (required, nonempty)."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Revision recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "revision",
+                    "report"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "revision": {
+                      "type": "integer"
+                    },
+                    "report": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No active plan, invalid patch, missing reason, or a revision rule was violated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong `x-carthagent-token` header. Body is `{\"error\":\"Unauthorized\"}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The request carried an `Origin` header other than `http://127.0.0.1:<port>` or `http://localhost:<port>`. Body is `{\"error\":\"Origin not allowed\"}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Another process holds the workspace lease (for example a concurrent `ctg check`), or checks are running or queued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/plan/bind-required": {
+      "post": {
+        "operationId": "bindRequiredChecks",
+        "tags": [
+          "plan"
+        ],
+        "summary": "Bind harness-required checks into a plan and validate it",
+        "description": "Pure function: nothing is saved. Required checks replace same-ID checks, force `verification: required` and add one `[Harness required] <id>` acceptance item each.",
+        "x-carthagent-auth": "dashboard-token",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "plan",
+                  "required"
+                ],
+                "properties": {
+                  "plan": {
+                    "$ref": "#/components/schemas/Plan"
+                  },
+                  "required": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/Check"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Bound and validated plan.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "plan",
+                    "d2"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "plan": {
+                      "$ref": "#/components/schemas/Plan"
+                    },
+                    "d2": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The plan or the required checks are invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong `x-carthagent-token` header. Body is `{\"error\":\"Unauthorized\"}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The request carried an `Origin` header other than `http://127.0.0.1:<port>` or `http://localhost:<port>`. Body is `{\"error\":\"Origin not allowed\"}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/design": {
+      "post": {
+        "operationId": "designAction",
+        "tags": [
+          "delivery"
+        ],
+        "summary": "Run a design-gate action on the active plan",
+        "description": "Implementation is locked until the current plan revision has been validated, inspected, reviewed and approved on the current source fingerprint. For `review`, the review fields may be sent inside `review` or at the top level; `review.id` is accepted as `captureId`.",
+        "x-carthagent-auth": "dashboard-token",
+        "x-carthagent-workspace-lease": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "action"
+                ],
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "validate",
+                      "inspect",
+                      "review",
+                      "approve"
+                    ]
+                  },
+                  "review": {
+                    "$ref": "#/components/schemas/DesignReview"
+                  },
+                  "captureId": {
+                    "type": "string"
+                  },
+                  "challenges": {
+                    "type": "array",
+                    "items": {}
+                  },
+                  "walkthroughs": {
+                    "type": "array",
+                    "items": {}
+                  },
+                  "findings": {
+                    "type": "array",
+                    "items": {}
+                  },
+                  "limitations": {
+                    "type": "array",
+                    "items": {}
+                  },
+                  "resolutions": {
+                    "type": "array",
+                    "items": {}
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Action applied and persisted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "result",
+                    "planningStatus"
+                  ],
+                  "properties": {
+                    "result": {
+                      "description": "Action-specific result (validation findings, inspection capture, review record or approval)."
+                    },
+                    "planningStatus": {
+                      "$ref": "#/components/schemas/PlanningStatus"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No active plan, unknown action, or the action was rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong `x-carthagent-token` header. Body is `{\"error\":\"Unauthorized\"}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The request carried an `Origin` header other than `http://127.0.0.1:<port>` or `http://localhost:<port>`. Body is `{\"error\":\"Origin not allowed\"}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Another process holds the workspace lease (for example a concurrent `ctg check`), or checks are running or queued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/checks/run": {
+      "post": {
+        "operationId": "runChecks",
+        "tags": [
+          "delivery"
+        ],
+        "summary": "Run one or all plan checks and record evidence",
+        "description": "Requires an approved design (implementation must be unlocked). Checks run serially in the workspace without a shell; each result records exit code, timing, output tail, a log path and whether the workspace changed while the check ran. A check passes only when it exits 0, did not time out, was not cancelled, stayed within the output limit and left the workspace fingerprint unchanged.",
+        "x-carthagent-auth": "dashboard-token",
+        "x-carthagent-workspace-lease": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "id"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "A check ID from the plan, or `all`."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Checks executed (individual checks may have failed; see `passed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "results",
+                    "pendingChecks",
+                    "currentFingerprint"
+                  ],
+                  "properties": {
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CheckResult"
+                      }
+                    },
+                    "pendingChecks": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "currentFingerprint": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No active plan, or the plan has no checks.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong `x-carthagent-token` header. Body is `{\"error\":\"Unauthorized\"}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The request carried an `Origin` header other than `http://127.0.0.1:<port>` or `http://localhost:<port>`. Body is `{\"error\":\"Origin not allowed\"}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`id` does not name a check in the plan. Body is `{\"error\":\"Unknown check ID: <id>\"}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Another process holds the workspace lease (for example a concurrent `ctg check`), or checks are running or queued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Implementation is still locked by the design gate, or running the checks failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/review": {
+      "post": {
+        "operationId": "deliveryReview",
+        "tags": [
+          "delivery"
+        ],
+        "summary": "Capture or record the delivery review",
+        "description": "`inspect` captures the Git diff (or a no-repository notice) for review. `record` stores the review against that capture; all checks must be fresh.",
+        "x-carthagent-auth": "dashboard-token",
+        "x-carthagent-workspace-lease": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeliveryReviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Review action applied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "result"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "result": {
+                      "description": "Capture (inspect) or recorded review evidence (record)."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No active plan, unknown action, stale capture, or malformed review record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong `x-carthagent-token` header. Body is `{\"error\":\"Unauthorized\"}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The request carried an `Origin` header other than `http://127.0.0.1:<port>` or `http://localhost:<port>`. Body is `{\"error\":\"Origin not allowed\"}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Another process holds the workspace lease (for example a concurrent `ctg check`), or checks are running or queued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/finish": {
+      "post": {
+        "operationId": "finishDelivery",
+        "tags": [
+          "delivery"
+        ],
+        "summary": "Finish the delivery as verified or blocked",
+        "description": "`verified` requires every completion issue to be resolved (fresh passing evidence and review). `blocked` requires at least one limitation explaining why.",
+        "x-carthagent-auth": "dashboard-token",
+        "x-carthagent-workspace-lease": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "verified",
+                      "blocked"
+                    ]
+                  },
+                  "review": {
+                    "type": "string"
+                  },
+                  "launch": {
+                    "type": "string",
+                    "description": "How to launch or use the result."
+                  },
+                  "limitations": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Delivery finished; the handoff is recorded in `state.handoff`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "state"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "state": {
+                      "$ref": "#/components/schemas/DeliveryState"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid status, no active plan, outstanding completion issues, or a blocked handoff without limitations.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong `x-carthagent-token` header. Body is `{\"error\":\"Unauthorized\"}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The request carried an `Origin` header other than `http://127.0.0.1:<port>` or `http://localhost:<port>`. Body is `{\"error\":\"Origin not allowed\"}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Another process holds the workspace lease (for example a concurrent `ctg check`), or checks are running or queued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/docs/{name}": {
+      "get": {
+        "operationId": "getDoc",
+        "tags": [
+          "docs"
+        ],
+        "summary": "Read a bundled Markdown document",
+        "x-carthagent-auth": "dashboard-token",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "readme",
+                "evaluation",
+                "delivery",
+                "game-development",
+                "software-delivery",
+                "typescript-delivery"
+              ]
+            },
+            "description": "readme: README.md; evaluation: docs/evaluation.md; delivery: prompts/delivery.md; the others: skills/<name>/SKILL.md."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Document content.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "content",
+                    "path"
+                  ],
+                  "properties": {
+                    "content": {
+                      "type": "string",
+                      "description": "Markdown source."
+                    },
+                    "path": {
+                      "type": "string",
+                      "description": "Absolute path of the document."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong `x-carthagent-token` header. Body is `{\"error\":\"Unauthorized\"}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The request carried an `Origin` header other than `http://127.0.0.1:<port>` or `http://localhost:<port>`. Body is `{\"error\":\"Origin not allowed\"}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown name or missing file. Body is `{\"error\":\"Document not found\"}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "dashboardToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-carthagent-token",
+        "description": "Dashboard session token: `CARTHAGENT_SERVER_TOKEN`, or the random token printed in the startup URL. Compared in constant time."
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Human-readable error message."
+          }
+        }
+      },
+      "Check": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "argv",
+          "timeoutSeconds"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique safe identifier (`^[a-z][a-z0-9_-]{0,39}$`, not `all`). Harness-required checks use the `required_` prefix.",
+            "pattern": "^[a-z][a-z0-9_-]{0,39}$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "test",
+              "runtime",
+              "static"
+            ]
+          },
+          "argv": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Executable and separate arguments; no implicit shell.",
+            "minItems": 1
+          },
+          "timeoutSeconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300
+          }
+        }
+      },
+      "Step": {
+        "type": "object",
+        "required": [
+          "id",
+          "title"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,39}$"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "work",
+              "regression"
+            ]
+          },
+          "dependsOn": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Step IDs this step depends on (acyclic)."
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Check IDs gating this step; must be empty for regression steps."
+          }
+        }
+      },
+      "Acceptance": {
+        "type": "object",
+        "required": [
+          "requirement",
+          "checks"
+        ],
+        "properties": {
+          "requirement": {
+            "type": "string",
+            "description": "Unique requirement text."
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Existing check IDs.",
+            "minItems": 1
+          }
+        }
+      },
+      "Plan": {
+        "type": "object",
+        "description": "Delivery plan. `required` verification needs acceptance criteria and at least one test or runtime check; every acceptance item must reference existing check IDs.",
+        "required": [
+          "goal",
+          "artifacts",
+          "steps"
+        ],
+        "properties": {
+          "goal": {
+            "type": "string",
+            "minLength": 1
+          },
+          "assumptions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Relative artifact roots that exist at completion (for example `.` or `src`).",
+            "minItems": 1
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Relative paths of produced evidence."
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/components/schemas/Step"
+                }
+              ]
+            },
+            "description": "1 to 40 steps; strings are legacy sequential labels.",
+            "minItems": 1,
+            "maxItems": 40
+          },
+          "verification": {
+            "type": "string",
+            "enum": [
+              "required",
+              "advisory",
+              "none"
+            ],
+            "default": "required"
+          },
+          "acceptance": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Acceptance"
+            }
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Check"
+            }
+          },
+          "design": {
+            "type": "object",
+            "description": "Tested design record used by the design gate."
+          },
+          "workflow": {
+            "type": "object",
+            "description": "Optional explicit workflow graph."
+          },
+          "outcomes": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Outcome obligations with linked checks."
+          }
+        }
+      },
+      "PlanPatch": {
+        "type": "object",
+        "description": "Nonempty subset of plan fields; `design` and `workflow` objects are shallow-merged.",
+        "minProperties": 1,
+        "additionalProperties": false,
+        "properties": {
+          "goal": {
+            "type": "string"
+          },
+          "assumptions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/components/schemas/Step"
+                }
+              ]
+            }
+          },
+          "verification": {
+            "type": "string",
+            "enum": [
+              "required",
+              "advisory",
+              "none"
+            ]
+          },
+          "acceptance": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Acceptance"
+            }
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Check"
+            }
+          },
+          "design": {
+            "type": "object"
+          },
+          "workflow": {
+            "type": "object"
+          },
+          "outcomes": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      "DesignReview": {
+        "type": "object",
+        "description": "Design review record; validated by lib/planning.mjs.",
+        "properties": {
+          "captureId": {
+            "type": "string",
+            "description": "ID returned by the `inspect` action."
+          },
+          "id": {
+            "type": "string",
+            "description": "Alias for captureId."
+          },
+          "challenges": {
+            "type": "array",
+            "items": {}
+          },
+          "walkthroughs": {
+            "type": "array",
+            "items": {}
+          },
+          "findings": {
+            "type": "array",
+            "items": {}
+          },
+          "limitations": {
+            "type": "array",
+            "items": {}
+          },
+          "resolutions": {
+            "type": "array",
+            "items": {}
+          }
+        }
+      },
+      "DeliveryReviewRequest": {
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "inspect",
+              "record"
+            ]
+          },
+          "captureId": {
+            "type": "string",
+            "description": "Required for record: ID of the latest inspect capture."
+          },
+          "coverage": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "requirement",
+                "assertions"
+              ],
+              "properties": {
+                "requirement": {
+                  "type": "string",
+                  "description": "Exact acceptance requirement text."
+                },
+                "assertions": {},
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "demonstrated",
+                    "unverified"
+                  ]
+                }
+              }
+            }
+          },
+          "probes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Boundary or metamorphic probes with observed results.",
+            "minItems": 1
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Open defects; empty when none."
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "outcomes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "check": {
+                  "type": "string"
+                },
+                "observation": {
+                  "type": "string"
+                },
+                "challenge": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "demonstrated",
+                    "unverified"
+                  ]
+                }
+              }
+            }
+          },
+          "resolutions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "change",
+                "evidence"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "change": {
+                  "type": "string"
+                },
+                "evidence": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "PlanningStatus": {
+        "type": "object",
+        "required": [
+          "locked",
+          "phase",
+          "reasons"
+        ],
+        "properties": {
+          "locked": {
+            "type": "boolean"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "discovery",
+              "design-validation",
+              "approved",
+              "implementation",
+              "informational"
+            ]
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "findings": {
+            "type": "array",
+            "items": {}
+          },
+          "reviewFindings": {
+            "type": "array",
+            "items": {}
+          },
+          "enforcement": {
+            "type": "string"
+          }
+        }
+      },
+      "Evidence": {
+        "type": "object",
+        "description": "Execution receipt for one check.",
+        "properties": {
+          "passed": {
+            "type": "boolean"
+          },
+          "fingerprint": {
+            "type": "string",
+            "description": "Workspace fingerprint after the check."
+          },
+          "executedRevision": {
+            "type": "integer"
+          },
+          "durationMs": {
+            "type": "number"
+          },
+          "code": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "timedOut": {
+            "type": "boolean"
+          },
+          "cancelled": {
+            "type": "boolean"
+          },
+          "outputLimit": {
+            "type": "boolean"
+          },
+          "changedDuringCheck": {
+            "type": "boolean"
+          },
+          "outputTail": {
+            "type": "string",
+            "description": "Last 1200 characters of output."
+          },
+          "logPath": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": true
+      },
+      "CheckResult": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Evidence"
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "output"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "output": {
+                "type": "string",
+                "description": "Captured output."
+              }
+            }
+          }
+        ]
+      },
+      "DeliveryState": {
+        "type": "object",
+        "description": "Persisted delivery report state.",
+        "properties": {
+          "version": {
+            "const": 1
+          },
+          "runId": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "description": "idle, implementing, verifying, verified or blocked."
+          },
+          "plan": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Plan"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Evidence"
+            }
+          },
+          "stepStatus": {
+            "type": "object"
+          },
+          "review": {
+            "type": "string"
+          },
+          "launch": {
+            "type": "string"
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "handoff": {
+            "type": "object"
+          }
+        },
+        "additionalProperties": true
+      },
+      "Status": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "completionIssues",
+          "plan",
+          "evidence",
+          "stepStatus",
+          "requirementRevisions",
+          "reviewEvidence",
+          "review",
+          "launch",
+          "limitations",
+          "currentFingerprint",
+          "planningStatus",
+          "planning",
+          "planningView",
+          "pendingChecks",
+          "workspace",
+          "report",
+          "update"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "idle, implementing, verifying, verified or blocked."
+          },
+          "runId": {
+            "type": "string",
+            "description": "Absent before the first plan."
+          },
+          "revision": {
+            "type": "integer",
+            "description": "Absent before the first plan."
+          },
+          "completionIssues": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "array",
+                  "items": {}
+                },
+                "description": "Outstanding completion issues by category; null without a plan."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "plan": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Plan"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Evidence"
+            }
+          },
+          "stepStatus": {
+            "type": "object"
+          },
+          "requirementRevisions": {
+            "type": "object"
+          },
+          "reviewEvidence": {
+            "oneOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "review": {
+            "type": "string"
+          },
+          "launch": {
+            "type": "string"
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "currentFingerprint": {
+            "type": "string",
+            "description": "Content fingerprint of the workspace."
+          },
+          "planningStatus": {
+            "$ref": "#/components/schemas/PlanningStatus"
+          },
+          "planning": {
+            "oneOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "planningView": {
+            "type": "object",
+            "required": [
+              "gate",
+              "workflow",
+              "evidence",
+              "blockers"
+            ],
+            "properties": {
+              "gate": {
+                "$ref": "#/components/schemas/PlanningStatus"
+              },
+              "workflow": {
+                "oneOf": [
+                  {
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "architecture": {
+                "oneOf": [
+                  {
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "evidence": {
+                "type": "array",
+                "items": {}
+              },
+              "current": {
+                "type": "array",
+                "items": {}
+              },
+              "blockers": {
+                "type": "array",
+                "items": {}
+              }
+            }
+          },
+          "pendingChecks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Check IDs without fresh evidence."
+          },
+          "workspace": {
+            "type": "string",
+            "description": "Absolute workspace path."
+          },
+          "report": {
+            "oneOf": [
+              {
+                "type": "string",
+                "description": "Absolute path of the active report."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "update": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "installed": {
+                    "type": "string"
+                  },
+                  "latest": {
+                    "type": "string"
+                  },
+                  "available": {
+                    "type": "boolean"
+                  },
+                  "tag": {
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}
