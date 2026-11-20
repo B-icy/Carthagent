@@ -18,7 +18,7 @@ const added = (patch, path) => sections(patch).get(path).split('\n')
 
 test('v21 is the candidate build patch, separate from the published v18 pin', () => {
   const expected = digest(v21);
-  assert.equal(expected, 'a3ee0e6b8e7a04b9ed6a46162dd42529af8d202b0cbbd1261124899d3f899382');
+  assert.equal(expected, '9a73eb1ded4d9914a554640226949d53caca986ef8b846ef8592fe75a9a1bf92');
   assert.ok(read('docs/staged-native-polish-v21.md').includes(expected));
   assert.ok(read('docs/release-preparation-1.1.3.md').includes(expected));
   const build = read('script/ctg/build-owned-runtime.sh');
@@ -60,6 +60,7 @@ test('v21 keeps every v20 section and changes only the reviewed paths', () => {
   // Upstream files that earlier patches left untouched.
   assert.deepEqual(extra.filter(path => !created.includes(path)).sort(), [
     'packages/tui/src/util/path-format.ts',
+    'packages/tui/test/ui/pane-resize-handle.test.tsx',
     'packages/tui/test/util/path-format.test.ts',
   ]);
 });
@@ -89,8 +90,12 @@ test('v21 clamps a dragged rail and stops the drag release from clicking through
   assert.match(handle, /id="pane-resize-shield"/);
   assert.match(handle, /container\.zIndex = 10_000/);
   assert.match(handle, /queueMicrotask\(/);
+  // Hit testing reads the last drawn frame, so removing the shield must draw one before the next press.
+  assert.match(handle, /setShielded\(false\)\n\s*(\+\s*\/\/.*\n\s*)*\+\s*renderer\.intermediateRender\(\)/);
   assert.ok(added(v21, 'packages/tui/test/navigation-rail.test.tsx')
     .includes('dragging the rail divider past the page stops at the widest rail that fits, clicks nothing and releases the highlight'));
+  assert.ok(added(v21, 'packages/tui/test/ui/pane-resize-handle.test.tsx')
+    .includes('a press right after a resize reaches the content under the pointer'));
 });
 
 test('v21 caches plugin transforms only in release builds and bounds the theme wait', () => {

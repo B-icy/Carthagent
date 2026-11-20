@@ -1,7 +1,7 @@
 # Production release 1.1.3 preparation
 
 The native prebuild recipe selects the complete v21 patch, SHA-256
-`a3ee0e6b8e7a04b9ed6a46162dd42529af8d202b0cbbd1261124899d3f899382`.
+`9a73eb1ded4d9914a554640226949d53caca986ef8b846ef8592fe75a9a1bf92`.
 It carries every v20 sidebar fix plus the v21 polish described in
 [staged-native-polish-v21.md](staged-native-polish-v21.md).
 

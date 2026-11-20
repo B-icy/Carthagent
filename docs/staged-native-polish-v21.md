@@ -29,7 +29,9 @@ change promotes the generated manifest.
   footer opened the working-directory menu, because the renderer delivers the
   release to the element under the pointer. While a resize is in progress a
   transparent layer above the app takes the pointer, and it is removed only
-  after the release has been dispatched.
+  after the release has been dispatched. Removing it also draws a frame at
+  once: hit testing reads the last drawn frame, so without it a right-click or
+  scroll right after a drag could land on the removed layer and do nothing.
 - **Startup.** Each launch compiled the plugin's TSX files with Babel, about
   1.7 s on a one-core machine. Release builds now cache each compiled file
   under the profile's cache folder, keyed by the file's bytes and the
@@ -46,7 +48,7 @@ folder.
 
 - Pristine upstream: `843a6c514e606b436a7fe713422ace0a93ad3d61`.
 - Complete patch: `docs/patches/opencode-v2.0.32-session-ui-combined-v21.patch`.
-- Patch SHA-256: `a3ee0e6b8e7a04b9ed6a46162dd42529af8d202b0cbbd1261124899d3f899382`.
+- Patch SHA-256: `9a73eb1ded4d9914a554640226949d53caca986ef8b846ef8592fe75a9a1bf92`.
 
 The patch applies cleanly to pristine upstream. Relative to v20 it changes:
 
@@ -62,9 +64,10 @@ The patch applies cleanly to pristine upstream. Relative to v20 it changes:
 - `packages/tui/test/prompt/slash-options.test.ts`
 - `packages/tui/test/ui/layout.test.ts`
 
-It also changes two upstream files that earlier patches left untouched:
+It also changes three upstream files that earlier patches left untouched:
 
 - `packages/tui/src/util/path-format.ts`
+- `packages/tui/test/ui/pane-resize-handle.test.tsx`
 - `packages/tui/test/util/path-format.test.ts`
 
 and adds:
@@ -77,9 +80,15 @@ and adds:
 
 ## Validation
 
-- TUI typecheck clean; full TUI suite 1692 pass, 2 skip, 0 fail.
+- TUI typecheck clean; full TUI suite 1693 pass, 2 skip, 0 fail.
 - The title, divider-clamp, drag-release and completion regression tests fail
   against the v20 sources and pass with v21.
+- The first five-platform prebuild of this patch failed on three runners: the
+  hidden-sidebar mouse test right-clicked the rail just after a divider drag
+  and no menu opened. Locally it failed 11 of 30 runs. The cause was the
+  stale-frame hit test described above. With the fix it passed 120 of 120
+  runs, and a focused regression test that presses right after a resize
+  fails 5 of 5 runs without the fix and passes 30 of 30 with it.
 - A local linux-arm64 build of this patch, run through the real `ctg` entry on
   a copy of a signed-in profile at 120x36:
   - A long title ends in `…`; after hovering, the full title appears beside the

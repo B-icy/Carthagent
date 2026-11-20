@@ -12639,12 +12639,12 @@ index 803ae76897150db832710e367217be943df373ce..863ab713b4484aa97dfa887e7af6ea9d
    return Math.max(
      SESSION_TABS_COMPACT_WIDTH,
 diff --git a/packages/tui/src/ui/pane-resize-handle.tsx b/packages/tui/src/ui/pane-resize-handle.tsx
-index f0eea2caf46f2bc52bac61a74c1698e6cd69f850..48cd996ddb7e3c87d55802d81cb8c6b4b023ceeb 100644
+index f0eea2caf46f2bc52bac61a74c1698e6cd69f850..09d44abbc17db7d99dbdc36e60cd4dd9e8a927cd 100644
 --- a/packages/tui/src/ui/pane-resize-handle.tsx
 +++ b/packages/tui/src/ui/pane-resize-handle.tsx
-@@ -1,33 +1,83 @@
+@@ -1,33 +1,88 @@
 +import { BoxRenderable } from "@opentui/core"
-+import { Portal } from "@opentui/solid"
++import { Portal, useRenderer } from "@opentui/solid"
 +import { createEffect, createSignal, on, Show } from "solid-js"
  import { useTheme } from "../context/theme"
 +import { EmptyBorder } from "./border"
@@ -12659,6 +12659,7 @@ index f0eea2caf46f2bc52bac61a74c1698e6cd69f850..48cd996ddb7e3c87d55802d81cb8c6b4
 +  divider?: boolean
  }) {
    const theme = useTheme()
++  const renderer = useRenderer()
 +  // The renderer also delivers a drag's release to whatever is under the pointer, so ending a resize over a row,
 +  // link or footer would click it. While resizing, a transparent layer above the app takes the pointer instead.
 +  // It is removed after the release has been fully dispatched, never in the middle of it.
@@ -12667,7 +12668,11 @@ index f0eea2caf46f2bc52bac61a74c1698e6cd69f850..48cd996ddb7e3c87d55802d81cb8c6b4
 +    on(props.resize.resizing, (resizing) => {
 +      if (resizing) return setShielded(true)
 +      queueMicrotask(() => {
-+        if (!props.resize.resizing()) setShielded(false)
++        if (props.resize.resizing() || !shielded()) return
++        setShielded(false)
++        // Hit testing reads the last drawn frame, which still has the layer on top; until another frame is drawn,
++        // the next press or scroll would land on the removed layer and be lost.
++        renderer.intermediateRender()
 +      })
 +    }),
 +  )
@@ -20416,6 +20421,91 @@ index 0aded5faeb619d5d129889a33f0098f52225574b..8b2d3a033d0477785c3dbd498d79715e
      const x = rows[head]!.indexOf("https")
      expect(tail).toBeGreaterThan(head)
  
+diff --git a/packages/tui/test/ui/pane-resize-handle.test.tsx b/packages/tui/test/ui/pane-resize-handle.test.tsx
+index 0c7fd163975c23b444bf5c1af39b6f13d05391b0..5b63814388b7d7f35e97ac723d506605ce2babca 100644
+--- a/packages/tui/test/ui/pane-resize-handle.test.tsx
++++ b/packages/tui/test/ui/pane-resize-handle.test.tsx
+@@ -1,5 +1,5 @@
+ /** @jsxImportSource @opentui/solid */
+-import { BoxRenderable } from "@opentui/core"
++import { BoxRenderable, MouseButton } from "@opentui/core"
+ import { testRender } from "@opentui/solid"
+ import { expect, test } from "bun:test"
+ import { createSignal } from "solid-js"
+@@ -132,3 +132,73 @@ for (const mode of ["dark", "light"] as const) {
+     }
+   })
+ }
++
++test("a press right after a resize reaches the content under the pointer", async () => {
++  const [value, setValue] = createSignal(20)
++  const presses: number[] = []
++  let resize!: ReturnType<typeof createPaneResize>
++  let parent!: BoxRenderable
++  function Pane() {
++    resize = createPaneResize({
++      value,
++      defaultValue: () => 16,
++      clamp: (size) => Math.max(10, Math.min(40, size)),
++      fromMouse: (event) => event.x + 1,
++      contains: (event, size) => event.x >= size - 1 && event.x <= size,
++      onCommit: setValue,
++    })
++    return (
++      <box
++        ref={(element) => (parent = element)}
++        width="100%"
++        height="100%"
++        onMouseDrag={resize.onMouseDrag}
++        onMouseDragEnd={resize.onMouseDragEnd}
++        onMouseUp={resize.onMouseUp}
++      >
++        <box
++          position="absolute"
++          left={45}
++          top={0}
++          width={10}
++          height="100%"
++          onMouseDown={(event) => presses.push(event.button)}
++        />
++        <PaneResizeHandle resize={resize} left={resize.size() - 1} />
++      </box>
++    )
++  }
++  const app = await testRender(
++    () => (
++      <TestTuiContexts>
++        <ConfigProvider config={createTuiResolvedConfig({ theme: { name: "opencode", mode: "dark" } })}>
++          <ThemeProvider mode="dark" source={emptyThemeSource}>
++            <Pane />
++          </ThemeProvider>
++        </ConfigProvider>
++      </TestTuiContexts>
++    ),
++    { width: 60, height: 5 },
++  )
++
++  try {
++    app.renderer.start()
++    await app.waitForFrame(() => parent?.height === 5)
++    await app.mockMouse.pressDown(20, 2)
++    await app.renderOnce()
++    expect(app.renderer.root.findDescendantById("pane-resize-shield")).toBeDefined()
++    await app.mockMouse.moveTo(30, 2)
++    await app.renderOnce()
++    // The release over the content belongs to the resize, so the content sees no press from it.
++    await app.mockMouse.release(50, 2)
++    expect(value()).toBe(40)
++    expect(presses).toEqual([])
++    // No frame is waited for: a user can press again before the next scheduled frame.
++    await app.mockMouse.pressDown(50, 2, MouseButton.RIGHT)
++    await app.mockMouse.release(50, 2, MouseButton.RIGHT)
++    expect(app.renderer.root.findDescendantById("pane-resize-shield")).toBeUndefined()
++    expect(presses).toEqual([MouseButton.RIGHT])
++  } finally {
++    app.renderer.destroy()
++  }
++})
 diff --git a/packages/tui/test/util/combining-input.test.ts b/packages/tui/test/util/combining-input.test.ts
 new file mode 100644
 index 0000000000000000000000000000000000000000..f3309c5c19c59bc31261475b32fa434b89db0fe2
