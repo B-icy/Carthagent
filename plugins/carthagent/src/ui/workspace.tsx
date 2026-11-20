@@ -32,43 +32,18 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
   const [pullRequests, setPullRequests] = createSignal<Record<string, PullRequestRecord[]>>({});
   const base = () => context.keymap.mode.current() === "base";
   const back = () => context.ui.router.navigate(workspaceReturnRoute(props.sessionID ?? props.returnSessionID));
-  const escape = () => {
-    if (filterFocused()) {
-      setFilterFocused(false);
-      return;
-    }
-    back();
-  };
+  // prettier-ignore
+  const escape = () => { if (filterFocused()) { setFilterFocused(false); return; } back(); };
   const pointer = createPointerActions(base);
   let content: ScrollBoxRenderable | undefined;
+  // prettier-ignore
   context.keymap.layer(() => ({
     priority: 30,
     commands: [
       { bind: "escape", title: "Back", enabled: base, run: escape },
-      {
-        bind: "tab",
-        title: "Toggle workspace filter",
-        enabled: base,
-        run: () => {
-          setFilterFocused(!filterFocused());
-        },
-      },
-      {
-        bind: "pageup",
-        title: "Scroll workspace report up",
-        enabled: base,
-        run: () => {
-          content?.scrollBy(-1 / 2, "viewport");
-        },
-      },
-      {
-        bind: "pagedown",
-        title: "Scroll workspace report down",
-        enabled: base,
-        run: () => {
-          content?.scrollBy(1 / 2, "viewport");
-        },
-      },
+      { bind: "tab", title: "Toggle workspace filter", enabled: base, run: () => { setFilterFocused(!filterFocused()); } },
+      { bind: "pageup", title: "Scroll workspace report up", enabled: base, run: () => { content?.scrollBy(-1 / 2, "viewport"); } },
+      { bind: "pagedown", title: "Scroll workspace report down", enabled: base, run: () => { content?.scrollBy(1 / 2, "viewport"); } },
     ],
   }));
   const snapshotRequests = createLatestRequestGate();
@@ -437,475 +412,115 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
   });
   const sectionColor = (tone: "returned" | "truncated" | "unknown") =>
     tone === "truncated" ? context.theme.text.feedback.warning.base : context.theme.text.muted;
-  return (
-    <box flexDirection="column" flexGrow={1} minHeight={0} overflow="hidden" padding={1} onMouseDown={pointer.press} onMouseUp={pointer.release}>
-      <box flexDirection="row" flexShrink={0} gap={2}>
-        <text flexShrink={0} fg={context.theme.text.action.primary.base} onMouseUp={pointer.action(back)}>
-          ← Back
-        </text>
-        <text flexShrink={0} fg={context.theme.text.feedback.warning.base}>
-          CARTHAGENT · {props.view.toUpperCase()}
-        </text>
-      </box>
-      <text flexShrink={0} fg={context.theme.text.muted}>
-        CTG workspace tasks and native sessions associated with its projects.
-      </text>
-      <box flexDirection="row" flexShrink={0} gap={1}>
-        <text flexShrink={0} fg={context.theme.text.action.secondary.base}>
-          Filter:
-        </text>
-        <input
-          flexGrow={1}
-          placeholder="project name or path"
-          value={query()}
-          onInput={setQuery}
-          focused={base() && filterFocused()}
-          onMouseDown={() => setFilterFocused(true)}
-        />
-        <text flexShrink={0} fg={context.theme.text.action.primary.base} onMouseUp={pointer.action(() => void refresh())}>
-          ↻ Refresh
-        </text>
-      </box>
-      <Show when={error()}>
-        <text flexShrink={0} fg={context.theme.text.feedback.error.base}>
-          {error()}
-        </text>
-      </Show>
-      <Show when={!rpcConnected()}>
-        <text flexShrink={0} fg={context.theme.text.feedback.warning.base}>
-          Workspace RPC disconnected · cached view may be stale; waiting for native reconnect
-        </text>
-      </Show>
-      {/* Report rows keep their natural height and scroll; shrinking them lets wrapped rows paint over each other. */}
-      <scrollbox
-        ref={(node) => {
-          content = node;
-        }}
-        flexBasis={0}
-        flexGrow={1}
-        minHeight={1}
-        overflow="hidden"
-        contentOptions={{ flexDirection: "column" }}
-      >
-        <Show when={activeSession()}>
-          {(active) => (
-            <box flexDirection="column" flexShrink={0} marginTop={1}>
-              <text flexShrink={0} fg={context.theme.text.action.primary.base}>
-                Selected native session
-              </text>
-              <For
-                each={
-                  api ? (snapshot()?.sessions.filter((session) => session.id === active()) ?? []) : localSessions().filter((session) => session.id === active())
-                }
-              >
-                {(session) => (
-                  <box flexDirection="column" flexShrink={0}>
-                    <text flexShrink={0} fg={context.theme.text.base}>
-                      {session.title}
-                    </text>
-                    <Show when={api}>
-                      <text
-                        flexShrink={0}
-                        fg={context.theme.text.action.secondary.base}
-                        onMouseUp={pointer.action(
-                          () =>
-                            void api
-                              ?.delivery({ sessionID: active() })
-                              .then((value: unknown) =>
-                                context.ui.dialog.alert({ title: "Observed delivery evidence", message: JSON.stringify(value ?? { status: "none" }, null, 2) }),
-                              )
-                              .catch((cause: unknown) => setError(String(cause))),
-                        )}
-                      >
-                        View delivery evidence
-                      </text>
-                      <text
-                        flexShrink={0}
-                        fg={context.theme.text.action.secondary.base}
-                        onMouseUp={pointer.action(
-                          () =>
-                            void api
-                              ?.review({ sessionID: active() })
-                              .then((value) => context.ui.dialog.alert({ title: "Independent code-review status", message: independentReviewText(value) }))
-                              .catch((cause: unknown) => setError(String(cause))),
-                        )}
-                      >
-                        View review status
-                      </text>
-                    </Show>
-                  </box>
-                )}
-              </For>
-              <Show when={taskForSession(active())}>
-                <text flexShrink={0} fg={context.theme.text.action.primary.base}>
-                  Task pull requests · GitHub is queried only by explicit actions
-                </text>
-                <text flexShrink={0} fg={context.theme.text.action.secondary.base} onMouseUp={pointer.action(() => void loadPullRequests(active()))}>
-                  Load cached pull requests
-                </text>
-                <text flexShrink={0} fg={context.theme.text.action.secondary.base} onMouseUp={pointer.action(() => void associatePullRequest(active()))}>
-                  + Associate pull request…
-                </text>
-                <For each={pullRequests()[taskForSession(active())!] ?? []}>
-                  {(pr) => (
-                    <box flexDirection="column" flexShrink={0}>
-                      <text flexShrink={0} fg={context.theme.text.base}>
-                        #{pr.number} · {pr.state}
-                        {pr.draft ? " · draft" : ""} · checks {pr.checks} · review {pr.review} · {pr.source}
-                      </text>
-                      <text flexShrink={0} fg={context.theme.text.muted}>
-                        {pr.headRef} → {pr.baseRef} · {pr.head.slice(0, 10)} · updated {pr.updatedAt}
-                      </text>
-                      <text
-                        flexShrink={0}
-                        fg={context.theme.text.action.secondary.base}
-                        onMouseUp={pointer.action(() => void refreshPullRequest(active(), pr.taskID, pr.number))}
-                      >
-                        ↻ Refresh #{pr.number} from GitHub
-                      </text>
-                    </box>
-                  )}
-                </For>
-              </Show>
-            </box>
-          )}
-        </Show>
-        <Show
-          when={snapshot()}
-          fallback={
-            <text flexShrink={0} fg={context.theme.text.faint}>
-              {error() || "Loading local workspace…"}
-            </text>
-          }
-        >
-          <Show when={props.view === "workflow"}>
-            <text flexShrink={0} fg={context.theme.text.action.primary.base}>
-              Authoritative delivery workflow · {deliveryEvidence()?.status ?? "select a session"}
-            </text>
-            <text flexShrink={0} fg={readinessColor()}>
-              {readiness().label}
-            </text>
-            <For each={readiness().receipts}>
-              {(receipt) => (
-                <text flexShrink={0} fg={context.theme.text.feedback.warning.base}>
-                  {receipt}
-                </text>
-              )}
-            </For>
-            <Show
-              when={deliveryEvidence()?.workflow}
-              fallback={
-                <text flexShrink={0} fg={context.theme.text.faint}>
-                  Select a session with a delivery report to load workflow nodes, edges, and step receipts.
-                </text>
-              }
-            >
-              <For each={orderedWorkflowNodes(deliveryEvidence()?.workflow?.nodes ?? [])}>
-                {(node) => (
-                  <text
-                    flexShrink={0}
-                    fg={
-                      node.status === "fail" || node.status === "failed" || node.status === "blocked"
-                        ? context.theme.text.feedback.error.base
-                        : node.status === "complete" || node.status === "passed"
-                          ? context.theme.text.feedback.success.base
-                          : context.theme.text.base
-                    }
-                  >
-                    [{node.status}] {node.title} · {node.type}
-                    {node.step ? ` · step ${node.step}` : ""} · checks: {node.checks.join(", ") || "none"}
-                  </text>
-                )}
-              </For>
-              <text flexShrink={0} fg={context.theme.text.muted}>
-                {deliveryEvidence()?.workflow?.semantics}
-              </text>
-              <For each={deliveryEvidence()?.workflow?.edges ?? []}>
-                {(edge) => (
-                  <text flexShrink={0} fg={context.theme.text.muted}>
-                    {edge.from} → {edge.to} · {edge.label ?? edge.kind}
-                    {edge.when ? ` · when ${edge.when}` : ""}
-                  </text>
-                )}
-              </For>
-            </Show>
-            <For each={readiness().sectionRows}>
-              {(row) => (
-                <text flexShrink={0} fg={sectionColor(row.tone)}>
-                  {row.text}
-                </text>
-              )}
-            </For>
-            <text
-              flexShrink={0}
-              fg={context.theme.text.action.secondary.base}
-              onMouseUp={pointer.action(() => activeSession() && void refreshEvidence(activeSession()!))}
-            >
-              ↻ Refresh delivery workflow
-            </text>
-          </Show>
-          <Show when={props.view === "architecture"}>
-            <text flexShrink={0} fg={context.theme.text.action.primary.base}>
-              Delivery architecture · {deliveryEvidence()?.status ?? "select a session"}
-            </text>
-            <text flexShrink={0} fg={readinessColor()}>
-              {readiness().label}
-            </text>
-            <For each={readiness().receipts}>
-              {(receipt) => (
-                <text flexShrink={0} fg={context.theme.text.feedback.warning.base}>
-                  {receipt}
-                </text>
-              )}
-            </For>
-            <For each={readiness().sectionRows}>
-              {(row) => (
-                <text flexShrink={0} fg={sectionColor(row.tone)}>
-                  {row.text}
-                </text>
-              )}
-            </For>
-            <Show
-              when={deliveryEvidence()?.architecture}
-              fallback={
-                <text flexShrink={0} fg={context.theme.text.faint}>
-                  Select a session with a delivery report to load authored architecture nodes, edges, and ports.
-                </text>
-              }
-            >
-              <For each={deliveryEvidence()?.architecture?.nodes ?? []}>
-                {(node) => (
-                  <text flexShrink={0} fg={context.theme.text.base}>
-                    ◆ {node.title} · {node.type ?? "component"}
-                    {node.layer ? ` · layer ${node.layer}` : ""}
-                    {node.status ? ` · ${node.status}` : ""}
-                  </text>
-                )}
-              </For>
-              <For each={deliveryEvidence()?.architecture?.edges ?? []}>
-                {(edge) => (
-                  <text flexShrink={0} fg={context.theme.text.muted}>
-                    {edge.from} → {edge.to} · {edge.label ?? edge.kind}
-                  </text>
-                )}
-              </For>
-              <For each={deliveryEvidence()?.architecture?.ports ?? []}>
-                {(port) => (
-                  <text flexShrink={0} fg={context.theme.text.action.secondary.base}>
-                    ⇄ {port.id} · {port.owner} via {port.adapter} · root {port.compositionRoot}
-                    {port.integrationAssertion ? ` · verifies ${port.integrationAssertion}` : ""}
-                  </text>
-                )}
-              </For>
-            </Show>
-            <text
-              flexShrink={0}
-              fg={context.theme.text.action.secondary.base}
-              onMouseUp={pointer.action(() => activeSession() && void refreshEvidence(activeSession()!))}
-            >
-              ↻ Refresh delivery architecture
-            </text>
-          </Show>
-          <Show when={props.view === "evidence"}>
-            <text flexShrink={0} fg={context.theme.text.action.primary.base}>
-              Observed delivery evidence
-            </text>
-            <For each={evidenceSessions()}>
-              {(session) => (
-                <text flexShrink={0} fg={context.theme.text.muted}>
-                  {session.title} · {session.status} · {session.directory}
-                </text>
-              )}
-            </For>
-            <Show when={evidenceSessions().length === 0}>
-              <text flexShrink={0} fg={context.theme.text.faint}>
-                No matching workspace session has recorded evidence.
-              </text>
-            </Show>
-            <Show when={activeSession()}>
-              <text flexShrink={0} fg={context.theme.text.action.secondary.base} onMouseUp={pointer.action(() => void refreshEvidence(activeSession()!))}>
-                ↻ Refresh selected session evidence
-              </text>
-              <text flexShrink={0} fg={context.theme.text.action.primary.base}>
-                Delivery receipt
-              </text>
-              <Show
-                when={deliveryEvidence()}
-                fallback={
-                  <text flexShrink={0} fg={context.theme.text.faint}>
-                    Loading delivery receipt…
-                  </text>
-                }
-              >
-                <text flexShrink={0} fg={context.theme.text.base}>
-                  Status: {deliveryEvidence()?.status} · {deliveryEvidence()?.freshness ?? "freshness unavailable"} · revision{" "}
-                  {deliveryEvidence()?.revision ?? "—"} · run {deliveryEvidence()?.runId ?? "—"}
-                </text>
-                <text flexShrink={0} fg={readinessColor()}>
-                  {readiness().label}
-                </text>
-                <For each={readiness().receipts}>
-                  {(receipt) => (
-                    <text flexShrink={0} fg={context.theme.text.feedback.warning.base}>
-                      {receipt}
-                    </text>
-                  )}
-                </For>
-                <Show when={deliveryEvidence()?.plan}>
-                  {(plan) => (
-                    <box flexDirection="column" flexShrink={0}>
-                      <text flexShrink={0} fg={context.theme.text.action.primary.base}>
-                        Goal: {plan().goal}
-                      </text>
-                      <Show when={deliveryEvidence()?.truncation?.steps}>
-                        {(scope) => (
-                          <text flexShrink={0} fg={context.theme.text.muted}>
-                            Steps: {scope().returned} of {scope().total} returned
-                          </text>
-                        )}
-                      </Show>
-                      <For each={plan().steps}>
-                        {(step) => (
-                          <text flexShrink={0} fg={step.status === "completed" ? context.theme.text.feedback.success.base : context.theme.text.base}>
-                            [{step.status}] {step.id} · {step.title}
-                            {step.dependsOn.length ? ` · after ${step.dependsOn.join(", ")}` : ""}
-                          </text>
-                        )}
-                      </For>
-                      <Show when={deliveryEvidence()?.truncation?.checks}>
-                        {(scope) => (
-                          <text flexShrink={0} fg={context.theme.text.muted}>
-                            Checks: {scope().returned} of {scope().total} returned
-                          </text>
-                        )}
-                      </Show>
-                      <For each={deliveryEvidence()?.evidence ?? []}>
-                        {(item) => (
-                          <text
-                            flexShrink={0}
-                            fg={
-                              item.status === "fresh"
-                                ? context.theme.text.feedback.success.base
-                                : item.status === "failed" || item.status === "stale"
-                                  ? context.theme.text.feedback.error.base
-                                  : context.theme.text.feedback.warning.base
-                            }
-                          >
-                            Receipt {item.id}: {item.status}
-                            {item.code !== undefined ? ` · exit ${item.code}` : ""}
-                            {item.filename ? ` · ${item.filename}` : ""}
-                          </text>
-                        )}
-                      </For>
-                    </box>
-                  )}
-                </Show>
-                <For each={readiness().sectionRows}>
-                  {(row) => (
-                    <text flexShrink={0} fg={sectionColor(row.tone)}>
-                      {row.text}
-                    </text>
-                  )}
-                </For>
-              </Show>
-              <text flexShrink={0} fg={context.theme.text.action.primary.base}>
-                Independent code-review receipt
-              </text>
-              <Show
-                when={reviewEvidence()}
-                fallback={
-                  <text flexShrink={0} fg={context.theme.text.faint}>
-                    Loading review receipt…
-                  </text>
-                }
-              >
-                <text flexShrink={0} fg={context.theme.text.muted}>
-                  {independentReviewText(reviewEvidence() as { status?: string; summary?: string; error?: string } | undefined)}
-                </text>
-              </Show>
-            </Show>
-          </Show>
-          <select
-            options={navigationOptions()}
-            onSelect={(_index, option) => selectNavigation(option)}
-            focused={base() && !filterFocused()}
-            onMouseDown={() => setFilterFocused(false)}
-          />
-          <For each={filteredProjects()}>
-            {(project) => (
-              <box flexDirection="column" flexShrink={0} marginTop={1}>
-                <text flexShrink={0} fg={context.theme.text.action.primary.base}>
-                  ◆ {project.name ?? project.directory}
-                </text>
-                <text flexShrink={0} fg={context.theme.text.muted}>
-                  {context.ui.format.path(project.directory)}
-                </text>
-                <text flexShrink={0} fg={context.theme.text.action.secondary.base} onMouseUp={pointer.action(() => void worktree(project.id))}>
-                  + Create worktree
-                </text>
-                <For each={snapshot()?.tasks.filter((task) => task.projectID === project.id)}>
-                  {(task) => (
-                    <box flexDirection="column" flexShrink={0} paddingLeft={2}>
-                      <text flexShrink={0} fg={task.attention ? context.theme.text.feedback.warning.base : context.theme.text.base}>
-                        {task.attention ? "! " : "· "}
-                        {task.title} [{task.status}]
-                      </text>
-                      <For each={snapshot()?.sessions.filter((session) => session.taskID === task.id)}>
-                        {(session) => (
-                          <text flexShrink={0} fg={context.theme.text.muted}>
-                            {" "}
-                            ↳ {session.title} · {session.status}
-                          </text>
-                        )}
-                      </For>
-                    </box>
-                  )}
-                </For>
-              </box>
-            )}
-          </For>
-        </Show>
-        <Show when={snapshot()}>
-          <text flexShrink={0} fg={context.theme.text.action.primary.base}>
-            Workspace native sessions
-          </text>
-          <For each={workspaceSessions()}>
-            {(session) => (
-              <text
-                flexShrink={0}
-                fg={session.attention ? context.theme.text.feedback.warning.base : context.theme.text.action.secondary.base}
-                onMouseUp={pointer.action(() => void openSession(session.id))}
-              >
-                {session.attention ? "! " : "· "}
-                {session.title} [{session.attention ? `${session.attention} pending` : session.status}] · {session.directory}
-              </text>
-            )}
-          </For>
-        </Show>
-        <Show when={!snapshot()}>
-          <text flexShrink={0} fg={context.theme.text.action.primary.base}>
-            Local Carthagent sessions
-          </text>
-          <For
-            each={localSessions().filter(
-              (session) => !query() || `${session.title ?? ""} ${session.id} ${session.location.directory}`.toLowerCase().includes(query().toLowerCase()),
-            )}
-          >
-            {(session) => (
-              <text
-                flexShrink={0}
-                fg={context.theme.text.action.secondary.base}
-                onMouseUp={pointer.action(() => context.ui.router.navigate({ type: "session", sessionID: session.id }))}
-              >
-                · {session.title ?? session.id} [{context.data.session.status(session.id)}]
-              </text>
-            )}
-          </For>
-        </Show>
-      </scrollbox>
-      <text flexShrink={0} fg={context.theme.text.faint}>
-        Esc back · Tab filter · PgUp/PgDn scroll · /ctg-open searches sessions; /ctg-worktree creates a worktree; /ctg-task starts a task.
-      </text>
+  // prettier-ignore
+  return <box flexDirection="column" flexGrow={1} minHeight={0} overflow="hidden" padding={1} onMouseDown={pointer.press} onMouseUp={pointer.release}>
+    <box flexDirection="row" flexShrink={0} gap={2}>
+      <text flexShrink={0} fg={context.theme.text.action.primary.base} onMouseUp={pointer.action(back)}>← Back</text>
+      <text flexShrink={0} fg={context.theme.text.feedback.warning.base}>CARTHAGENT · {props.view.toUpperCase()}</text>
     </box>
-  );
+    <text flexShrink={0} fg={context.theme.text.muted}>CTG workspace tasks and native sessions associated with its projects.</text>
+    <box flexDirection="row" flexShrink={0} gap={1}>
+      <text flexShrink={0} fg={context.theme.text.action.secondary.base}>Filter:</text>
+      <input flexGrow={1} placeholder="project name or path" value={query()} onInput={setQuery} focused={base() && filterFocused()} onMouseDown={() => setFilterFocused(true)} />
+      <text flexShrink={0} fg={context.theme.text.action.primary.base} onMouseUp={pointer.action(() => void refresh())}>↻ Refresh</text>
+    </box>
+    <Show when={error()}><text flexShrink={0} fg={context.theme.text.feedback.error.base}>{error()}</text></Show>
+    <Show when={!rpcConnected()}><text flexShrink={0} fg={context.theme.text.feedback.warning.base}>Workspace RPC disconnected · cached view may be stale; waiting for native reconnect</text></Show>
+    {/* Report rows keep their natural height and scroll; shrinking them lets wrapped rows paint over each other. */}
+    <scrollbox ref={(node) => { content = node; }} flexBasis={0} flexGrow={1} minHeight={1} overflow="hidden" contentOptions={{ flexDirection: "column" }}>
+    <Show when={activeSession()}>{(active) => <box flexDirection="column" flexShrink={0} marginTop={1}>
+      <text flexShrink={0} fg={context.theme.text.action.primary.base}>Selected native session</text>
+      <For each={api ? snapshot()?.sessions.filter((session) => session.id === active()) ?? [] : localSessions().filter((session) => session.id === active())}>{(session) =>
+        <box flexDirection="column" flexShrink={0}>
+          <text flexShrink={0} fg={context.theme.text.base}>{session.title}</text>
+          <Show when={api}>
+            <text flexShrink={0} fg={context.theme.text.action.secondary.base} onMouseUp={pointer.action(() => void api?.delivery({ sessionID: active() }).then((value: unknown) => context.ui.dialog.alert({ title: "Observed delivery evidence", message: JSON.stringify(value ?? { status: "none" }, null, 2) })).catch((cause: unknown) => setError(String(cause))))}>View delivery evidence</text>
+            <text flexShrink={0} fg={context.theme.text.action.secondary.base} onMouseUp={pointer.action(() => void api?.review({ sessionID: active() }).then((value) => context.ui.dialog.alert({ title: "Independent code-review status", message: independentReviewText(value) })).catch((cause: unknown) => setError(String(cause))))}>View review status</text>
+          </Show>
+        </box>}</For>
+      <Show when={taskForSession(active())}>
+        <text flexShrink={0} fg={context.theme.text.action.primary.base}>Task pull requests · GitHub is queried only by explicit actions</text>
+        <text flexShrink={0} fg={context.theme.text.action.secondary.base} onMouseUp={pointer.action(() => void loadPullRequests(active()))}>Load cached pull requests</text>
+        <text flexShrink={0} fg={context.theme.text.action.secondary.base} onMouseUp={pointer.action(() => void associatePullRequest(active()))}>+ Associate pull request…</text>
+        <For each={pullRequests()[taskForSession(active())!] ?? []}>{(pr) => <box flexDirection="column" flexShrink={0}>
+          <text flexShrink={0} fg={context.theme.text.base}>#{pr.number} · {pr.state}{pr.draft ? " · draft" : ""} · checks {pr.checks} · review {pr.review} · {pr.source}</text>
+          <text flexShrink={0} fg={context.theme.text.muted}>{pr.headRef} → {pr.baseRef} · {pr.head.slice(0, 10)} · updated {pr.updatedAt}</text>
+          <text flexShrink={0} fg={context.theme.text.action.secondary.base} onMouseUp={pointer.action(() => void refreshPullRequest(active(), pr.taskID, pr.number))}>↻ Refresh #{pr.number} from GitHub</text>
+        </box>}</For>
+      </Show>
+    </box>}</Show>
+    <Show when={snapshot()} fallback={<text flexShrink={0} fg={context.theme.text.faint}>{error() || "Loading local workspace…"}</text>}>
+      <Show when={props.view === "workflow"}>
+        <text flexShrink={0} fg={context.theme.text.action.primary.base}>Authoritative delivery workflow · {deliveryEvidence()?.status ?? "select a session"}</text>
+        <text flexShrink={0} fg={readinessColor()}>{readiness().label}</text>
+        <For each={readiness().receipts}>{(receipt) => <text flexShrink={0} fg={context.theme.text.feedback.warning.base}>{receipt}</text>}</For>
+        <Show when={deliveryEvidence()?.workflow} fallback={<text flexShrink={0} fg={context.theme.text.faint}>Select a session with a delivery report to load workflow nodes, edges, and step receipts.</text>}>
+          <For each={orderedWorkflowNodes(deliveryEvidence()?.workflow?.nodes ?? [])}>{(node) => <text flexShrink={0} fg={node.status === "fail" || node.status === "failed" || node.status === "blocked" ? context.theme.text.feedback.error.base : node.status === "complete" || node.status === "passed" ? context.theme.text.feedback.success.base : context.theme.text.base}>[{node.status}] {node.title} · {node.type}{node.step ? ` · step ${node.step}` : ""} · checks: {node.checks.join(", ") || "none"}</text>}</For>
+          <text flexShrink={0} fg={context.theme.text.muted}>{deliveryEvidence()?.workflow?.semantics}</text>
+          <For each={deliveryEvidence()?.workflow?.edges ?? []}>{(edge) => <text flexShrink={0} fg={context.theme.text.muted}>{edge.from} → {edge.to} · {edge.label ?? edge.kind}{edge.when ? ` · when ${edge.when}` : ""}</text>}</For>
+        </Show>
+        <For each={readiness().sectionRows}>{(row) => <text flexShrink={0} fg={sectionColor(row.tone)}>{row.text}</text>}</For>
+        <text flexShrink={0} fg={context.theme.text.action.secondary.base} onMouseUp={pointer.action(() => activeSession() && void refreshEvidence(activeSession()!))}>↻ Refresh delivery workflow</text>
+      </Show>
+      <Show when={props.view === "architecture"}>
+        <text flexShrink={0} fg={context.theme.text.action.primary.base}>Delivery architecture · {deliveryEvidence()?.status ?? "select a session"}</text>
+        <text flexShrink={0} fg={readinessColor()}>{readiness().label}</text>
+        <For each={readiness().receipts}>{(receipt) => <text flexShrink={0} fg={context.theme.text.feedback.warning.base}>{receipt}</text>}</For>
+        <For each={readiness().sectionRows}>{(row) => <text flexShrink={0} fg={sectionColor(row.tone)}>{row.text}</text>}</For>
+        <Show when={deliveryEvidence()?.architecture} fallback={<text flexShrink={0} fg={context.theme.text.faint}>Select a session with a delivery report to load authored architecture nodes, edges, and ports.</text>}>
+          <For each={deliveryEvidence()?.architecture?.nodes ?? []}>{(node) => <text flexShrink={0} fg={context.theme.text.base}>◆ {node.title} · {node.type ?? "component"}{node.layer ? ` · layer ${node.layer}` : ""}{node.status ? ` · ${node.status}` : ""}</text>}</For>
+          <For each={deliveryEvidence()?.architecture?.edges ?? []}>{(edge) => <text flexShrink={0} fg={context.theme.text.muted}>{edge.from} → {edge.to} · {edge.label ?? edge.kind}</text>}</For>
+          <For each={deliveryEvidence()?.architecture?.ports ?? []}>{(port) => <text flexShrink={0} fg={context.theme.text.action.secondary.base}>⇄ {port.id} · {port.owner} via {port.adapter} · root {port.compositionRoot}{port.integrationAssertion ? ` · verifies ${port.integrationAssertion}` : ""}</text>}</For>
+        </Show>
+        <text flexShrink={0} fg={context.theme.text.action.secondary.base} onMouseUp={pointer.action(() => activeSession() && void refreshEvidence(activeSession()!))}>↻ Refresh delivery architecture</text>
+      </Show>
+      <Show when={props.view === "evidence"}>
+        <text flexShrink={0} fg={context.theme.text.action.primary.base}>Observed delivery evidence</text>
+        <For each={evidenceSessions()}>{(session) => <text flexShrink={0} fg={context.theme.text.muted}>{session.title} · {session.status} · {session.directory}</text>}</For>
+        <Show when={evidenceSessions().length === 0}><text flexShrink={0} fg={context.theme.text.faint}>No matching workspace session has recorded evidence.</text></Show>
+        <Show when={activeSession()}>
+          <text flexShrink={0} fg={context.theme.text.action.secondary.base} onMouseUp={pointer.action(() => void refreshEvidence(activeSession()!))}>↻ Refresh selected session evidence</text>
+          <text flexShrink={0} fg={context.theme.text.action.primary.base}>Delivery receipt</text>
+          <Show when={deliveryEvidence()} fallback={<text flexShrink={0} fg={context.theme.text.faint}>Loading delivery receipt…</text>}>
+            <text flexShrink={0} fg={context.theme.text.base}>Status: {deliveryEvidence()?.status} · {deliveryEvidence()?.freshness ?? "freshness unavailable"} · revision {deliveryEvidence()?.revision ?? "—"} · run {deliveryEvidence()?.runId ?? "—"}</text>
+            <text flexShrink={0} fg={readinessColor()}>{readiness().label}</text>
+            <For each={readiness().receipts}>{(receipt) => <text flexShrink={0} fg={context.theme.text.feedback.warning.base}>{receipt}</text>}</For>
+            <Show when={deliveryEvidence()?.plan}>{(plan) => <box flexDirection="column" flexShrink={0}>
+              <text flexShrink={0} fg={context.theme.text.action.primary.base}>Goal: {plan().goal}</text>
+              <Show when={deliveryEvidence()?.truncation?.steps}>{(scope) => <text flexShrink={0} fg={context.theme.text.muted}>Steps: {scope().returned} of {scope().total} returned</text>}</Show>
+              <For each={plan().steps}>{(step) => <text flexShrink={0} fg={step.status === "completed" ? context.theme.text.feedback.success.base : context.theme.text.base}>[{step.status}] {step.id} · {step.title}{step.dependsOn.length ? ` · after ${step.dependsOn.join(", ")}` : ""}</text>}</For>
+              <Show when={deliveryEvidence()?.truncation?.checks}>{(scope) => <text flexShrink={0} fg={context.theme.text.muted}>Checks: {scope().returned} of {scope().total} returned</text>}</Show>
+              <For each={deliveryEvidence()?.evidence ?? []}>{(item) => <text flexShrink={0} fg={item.status === "fresh" ? context.theme.text.feedback.success.base : item.status === "failed" || item.status === "stale" ? context.theme.text.feedback.error.base : context.theme.text.feedback.warning.base}>Receipt {item.id}: {item.status}{item.code !== undefined ? ` · exit ${item.code}` : ""}{item.filename ? ` · ${item.filename}` : ""}</text>}</For>
+            </box>}</Show>
+            <For each={readiness().sectionRows}>{(row) => <text flexShrink={0} fg={sectionColor(row.tone)}>{row.text}</text>}</For>
+          </Show>
+          <text flexShrink={0} fg={context.theme.text.action.primary.base}>Independent code-review receipt</text>
+          <Show when={reviewEvidence()} fallback={<text flexShrink={0} fg={context.theme.text.faint}>Loading review receipt…</text>}>
+            <text flexShrink={0} fg={context.theme.text.muted}>{independentReviewText(reviewEvidence() as { status?: string; summary?: string; error?: string } | undefined)}</text>
+          </Show>
+        </Show>
+      </Show>
+      <select options={navigationOptions()} onSelect={(_index, option) => selectNavigation(option)} focused={base() && !filterFocused()} onMouseDown={() => setFilterFocused(false)} />
+      <For each={filteredProjects()}>{(project) => <box flexDirection="column" flexShrink={0} marginTop={1}>
+        <text flexShrink={0} fg={context.theme.text.action.primary.base}>◆ {project.name ?? project.directory}</text>
+        <text flexShrink={0} fg={context.theme.text.muted}>{context.ui.format.path(project.directory)}</text>
+        <text flexShrink={0} fg={context.theme.text.action.secondary.base} onMouseUp={pointer.action(() => void worktree(project.id))}>+ Create worktree</text>
+        <For each={snapshot()?.tasks.filter((task) => task.projectID === project.id)}>{(task) => <box flexDirection="column" flexShrink={0} paddingLeft={2}>
+          <text flexShrink={0} fg={task.attention ? context.theme.text.feedback.warning.base : context.theme.text.base}>{task.attention ? "! " : "· "}{task.title}  [{task.status}]</text>
+         <For each={snapshot()?.sessions.filter((session) => session.taskID === task.id)}>{(session) =>
+            <text flexShrink={0} fg={context.theme.text.muted}>  ↳ {session.title} · {session.status}</text>}</For>
+        </box>}</For>
+      </box>}</For>
+    </Show>
+    <Show when={snapshot()}>
+      <text flexShrink={0} fg={context.theme.text.action.primary.base}>Workspace native sessions</text>
+      <For each={workspaceSessions()}>{(session) => <text flexShrink={0} fg={session.attention ? context.theme.text.feedback.warning.base : context.theme.text.action.secondary.base} onMouseUp={pointer.action(() => void openSession(session.id))}>{session.attention ? "! " : "· "}{session.title} [{session.attention ? `${session.attention} pending` : session.status}] · {session.directory}</text>}</For>
+    </Show>
+    <Show when={!snapshot()}>
+      <text flexShrink={0} fg={context.theme.text.action.primary.base}>Local Carthagent sessions</text>
+      <For each={localSessions().filter((session) => !query() || `${session.title ?? ""} ${session.id} ${session.location.directory}`.toLowerCase().includes(query().toLowerCase()))}>{(session) => <text flexShrink={0} fg={context.theme.text.action.secondary.base} onMouseUp={pointer.action(() => context.ui.router.navigate({ type: "session", sessionID: session.id }))}>· {session.title ?? session.id} [{context.data.session.status(session.id)}]</text>}</For>
+    </Show>
+    </scrollbox>
+    <text flexShrink={0} fg={context.theme.text.faint}>Esc back · Tab filter · PgUp/PgDn scroll · /ctg-open searches sessions; /ctg-worktree creates a worktree; /ctg-task starts a task.</text>
+  </box>;
 }

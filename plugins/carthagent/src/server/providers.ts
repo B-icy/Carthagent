@@ -527,15 +527,12 @@ export async function registerProviders(ctx: Context, options: ProviderRegistrat
 
     // Cloud rejects requests over the model's byte budget (request_too_large);
     // old inline screenshots would otherwise be resent on every later turn.
-    const mediaBudget = await ctx.session.hook(
-      'context',
-      async event => {
-        if (event.model.providerID !== EXPERIENTIAL_PROVIDER_ID) return;
-        const trimmed = trimHistoryMedia(event.messages);
-        if (trimmed.omitted) event.messages = trimmed.messages;
-      },
-      { providerID: EXPERIENTIAL_PROVIDER_ID },
-    );
+    // prettier-ignore
+    const mediaBudget = await ctx.session.hook('context', async event => {
+      if (event.model.providerID !== EXPERIENTIAL_PROVIDER_ID) return;
+      const trimmed = trimHistoryMedia(event.messages);
+      if (trimmed.omitted) event.messages = trimmed.messages;
+    }, { providerID: EXPERIENTIAL_PROVIDER_ID });
     registrations.push(mediaBudget);
 
     const managedRetry = await ctx.session.hook(

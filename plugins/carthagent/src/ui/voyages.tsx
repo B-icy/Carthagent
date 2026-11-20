@@ -46,41 +46,20 @@ export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "
     setPreviewItem(undefined);
     context.ui.router.navigate({ type: "plugin", name: "voyages", data: { ...(props.sessionID ? { sessionID: props.sessionID } : {}), section } });
   };
+  // prettier-ignore
   const goBack = () => {
-    if (previewItem()) {
-      memory.reset();
-      setPreviewItem(undefined);
-      return;
-    }
-    if (category()) {
-      memory.reset();
-      setCategory(undefined);
-      return;
-    }
-    if (props.section === "equipment") {
-      switchSection("profile");
-      return;
-    }
+    if (previewItem()) { memory.reset(); setPreviewItem(undefined); return; }
+    if (category()) { memory.reset(); setCategory(undefined); return; }
+    if (props.section === "equipment") { switchSection("profile"); return; }
     back();
   };
   let summary: ScrollBoxRenderable | undefined;
+  // prettier-ignore
   context.keymap.layer(() => ({
     priority: 30,
     commands: [
-      {
-        bind: "ctrl+u",
-        title: "Scroll Voyages profile up",
-        run: () => {
-          summary?.scrollBy(-1);
-        },
-      },
-      {
-        bind: "ctrl+d",
-        title: "Scroll Voyages profile down",
-        run: () => {
-          summary?.scrollBy(1);
-        },
-      },
+      { bind: "ctrl+u", title: "Scroll Voyages profile up", run: () => { summary?.scrollBy(-1); } },
+      { bind: "ctrl+d", title: "Scroll Voyages profile down", run: () => { summary?.scrollBy(1); } },
       { bind: "escape", title: "Back", enabled, run: goBack },
     ],
   }));
@@ -282,10 +261,8 @@ export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "
       );
       return;
     }
-    if (value === "section") {
-      switchSection(props.section === "equipment" ? "profile" : "equipment");
-      return;
-    }
+    // prettier-ignore
+    if (value === "section") { switchSection(props.section === "equipment" ? "profile" : "equipment"); return; }
     if (value === "daily") {
       context.ui.router.navigate({ type: "plugin", name: "daily-quests", data: { ...(props.sessionID ? { sessionID: props.sessionID } : {}) } });
       return;
@@ -474,31 +451,8 @@ export function VoyagesPage(props: { sessionID?: string; section?: "profile" | "
           )}
         </Show>
       </scrollbox>
-      <select
-        height={5}
-        flexShrink={0}
-        backgroundColor={context.theme.background.base}
-        focusedBackgroundColor={context.theme.background.base}
-        focusedTextColor={context.theme.text.action.secondary.base}
-        textColor={context.theme.text.action.secondary.base}
-        selectedTextColor={context.theme.text.formfield.focused}
-        selectedBackgroundColor={context.theme.background.formfield.focused}
-        showDescription={false}
-        ref={(node) => {
-          list = node;
-        }}
-        onMouseUp={(event) => clickSelect(list, event)}
-        onMouseScroll={(event) => wheelSelect(list, event, enabled())}
-        onChange={(_index, option) => memory.changed(option)}
-        showScrollIndicator
-        keyBindings={[
-          { name: "pageup", action: "move-up-fast" },
-          { name: "pagedown", action: "move-down-fast" },
-        ]}
-        options={options()}
-        focused={enabled()}
-        onSelect={(_index, option) => select(option?.value)}
-      />
+      {/* prettier-ignore */}
+      <select height={5} flexShrink={0} backgroundColor={context.theme.background.base} focusedBackgroundColor={context.theme.background.base} focusedTextColor={context.theme.text.action.secondary.base} textColor={context.theme.text.action.secondary.base} selectedTextColor={context.theme.text.formfield.focused} selectedBackgroundColor={context.theme.background.formfield.focused} showDescription={false} ref={(node) => { list = node; }} onMouseUp={(event) => clickSelect(list, event)} onMouseScroll={(event) => wheelSelect(list, event, enabled())} onChange={(_index, option) => memory.changed(option)} showScrollIndicator keyBindings={[{ name: "pageup", action: "move-up-fast" }, { name: "pagedown", action: "move-down-fast" }]} options={options()} focused={enabled()} onSelect={(_index, option) => select(option?.value)} />
       <text flexShrink={0} fg={context.theme.text.muted}>
         ↑↓ Enter select · Ctrl+U/D scroll · Esc back
       </text>
