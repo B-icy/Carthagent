@@ -13,12 +13,12 @@ const sections = patch => new Map(patch.split(/(?=^diff --git )/m).filter(Boolea
   return [path, section.replace(/^index .*\n/gm, '')];
 }));
 
-test('v20 is staged beside the published v18 runtime patch', () => {
+test('v20 stays a staged record; v18 keeps its digest', () => {
   assert.equal(digest(published), '636e01c3da517c64a5f90fb1ea6a682a25fbcb2b63372a8fd2c32ec11fe706dd');
   const expected = digest(staged);
   assert.equal(expected, '335ef409841928fb34f6c8c0332eacb2c1b8dc90410835a8a6ae8dc6a8d367e0');
   assert.ok(read('docs/staged-native-sidebar-polish.md').includes(expected));
-  assert.equal(JSON.parse(read('lib/opencode/runtime-release.json')).patchSha256, digest(published));
+  assert.notEqual(JSON.parse(read('lib/opencode/runtime-release.json')).patchSha256, expected);
   // v21 carries every v20 change; v20 itself is never built.
   assert.ok(!read('script/ctg/build-owned-runtime.sh').includes('combined-v20.patch'));
   assert.ok(!read('.github/workflows/publish-owned-opencode-runtime.yml').includes('combined-v20.patch'));

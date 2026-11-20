@@ -16,7 +16,7 @@ const sections = patch => new Map(patch.split(/(?=^diff --git )/m).filter(Boolea
 const added = (patch, path) => sections(patch).get(path).split('\n')
   .filter(line => line.startsWith('+') && !line.startsWith('+++')).join('\n');
 
-test('v21 is the candidate build patch, separate from the published v18 pin', () => {
+test('v21 is the published 1.1.3 runtime patch', () => {
   const expected = digest(v21);
   assert.equal(expected, '9a73eb1ded4d9914a554640226949d53caca986ef8b846ef8592fe75a9a1bf92');
   assert.ok(read('docs/staged-native-polish-v21.md').includes(expected));
@@ -25,9 +25,9 @@ test('v21 is the candidate build patch, separate from the published v18 pin', ()
   assert.ok(build.includes(`EXPECTED_PATCH="${expected}"`));
   assert.ok(build.includes('docs/patches/opencode-v2.0.32-session-ui-combined-v21.patch'));
   assert.ok(read('.github/workflows/publish-owned-opencode-runtime.yml').includes('combined-v21.patch'));
-  assert.notEqual(expected, CTG_RUNTIME_PATCH_SHA256);
+  assert.equal(expected, CTG_RUNTIME_PATCH_SHA256);
   assert.notEqual(expected, CTG_DEVELOPMENT_RUNTIME_PATCH_SHA256);
-  assert.notEqual(JSON.parse(read('lib/opencode/runtime-release.json')).patchSha256, expected);
+  assert.equal(JSON.parse(read('lib/opencode/runtime-release.json')).patchSha256, expected);
 });
 
 test('v21 keeps every v20 section and changes only the reviewed paths', () => {

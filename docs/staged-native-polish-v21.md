@@ -32,6 +32,11 @@ change promotes the generated manifest.
   after the release has been dispatched. Removing it also draws a frame at
   once: hit testing reads the last drawn frame, so without it a right-click or
   scroll right after a drag could land on the removed layer and do nothing.
+  One case remains: when the app is too busy to read input between the
+  release and the next press, both arrive in one read and that press can
+  still be lost, because the renderer draws frames asynchronously and cannot
+  draw one between two events of the same read. In the local build a
+  right-click sent 3 ms or 30 ms after the release opened the menu every time.
 - **Startup.** Each launch compiled the plugin's TSX files with Babel, about
   1.7 s on a one-core machine. Release builds now cache each compiled file
   under the profile's cache folder, keyed by the file's bytes and the
