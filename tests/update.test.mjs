@@ -112,6 +112,24 @@ test('fetchLatestRelease falls back to GitHub when the manifest fails validation
   assert.equal(urls.length, 2);
 });
 
+test('release checks retry transient GitHub errors but fall back from an unconfigured control plane at once', async () => {
+  const urls = [];
+  let githubFailures = 1;
+  const fetchImpl = async url => {
+    urls.push(url);
+    if (url.includes('/v1/cli/releases/latest')) return { status: 503, json: async () => null };
+    if (githubFailures-- > 0) return { status: 502, json: async () => null };
+    return { status: 200, json: async () => ({ tag_name: 'v0.3.1' }) };
+  };
+  const { release, source } = await fetchLatestRelease({ cloudUrl: 'https://cloud.test', fetchImpl, channel: 'stable' });
+  assert.equal(source, 'github');
+  assert.equal(release.version, '0.3.1');
+  assert.deepEqual(
+    urls.map(url => new URL(url).host),
+    ['cloud.test', 'api.github.com', 'api.github.com'],
+  );
+});
+
 test('fetchLatestRelease forwards cancellation and does not fall back after an abort', async () => {
   const controller = new AbortController();
   let calls = 0;

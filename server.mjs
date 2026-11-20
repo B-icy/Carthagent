@@ -23,6 +23,10 @@ import { mergePlanPatch } from './lib/delivery.mjs';
 import { compareVersions, latestReleaseCached, packageVersion, updateCheckEnabled } from './lib/update.mjs';
 import { lockWorkspace, selectReport } from './lib/workspace.mjs';
 import { createReport, latestReport, saveReport } from './lib/reports.mjs';
+import { configureLogging, getLogger } from './lib/logger.mjs';
+
+configureLogging({ defaultLevel: 'info' });
+const log = getLogger('server');
 
 const root = dirname(fileURLToPath(import.meta.url));
 const cwd = resolve(process.env.CARTHAGENT_WORKSPACE || process.cwd());
@@ -50,9 +54,7 @@ if (updateCheckEnabled()) {
       }
       updateState = { installed, latest: release?.version || installed, available, tag: release?.tag, note: release?.note };
     })
-    .catch(() => {
-      /* update check is best-effort */
-    });
+    .catch(error => log.warn('Dashboard update check failed', { error }));
 }
 
 app.disable('x-powered-by');
@@ -67,6 +69,13 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.json({ limit: '1mb' }));
+app.use('/api', (req, res, next) => {
+  const started = performance.now();
+  res.once('finish', () =>
+    log.debug('API request', { method: req.method, path: req.path, status: res.statusCode, durationMs: Math.round(performance.now() - started) }),
+  );
+  next();
+});
 app.use('/api', (req, res, next) => {
   const supplied = req.get('x-carthagent-token') || '';
   const expected = Buffer.from(token);
@@ -120,6 +129,7 @@ app.get('/api/status', (req, res) => {
       update: updateState,
     });
   } catch (error) {
+    log.error('Status request failed', { error });
     res.status(500).json({ error: error.message });
   }
 });
@@ -299,6 +309,7 @@ app.post('/api/checks/run', async (req, res) => {
     const currentFingerprint = fingerprint(cwd, ['.']);
     res.json({ results, pendingChecks: pendingChecks(currentState, currentFingerprint), currentFingerprint });
   } catch (error) {
+    log.error('Check run failed', { error });
     res.status(500).json({ error: error.message });
   } finally {
     pendingRuns--;
@@ -379,7 +390,7 @@ app.use((req, res, next) => {
 
 const server = app.listen(port, '127.0.0.1', error => {
   if (error) {
-    console.error(`Dashboard startup failed: ${error.message}`);
+    log.error(`Dashboard startup failed: ${error.message}`, { code: error.code });
     process.exitCode = 1;
     return;
   }

@@ -25,6 +25,8 @@ let baseUrl;
 let assets = new Map();
 let gets = 0;
 let truncateResponse = false;
+let truncateNext = 0;
+let unavailableNext = 0;
 
 before(async () => {
   temp = await mkdtemp(path.join(os.tmpdir(), 'ctg-runtime-artifact-test-'));
@@ -39,8 +41,14 @@ before(async () => {
       response.writeHead(404).end('not found');
       return;
     }
+    if (unavailableNext > 0) {
+      unavailableNext--;
+      response.writeHead(503, { 'retry-after': '0' }).end('busy');
+      return;
+    }
     response.writeHead(200, { 'content-length': asset.length });
-    if (truncateResponse) {
+    if (truncateResponse || truncateNext > 0) {
+      truncateNext = Math.max(0, truncateNext - 1);
       response.write(asset.subarray(0, Math.floor(asset.length / 2)));
       response.socket.destroy();
       return;
@@ -341,5 +349,22 @@ test('cleans staging after a truncated transfer', async () => {
     assert.deepEqual(await readdir(path.join(temp, 'truncated-cache', '.staging')), []);
   } finally {
     truncateResponse = false;
+  }
+});
+
+test('a truncated transfer or transient 503 restarts the download from an empty file', async () => {
+  const archive = makeArchive();
+  setArchive(archive);
+  truncateNext = 1;
+  unavailableNext = 1;
+  gets = 0;
+  try {
+    const destination = await acquireOwnedRuntime(args({ cacheRoot: path.join(temp, 'restart-cache') }));
+    assert.deepEqual(await readFile(path.join(destination, 'cli-linux-x64', 'bin', 'opencode')), executableBytes);
+    assert.equal(gets, 3);
+    assert.deepEqual(await readdir(path.join(temp, 'restart-cache', '.staging')), []);
+  } finally {
+    truncateNext = 0;
+    unavailableNext = 0;
   }
 });

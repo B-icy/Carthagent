@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Crash reports are stored only on your machine under `~/.carthagent/logs/`. They are redacted, but please read
+        Crash reports are stored only on your machine, in the `logs/` folder of the ctg agent directory (`~/.carthagent/agent/logs/` by default; `ctg doctor --crash-report` prints the latest one). They are redacted, but please read
         the report before pasting it and remove anything you do not want to share.
   - type: input
     id: fingerprint

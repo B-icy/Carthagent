@@ -156,3 +156,33 @@ test('only canonical fixed-repository runtime asset URLs enter authenticated tra
   assert.equal(calls.length, 2);
   assert.ok(calls.every(({ init }) => init.headers?.authorization === undefined));
 });
+
+test('metadata GETs retry transient GitHub failures; the asset GET leaves restarts to the downloader', async () => {
+  const requests = [];
+  let releaseFailures = 1;
+  const fetchImpl = async input => {
+    const url = new URL(input);
+    requests.push(url.pathname);
+    if (url.pathname === '/repos/B-icy/Carthagent/releases') {
+      if (releaseFailures-- > 0) return new Response('busy', { status: 503, headers: { 'retry-after': '0' } });
+      return Response.json([{ id: 88, tag_name: 'v9.8.7' }]);
+    }
+    if (url.pathname === '/repos/B-icy/Carthagent/releases/88/assets')
+      return Response.json([{ id: 777, name: runtimeAsset, state: 'uploaded', size: 5, url: `${api}/releases/assets/777` }]);
+    throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET', headers: { authorization: `Bearer ${token}` } } });
+  };
+  const fetch = createRuntimeGithubFetch({ token, fetchImpl });
+  await assert.rejects(fetch(`${base}/${runtimeAsset}`), error => {
+    assert.match(error.message, /failed before a response/);
+    assert.equal(error.transient, true);
+    assert.equal(error.cause, undefined);
+    assert.equal(JSON.stringify(error).includes(token), false);
+    return true;
+  });
+  assert.deepEqual(requests, [
+    '/repos/B-icy/Carthagent/releases',
+    '/repos/B-icy/Carthagent/releases',
+    '/repos/B-icy/Carthagent/releases/88/assets',
+    '/repos/B-icy/Carthagent/releases/assets/777',
+  ]);
+});

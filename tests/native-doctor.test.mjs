@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { doctorExitCode, doctorReport, formatDoctor, supportedNode } from '../lib/opencode/doctor.mjs';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { doctorExitCode, doctorReport, formatDoctor, printLatestCrashReport, supportedNode } from '../lib/opencode/doctor.mjs';
 import { commandHelp, runOpenCodeCli } from '../lib/opencode/cli.mjs';
+import { buildCrashReport, writeCrashReport } from '../lib/crash-report.mjs';
 
 const base = { version: '1.1.1', nodeVersion: 'v24.22.1', platform: 'linux-arm64' };
 const ok = {
@@ -9,6 +13,7 @@ const ok = {
   service: async () => 'running',
   providers: async () => ['Carthagent Cloud'],
   cloud: async () => 'signed in as a@b.c',
+  crash: async () => null,
 };
 
 test('Node support matches the package engines range', () => {
@@ -107,4 +112,54 @@ test('a revoked Cloud session is a problem with the re-login fix; the RPC reject
   const text = formatDoctor(rows);
   assert.match(text, /✗ Carthagent Cloud\s+session expired or revoked\n\s+→ Run `ctg login` again/);
   assert.doesNotMatch(text, /All good/);
+});
+
+test('a recent crash is a warning with the report command and a prefilled issue link; it does not fail doctor', async () => {
+  const now = Date.parse('2026-03-10T12:00:00Z');
+  const report = buildCrashReport({
+    error: new TypeError('Cannot read properties of undefined (reading "model")'),
+    argv: ['update', '--check'],
+    cli: { isCommand: name => name === 'update' },
+    version: '1.1.1',
+    now: new Date(now - 60_000),
+    breadcrumbs: [],
+  });
+  const rows = await doctorReport({ ...base, now, probes: { ...ok, crash: async () => ({ path: '/x/crash.json', report }) } });
+  assert.equal(doctorExitCode(rows), 0);
+  const text = formatDoctor(rows);
+  assert.match(text, new RegExp(`! Last crash\\s+2026-03-10T11:59:00\\.000Z ${report.fingerprint} TypeError: Cannot read properties`));
+  assert.match(
+    text,
+    /→ Full report: `ctg doctor --crash-report`\. Report it: https:\/\/github\.com\/B-icy\/Carthagent\/issues\/new\?template=crash_report\.yml&fingerprint=/,
+  );
+  assert.match(text, /&command=ctg\+update\+--check/);
+  assert.match(text, /All good\.$/);
+
+  const old = await doctorReport({ ...base, now: now + 30 * 24 * 60 * 60 * 1000, probes: { ...ok, crash: async () => ({ report }) } });
+  assert.doesNotMatch(formatDoctor(old), /Last crash/);
+  const unreadable = await doctorReport({
+    ...base,
+    probes: {
+      ...ok,
+      crash: async () => {
+        throw new Error('EACCES');
+      },
+    },
+  });
+  assert.doesNotMatch(formatDoctor(unreadable), /Last crash/);
+});
+
+test('printLatestCrashReport prints the newest report as JSON, or says there is none', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'ctg-doctor-crash-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const out = [];
+  const err = [];
+  const io = { log: line => out.push(line), error: line => err.push(line) };
+  assert.equal(printLatestCrashReport({ io, dir }), 0);
+  assert.match(out[0], /No crash reports found/);
+  const path = writeCrashReport(buildCrashReport({ error: new Error('latest'), breadcrumbs: [] }), { dir });
+  out.length = 0;
+  assert.equal(printLatestCrashReport({ io, dir }), 0);
+  assert.equal(JSON.parse(out[0]).error.message, 'latest');
+  assert.deepEqual(err, [`Crash report: ${path}`]);
 });

@@ -370,6 +370,9 @@ test('default packaged OpenCode resolves through Node package exports when hoist
     await writeFile(path.join(packageRoot, 'lib', 'opencode', 'runtime.mjs'), runtime);
     await writeFile(path.join(packageRoot, 'lib', 'opencode', 'runtime-artifact.mjs'), artifactModule);
     await writeFile(path.join(packageRoot, 'lib', 'opencode', 'runtime-github-transport.mjs'), transportModule);
+    for (const name of ['logger.mjs', 'http-resilience.mjs']) {
+      await writeFile(path.join(packageRoot, 'lib', name), await readFile(new URL(`../lib/${name}`, import.meta.url), 'utf8'));
+    }
     await writeFile(path.join(packageRoot, 'package.json'), JSON.stringify({ name: 'carthagent', version: '1.0.0', type: 'module' }));
     await writeFile(
       path.join(dependencyRoot, 'package.json'),
@@ -554,6 +557,9 @@ test('missing runtime release manifest keeps the developer-preview package resol
     await mkdir(path.join(dependencyRoot, 'bin'), { recursive: true });
     for (const name of ['runtime.mjs', 'runtime-artifact.mjs', 'runtime-github-transport.mjs']) {
       await writeFile(path.join(packageRoot, 'lib', 'opencode', name), await readFile(new URL(`../lib/opencode/${name}`, import.meta.url), 'utf8'));
+    }
+    for (const name of ['logger.mjs', 'http-resilience.mjs']) {
+      await writeFile(path.join(packageRoot, 'lib', name), await readFile(new URL(`../lib/${name}`, import.meta.url), 'utf8'));
     }
     await writeFile(path.join(packageRoot, 'package.json'), JSON.stringify({ name: 'carthagent', version: '1.0.0', type: 'module' }));
     await writeFile(

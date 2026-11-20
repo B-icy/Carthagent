@@ -33,6 +33,9 @@ async function fixture(t, patchSha256 = developmentPatch) {
     }
     await writeFile(path.join(moduleRoot, name), source);
   }
+  for (const name of ['logger.mjs', 'http-resilience.mjs']) {
+    await writeFile(path.join(packageRoot, 'lib', name), await readFile(new URL(`../lib/${name}`, import.meta.url), 'utf8'));
+  }
   await writeFile(path.join(packageRoot, 'package.json'), await readFile(new URL('../package.json', import.meta.url)));
   const runtime = await import(pathToFileURL(path.join(moduleRoot, 'runtime.mjs')).href);
   assert.notEqual(runtime.CTG_DEVELOPMENT_RUNTIME_PATCH_SHA256, runtime.CTG_RUNTIME_PATCH_SHA256);
