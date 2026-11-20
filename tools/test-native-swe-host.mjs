@@ -59,8 +59,8 @@ const host = await nativeFixture({
       if (!snapshot || !head) throw Error('Reviewer prompt omitted exact source identity');
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       const content = `Deterministic review receipt plumbing fixture.\nREVIEW_JSON: ${JSON.stringify({ version: 1, snapshot, head, findings: [] })}\nVERDICT: APPROVE`;
-      const chunk = (delta, finish_reason = null, usage) =>
-        `data: ${JSON.stringify({ id: `native-review-${host.requests.length}`, object: 'chat.completion.chunk', created: 1, model: 'fixture', choices: [{ index: 0, delta, finish_reason }], ...(usage ? { usage } : {}) })}\n\n`;
+      const chunk = (delta, finishReason = null, usage) =>
+        `data: ${JSON.stringify({ id: `native-review-${host.requests.length}`, object: 'chat.completion.chunk', created: 1, model: 'fixture', choices: [{ index: 0, delta, finish_reason: finishReason }], ...(usage ? { usage } : {}) })}\n\n`;
       res.end(`${chunk({ role: 'assistant', content })}${chunk({}, 'stop', { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 })}data: [DONE]\n\n`);
       return;
     }
@@ -151,8 +151,8 @@ const host = await nativeFixture({
       if (!tools.includes(name)) throw Error(`Production delivery policy is withholding required native tool ${name}; advertised: ${tools.join(', ')}`);
       const call = { index: 0, id: `fixture-call-${host.requests.length}`, type: 'function', function: { name, arguments: JSON.stringify(args) } };
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
-      const chunk = (delta, finish_reason = null, usage) =>
-        `data: ${JSON.stringify({ id: `native-swe-${host.requests.length}`, object: 'chat.completion.chunk', created: 1, model: 'fixture', choices: [{ index: 0, delta, finish_reason }], ...(usage ? { usage } : {}) })}\n\n`;
+      const chunk = (delta, finishReason = null, usage) =>
+        `data: ${JSON.stringify({ id: `native-swe-${host.requests.length}`, object: 'chat.completion.chunk', created: 1, model: 'fixture', choices: [{ index: 0, delta, finish_reason: finishReason }], ...(usage ? { usage } : {}) })}\n\n`;
       res.end(
         `${chunk({ role: 'assistant', tool_calls: [call] })}${chunk({}, 'tool_calls', { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 })}data: [DONE]\n\n`,
       );
@@ -160,8 +160,8 @@ const host = await nativeFixture({
     }
     function respondText(text) {
       res.writeHead(200, { 'content-type': 'text/event-stream' });
-      const chunk = (delta, finish_reason = null, usage) =>
-        `data: ${JSON.stringify({ id: `native-swe-${host.requests.length}`, object: 'chat.completion.chunk', created: 1, model: 'fixture', choices: [{ index: 0, delta, finish_reason }], ...(usage ? { usage } : {}) })}\n\n`;
+      const chunk = (delta, finishReason = null, usage) =>
+        `data: ${JSON.stringify({ id: `native-swe-${host.requests.length}`, object: 'chat.completion.chunk', created: 1, model: 'fixture', choices: [{ index: 0, delta, finish_reason: finishReason }], ...(usage ? { usage } : {}) })}\n\n`;
       res.end(
         `${chunk({ role: 'assistant', content: text })}${chunk({}, 'stop', { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 })}data: [DONE]\n\n`,
       );

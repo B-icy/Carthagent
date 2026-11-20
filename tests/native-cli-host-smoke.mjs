@@ -80,13 +80,13 @@ const provider = createServer((req, res) => {
       (uncappedPrompt && !body.messages.some(message => message.role === 'tool' && message.tool_call_id === 'fixture-uncapped-shell')) ||
       (plannedShellPrompt && hasSuccessfulPlan && !body.messages.some(message => message.role === 'tool' && message.tool_call_id === 'fixture-bash-cap'));
     const fails = userText.includes('Smoke provider failure');
-    const chunk = (delta, finish_reason = null) =>
+    const chunk = (delta, finishReason = null) =>
       `data: ${JSON.stringify({
         id: 'ctg-cli-smoke',
         object: 'chat.completion.chunk',
         created: 1,
         model: 'fixture',
-        choices: [{ index: 0, delta, finish_reason }],
+        choices: [{ index: 0, delta, finish_reason: finishReason }],
       })}\n\n`;
     if (fails || userText.includes('Smoke provider failure after success')) {
       // Use a non-retryable client error so the pinned host terminates this

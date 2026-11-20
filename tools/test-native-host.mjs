@@ -60,13 +60,13 @@ const fixture = createServer(async (req, res) => {
     body.tools?.some(tool => tool.function?.name === 'read') &&
     !(body.messages ?? []).some(message => message.role === 'tool')
   ) {
-    const chunk = (delta, finish_reason = null) =>
+    const chunk = (delta, finishReason = null) =>
       `data: ${JSON.stringify({
         id: 'chatcmpl-ctg-tool',
         object: 'chat.completion.chunk',
         created: 1,
         model: 'fixture',
-        choices: [{ index: 0, delta, finish_reason }],
+        choices: [{ index: 0, delta, finish_reason: finishReason }],
       })}\n\n`;
     res.writeHead(200, { 'content-type': 'text/event-stream' });
     res.end(
@@ -96,13 +96,13 @@ const fixture = createServer(async (req, res) => {
   }
   res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
   const created = Math.floor(Date.now() / 1000);
-  const chunk = (delta, finish_reason = null) =>
+  const chunk = (delta, finishReason = null) =>
     `data: ${JSON.stringify({
       id: 'chatcmpl-ctg-fixture',
       object: 'chat.completion.chunk',
       created,
       model: 'fixture',
-      choices: [{ index: 0, delta, finish_reason }],
+      choices: [{ index: 0, delta, finish_reason: finishReason }],
     })}\n\n`;
   const reply = promptText.includes('WRAPPER_TOOL') ? 'FINAL_AFTER_TOOL' : promptText.includes('WRAPPER_SECOND') ? 'SECOND_TURN' : 'CTG_FIXTURE_OK';
   res.write(chunk({ role: 'assistant', content: reply }));

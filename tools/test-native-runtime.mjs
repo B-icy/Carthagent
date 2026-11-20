@@ -26,13 +26,13 @@ const host = await nativeFixture({
         body.tools.some(tool => tool.function?.name === 'read'),
         'Native host must advertise the requested read tool',
       );
-      const chunk = (delta, finish_reason = null) =>
+      const chunk = (delta, finishReason = null) =>
         `data: ${JSON.stringify({
           id: 'runtime-tool',
           object: 'chat.completion.chunk',
           created: 1,
           model: 'fixture',
-          choices: [{ index: 0, delta, finish_reason }],
+          choices: [{ index: 0, delta, finish_reason: finishReason }],
         })}\n\n`;
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       res.end(

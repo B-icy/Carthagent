@@ -71,8 +71,8 @@ const provider = createServer(async (req, res) => {
     const marker = userText.includes('OWNED_SHELL_SESSION_A') ? 'A' : userText.includes('OWNED_SHELL_SESSION_B') ? 'B' : null;
     assert.ok(marker, `shell tool call has no known originating prompt marker: ${userText}`);
     providerToolCalls.set(marker, callID);
-    const chunk = (delta, finish_reason = null) =>
-      `data: ${JSON.stringify({ id: `same-command-${requests.length}`, object: 'chat.completion.chunk', created: 1, model: 'fixture', choices: [{ index: 0, delta, finish_reason }] })}\n\n`;
+    const chunk = (delta, finishReason = null) =>
+      `data: ${JSON.stringify({ id: `same-command-${requests.length}`, object: 'chat.completion.chunk', created: 1, model: 'fixture', choices: [{ index: 0, delta, finish_reason: finishReason }] })}\n\n`;
     res.writeHead(200, { 'content-type': 'text/event-stream' });
     res.end(
       `${chunk({ role: 'assistant', tool_calls: [{ index: 0, id: callID, type: 'function', function: { name: 'shell', arguments: JSON.stringify({ command: 'printf owned-identical-shell' }) } }] })}${chunk({}, 'tool_calls')}data: [DONE]\n\n`,
@@ -291,8 +291,8 @@ try {
 }
 
 function stream(res, text) {
-  const chunk = (delta, finish_reason = null, usage) =>
-    `data: ${JSON.stringify({ id: `owned-${requests.length}`, object: 'chat.completion.chunk', created: 1, model: 'fixture', choices: [{ index: 0, delta, finish_reason }], ...(usage ? { usage } : {}) })}\n\n`;
+  const chunk = (delta, finishReason = null, usage) =>
+    `data: ${JSON.stringify({ id: `owned-${requests.length}`, object: 'chat.completion.chunk', created: 1, model: 'fixture', choices: [{ index: 0, delta, finish_reason: finishReason }], ...(usage ? { usage } : {}) })}\n\n`;
   res.writeHead(200, { 'content-type': 'text/event-stream' });
   res.end(`${chunk({ role: 'assistant', content: text })}${chunk({}, 'stop', { prompt_tokens: 30, completion_tokens: 10, total_tokens: 40 })}data: [DONE]\n\n`);
 }

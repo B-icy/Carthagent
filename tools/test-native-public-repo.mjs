@@ -42,8 +42,8 @@ const host = await nativeFixture({
     const dispatch = (name, args) => {
       if (!tools.includes(name)) throw Error(`Required native tool ${name} was not advertised: ${tools.join(', ')}`);
       const call = { index: 0, id: `public-repo-${host.requests.length}`, type: 'function', function: { name, arguments: JSON.stringify(args) } };
-      const chunk = (delta, finish_reason = null, usage) =>
-        `data: ${JSON.stringify({ id: `public-repo-${host.requests.length}`, object: 'chat.completion.chunk', created: 1, model: 'fixture', choices: [{ index: 0, delta, finish_reason }], ...(usage ? { usage } : {}) })}\n\n`;
+      const chunk = (delta, finishReason = null, usage) =>
+        `data: ${JSON.stringify({ id: `public-repo-${host.requests.length}`, object: 'chat.completion.chunk', created: 1, model: 'fixture', choices: [{ index: 0, delta, finish_reason: finishReason }], ...(usage ? { usage } : {}) })}\n\n`;
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       res.end(
         `${chunk({ role: 'assistant', tool_calls: [call] })}${chunk({}, 'tool_calls', { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 })}data: [DONE]\n\n`,
@@ -104,8 +104,8 @@ const host = await nativeFixture({
       return execution(
         'const result=await tools.carthagent["delivery_finish"]({status:"verified",change:"Added bigint support with a dedicated regression check in the pinned library fixture.",review:"Pinned package test suite and separate declared bigint regression check passed; coverage and probes recorded.",launch:"Not applicable to this library change.",limitations:["Offline deterministic provider; no independent reviewer or public repository write.","One small feature addition in a pinned checkout is not a full migration acceptance claim."]}); return result',
       );
-    const chunk = (delta, finish_reason = null) =>
-      `data: ${JSON.stringify({ id: `public-repo-${host.requests.length}`, object: 'chat.completion.chunk', created: 1, model: 'fixture', choices: [{ index: 0, delta, finish_reason }], ...(finish_reason ? { usage: { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 } } : {}) })}\n\n`;
+    const chunk = (delta, finishReason = null) =>
+      `data: ${JSON.stringify({ id: `public-repo-${host.requests.length}`, object: 'chat.completion.chunk', created: 1, model: 'fixture', choices: [{ index: 0, delta, finish_reason: finishReason }], ...(finishReason ? { usage: { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 } } : {}) })}\n\n`;
     res.writeHead(200, { 'content-type': 'text/event-stream' });
     res.end(
       `${chunk({ role: 'assistant', content: 'Bigint support passed the pinned package tests and declared regression check; handoff recorded.' })}${chunk({}, 'stop')}data: [DONE]\n\n`,

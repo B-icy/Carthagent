@@ -88,14 +88,14 @@ export function assistantText(response, text) {
 
 export function streamText(res, text = 'Fixture response complete.') {
   res.writeHead(200, { 'content-type': 'text/event-stream' });
-  const chunk = (delta, finish_reason = null) =>
+  const chunk = (delta, finishReason = null) =>
     `data: ${JSON.stringify({
       id: 'fixture',
       object: 'chat.completion.chunk',
       created: 1,
       model: 'fixture',
-      choices: [{ index: 0, delta, finish_reason }],
-      ...(finish_reason ? { usage: { prompt_tokens: 20, completion_tokens: 5, total_tokens: 25 } } : {}),
+      choices: [{ index: 0, delta, finish_reason: finishReason }],
+      ...(finishReason ? { usage: { prompt_tokens: 20, completion_tokens: 5, total_tokens: 25 } } : {}),
     })}\n\n`;
   res.write(chunk({ role: 'assistant', content: text }));
   res.end(`${chunk({}, 'stop')}data: [DONE]\n\n`);

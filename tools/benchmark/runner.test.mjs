@@ -110,8 +110,8 @@ test('native benchmark plugin loads in OpenCode 2 with both session and tool hoo
           type: 'function',
           function: { name: 'read', arguments: JSON.stringify({ path: markerFile }) },
         }));
-        const chunk = (delta, finish_reason = null) =>
-          `data: ${JSON.stringify({ id: 'parallel-guard-probe', object: 'chat.completion.chunk', created: 1, model: 'fixture', choices: [{ index: 0, delta, finish_reason }] })}\n\n`;
+        const chunk = (delta, finishReason = null) =>
+          `data: ${JSON.stringify({ id: 'parallel-guard-probe', object: 'chat.completion.chunk', created: 1, model: 'fixture', choices: [{ index: 0, delta, finish_reason: finishReason }] })}\n\n`;
         res.writeHead(200, { 'content-type': 'text/event-stream' });
         res.end(`${chunk({ role: 'assistant', tool_calls: calls })}${chunk({}, 'tool_calls')}data: [DONE]\n\n`);
         return;
