@@ -92,6 +92,9 @@ jobs:
     if: ${{ !contains(inputs.release_tag, '-') }}
     needs: verify-release
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -180,3 +183,25 @@ jobs:
             -H "authorization: Bearer ${CARTHAGENT_CLI_RELEASE_TOKEN}" \
             -H 'content-type: application/json' \
             -d "{\"version\":\"${version}\",\"minNode\":\"${min_node}\"}"
+      - name: Summarize the deployment and start the release health check
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          EXPECTED_SHA: ${{ needs.verify-release.outputs.tested_sha }}
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          {
+            echo "## Deployed Carthagent ${version}"
+            echo
+            echo "| Item | Value |"
+            echo "| --- | --- |"
+            echo "| Version | \`${version}\` |"
+            echo "| Commit | \`${EXPECTED_SHA}\` |"
+            echo "| GitHub release | ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG} |"
+            echo "| npm | https://www.npmjs.com/package/carthagent/v/${version} |"
+            echo "| Release health | ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/workflows/release-health.yml |"
+            echo "| Runbook | ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/main/docs/deployment-observability.md |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          gh workflow run release-health.yml --repo "$GITHUB_REPOSITORY" --ref main
