@@ -6,6 +6,8 @@ import { runPreCommit } from '../tools/pre-commit.mjs';
 import { captureOutput, tempRepo } from './helpers/temp-git-repo.mjs';
 
 const FORMATTED = 'export const value = 1;\n';
+// Assembled at runtime so this file does not itself trip the repository debt-marker check.
+const UNLINKED_MARKER = ['FIX', 'ME'].join('');
 
 async function preCommit(repo) {
   const { out, err, io } = captureOutput();
@@ -36,7 +38,7 @@ test('pre-commit rejects unformatted, lint-failing and unlinked-debt staged cont
   assert.equal(result.status, 1);
   assert.match(result.err, /ESLint check failed[\s\S]*no-var/);
 
-  repo.stage('lib/unformatted.mjs', 'export const value = 1; // FIXME soon\n');
+  repo.stage('lib/unformatted.mjs', `export const value = 1; // ${UNLINKED_MARKER} soon\n`);
   result = await preCommit(repo);
   assert.equal(result.status, 1);
   assert.match(result.err, /debt marker check failed[\s\S]*lib\/unformatted\.mjs:1 needs a tracking issue/);
