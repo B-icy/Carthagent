@@ -31,6 +31,7 @@ import {
 } from '../../../../lib/providers/subscription-models.mjs';
 import { catalogModels } from '../../../../lib/providers/model-catalog.mjs';
 import { shipAgentDir } from '../../../../lib/ship-auth.mjs';
+import { isEnabled } from '../../../../lib/feature-flags.mjs';
 import { createHash } from 'node:crypto';
 import {
   legacyOAuthForOpenCode,
@@ -260,7 +261,7 @@ function integrationDefinitions(
   options: Parameters<typeof oauthMethod>[0],
 ) {
   editor.method.update(oauthMethod(options));
-  if (options.env.CARTHAGENT_ADVANCED_AUTH === '1') {
+  if (isEnabled('advanced-auth', { env: options.env })) {
     editor.method.update({
       integrationID: IntegrationSchema.ID.make(SHIP_INTEGRATION_ID),
       method: { type: 'key', label: 'Advanced: use an Experiential API key' },
