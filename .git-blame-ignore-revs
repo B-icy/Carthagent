@@ -1,0 +1,6 @@
+# Commits that only reformat code. `git blame` skips them once configured with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+# GitHub's blame view reads this file automatically.
+
+# Format first-party JavaScript and TypeScript with Prettier
+c16910f7bf3891cbd5933e3780300add4ef58b16
