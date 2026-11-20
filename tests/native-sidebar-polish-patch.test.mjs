@@ -19,7 +19,9 @@ test('v20 is staged beside the published v18 runtime patch', () => {
   assert.equal(expected, '335ef409841928fb34f6c8c0332eacb2c1b8dc90410835a8a6ae8dc6a8d367e0');
   assert.ok(read('docs/staged-native-sidebar-polish.md').includes(expected));
   assert.equal(JSON.parse(read('lib/opencode/runtime-release.json')).patchSha256, digest(published));
-  assert.ok(read('script/ctg/build-owned-runtime.sh').includes('combined-v18.patch'));
+  // v21 carries every v20 change; v20 itself is never built.
+  assert.ok(!read('script/ctg/build-owned-runtime.sh').includes('combined-v20.patch'));
+  assert.ok(!read('.github/workflows/publish-owned-opencode-runtime.yml').includes('combined-v20.patch'));
 });
 
 test('v20 changes only the sidebar sources, plugin readiness and their tests', () => {

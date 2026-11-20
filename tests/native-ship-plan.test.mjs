@@ -82,12 +82,12 @@ test('the published runtime pin stays on its immutable release patch', () => {
   assert.equal(CTG_RUNTIME_PATCH_SHA256, digest);
 });
 
-test('the candidate build recipe pins the reviewed first-use follow-up patch', () => {
-  const published = readFileSync(new URL('../docs/patches/opencode-v2.0.32-session-ui-combined-v18.patch', import.meta.url));
-  const digest = createHash('sha256').update(published).digest('hex');
+test('the candidate build recipe pins the reviewed v21 polish patch', () => {
+  const candidate = readFileSync(new URL('../docs/patches/opencode-v2.0.32-session-ui-combined-v21.patch', import.meta.url));
+  const digest = createHash('sha256').update(candidate).digest('hex');
   const build = readFileSync(new URL('../script/ctg/build-owned-runtime.sh', import.meta.url), 'utf8');
   assert.ok(build.includes(`EXPECTED_PATCH="${digest}"`));
-  assert.ok(build.includes('docs/patches/opencode-v2.0.32-session-ui-combined-v18.patch'));
+  assert.ok(build.includes('docs/patches/opencode-v2.0.32-session-ui-combined-v21.patch'));
 });
 
 test('beta8 release waiver excludes only the accepted Intel macOS Rename regression', () => {

@@ -13,8 +13,6 @@ test('v18 is the published runtime patch and v17 stays frozen', () => {
   const expected = digest(candidate);
   assert.equal(expected, '636e01c3da517c64a5f90fb1ea6a682a25fbcb2b63372a8fd2c32ec11fe706dd');
   assert.ok(read('docs/staged-native-test-followup.md').includes(expected));
-  assert.ok(read('script/ctg/build-owned-runtime.sh').includes('combined-v18.patch'));
-  assert.ok(read('.github/workflows/publish-owned-opencode-runtime.yml').includes('combined-v18.patch'));
   assert.equal(JSON.parse(read('lib/opencode/runtime-release.json')).patchSha256, expected);
 });
 

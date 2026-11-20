@@ -46,6 +46,19 @@ test('CTG runtime paths and env are isolated from host OpenCode roots', () => {
   assert.notEqual(paths.serviceFile, path.join(os.homedir(), '.local/state/opencode/service.json'));
 });
 
+test('runtime passes the real user home separately from the private profile HOME', () => {
+  const root = path.resolve('/tmp/ctg-user-home');
+  const paths = runtimePaths({ root });
+  const env = runtimeEnvironment({ root, env: { CTG_USER_HOME: '' } });
+  assert.equal(env.HOME, paths.home);
+  assert.equal(env.CTG_USER_HOME, os.homedir());
+  assert.notEqual(env.CTG_USER_HOME, env.HOME);
+  // A nested launch from an agent shell (HOME is the profile there) keeps the outer real home.
+  const real = path.resolve('/tmp/real-user');
+  assert.equal(runtimeEnvironment({ root, env: { CTG_USER_HOME: real, HOME: paths.home } }).CTG_USER_HOME, real);
+  assert.equal(runtimeEnvironment({ root, env: { CTG_USER_HOME: 'relative/home' } }).CTG_USER_HOME, os.homedir());
+});
+
 test('runtime removes inherited OpenCode profile overrides', () => {
   const root = path.resolve('/tmp/ctg-isolated');
   const paths = runtimePaths({ root });

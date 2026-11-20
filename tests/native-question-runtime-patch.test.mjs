@@ -12,6 +12,7 @@ import {
 const releasedPath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v15.patch';
 const candidatePath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v16.patch';
 const promotedPath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v18.patch';
+const candidateBuildPath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v21.patch';
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url));
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 
@@ -36,14 +37,14 @@ test('v15 patch stays immutable; the 1.1.2 runtime pin selects reviewed v18', ()
   assert.equal(release.lockSha256, CTG_RUNTIME_LOCK_SHA256);
 });
 
-test('resolver, release trust root, build recipe and workflow agree on promoted v18', () => {
+test('resolver and release trust root stay on promoted v18; build recipe and workflow select candidate v21', () => {
   const release = JSON.parse(read('lib/opencode/runtime-release.json'));
   const packageJson = JSON.parse(read('package.json'));
   assert.equal(release.releaseVersion, packageJson.version);
   assert.equal(release.patchSha256, CTG_RUNTIME_PATCH_SHA256);
   assert.equal(release.sourceRevision, CTG_RUNTIME_SOURCE);
   assert.equal(release.lockSha256, CTG_RUNTIME_LOCK_SHA256);
-  const candidateBuildPath = promotedPath;
+  assert.equal(CTG_RUNTIME_PATCH_SHA256, sha256(read(promotedPath)));
   const build = read('script/ctg/build-owned-runtime.sh').toString('utf8');
   assert.ok(build.includes(`EXPECTED_PATCH="${sha256(read(candidateBuildPath))}"`));
   assert.ok(build.includes(candidateBuildPath));

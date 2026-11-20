@@ -29,24 +29,52 @@ function requestOptions(context: RpcContext, selectedLocation?: SelectedLocation
   };
 }
 
+type RequestOptions = ReturnType<typeof requestOptions>;
+
+export function isLocationNotFound(error: unknown) {
+  if (typeof error !== "object" || error === null) return false;
+  const { name, _tag } = error as { name?: unknown; _tag?: unknown };
+  return _tag === "LocationNotFoundError" || name === "LocationNotFoundError";
+}
+
+/**
+ * Account-level calls do not depend on the session's folder, but they still
+ * travel with a location. When that folder was moved or deleted the server
+ * rejects the location before any handler runs, so one retry at the launch
+ * location is safe even for writes.
+ */
+async function accountCall<T>(context: RpcContext, selectedLocation: SelectedLocation | undefined, signal: AbortSignal | undefined, call: (options: RequestOptions) => Promise<T>): Promise<T> {
+  const options = requestOptions(context, selectedLocation, signal);
+  try {
+    return await call(options);
+  } catch (error) {
+    if (!isLocationNotFound(error)) throw error;
+    const fallback = context.data.location.default();
+    if (fallback.directory === options.location.directory && fallback.workspaceID === options.location.workspaceID) throw error;
+    return await call({ ...options, location: fallback });
+  }
+}
+
 export function voyagesClient(context: RpcContext, selectedLocation?: SelectedLocation) {
   const rpc = () => context.client.rpc(Voyages);
+  const account = <T>(signal: AbortSignal | undefined, call: (options: RequestOptions) => Promise<T>) => accountCall(context, selectedLocation, signal, call);
   return {
+    // Rewards are tied to the session's own workspace, so they never fall back.
     previewReward: (input: { sessionID: string }, signal?: AbortSignal) => rpc().previewReward(input, requestOptions(context, selectedLocation, signal)),
     claimReward: (input: { sessionID: string; runId: string; snapshot: string }, signal?: AbortSignal) => rpc().claimReward(input, requestOptions(context, selectedLocation, signal)),
-    snapshot: (signal?: AbortSignal) => rpc().snapshot({}, requestOptions(context, selectedLocation, signal)) as Promise<VoyagesSnapshot>,
-    customize: (input: { version: number; name?: string; shipName?: string; skin?: string; hair?: string; pattern?: string }, signal?: AbortSignal) => rpc().customize(input, requestOptions(context, selectedLocation, signal)),
-    equip: (input: { version: number; slot: string; item: string }, signal?: AbortSignal) => rpc().equip(input, requestOptions(context, selectedLocation, signal)),
-    quote: (input: { slot: string; item: string }, signal?: AbortSignal) => rpc().quote(input, requestOptions(context, selectedLocation, signal)),
-    purchase: (input: { quoteId: string }, signal?: AbortSignal) => rpc().purchase(input, requestOptions(context, selectedLocation, signal)),
-    retryPurchase: (input: { quoteId: string }, signal?: AbortSignal) => rpc().retryPurchase(input, requestOptions(context, selectedLocation, signal)),
+    snapshot: (signal?: AbortSignal) => account(signal, (options) => rpc().snapshot({}, options)) as Promise<VoyagesSnapshot>,
+    customize: (input: { version: number; name?: string; shipName?: string; skin?: string; hair?: string; pattern?: string }, signal?: AbortSignal) => account(signal, (options) => rpc().customize(input, options)),
+    equip: (input: { version: number; slot: string; item: string }, signal?: AbortSignal) => account(signal, (options) => rpc().equip(input, options)),
+    quote: (input: { slot: string; item: string }, signal?: AbortSignal) => account(signal, (options) => rpc().quote(input, options)),
+    purchase: (input: { quoteId: string }, signal?: AbortSignal) => account(signal, (options) => rpc().purchase(input, options)),
+    retryPurchase: (input: { quoteId: string }, signal?: AbortSignal) => account(signal, (options) => rpc().retryPurchase(input, options)),
   };
 }
 
 export function dailyGoalsClient(context: RpcContext, selectedLocation?: SelectedLocation) {
   const rpc = () => context.client.rpc(DailyGoals);
   return {
-    snapshot: (signal?: AbortSignal) => rpc().snapshot({}, requestOptions(context, selectedLocation, signal)) as Promise<DailyGoalsSnapshot>,
+    snapshot: (signal?: AbortSignal) => accountCall(context, selectedLocation, signal, (options) => rpc().snapshot({}, options)) as Promise<DailyGoalsSnapshot>,
   };
 }
 
@@ -99,21 +127,23 @@ export function pullRequestClient(context: RpcContext, selectedLocation?: Select
 
 export function shipClient(context: RpcContext, selectedLocation?: SelectedLocation) {
   const rpc = () => context.client.rpc(Carthagent);
+  const account = <T>(signal: AbortSignal | undefined, call: (options: RequestOptions) => Promise<T>) => accountCall(context, selectedLocation, signal, call);
   return {
-    account: (signal?: AbortSignal) => rpc().shipAccount({}, requestOptions(context, selectedLocation, signal)),
-    usage: (input: { limit?: number } = {}, signal?: AbortSignal) => rpc().shipUsage(input, requestOptions(context, selectedLocation, signal)),
-    billing: (input: { action: "checkout" | "portal" | "quote"; plan?: "builder" | "pro" | "max" }, signal?: AbortSignal) => rpc().shipBilling(input, requestOptions(context, selectedLocation, signal)),
-    logout: (input: { session?: string } = {}, signal?: AbortSignal) => rpc().shipLogout(input, requestOptions(context, selectedLocation, signal)),
+    account: (signal?: AbortSignal) => account(signal, (options) => rpc().shipAccount({}, options)),
+    usage: (input: { limit?: number } = {}, signal?: AbortSignal) => account(signal, (options) => rpc().shipUsage(input, options)),
+    billing: (input: { action: "checkout" | "portal" | "quote"; plan?: "builder" | "pro" | "max" }, signal?: AbortSignal) => account(signal, (options) => rpc().shipBilling(input, options)),
+    logout: (input: { session?: string } = {}, signal?: AbortSignal) => account(signal, (options) => rpc().shipLogout(input, options)),
   };
 }
 
 export function archiveClient(context: RpcContext, selectedLocation?: SelectedLocation) {
   const rpc = () => context.client.rpc(Archive);
+  const account = <T>(signal: AbortSignal | undefined, call: (options: RequestOptions) => Promise<T>) => accountCall(context, selectedLocation, signal, call);
   return {
-    list: (input: { offset?: number; limit?: number } = {}, signal?: AbortSignal) => rpc().list(input, requestOptions(context, selectedLocation, signal)),
-    search: (input: { query: string; offset?: number; limit?: number }, signal?: AbortSignal) => rpc().search(input, requestOptions(context, selectedLocation, signal)),
-    read: (input: { id: string }, signal?: AbortSignal) => rpc().read(input, requestOptions(context, selectedLocation, signal)),
-    export: (input: { id: string; format?: "json" | "jsonl" }, signal?: AbortSignal) => rpc().export(input, requestOptions(context, selectedLocation, signal)),
+    list: (input: { offset?: number; limit?: number } = {}, signal?: AbortSignal) => account(signal, (options) => rpc().list(input, options)),
+    search: (input: { query: string; offset?: number; limit?: number }, signal?: AbortSignal) => account(signal, (options) => rpc().search(input, options)),
+    read: (input: { id: string }, signal?: AbortSignal) => account(signal, (options) => rpc().read(input, options)),
+    export: (input: { id: string; format?: "json" | "jsonl" }, signal?: AbortSignal) => account(signal, (options) => rpc().export(input, options)),
   };
 }
 

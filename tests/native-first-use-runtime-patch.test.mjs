@@ -28,7 +28,7 @@ test('first-use staging preserves the immutable v16 patch', () => {
   assert.ok(expected);
   assert.equal(digest(read(baselinePath)), expected);
   // v15/v16 structural comparisons remain in native-question-runtime-patch;
-  // its prebuild guards now intentionally select the reviewed v18 recipe.
+  // its prebuild guards select the current reviewed recipe.
 });
 
 test('combined v17 has its own reviewed digest and is not an active runtime pin', t => {
