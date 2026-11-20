@@ -17,4 +17,14 @@ Commands: {op:"open",account:string,balance:string,key:string}; {op:"transfer",f
 Responses: mutations {ok:true}, balance {ok:true,balance:"canonical decimal with exactly two places"}, snapshot {ok:true,balances:{account:"canonical amount",...}}, all failures {ok:false,error:nonempty string}. No timestamps/extra nondeterministic fields needed. Unknown operations rejected. Failed mutations neither consume key nor modify durable state; rejected transfer can be retried successfully later using same key. Balances always nonnegative and transfers conserve exact total. Supply npm test with adversarial and restart integration coverage; README describes crash/concurrency limits honestly. One process writer at a time is sufficient; no multi-process locking required.
 `,
 };
-export const MATRIX = [['voxel','plain'],['voxel','harness'],['voxel','jev'],['shop','harness'],['shop','jev'],['shop','plain'],['ledger','jev'],['ledger','plain'],['ledger','harness']];
+export const MATRIX = [
+  ['voxel', 'plain'],
+  ['voxel', 'harness'],
+  ['voxel', 'jev'],
+  ['shop', 'harness'],
+  ['shop', 'jev'],
+  ['shop', 'plain'],
+  ['ledger', 'jev'],
+  ['ledger', 'plain'],
+  ['ledger', 'harness'],
+];

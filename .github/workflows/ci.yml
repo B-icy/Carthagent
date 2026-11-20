@@ -43,9 +43,30 @@ jobs:
         with:
           python-version: "3.11"
       - run: npm ci
+      - uses: actions/cache@v4
+        with:
+          path: node_modules/.cache/ctg
+          key: build-cache-${{ runner.os }}-node${{ matrix.node }}-${{ hashFiles('package-lock.json', 'eslint.config.mjs', 'plugins/carthagent/tsconfig.json') }}-${{ github.sha }}
+          restore-keys: build-cache-${{ runner.os }}-node${{ matrix.node }}-${{ hashFiles('package-lock.json', 'eslint.config.mjs', 'plugins/carthagent/tsconfig.json') }}-
       - run: npm run lint
       - run: npm run build
-      - run: npm test
+      - name: Test
+        if: ${{ !(matrix.os == 'ubuntu-latest' && matrix.node == 24) }}
+        run: npm run test:ci
+      - name: Test with coverage thresholds
+        if: ${{ matrix.os == 'ubuntu-latest' && matrix.node == 24 }}
+        run: npm run test:coverage
+      - name: Test timing report
+        if: always()
+        run: node tools/test-report.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ matrix.os }}-node${{ matrix.node }}
+          path: |
+            artifacts/test-results/
+            artifacts/test-timings.json
+          if-no-files-found: ignore
       - run: npm run test:native-host
         env:
           CTG_RUNTIME_GITHUB_TOKEN: ${{ github.token }}
@@ -64,6 +85,34 @@ jobs:
           CTG_RUNTIME_GITHUB_TOKEN: ${{ github.token }}
       - run: python -m pip install Pillow==11.3.0
       - run: npm run test:python
+
+  repo-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # File sizes, debt markers, duplication, unused dependencies, workspace
+      # version drift, feature-flag lifecycle, generated API docs, AGENTS.md.
+      - run: npm run check:repo
+      - run: node tools/validate-agents-md.mjs --links-only "docs/*.md" "docs/api/*.md"
+      # Cold timings (no build cache) stay comparable with tools/build-budget.json.
+      - run: npm run build:timings
+      - run: npm run qa:smoke -- --json artifacts/qa-smoke/report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: repo-checks
+          path: |
+            artifacts/build-timings.json
+            artifacts/qa-smoke/
+          if-no-files-found: ignore
 
   native-navigation:
     runs-on: ubuntu-latest

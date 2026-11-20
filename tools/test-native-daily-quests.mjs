@@ -29,19 +29,48 @@ try {
     const draft = (await rpc('carthagent.daily-source', 'report', { sessionID: work.id, allowSession: true })).output.source;
     assert.equal(draft.origin, 'session');
     assert.equal(draft.revision, fingerprint(host.cwd, ['.']));
-    assert.equal(draft.goal, ''); assert.equal(draft.change, '');
-    assert.deepEqual(draft.checks, []); assert.deepEqual(draft.findings, []);
+    assert.equal(draft.goal, '');
+    assert.equal(draft.change, '');
+    assert.deepEqual(draft.checks, []);
+    assert.deepEqual(draft.findings, []);
     assert.deepEqual((await source(work.id)).output, { source: null });
   }
   await writeFile(join(host.cwd, 'source.txt'), 'local schema probe, not execution evidence\n');
-  const runId = randomUUID(), revision = fingerprint(host.cwd, ['.']);
+  const runId = randomUUID(),
+    revision = fingerprint(host.cwd, ['.']);
   const check = { id: 'unit', kind: 'test', argv: ['never-execute'], timeoutSeconds: 20 };
-  const report = createReport(host.cwd, {
-    runId, revision: 1, status: 'implementing',
-    plan: { goal: 'Exercise the real local RPC output validator', artifacts: ['.'], steps: ['Inspect'], acceptance: [{ requirement: 'Return the selected local projection', checks: ['unit'] }], checks: [check] },
-    // Deliberately constructed schema receipt, not proof that a command ran.
-    evidence: { unit: { runId, revision: 1, executedRevision: 1, passed: true, code: 0, checkDigest: checkDigest(check), fingerprint: revision, timedOut: false, cancelled: false, changedDuringCheck: false, outputTail: 'Selected local-only schema text' } },
-  }, session.id);
+  const report = createReport(
+    host.cwd,
+    {
+      runId,
+      revision: 1,
+      status: 'implementing',
+      plan: {
+        goal: 'Exercise the real local RPC output validator',
+        artifacts: ['.'],
+        steps: ['Inspect'],
+        acceptance: [{ requirement: 'Return the selected local projection', checks: ['unit'] }],
+        checks: [check],
+      },
+      // Deliberately constructed schema receipt, not proof that a command ran.
+      evidence: {
+        unit: {
+          runId,
+          revision: 1,
+          executedRevision: 1,
+          passed: true,
+          code: 0,
+          checkDigest: checkDigest(check),
+          fingerprint: revision,
+          timedOut: false,
+          cancelled: false,
+          changedDuringCheck: false,
+          outputTail: 'Selected local-only schema text',
+        },
+      },
+    },
+    session.id,
+  );
   selectReport(host.cwd, report.path);
   const selected = (await source(session.id)).output.source;
   assert.equal(selected.runId, runId);
@@ -58,7 +87,20 @@ try {
   assert.equal(stale.freshness, 'stale');
   assert.equal(stale.checks[0].after, 'not_run');
   assert.equal(host.requests.length, 0, 'No model requests are authorized by this probe');
-  console.log(JSON.stringify({ runtime: host.runtimeIdentity.runtimeVersion, binarySha256: host.runtimeIdentity.binarySha256, dailyGoalsRegistration: 'passed', anyModeSourceSchema: 'passed', authFailures: 1, sourceOutputSchema: 'passed', staleProjection: 'passed', cloudSubmissions: 0, providerRequests: 0, productionAcceptance: false }));
+  console.log(
+    JSON.stringify({
+      runtime: host.runtimeIdentity.runtimeVersion,
+      binarySha256: host.runtimeIdentity.binarySha256,
+      dailyGoalsRegistration: 'passed',
+      anyModeSourceSchema: 'passed',
+      authFailures: 1,
+      sourceOutputSchema: 'passed',
+      staleProjection: 'passed',
+      cloudSubmissions: 0,
+      providerRequests: 0,
+      productionAcceptance: false,
+    }),
+  );
 } finally {
   await host.close();
 }

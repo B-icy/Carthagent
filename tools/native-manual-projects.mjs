@@ -4,12 +4,8 @@ import { execFileSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-export async function createManualProjects(
-  destination,
-  { packages = 128 } = {},
-) {
-  if (!Number.isInteger(packages) || packages < 2 || packages > 1024)
-    throw Error('packages must be an integer from 2 to 1024');
+export async function createManualProjects(destination, { packages = 128 } = {}) {
+  if (!Number.isInteger(packages) || packages < 2 || packages > 1024) throw Error('packages must be an integer from 2 to 1024');
   const root = resolve(destination);
   await mkdir(dirname(root), { recursive: true });
   await mkdir(root);
@@ -34,8 +30,7 @@ export async function createManualProjects(
       null,
       2,
     ) + '\n';
-  const imports =
-    "import {test} from 'node:test';\nimport assert from 'node:assert/strict';\n";
+  const imports = "import {test} from 'node:test';\nimport assert from 'node:assert/strict';\n";
   try {
     await write('tiny', 'package.json', packageFile('ctg-invoice-fixture'));
     await write(
@@ -61,11 +56,7 @@ export async function createManualProjects(
       '# Small task\nAdd optional {discountBps} to invoiceTotal. Prices/totals are integer cents. Accept integer discounts 0..10000; reject others with RangeError. Round once after discount. Preserve old calls and never mutate inputs. Run npm test and npm run test:acceptance. Baseline is green; new-feature acceptance is intentionally red.\n',
     );
 
-    await write(
-      'product',
-      'package.json',
-      packageFile('ctg-forgeboard-fixture', { start: 'node server.mjs' }),
-    );
+    await write('product', 'package.json', packageFile('ctg-forgeboard-fixture', { start: 'node server.mjs' }));
     await write(
       'product',
       'src/issues.mjs',
@@ -125,11 +116,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
         'test:stress': 'node --test --test-concurrency=2 test/*.test.mjs',
       }),
     );
-    await write(
-      'scale',
-      'shared/money.mjs',
-      'export function roundMoney(value){return Math.round(value*100)/100;}\n',
-    );
+    await write('scale', 'shared/money.mjs', 'export function roundMoney(value){return Math.round(value*100)/100;}\n');
     await write(
       'scale',
       'test/packages.test.mjs',
@@ -162,11 +149,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
           `packages/domain-${i}/src/metric-${j}.mjs`,
           `import {total} from './index.mjs';\nexport const metric${j}=values=>({domain:${i},metric:${j},total:total(values)});\n`,
         );
-      await write(
-        'scale',
-        `docs/domain-${i}.md`,
-        `# Domain ${i}\nUses shared/money.mjs through its public index. Preserve domain identity.\n`,
-      );
+      await write('scale', `docs/domain-${i}.md`, `# Domain ${i}\nUses shared/money.mjs through its public index. Preserve domain identity.\n`);
     }
     await write(
       'scale',
@@ -183,10 +166,8 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
     for (const name of ['tiny', 'product', 'scale']) {
       await write(name, '.gitignore', 'node_modules/\n.harness/\n.env\n');
       const files = [];
-      const visit = async (directory) => {
-        for (const entry of (
-          await readdir(join(root, name, directory), { withFileTypes: true })
-        ).sort((a, b) => a.name.localeCompare(b.name))) {
+      const visit = async directory => {
+        for (const entry of (await readdir(join(root, name, directory), { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
           const file = directory ? `${directory}/${entry.name}` : entry.name;
           if (entry.isDirectory()) await visit(file);
           else
@@ -217,20 +198,11 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
         'Initialize disposable manual-test project\n\nCo-authored-by: openhands <openhands@all-hands.dev>',
       );
     }
-    await writeFile(
-      join(root, 'inventory.json'),
-      JSON.stringify({ version: 1, packages, projects: inventory }, null, 2) +
-        '\n',
-    );
+    await writeFile(join(root, 'inventory.json'), JSON.stringify({ version: 1, packages, projects: inventory }, null, 2) + '\n');
     return {
       root,
       packages,
-      projects: Object.fromEntries(
-        Object.entries(inventory).map(([name, value]) => [
-          name,
-          { files: value.files },
-        ]),
-      ),
+      projects: Object.fromEntries(Object.entries(inventory).map(([name, value]) => [name, { files: value.files }])),
     };
   } catch (error) {
     await rm(root, { recursive: true, force: true });
@@ -238,15 +210,9 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
   }
 }
 
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(resolve(process.argv[1])).href
-) {
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const [destination, packages] = process.argv.slice(2);
-  if (!destination)
-    throw Error(
-      'Usage: node tools/native-manual-projects.mjs <new-directory> [packages=128]',
-    );
+  if (!destination) throw Error('Usage: node tools/native-manual-projects.mjs <new-directory> [packages=128]');
   console.log(
     JSON.stringify(
       await createManualProjects(destination, {

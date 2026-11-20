@@ -1,0 +1,39 @@
+name: Sync labels
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/labels.json
+      - .github/workflows/labels.yml
+      - tools/sync-labels.mjs
+      - tools/github-issues.mjs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-labels
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # Creates and updates labels from .github/labels.json. Labels missing from
+      # the file are reported as unmanaged and never deleted.
+      - name: Sync repository labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/sync-labels.mjs --apply --repo "$GITHUB_REPOSITORY"

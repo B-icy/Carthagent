@@ -16,12 +16,29 @@ type Flow = {
   timer: ReturnType<typeof setTimeout>;
 };
 
-export function createDeviceAuthController({ env = process.env, fetchImpl = globalThis.fetch, agentDir, now = Date.now, sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
-  if (signal?.aborted) return reject(signal.reason);
-  const timer = setTimeout(resolve, ms);
-  signal?.addEventListener('abort', () => { clearTimeout(timer); reject(signal.reason); }, { once: true });
-}) }: {
-  env?: NodeJS.ProcessEnv; fetchImpl?: typeof fetch; agentDir: string; now?: () => number;
+export function createDeviceAuthController({
+  env = process.env,
+  fetchImpl = globalThis.fetch,
+  agentDir,
+  now = Date.now,
+  sleep = (ms: number, signal?: AbortSignal) =>
+    new Promise<void>((resolve, reject) => {
+      if (signal?.aborted) return reject(signal.reason);
+      const timer = setTimeout(resolve, ms);
+      signal?.addEventListener(
+        'abort',
+        () => {
+          clearTimeout(timer);
+          reject(signal.reason);
+        },
+        { once: true },
+      );
+    }),
+}: {
+  env?: NodeJS.ProcessEnv;
+  fetchImpl?: typeof fetch;
+  agentDir: string;
+  now?: () => number;
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }) {
   const client = new CloudClient({ baseUrl: cloudControlUrl(env), fetchImpl, sleep: ms => sleep(ms) });
@@ -35,19 +52,37 @@ export function createDeviceAuthController({ env = process.env, fetchImpl = glob
   };
   const start = async (signal?: AbortSignal) => {
     // Bound active generations; expired callbacks are aborted by their timer.
-    for (const [id, flow] of flows) if (flow.expiresAt <= now()) { flow.controller.abort(new Error('expired_token')); remove(id); }
+    for (const [id, flow] of flows)
+      if (flow.expiresAt <= now()) {
+        flow.controller.abort(new Error('expired_token'));
+        remove(id);
+      }
     if (flows.size >= 4) throw new Error('too_many_auth_flows');
-    const request = client.request as unknown as (path: string, options: { method: string; body: unknown; signal?: AbortSignal }) => Promise<{
-      userCode: string; verificationUri: string; verificationUriComplete?: string; expiresIn: number; interval: number; deviceCode: string;
+    const request = client.request as unknown as (
+      path: string,
+      options: { method: string; body: unknown; signal?: AbortSignal },
+    ) => Promise<{
+      userCode: string;
+      verificationUri: string;
+      verificationUriComplete?: string;
+      expiresIn: number;
+      interval: number;
+      deviceCode: string;
     }>;
-    const createAuthorization = (input: { clientName: string; installId: string }, signal?: AbortSignal) => request.call(client, '/v1/device/authorizations', {
-      method: 'POST', body: input, signal,
-    });
+    const createAuthorization = (input: { clientName: string; installId: string }, signal?: AbortSignal) =>
+      request.call(client, '/v1/device/authorizations', {
+        method: 'POST',
+        body: input,
+        signal,
+      });
     const installId = shipInstallId({ agentDir });
-    const authorization = await createAuthorization({
-      clientName: cloudClientName({ hostname: hostname(), installId }),
-      installId,
-    }, signal);
+    const authorization = await createAuthorization(
+      {
+        clientName: cloudClientName({ hostname: hostname(), installId }),
+        installId,
+      },
+      signal,
+    );
     const flowId = randomUUID();
     const controller = new AbortController();
     const expiresAt = now() + Math.min(MAX_EXPIRY_MS, Math.max(1, Number(authorization.expiresIn) || 600) * 1000);
@@ -68,7 +103,9 @@ export function createDeviceAuthController({ env = process.env, fetchImpl = glob
           await sleep(interval, controller.signal);
         }
         throw new Error('expired_token');
-      } finally { remove(flowId); }
+      } finally {
+        remove(flowId);
+      }
     })();
     // Avoid unhandled rejection for RPC-only starts; native authorize still
     // awaits this same promise and receives the original rejection.
@@ -85,7 +122,10 @@ export function createDeviceAuthController({ env = process.env, fetchImpl = glob
       return remove(flowId);
     },
     async cleanup() {
-      for (const flow of flows.values()) { clearTimeout(flow.timer); flow.controller.abort(new Error('plugin_unloaded')); }
+      for (const flow of flows.values()) {
+        clearTimeout(flow.timer);
+        flow.controller.abort(new Error('plugin_unloaded'));
+      }
       flows.clear();
       await Promise.resolve();
     },

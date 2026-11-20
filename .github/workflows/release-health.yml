@@ -1,0 +1,73 @@
+name: Release health
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-health
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    env:
+      CARTHAGENT_NO_UPDATE_CHECK: '1'
+    steps:
+      # A release event would otherwise check out the release tag, which may
+      # predate this tooling.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.repository.default_branch || github.ref }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Check the latest stable release
+        id: health
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CARTHAGENT_CLOUD_URL: ${{ vars.CARTHAGENT_CLOUD_URL || 'https://api.carthagent.xyz' }}
+        run: |
+          set +e
+          node tools/release-health.mjs --json-out release-health.json > release-health.md
+          status=$?
+          set -e
+          cat release-health.md >> "$GITHUB_STEP_SUMMARY"
+          echo "exit_code=${status}" >> "$GITHUB_OUTPUT"
+      - name: Upload the release health report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-health-${{ github.run_id }}
+          path: release-health.json
+          if-no-files-found: warn
+          retention-days: 90
+      # A release is published on GitHub before the Release workflow publishes
+      # npm and the control-plane manifest, so the run triggered by the release
+      # event only reports. The Release workflow dispatches the alerting run
+      # after the manifest is live, and the schedule catches anything later.
+      - name: Open, update or close the release health issue
+        if: github.event_name != 'release' && hashFiles('release-health.json') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/release-health.mjs --sync-issue release-health.json
+      - name: Fail when the release is unhealthy
+        if: steps.health.outputs.exit_code != '0' && github.event_name != 'release'
+        run: |
+          echo "::error::Release health checks failed; see the job summary and the 'source: release-health' issue."
+          exit 1
+      - name: Warn about expected publication lag
+        if: steps.health.outputs.exit_code != '0' && github.event_name == 'release'
+        run: echo "::warning::Release health is not yet consistent; npm and the update manifest are published by the Release workflow after this event."

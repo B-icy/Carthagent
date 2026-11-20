@@ -1,0 +1,29 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignoreBinaries": ["cygpath", "geckodriver", "openssl", "taskkill.exe", "where.exe"],
+  "workspaces": {
+    ".": {
+      "entry": [
+        "bin/**/*.mjs",
+        "evaluate.mjs",
+        "lib/**/*.{mjs,ts}",
+        "extensions/*.ts",
+        "tools/**/*.{mjs,cjs,ts}",
+        "tests/**/*.{mjs,ts}",
+        "types/*.d.ts"
+      ],
+      "project": ["bin/**", "lib/**", "extensions/**", "tools/**", "tests/**", "types/**", "*.mjs"],
+      "ignore": ["vendor/**"],
+      "ignoreDependencies": [
+        "@earendil-works/pi-coding-agent",
+        "@resvg/resvg-js",
+        "tree-sitter-wasms",
+        "web-tree-sitter-legacy"
+      ]
+    },
+    "plugins/carthagent": {
+      "entry": ["index.ts", "tui.ts", "src/**/*.{ts,tsx,mjs}", "test-plugin/**/*.ts", "tests/**/*.{ts,tsx}"],
+      "project": ["**/*.{ts,tsx,mjs,mts}"]
+    }
+  }
+}

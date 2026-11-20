@@ -8,7 +8,9 @@ test('resume finds ID prefixes outside the server title-search results', async (
   const byTitle = { id: 'ses_xyz789', title: 'Parser implementation', time: { updated: 1 } };
   const client = {
     session: {
-      async get() { throw new Error('not an exact ID'); },
+      async get() {
+        throw new Error('not an exact ID');
+      },
       async list(input) {
         calls.push(input);
         const rows = input.search ? [byTitle] : [byPrefix];
@@ -25,7 +27,9 @@ test('resume falls back to title search after an unfiltered ID-prefix miss', asy
   const byTitle = { id: 'ses_xyz789', title: 'Parser implementation', time: { updated: 1 } };
   const client = {
     session: {
-      async get() { throw new Error('not an exact ID'); },
+      async get() {
+        throw new Error('not an exact ID');
+      },
       async list(input) {
         calls.push(input);
         return { data: input.search ? [byTitle] : [], cursor: { next: null } };
@@ -38,9 +42,11 @@ test('resume falls back to title search after an unfiltered ID-prefix miss', asy
 });
 
 test('resume rejects sessions from another project location', async () => {
-  const client = { session: {
-    get: async () => ({ id: 'ses_exact', location: { directory: 'other' } }),
-    list: async () => ({ data: [], cursor: { next: null } }),
-  } };
+  const client = {
+    session: {
+      get: async () => ({ id: 'ses_exact', location: { directory: 'other' } }),
+      list: async () => ({ data: [], cursor: { next: null } }),
+    },
+  };
   assert.equal(await findNativeResumeSession({ query: 'ses_exact', directory: 'repo', client }), undefined);
 });

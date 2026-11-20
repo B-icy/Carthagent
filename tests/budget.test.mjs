@@ -17,7 +17,12 @@ test('budget boundaries and configuration fail closed', () => {
 test('shared launch arguments validate and forward budgets for both clients', async () => {
   const { buildEngineArgs } = await import('../lib/engine.mjs');
   const args = buildEngineArgs({ maxTools: '3', maxSeconds: '0', maxRepairs: '1' });
-  for (const [flag, value] of [['tools', '3'], ['seconds', '0'], ['repairs', '1']]) assert.equal(args[args.indexOf(`--delivery-max-${flag}`) + 1], value);
+  for (const [flag, value] of [
+    ['tools', '3'],
+    ['seconds', '0'],
+    ['repairs', '1'],
+  ])
+    assert.equal(args[args.indexOf(`--delivery-max-${flag}`) + 1], value);
   assert.throws(() => buildEngineArgs({ maxTools: '-1' }));
   assert.throws(() => buildEngineArgs({ maxTools: '0', delivery: false }), /require the delivery extension/);
 });

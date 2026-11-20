@@ -1,9 +1,6 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
-import {
-  SUBSCRIPTION_PROVIDER_IDS,
-  registerSubscriptionProviders,
-} from '../lib/providers/subscription-models.mjs';
+import { SUBSCRIPTION_PROVIDER_IDS, registerSubscriptionProviders } from '../lib/providers/subscription-models.mjs';
 
 /**
  * Overlay Claude/ChatGPT subscription model discovery on the builtin

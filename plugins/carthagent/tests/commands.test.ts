@@ -1,6 +1,19 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { COMMANDS, commandErrorMessage, HOST_ESSENTIALS, slashRegistrations, helpOptions, helpSelectionCommand, helpSelectionTarget, matchCommand, NATIVE_COMMAND_COLLISIONS, NATIVE_SESSION_COMMANDS, pluginSlashAvailable, resolveCommand } from "../src/ui/commands.js";
+import {
+  COMMANDS,
+  commandErrorMessage,
+  HOST_ESSENTIALS,
+  slashRegistrations,
+  helpOptions,
+  helpSelectionCommand,
+  helpSelectionTarget,
+  matchCommand,
+  NATIVE_COMMAND_COLLISIONS,
+  NATIVE_SESSION_COMMANDS,
+  pluginSlashAvailable,
+  resolveCommand,
+} from "../src/ui/commands.js";
 import { readFile } from "node:fs/promises";
 import { parseThemeDocument } from "@opencode/theme/tui";
 import { cliConfigDirectory, cliConfigPath, readCliConfig, writeNativeTheme } from "../src/ui/host-state.js";
@@ -13,10 +26,18 @@ test("picking /help from completion runs it; a submitted /help still dispatches"
   const help = COMMANDS.find((item) => item.id === "help")!;
   const entries = slashRegistrations(help);
   // The host's completion runs the last plain /help entry; the argument-taking twin keeps a submitted /help working.
-  assert.deepEqual(entries.map((entry) => [entry.idSuffix, entry.palette, entry.slash?.arguments]), [[".submit", false, true], ["", true, undefined]]);
+  assert.deepEqual(
+    entries.map((entry) => [entry.idSuffix, entry.palette, entry.slash?.arguments]),
+    [
+      [".submit", false, true],
+      ["", true, undefined],
+    ],
+  );
   for (const entry of entries) assert.deepEqual([entry.slash?.name, entry.slash?.aliases], ["help", ["ctg-help"]]);
   // Commands that take arguments keep a single argument-taking entry so completion leaves room to type them.
-  assert.deepEqual(slashRegistrations(COMMANDS.find((item) => item.id === "goal")!), [{ idSuffix: "", palette: true, slash: { name: "goal", arguments: true } }]);
+  assert.deepEqual(slashRegistrations(COMMANDS.find((item) => item.id === "goal")!), [
+    { idSuffix: "", palette: true, slash: { name: "goal", arguments: true } },
+  ]);
   assert.deepEqual(slashRegistrations(COMMANDS.find((item) => item.id === "quests")!), [{ idSuffix: "", palette: true, slash: { name: "quests" } }]);
   assert.deepEqual(slashRegistrations(COMMANDS.find((item) => item.id === "stats")!), [{ idSuffix: "", palette: true }]);
   // Aliases are copied, so the host cannot mutate the manifest.
@@ -32,7 +53,10 @@ test("Carthagent command manifest resolves visible CTG commands", () => {
   assert.equal(resolveCommand("/review-mode")?.id, "review");
   for (const name of ["workflow", "architecture", "evidence"]) assert.equal(resolveCommand(name)?.hidden, undefined);
   for (const name of ["model", "compact", "autocompact", "abort", "clear"]) assert.equal(resolveCommand(name)?.id, name);
-  assert.deepEqual(matchCommand("/arch").map((item) => item.name), ["architecture", "archive"]);
+  assert.deepEqual(
+    matchCommand("/arch").map((item) => item.name),
+    ["architecture", "archive"],
+  );
   assert.deepEqual(matchCommand("/rev status"), []);
   for (const name of ["login", "account", "usage", "billing", "logout-cloud", "archive", "demo", "voyages", "quests"]) {
     assert.ok(resolveCommand(`/${name}`), `/${name} must resolve to a registered handler`);
@@ -49,14 +73,31 @@ test("Carthagent command manifest resolves visible CTG commands", () => {
 test("command error reports read native RPC rejection objects instead of '[object Object]'", () => {
   const signIn = /^Sign in to Carthagent Cloud .*\/login/;
   // Native promise RPC rejects with plain { _tag, type, message, data } objects.
-  assert.match(commandErrorMessage({ _tag: "RpcError", type: "unauthenticated", message: "An active Carthagent Cloud OAuth connection is required.", data: {} }), signIn);
-  assert.match(commandErrorMessage({ _tag: "RpcInternalError", type: "rpc.internal", message: "An active Carthagent Cloud OAuth connection is required." }), signIn);
+  assert.match(
+    commandErrorMessage({ _tag: "RpcError", type: "unauthenticated", message: "An active Carthagent Cloud OAuth connection is required.", data: {} }),
+    signIn,
+  );
+  assert.match(
+    commandErrorMessage({ _tag: "RpcInternalError", type: "rpc.internal", message: "An active Carthagent Cloud OAuth connection is required." }),
+    signIn,
+  );
   assert.match(commandErrorMessage(new Error("An active Carthagent Cloud OAuth connection is required.")), signIn);
   assert.match(commandErrorMessage({ _tag: "UnauthorizedError", message: "Unauthorized" }), signIn);
   // INF-03: a session the server ended says so, rather than "sign in" as if never signed in.
-  assert.match(commandErrorMessage({ _tag: "RpcError", type: "unauthenticated", message: "Your Carthagent Cloud session expired or was revoked. Run `ctg login` again and choose Carthagent Cloud.", data: {} }), /expired or was revoked\. Run \/login again/);
+  assert.match(
+    commandErrorMessage({
+      _tag: "RpcError",
+      type: "unauthenticated",
+      message: "Your Carthagent Cloud session expired or was revoked. Run `ctg login` again and choose Carthagent Cloud.",
+      data: {},
+    }),
+    /expired or was revoked\. Run \/login again/,
+  );
   // Non-auth and network failures keep their useful message.
-  assert.equal(commandErrorMessage({ _tag: "RpcError", type: "rpc.failed", message: "Cloud usage limit must be between 1 and 200." }), "Cloud usage limit must be between 1 and 200.");
+  assert.equal(
+    commandErrorMessage({ _tag: "RpcError", type: "rpc.failed", message: "Cloud usage limit must be between 1 and 200." }),
+    "Cloud usage limit must be between 1 and 200.",
+  );
   assert.equal(commandErrorMessage(new Error("fetch failed: ECONNREFUSED")), "fetch failed: ECONNREFUSED");
   assert.equal(commandErrorMessage("plain text"), "plain text");
   for (const opaque of [{}, { message: "" }, { message: 42 }, null, undefined, 7]) {
@@ -70,17 +111,35 @@ test("/help list selections dispatch the selected command once; cancel is inert"
   for (const command of COMMANDS) assert.equal(helpSelectionCommand(command.name)?.id, command.id, command.name);
   assert.equal(helpSelectionCommand("ctg-help")?.id, "help");
   assert.equal(helpSelectionCommand("cloud")?.id, "account");
-  for (const cancelled of [undefined, null, "", "themes", "settings", "theme dark", "/theme"]) assert.equal(helpSelectionCommand(cancelled), undefined, String(cancelled));
+  for (const cancelled of [undefined, null, "", "themes", "settings", "theme dark", "/theme"])
+    assert.equal(helpSelectionCommand(cancelled), undefined, String(cancelled));
 });
 
 test("/help leads with a short Start here list that includes host /connect", () => {
   const options = helpOptions();
   const start = options.filter((option) => option.category === "Start here").map((option) => option.title);
-  assert.deepEqual(start, ["/login", "/connect", "/model [name]", "/demo", "/review [ask|yes|no|status]", "/evidence", "/account", "/new", "/sessions", "/status", "/exit"]);
+  assert.deepEqual(start, [
+    "/login",
+    "/connect",
+    "/model [name]",
+    "/demo",
+    "/review [ask|yes|no|status]",
+    "/evidence",
+    "/account",
+    "/new",
+    "/sessions",
+    "/status",
+    "/exit",
+  ]);
   assert.ok(start.length <= 12, "Start here stays short");
   // Every plugin command (except /help itself) remains discoverable exactly once.
   const pluginTitles = options.filter((option) => !option.value.startsWith("host:")).map((option) => option.value);
-  assert.deepEqual([...pluginTitles].sort(), COMMANDS.filter((command) => command.id !== "help").map((command) => command.name).sort());
+  assert.deepEqual(
+    [...pluginTitles].sort(),
+    COMMANDS.filter((command) => command.id !== "help")
+      .map((command) => command.name)
+      .sort(),
+  );
   // Advanced and internal commands are grouped last.
   const categories = options.map((option) => option.category);
   assert.equal(categories.lastIndexOf("Start here") < categories.indexOf("More commands"), true);
@@ -94,7 +153,12 @@ test("/help leads with a short Start here list that includes host /connect", () 
   assert.deepEqual(helpSelectionTarget(connect!.value), { type: "host", id: "provider.connect" });
   assert.deepEqual(helpSelectionTarget("host:not-a-command"), undefined);
   assert.equal(helpSelectionTarget("model")?.type, "plugin");
-  for (const entry of HOST_ESSENTIALS) assert.equal(COMMANDS.some((command) => command.name === entry.name), false, `${entry.name} is host-owned`);
+  for (const entry of HOST_ESSENTIALS)
+    assert.equal(
+      COMMANDS.some((command) => command.name === entry.name),
+      false,
+      `${entry.name} is host-owned`,
+    );
 });
 
 test("command descriptions are short, Cloud-named and fit the palette column", () => {
@@ -111,13 +175,24 @@ test("plugin does not add duplicate slash rows for host-owned equivalents", () =
   assert.equal(resolveCommand("/sessions"), undefined);
   assert.equal(resolveCommand("/thinking")?.hostSlash, true);
   const slashNames = COMMANDS.filter((command) => !command.hostSlash).flatMap((command) => [command.name, ...(command.aliases ?? [])]);
-  for (const host of ["sessions", "thinking", "stats", "connect", "new", "status", "exit", "models", "variants"]) assert.equal(slashNames.includes(host), false, host);
+  for (const host of ["sessions", "thinking", "stats", "connect", "new", "status", "exit", "models", "variants"])
+    assert.equal(slashNames.includes(host), false, host);
 });
 
 test("manifest prevents collisions with native OpenCode slash commands", () => {
-  for (const name of NATIVE_COMMAND_COLLISIONS) assert.equal(COMMANDS.some((item) => item.name === name || item.aliases?.includes(name)), false, name);
-  assert.equal(NATIVE_COMMAND_COLLISIONS.includes("help" as typeof NATIVE_COMMAND_COLLISIONS[number]), false);
-  assert.deepEqual(COMMANDS.filter((item) => ["model", "compact", "abort", "resume"].includes(item.name)).map((item) => item.name).sort(), ["abort", "compact", "model", "resume"]);
+  for (const name of NATIVE_COMMAND_COLLISIONS)
+    assert.equal(
+      COMMANDS.some((item) => item.name === name || item.aliases?.includes(name)),
+      false,
+      name,
+    );
+  assert.equal(NATIVE_COMMAND_COLLISIONS.includes("help" as (typeof NATIVE_COMMAND_COLLISIONS)[number]), false);
+  assert.deepEqual(
+    COMMANDS.filter((item) => ["model", "compact", "abort", "resume"].includes(item.name))
+      .map((item) => item.name)
+      .sort(),
+    ["abort", "compact", "model", "resume"],
+  );
 });
 
 test("/clear has one slash entry: native in sessions, plugin fallback elsewhere", () => {
@@ -138,7 +213,9 @@ test("theme provisioning installs the startup default through its launcher-facin
     assert.ok(result.installed.includes("carthage"));
     const theme = parseThemeDocument(JSON.parse(await readFile(join(result.directory, "carthage.json"), "utf8")), "carthage");
     assert.equal(theme.dark.hue.yellow[400], "#d5af66");
-  } finally { await rm(directory, { recursive: true, force: true }); }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("startup theme provisioning covers compatibility themes and preserves host/user themes", async () => {
@@ -154,7 +231,9 @@ test("startup theme provisioning covers compatibility themes and preserves host/
     assert.ok(result.installed.includes("opencode") === false);
     assert.ok(result.installed.includes("tokyonight") === false);
     assert.deepEqual(JSON.parse(await readFile(join(directory, "themes", "forest.json"), "utf8")), { userOwned: true });
-  } finally { await rm(directory, { recursive: true, force: true }); }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("Carthage theme validates against the OpenCode V2 theme schema and resolver", async () => {
@@ -177,7 +256,9 @@ test("native CLI theme write preserves unrelated cli.json settings", async () =>
     assert.equal(cliConfigPath({ XDG_CONFIG_HOME: "/tmp/profile" }, "/home/test"), join("/tmp/profile", "opencode", "cli.json"));
     assert.equal(cliConfigDirectory({ OPENCODE_CONFIG_DIR: "/tmp/opencode-profile" }), "/tmp/opencode-profile");
     assert.equal(cliConfigDirectory({ XDG_CONFIG_HOME: "/tmp/profile" }, "/home/test"), join("/tmp/profile", "opencode"));
-  } finally { await rm(directory, { recursive: true, force: true }); }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("native theme provisioning converts legacy palettes inside the selected OpenCode profile", async () => {
@@ -198,5 +279,7 @@ test("native theme provisioning converts legacy palettes inside the selected Ope
     assert.deepEqual(again.installed, []);
     await writeFile(join(themeDirectory, "forest.json"), '{"userOwned":true}');
     await assert.rejects(provisionNativeThemes(directory, ["forest"]), /Refusing to replace/);
-  } finally { await rm(directory, { recursive: true, force: true }); }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

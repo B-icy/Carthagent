@@ -1,0 +1,29 @@
+# Prettier formats first-party JavaScript and TypeScript only. Prettier also
+# honors .gitignore, so node_modules/, artifacts/ and .harness/ are listed here
+# for editors and tools that read this file alone.
+
+# Third-party, generated and local-state content.
+node_modules/
+vendor/
+artifacts/
+.harness/
+package-lock.json
+
+# Byte-sensitive content: runtime patches and their digests, evaluation
+# scenarios and graders, and test or evaluator fixtures.
+docs/
+scenarios/
+tests/fixtures/
+tools/benchmark/fixtures/
+
+# Single hand-written HTML page with inline script and style; not part of the
+# JavaScript sources that ESLint and Prettier cover.
+public/
+
+# Prose, data and configuration formats are not formatted by Prettier here.
+*.md
+*.json
+*.yml
+*.yaml
+*.html
+*.css

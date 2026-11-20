@@ -1,0 +1,12 @@
+{
+  "printWidth": 160,
+  "singleQuote": true,
+  "trailingComma": "all",
+  "arrowParens": "avoid",
+  "overrides": [
+    {
+      "files": ["plugins/carthagent/src/tui.tsx", "plugins/carthagent/src/ui/*.{ts,tsx,mts}", "plugins/carthagent/tests/**"],
+      "options": { "singleQuote": false, "arrowParens": "always" }
+    }
+  ]
+}

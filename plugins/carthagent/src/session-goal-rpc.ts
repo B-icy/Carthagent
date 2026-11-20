@@ -1,7 +1,16 @@
 import { Rpc } from '@opencode/plugin/rpc';
 
 export type SessionGoalStatus = 'active' | 'paused' | 'done' | 'blocked';
-export type SessionGoal = { objective: string; status: SessionGoalStatus; turns: number; maxTurns: number; setAt: string; reason?: string; summary?: string; endedAt?: string };
+export type SessionGoal = {
+  objective: string;
+  status: SessionGoalStatus;
+  turns: number;
+  maxTurns: number;
+  setAt: string;
+  reason?: string;
+  summary?: string;
+  endedAt?: string;
+};
 
 const sessionID = { type: 'string', minLength: 1, maxLength: 200 } as const;
 const goal = {
@@ -29,13 +38,26 @@ export const SessionGoals = Rpc.define({
   methods: {
     get: { input: only, output: result, errors },
     set: {
-      input: { type: 'object', properties: { sessionID, objective: { type: 'string', minLength: 1, maxLength: 2000 }, maxTurns: { type: 'integer', minimum: 1, maximum: 50 } }, required: ['sessionID', 'objective', 'maxTurns'], additionalProperties: false },
-      output: result, errors,
+      input: {
+        type: 'object',
+        properties: { sessionID, objective: { type: 'string', minLength: 1, maxLength: 2000 }, maxTurns: { type: 'integer', minimum: 1, maximum: 50 } },
+        required: ['sessionID', 'objective', 'maxTurns'],
+        additionalProperties: false,
+      },
+      output: result,
+      errors,
     },
     clear: { input: only, output: result, errors },
     resume: { input: only, output: result, errors },
   },
   events: {
-    changed: { schema: { type: 'object', properties: { sessionID, goal: { anyOf: [goal, { type: 'null' }] } }, required: ['sessionID', 'goal'], additionalProperties: false } },
+    changed: {
+      schema: {
+        type: 'object',
+        properties: { sessionID, goal: { anyOf: [goal, { type: 'null' }] } },
+        required: ['sessionID', 'goal'],
+        additionalProperties: false,
+      },
+    },
   },
 });

@@ -41,7 +41,10 @@ test('native runtime selection never falls back to a legacy engine override', t 
   const marker = join(cwd, 'legacy-started');
   writeFileSync(fallback, `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, 'unexpected');`);
   const result = spawnSync(process.execPath, [cli, '-p', '--engine-cli', missing, '--no-delivery', '--max-tools', '1', 'Task'], {
-    cwd, encoding: 'utf8', timeout: 10000, env: { ...process.env, CTG_NATIVE: '0', CARTHAGENT_CLI: fallback },
+    cwd,
+    encoding: 'utf8',
+    timeout: 10000,
+    env: { ...process.env, CTG_NATIVE: '0', CARTHAGENT_CLI: fallback },
   });
   assert.equal(result.status, 1, result.stderr);
   assert.match(result.stderr, /missing-native-runtime/);
@@ -50,15 +53,22 @@ test('native runtime selection never falls back to a legacy engine override', t 
 
 test('status reads the newest persisted extension report', t => {
   const cwd = fixture(t);
-  createReport(cwd, {
-    status: 'implementing',
-    plan: {
-      goal: 'CLI fixture', assumptions: [], artifacts: ['.'], steps: ['Check'],
-      acceptance: [{ requirement: 'Runs', checks: ['smoke'] }],
-      checks: [{ id: 'smoke', kind: 'runtime', argv: [process.execPath, 'app.mjs'], timeoutSeconds: 10 }]
+  createReport(
+    cwd,
+    {
+      status: 'implementing',
+      plan: {
+        goal: 'CLI fixture',
+        assumptions: [],
+        artifacts: ['.'],
+        steps: ['Check'],
+        acceptance: [{ requirement: 'Runs', checks: ['smoke'] }],
+        checks: [{ id: 'smoke', kind: 'runtime', argv: [process.execPath, 'app.mjs'], timeoutSeconds: 10 }],
+      },
+      evidence: {},
     },
-    evidence: {}
-  }, 'session');
+    'session',
+  );
   const result = run(cwd, 'status');
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /CLI fixture/);
@@ -67,15 +77,22 @@ test('status reads the newest persisted extension report', t => {
 
 test('check executes declared argv and persists fresh evidence', t => {
   const cwd = fixture(t);
-  createReport(cwd, {
-    status: 'implementing',
-    plan: {
-      goal: 'CLI fixture', assumptions: [], artifacts: ['.'], steps: ['Check'],
-      acceptance: [{ requirement: 'Runs', checks: ['smoke'] }],
-      checks: [{ id: 'smoke', kind: 'runtime', argv: [process.execPath, 'app.mjs'], timeoutSeconds: 10 }]
+  createReport(
+    cwd,
+    {
+      status: 'implementing',
+      plan: {
+        goal: 'CLI fixture',
+        assumptions: [],
+        artifacts: ['.'],
+        steps: ['Check'],
+        acceptance: [{ requirement: 'Runs', checks: ['smoke'] }],
+        checks: [{ id: 'smoke', kind: 'runtime', argv: [process.execPath, 'app.mjs'], timeoutSeconds: 10 }],
+      },
+      evidence: {},
     },
-    evidence: {}
-  }, 'session');
+    'session',
+  );
   const report = latestReport(cwd);
   saveReport(report.path, approveFixture(report.state, cwd));
   const result = run(cwd, 'check', 'all');
@@ -138,7 +155,13 @@ test('review shows and persists the self-review default', t => {
 
 test('native review rejects invalid targets and bounds before resolving a host', t => {
   const cwd = fixture(t);
-  for (const args of [['review', 'bogus'], ['review', '14', '--timeout', '0'], ['review', '14', '--timeout', '301'], ['review', '14', '--timeout', 'Infinity'], ['review', '14', '--timeout', 'invalid']]) {
+  for (const args of [
+    ['review', 'bogus'],
+    ['review', '14', '--timeout', '0'],
+    ['review', '14', '--timeout', '301'],
+    ['review', '14', '--timeout', 'Infinity'],
+    ['review', '14', '--timeout', 'invalid'],
+  ]) {
     const result = run(cwd, ...args);
     assert.equal(result.status, 2, result.stderr);
     assert.match(result.stderr, /Invalid review target|integer from 1 to 300/);
@@ -147,19 +170,23 @@ test('native review rejects invalid targets and bounds before resolving a host',
 
 test('buildEngineArgs always loads the Experiential provider extension', () => {
   const args = buildEngineArgs({ isolate: true, delivery: false });
-  const extensionPaths = args.flatMap((arg, index) => arg === '-e' ? [args[index + 1]] : []);
+  const extensionPaths = args.flatMap((arg, index) => (arg === '-e' ? [args[index + 1]] : []));
   assert.ok(extensionPaths.some(path => path.endsWith(join('extensions', 'experiential.ts'))));
 });
 
 test('review modes launch the real bundled engine without unknown flags', t => {
   const cwd = fixture(t);
   for (const review of ['ask', 'yes', 'no']) {
-    const result = spawnSync(process.execPath, [join(root, 'vendor/agent/cli.js'),
-      '--offline', ...buildEngineArgs({ review, isolate: true }),
-      '--list-models', 'carthagent-no-such-model-123'], {
-      cwd, encoding: 'utf8', timeout: 15000,
-      env: { ...process.env, PI_CODING_AGENT_DIR: join(cwd, 'agent') },
-    });
+    const result = spawnSync(
+      process.execPath,
+      [join(root, 'vendor/agent/cli.js'), '--offline', ...buildEngineArgs({ review, isolate: true }), '--list-models', 'carthagent-no-such-model-123'],
+      {
+        cwd,
+        encoding: 'utf8',
+        timeout: 15000,
+        env: { ...process.env, PI_CODING_AGENT_DIR: join(cwd, 'agent') },
+      },
+    );
     assert.equal(result.status, 0, result.stderr);
     assert.doesNotMatch(result.stderr, /Unknown option|Failed to load extension/);
     assert.match(result.stdout + result.stderr, /No models (matching|available)/);
@@ -171,9 +198,16 @@ test('native model listing cannot silently fall back to legacy cached model meta
   const agent = join(cwd, 'legacy-agent');
   mkdirSync(agent);
   writeFileSync(join(agent, 'models-store.json'), JSON.stringify({ 'carthagent-cloud': { models: [{ id: 'legacy-only-model' }], checkedAt: 1 } }));
-  const result = spawnSync(process.execPath, [cli, '--list-models'], { cwd, encoding: 'utf8', env: {
-    ...process.env, CTG_OPENCODE_BIN: join(cwd, 'missing-native-runtime'), CARTHAGENT_CODING_AGENT_DIR: agent, PI_CODING_AGENT_DIR: agent,
-  } });
+  const result = spawnSync(process.execPath, [cli, '--list-models'], {
+    cwd,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      CTG_OPENCODE_BIN: join(cwd, 'missing-native-runtime'),
+      CARTHAGENT_CODING_AGENT_DIR: agent,
+      PI_CODING_AGENT_DIR: agent,
+    },
+  });
   assert.equal(result.status, 1, result.stderr);
   assert.match(result.stderr, /missing-native-runtime/);
   assert.doesNotMatch(result.stdout, /legacy-only-model/);

@@ -26,7 +26,8 @@ const cloud = createServer(async (req, res) => {
     res.end(JSON.stringify({ data: [{ id: 'refresh-reentry-fixture' }] }));
     return;
   }
-  res.writeHead(404); res.end('{}');
+  res.writeHead(404);
+  res.end('{}');
 });
 let fixture;
 try {
@@ -35,12 +36,12 @@ try {
   // Installed-product fixture, like test-native-controls: source-snapshot
   // verification requires the checkout lockfile and is not a package contract.
   // Verify the real installed inventory and health explicitly at each start.
-  fixture = await nativeFixture({ plugin: process.argv[2],
-    env: { CARTHAGENT_CLOUD_URL: `http://127.0.0.1:${cloud.address().port}`,
-      EXP_GATEWAY_URL: `http://127.0.0.1:${cloud.address().port}/v1` } });
+  fixture = await nativeFixture({
+    plugin: process.argv[2],
+    env: { CARTHAGENT_CLOUD_URL: `http://127.0.0.1:${cloud.address().port}`, EXP_GATEWAY_URL: `http://127.0.0.1:${cloud.address().port}/v1` },
+  });
   // Use the same location for activation and assertions, as the Ship sibling.
-  await fixture.client.session.create({ location: fixture.location, model: fixture.model,
-    title: 'native plugin activation probe' }, fixture.request());
+  await fixture.client.session.create({ location: fixture.location, model: fixture.model, title: 'native plugin activation probe' }, fixture.request());
   await fixture.active();
   const location = fixture.location;
   const verifyPlugin = async () => {
@@ -54,14 +55,17 @@ try {
     assert.equal(health.directory, location.directory);
   };
   await verifyPlugin();
-  const otherValue = { type: 'oauth', methodID: 'carthagent-device', access: 'fixture-account-b',
-    refresh: 'fixture-refresh-b', expires: Date.now() + 3600000 };
-  const other = await fixture.client.credential.create({ integrationID: 'carthagent-cloud',
-    value: otherValue, activate: true }, fixture.request());
+  const otherValue = { type: 'oauth', methodID: 'carthagent-device', access: 'fixture-account-b', refresh: 'fixture-refresh-b', expires: Date.now() + 3600000 };
+  const other = await fixture.client.credential.create({ integrationID: 'carthagent-cloud', value: otherValue, activate: true }, fixture.request());
   switchAccount = () => fixture.client.credential.activate({ credentialID: other.id }, fixture.request());
-  const created = await fixture.client.credential.create({ integrationID: 'carthagent-cloud',
-    value: { type: 'oauth', methodID: 'carthagent-device', access: 'fixture-expired-access',
-      refresh: 'fixture-expired-refresh', expires: 1 }, activate: true }, fixture.request());
+  const created = await fixture.client.credential.create(
+    {
+      integrationID: 'carthagent-cloud',
+      value: { type: 'oauth', methodID: 'carthagent-device', access: 'fixture-expired-access', refresh: 'fixture-expired-refresh', expires: 1 },
+      activate: true,
+    },
+    fixture.request(),
+  );
   await Promise.all(Array.from({ length: 8 }, () => fixture.client.model.list({ location }, fixture.request(8000))));
   const deadline = Date.now() + 8000;
   while (true) {
@@ -91,14 +95,26 @@ try {
   while (true) {
     const models = (await fixture.client.model.list({ location }, fixture.request(8000))).data;
     if (models.some(model => model.id === 'refresh-reentry-fixture' && model.providerID === 'carthagent-cloud')) break;
-    assert.ok(Date.now() < modelDeadline, `Active B must publish the exact Ship model after restart: ${JSON.stringify(models.map(model => ({ id: model.id, providerID: model.providerID })))}`);
+    assert.ok(
+      Date.now() < modelDeadline,
+      `Active B must publish the exact Ship model after restart: ${JSON.stringify(models.map(model => ({ id: model.id, providerID: model.providerID })))}`,
+    );
     await new Promise(resolve => setTimeout(resolve, 40));
   }
   assert.ok(discoveries > discoveriesBeforeRestart, 'Restart must discover B models rather than reuse an A catalog');
   assert.equal(rotations, 1, 'restart must reuse the host-persisted rotation');
-  console.log(JSON.stringify({ passed: true, runtime: fixture.runtimeIdentity.runtimeVersion,
-    binarySha256: fixture.runtimeIdentity.binarySha256, rotations, discoveries,
-    concurrentRequests: 8, persistedAcrossRestart: true, accountSwitchIsolated: true }));
+  console.log(
+    JSON.stringify({
+      passed: true,
+      runtime: fixture.runtimeIdentity.runtimeVersion,
+      binarySha256: fixture.runtimeIdentity.binarySha256,
+      rotations,
+      discoveries,
+      concurrentRequests: 8,
+      persistedAcrossRestart: true,
+      accountSwitchIsolated: true,
+    }),
+  );
 } finally {
   await fixture?.close();
   cloud.closeAllConnections();

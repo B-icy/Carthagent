@@ -5,11 +5,15 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { createJiti } = require('jiti');
 const jiti = createJiti(import.meta.url);
-const { createLatestRequestGate, onWorkspaceUpdated, deliveryReadiness, renderDeliveryReadiness } = await jiti.import('../plugins/carthagent/src/ui/workspace-live.ts');
+const { createLatestRequestGate, onWorkspaceUpdated, deliveryReadiness, renderDeliveryReadiness } = await jiti.import(
+  '../plugins/carthagent/src/ui/workspace-live.ts',
+);
 
 function deferred() {
   let resolve;
-  const promise = new Promise((done) => { resolve = done; });
+  const promise = new Promise(done => {
+    resolve = done;
+  });
   return { promise, resolve };
 }
 
@@ -20,11 +24,11 @@ test('overlapping async workspace refreshes cannot publish stale results', async
   let visible = 'initial';
 
   const olderRequest = gate.begin();
-  const oldRefresh = older.promise.then((value) => {
+  const oldRefresh = older.promise.then(value => {
     if (olderRequest.isCurrent()) visible = value;
   });
   const newerRequest = gate.begin();
-  const newRefresh = newer.promise.then((value) => {
+  const newRefresh = newer.promise.then(value => {
     if (newerRequest.isCurrent()) visible = value;
   });
 
@@ -40,21 +44,33 @@ test('a real workspace RPC event invalidates the active view and stale deferred 
   const older = deferred();
   const updated = deferred();
   let visible = 'before event';
-  const publish = (promise) => {
+  const publish = promise => {
     const request = gate.begin();
-    return promise.then((value) => {
+    return promise.then(value => {
       if (request.isCurrent()) visible = value;
     });
   };
   const oldRefresh = publish(older.promise);
   let listener;
-  const events = { on(name, handler) { assert.equal(name, 'updated'); listener = handler; return () => { listener = undefined; }; } };
+  const events = {
+    on(name, handler) {
+      assert.equal(name, 'updated');
+      listener = handler;
+      return () => {
+        listener = undefined;
+      };
+    },
+  };
   let refreshes = 0;
-  const stop = onWorkspaceUpdated(events, () => '/workspace/project', () => {
-    gate.invalidate();
-    refreshes++;
-    void publish(updated.promise);
-  });
+  const stop = onWorkspaceUpdated(
+    events,
+    () => '/workspace/project',
+    () => {
+      gate.invalidate();
+      refreshes++;
+      void publish(updated.promise);
+    },
+  );
 
   // This is the promise RPC event payload shape: location is on the envelope,
   // while declared data is only { revision }.
@@ -72,7 +88,10 @@ test('a real workspace RPC event invalidates the active view and stale deferred 
 test('bounded delivery DTO preserves stale incomplete status and authoritative locked gate with capped evidence', () => {
   const checks = { returned: 100, total: 101 };
   const delivery = {
-    status: 'stale', freshness: 'stale', completion: 'incomplete', gate: 'locked',
+    status: 'stale',
+    freshness: 'stale',
+    completion: 'incomplete',
+    gate: 'locked',
     evidence: Array.from({ length: 100 }, (_, index) => ({ id: `check_${index}`, status: index === 99 ? 'stale' : 'fresh' })),
     truncation: { checks, acceptance: { returned: 1, total: 1 }, steps: { returned: 1, total: 1 } },
   };
@@ -90,7 +109,10 @@ test('bounded delivery DTO preserves stale incomplete status and authoritative l
 
 test('capped presentation coverage does not downgrade authoritative ready status or gate', () => {
   const delivery = {
-    status: 'verified', freshness: 'current', completion: 'ready', gate: 'open',
+    status: 'verified',
+    freshness: 'current',
+    completion: 'ready',
+    gate: 'open',
     truncation: { architecture: { returned: 100, total: 101 }, checks: { returned: 4, total: 4 } },
   };
   const readiness = deliveryReadiness(delivery);
@@ -104,7 +126,10 @@ test('capped presentation coverage does not downgrade authoritative ready status
 
 test('stale check outside the returned cap remains incomplete regardless of implementation gate', () => {
   const delivery = {
-    status: 'stale', freshness: 'stale', completion: 'incomplete', gate: 'locked',
+    status: 'stale',
+    freshness: 'stale',
+    completion: 'incomplete',
+    gate: 'locked',
     evidence: Array.from({ length: 100 }, (_, index) => ({ id: `check_${index}`, status: 'fresh' })),
     truncation: { checks: { returned: 100, total: 101 } },
   };

@@ -17,7 +17,8 @@ test('explicit workspace selection survives newer unrelated writes and rejects c
   release();
   saveReport(b.path, b.state);
   assert.equal(latestReport(cwd).path, a.path);
-  const next = lockWorkspace(cwd); next();
+  const next = lockWorkspace(cwd);
+  next();
   writeFileSync(join(cwd, '.harness', 'active.json'), JSON.stringify({ version: 1, path: '../report.json' }));
   assert.throws(() => activeReportPath(cwd), /Invalid/);
   assert.throws(() => latestReport(cwd), /Invalid/);

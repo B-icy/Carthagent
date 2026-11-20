@@ -26,14 +26,17 @@ before(async () => {
   await mkdir(path.join(root, 'docs/patches'), { recursive: true });
   await mkdir(assetsDirectory, { recursive: true });
   await writeFile(path.join(root, 'package.json'), JSON.stringify({ name: 'fixture', version: releaseVersion }));
-  await writeFile(path.join(root, 'script/ctg/build-owned-runtime.sh'), [
-    `EXPECTED_SOURCE="${sourceRevision}"`,
-    `EXPECTED_LOCK="${lockSha256}"`,
-    `EXPECTED_PATCH="${patchSha256}"`,
-    'patch_file="$ROOT/docs/patches/opencode-v2.0.32-session-ui-combined-v1.patch"',
-    `OPENCODE_VERSION=${runtimeVersion} OPENCODE_CHANNEL=ctg.${compatibilityVersion}`,
-    'bun run script/build.ts',
-  ].join('\n'));
+  await writeFile(
+    path.join(root, 'script/ctg/build-owned-runtime.sh'),
+    [
+      `EXPECTED_SOURCE="${sourceRevision}"`,
+      `EXPECTED_LOCK="${lockSha256}"`,
+      `EXPECTED_PATCH="${patchSha256}"`,
+      'patch_file="$ROOT/docs/patches/opencode-v2.0.32-session-ui-combined-v1.patch"',
+      `OPENCODE_VERSION=${runtimeVersion} OPENCODE_CHANNEL=ctg.${compatibilityVersion}`,
+      'bun run script/build.ts',
+    ].join('\n'),
+  );
   await writeFile(path.join(root, 'docs/patches/opencode-v2.0.32-session-ui-combined-v1.patch'), patchBytes);
   await writeFile(path.join(root, 'docs/patches/opencode-v2.0.32-session-ui.patch'), Buffer.from('preserved base patch'));
   await createAllFixtures();
@@ -41,17 +44,26 @@ before(async () => {
 
 after(async () => rm(temp, { recursive: true, force: true }));
 
-function sha256(bytes) { return createHash('sha256').update(bytes).digest('hex'); }
-function octal(value, width) { return Buffer.from(`${value.toString(8).padStart(width - 1, '0')}\0`); }
+function sha256(bytes) {
+  return createHash('sha256').update(bytes).digest('hex');
+}
+function octal(value, width) {
+  return Buffer.from(`${value.toString(8).padStart(width - 1, '0')}\0`);
+}
 function tarEntry(name, data, type = '0', mode = 0o644) {
   const header = Buffer.alloc(512);
   header.write(name, 0, 100);
   octal(mode, 8).copy(header, 100);
-  octal(0, 8).copy(header, 108); octal(0, 8).copy(header, 116);
-  octal(data.length, 12).copy(header, 124); octal(0, 12).copy(header, 136);
-  header.fill(32, 148, 156); header[156] = type.charCodeAt(0);
-  header.write('ustar\0', 257, 6); header.write('00', 263, 2);
-  let checksum = 0; for (const byte of header) checksum += byte;
+  octal(0, 8).copy(header, 108);
+  octal(0, 8).copy(header, 116);
+  octal(data.length, 12).copy(header, 124);
+  octal(0, 12).copy(header, 136);
+  header.fill(32, 148, 156);
+  header[156] = type.charCodeAt(0);
+  header.write('ustar\0', 257, 6);
+  header.write('00', 263, 2);
+  let checksum = 0;
+  for (const byte of header) checksum += byte;
   octal(checksum, 8).copy(header, 148);
   return Buffer.concat([header, data, Buffer.alloc((512 - (data.length % 512)) % 512)]);
 }
@@ -59,36 +71,66 @@ function tarEntry(name, data, type = '0', mode = 0o644) {
 async function createAllFixtures() {
   for (const [key, [platform, arch, archiveName, executablePath]] of Object.entries(REQUIRED_RUNTIME_TARGETS)) {
     const binary = Buffer.from(`fixture executable for ${key}\n`);
-    const inner = Buffer.from(JSON.stringify({
-      owner: 'Carthagent', sourceRepository: 'https://github.com/anomalyco/opencode',
-      sourceRevision, lockSha256, patchSha256, compatibilityVersion, runtimeVersion,
-      channel: `ctg.${compatibilityVersion}`, platform: `${platform}-${arch}`, webUI: false,
-    }));
-    const packageJson = Buffer.from(JSON.stringify({
-      name: `@opencode/cli-${key}`, version: runtimeVersion, os: [platform === 'windows' ? 'win32' : platform], cpu: [arch],
-    }));
+    const inner = Buffer.from(
+      JSON.stringify({
+        owner: 'Carthagent',
+        sourceRepository: 'https://github.com/anomalyco/opencode',
+        sourceRevision,
+        lockSha256,
+        patchSha256,
+        compatibilityVersion,
+        runtimeVersion,
+        channel: `ctg.${compatibilityVersion}`,
+        platform: `${platform}-${arch}`,
+        webUI: false,
+      }),
+    );
+    const packageJson = Buffer.from(
+      JSON.stringify({
+        name: `@opencode/cli-${key}`,
+        version: runtimeVersion,
+        os: [platform === 'windows' ? 'win32' : platform],
+        cpu: [arch],
+      }),
+    );
     const license = Buffer.from('MIT License\n');
     const sums = Buffer.from(`${sha256(binary)}  ${executablePath}\n`);
-    const parentDirectories = executablePath.split('/').slice(0, -1).reduce((all, _part, index, parts) => {
-      const current = parts.slice(0, index + 1).join('/');
-      all.push(tarEntry(`${current}/`, Buffer.alloc(0), '5'));
-      return all;
-    }, []);
-    const archive = gzipSync(Buffer.concat([
-      tarEntry('./', Buffer.alloc(0), '5'),
-      ...parentDirectories,
-      tarEntry(executablePath, binary, '0', 0o755),
-      tarEntry(`cli-${key}/package.json`, packageJson),
-      tarEntry('LICENSE', license),
-      tarEntry('SHA256SUMS', sums),
-      tarEntry('ctg-runtime.json', inner),
-      Buffer.alloc(1024),
-    ]));
+    const parentDirectories = executablePath
+      .split('/')
+      .slice(0, -1)
+      .reduce((all, _part, index, parts) => {
+        const current = parts.slice(0, index + 1).join('/');
+        all.push(tarEntry(`${current}/`, Buffer.alloc(0), '5'));
+        return all;
+      }, []);
+    const archive = gzipSync(
+      Buffer.concat([
+        tarEntry('./', Buffer.alloc(0), '5'),
+        ...parentDirectories,
+        tarEntry(executablePath, binary, '0', 0o755),
+        tarEntry(`cli-${key}/package.json`, packageJson),
+        tarEntry('LICENSE', license),
+        tarEntry('SHA256SUMS', sums),
+        tarEntry('ctg-runtime.json', inner),
+        Buffer.alloc(1024),
+      ]),
+    );
     await writeFile(path.join(assetsDirectory, archiveName), archive);
-    await writeFile(path.join(assetsDirectory, `${archiveName}.build.json`), JSON.stringify({
-      version: 1, target: key, platform, arch, sourceRevision, lockSha256, patchSha256,
-      compatibilityVersion, runtimeVersion, executableSha256: sha256(binary),
-    }));
+    await writeFile(
+      path.join(assetsDirectory, `${archiveName}.build.json`),
+      JSON.stringify({
+        version: 1,
+        target: key,
+        platform,
+        arch,
+        sourceRevision,
+        lockSha256,
+        patchSha256,
+        compatibilityVersion,
+        runtimeVersion,
+        executableSha256: sha256(binary),
+      }),
+    );
   }
 }
 
@@ -102,7 +144,14 @@ test('generates exact five-platform manifest only after production USTAR acquisi
     'a second run must not silently replace a reviewed candidate',
   );
   assert.deepEqual(Object.keys(manifest), [
-    'version', 'releaseVersion', 'compatibilityVersion', 'runtimeVersion', 'sourceRevision', 'patchSha256', 'lockSha256', 'assets',
+    'version',
+    'releaseVersion',
+    'compatibilityVersion',
+    'runtimeVersion',
+    'sourceRevision',
+    'patchSha256',
+    'lockSha256',
+    'assets',
   ]);
   assert.equal(manifest.version, 1);
   assert.equal(manifest.releaseVersion, releaseVersion);
@@ -121,7 +170,7 @@ test('generates exact five-platform manifest only after production USTAR acquisi
   }
 });
 
-test('rejects missing, extra, malformed, and wrong-target build outputs', async (t) => {
+test('rejects missing, extra, malformed, and wrong-target build outputs', async t => {
   await t.test('missing platform output', async () => {
     const missing = path.join(temp, 'missing');
     await mkdir(missing);
@@ -148,7 +197,9 @@ test('rejects missing, extra, malformed, and wrong-target build outputs', async 
     await writeFile(recordPath, JSON.stringify(changed));
     try {
       await assert.rejects(generateOwnedRuntimeRelease({ releaseVersion, assetsDirectory, repoRoot: root }), /Build record for linux-x64/);
-    } finally { await writeFile(recordPath, original); }
+    } finally {
+      await writeFile(recordPath, original);
+    }
   });
 });
 
@@ -159,8 +210,13 @@ test('rejects record executable digest that does not describe archived executabl
   changed.executableSha256 = 'e'.repeat(64);
   await writeFile(recordPath, JSON.stringify(changed));
   try {
-    await assert.rejects(generateOwnedRuntimeRelease({ releaseVersion, assetsDirectory, repoRoot: root }), /SHA256SUMS executable hash does not match pinned release metadata/);
-  } finally { await writeFile(recordPath, original); }
+    await assert.rejects(
+      generateOwnedRuntimeRelease({ releaseVersion, assetsDirectory, repoRoot: root }),
+      /SHA256SUMS executable hash does not match pinned release metadata/,
+    );
+  } finally {
+    await writeFile(recordPath, original);
+  }
 });
 
 test('rejects a safe but unexpected archive member while retaining the actual build output files', async () => {
@@ -170,36 +226,54 @@ test('rejects a safe but unexpected archive member while retaining the actual bu
   const key = 'linux-x64';
   const executablePath = `cli-${key}/bin/opencode`;
   const binary = Buffer.from(`fixture executable for ${key}\n`);
-  const packageJson = Buffer.from(JSON.stringify({
-    name: '@opencode/cli-linux-x64', version: runtimeVersion, os: ['linux'], cpu: ['x64'],
-  }));
-  const inner = Buffer.from(JSON.stringify({
-    owner: 'Carthagent', sourceRepository: 'https://github.com/anomalyco/opencode',
-    sourceRevision, lockSha256, patchSha256, compatibilityVersion, runtimeVersion,
-    channel: `ctg.${compatibilityVersion}`, platform: 'linux-x64', webUI: false,
-  }));
-  const makeEntry = (extra = []) => gzipSync(Buffer.concat([
-    tarEntry('./', Buffer.alloc(0), '5'),
-    tarEntry('./cli-linux-x64/', Buffer.alloc(0), '5'),
-    tarEntry('./cli-linux-x64/bin/', Buffer.alloc(0), '5'),
-    tarEntry(executablePath, binary, '0', 0o755),
-    tarEntry('cli-linux-x64/package.json', packageJson),
-    tarEntry('LICENSE', Buffer.from('MIT License\n')),
-    tarEntry('SHA256SUMS', Buffer.from(`${sha256(binary)}  ${executablePath}\n`)),
-    tarEntry('ctg-runtime.json', inner),
-    ...extra,
-    Buffer.alloc(1024),
-  ]));
+  const packageJson = Buffer.from(
+    JSON.stringify({
+      name: '@opencode/cli-linux-x64',
+      version: runtimeVersion,
+      os: ['linux'],
+      cpu: ['x64'],
+    }),
+  );
+  const inner = Buffer.from(
+    JSON.stringify({
+      owner: 'Carthagent',
+      sourceRepository: 'https://github.com/anomalyco/opencode',
+      sourceRevision,
+      lockSha256,
+      patchSha256,
+      compatibilityVersion,
+      runtimeVersion,
+      channel: `ctg.${compatibilityVersion}`,
+      platform: 'linux-x64',
+      webUI: false,
+    }),
+  );
+  const makeEntry = (extra = []) =>
+    gzipSync(
+      Buffer.concat([
+        tarEntry('./', Buffer.alloc(0), '5'),
+        tarEntry('./cli-linux-x64/', Buffer.alloc(0), '5'),
+        tarEntry('./cli-linux-x64/bin/', Buffer.alloc(0), '5'),
+        tarEntry(executablePath, binary, '0', 0o755),
+        tarEntry('cli-linux-x64/package.json', packageJson),
+        tarEntry('LICENSE', Buffer.from('MIT License\n')),
+        tarEntry('SHA256SUMS', Buffer.from(`${sha256(binary)}  ${executablePath}\n`)),
+        tarEntry('ctg-runtime.json', inner),
+        ...extra,
+        Buffer.alloc(1024),
+      ]),
+    );
   await writeFile(archivePath, makeEntry([tarEntry('extra/payload', Buffer.from('unexpected'))]));
   try {
-    await assert.rejects(
-      generateOwnedRuntimeRelease({ releaseVersion, assetsDirectory, repoRoot: root }),
-      /unexpected directory: extra/,
-    );
-  } finally { await writeFile(archivePath, original); }
+    await assert.rejects(generateOwnedRuntimeRelease({ releaseVersion, assetsDirectory, repoRoot: root }), /unexpected directory: extra/);
+  } finally {
+    await writeFile(archivePath, original);
+  }
   // Restored valid input includes the genuine runtime LICENSE and target package metadata.
   const manifest = await generateOwnedRuntimeRelease({
-    releaseVersion, assetsDirectory, repoRoot: root,
+    releaseVersion,
+    assetsDirectory,
+    repoRoot: root,
     outputPath: path.join(temp, 'allowed-members.candidate'),
   });
   assert.equal(manifest.assets['linux-x64'].name, archiveName);
@@ -215,26 +289,50 @@ test('matches pinned OpenCode build.ts Windows package metadata (win32 OS, windo
     tarEntry('./cli-windows-x64/', Buffer.alloc(0), '5'),
     tarEntry('./cli-windows-x64/bin/', Buffer.alloc(0), '5'),
     tarEntry(expectedExecutablePath, binary, '0', 0o755),
-    tarEntry('cli-windows-x64/package.json', Buffer.from(JSON.stringify({
-      name: '@opencode/cli-windows-x64', version: runtimeVersion, os: ['win32'], cpu: ['x64'],
-    }))),
+    tarEntry(
+      'cli-windows-x64/package.json',
+      Buffer.from(
+        JSON.stringify({
+          name: '@opencode/cli-windows-x64',
+          version: runtimeVersion,
+          os: ['win32'],
+          cpu: ['x64'],
+        }),
+      ),
+    ),
     tarEntry('LICENSE', Buffer.from('MIT License\n')),
     tarEntry('SHA256SUMS', Buffer.from(`${sha256(binary)}  ${expectedExecutablePath}\n`)),
-    tarEntry('ctg-runtime.json', Buffer.from(JSON.stringify({
-      owner: 'Carthagent', sourceRepository: 'https://github.com/anomalyco/opencode',
-      sourceRevision, lockSha256, patchSha256, compatibilityVersion, runtimeVersion,
-      channel: `ctg.${compatibilityVersion}`, platform: 'windows-x64', webUI: false,
-    }))),
+    tarEntry(
+      'ctg-runtime.json',
+      Buffer.from(
+        JSON.stringify({
+          owner: 'Carthagent',
+          sourceRepository: 'https://github.com/anomalyco/opencode',
+          sourceRevision,
+          lockSha256,
+          patchSha256,
+          compatibilityVersion,
+          runtimeVersion,
+          channel: `ctg.${compatibilityVersion}`,
+          platform: 'windows-x64',
+          webUI: false,
+        }),
+      ),
+    ),
     Buffer.alloc(1024),
   ];
   await writeFile(archivePath, gzipSync(Buffer.concat(entries)));
   try {
     const manifest = await generateOwnedRuntimeRelease({
-      releaseVersion, assetsDirectory, repoRoot: root,
+      releaseVersion,
+      assetsDirectory,
+      repoRoot: root,
       outputPath: path.join(temp, 'windows-metadata.candidate'),
     });
     assert.equal(manifest.assets['windows-x64'].executableSha256, sha256(binary));
-  } finally { await writeFile(archivePath, original); }
+  } finally {
+    await writeFile(archivePath, original);
+  }
 });
 
 test('rejects npm Windows OS metadata that does not match pinned build.ts', async () => {
@@ -242,35 +340,64 @@ test('rejects npm Windows OS metadata that does not match pinned build.ts', asyn
   const original = await readFile(archivePath);
   const expectedExecutablePath = 'cli-windows-x64/bin/opencode.exe';
   const binary = Buffer.from('fixture executable for windows-x64\n');
-  await writeFile(archivePath, gzipSync(Buffer.concat([
-    tarEntry('./', Buffer.alloc(0), '5'),
-    tarEntry('./cli-windows-x64/', Buffer.alloc(0), '5'),
-    tarEntry('./cli-windows-x64/bin/', Buffer.alloc(0), '5'),
-    tarEntry(expectedExecutablePath, binary, '0', 0o755),
-    tarEntry('cli-windows-x64/package.json', Buffer.from(JSON.stringify({
-      name: '@opencode/cli-windows-x64', version: runtimeVersion, os: ['windows'], cpu: ['x64'],
-    }))),
-    tarEntry('LICENSE', Buffer.from('MIT License\n')),
-    tarEntry('SHA256SUMS', Buffer.from(`${sha256(binary)}  ${expectedExecutablePath}\n`)),
-    tarEntry('ctg-runtime.json', Buffer.from(JSON.stringify({
-      owner: 'Carthagent', sourceRepository: 'https://github.com/anomalyco/opencode',
-      sourceRevision, lockSha256, patchSha256, compatibilityVersion, runtimeVersion,
-      channel: `ctg.${compatibilityVersion}`, platform: 'windows-x64', webUI: false,
-    }))),
-    Buffer.alloc(1024),
-  ])));
+  await writeFile(
+    archivePath,
+    gzipSync(
+      Buffer.concat([
+        tarEntry('./', Buffer.alloc(0), '5'),
+        tarEntry('./cli-windows-x64/', Buffer.alloc(0), '5'),
+        tarEntry('./cli-windows-x64/bin/', Buffer.alloc(0), '5'),
+        tarEntry(expectedExecutablePath, binary, '0', 0o755),
+        tarEntry(
+          'cli-windows-x64/package.json',
+          Buffer.from(
+            JSON.stringify({
+              name: '@opencode/cli-windows-x64',
+              version: runtimeVersion,
+              os: ['windows'],
+              cpu: ['x64'],
+            }),
+          ),
+        ),
+        tarEntry('LICENSE', Buffer.from('MIT License\n')),
+        tarEntry('SHA256SUMS', Buffer.from(`${sha256(binary)}  ${expectedExecutablePath}\n`)),
+        tarEntry(
+          'ctg-runtime.json',
+          Buffer.from(
+            JSON.stringify({
+              owner: 'Carthagent',
+              sourceRepository: 'https://github.com/anomalyco/opencode',
+              sourceRevision,
+              lockSha256,
+              patchSha256,
+              compatibilityVersion,
+              runtimeVersion,
+              channel: `ctg.${compatibilityVersion}`,
+              platform: 'windows-x64',
+              webUI: false,
+            }),
+          ),
+        ),
+        Buffer.alloc(1024),
+      ]),
+    ),
+  );
   try {
     await assert.rejects(
       generateOwnedRuntimeRelease({
-        releaseVersion, assetsDirectory, repoRoot: root,
+        releaseVersion,
+        assetsDirectory,
+        repoRoot: root,
         outputPath: path.join(temp, 'windows-wrong-os.candidate'),
       }),
       /package metadata does not match windows-x64/,
     );
-  } finally { await writeFile(archivePath, original); }
+  } finally {
+    await writeFile(archivePath, original);
+  }
 });
 
-test('rejects a noncanonical release version and a recipe/patch mismatch', async (t) => {
+test('rejects a noncanonical release version and a recipe/patch mismatch', async t => {
   await t.test('v-prefixed release version', async () => {
     await assert.rejects(generateOwnedRuntimeRelease({ releaseVersion: 'v9.8.7', assetsDirectory, repoRoot: root }), /without a v prefix/);
   });
@@ -280,33 +407,41 @@ test('rejects a noncanonical release version and a recipe/patch mismatch', async
     await writeFile(patchPath, Buffer.concat([original, Buffer.from('changed')]));
     try {
       await assert.rejects(generateOwnedRuntimeRelease({ releaseVersion, assetsDirectory, repoRoot: root }), /patch bytes do not match/);
-    } finally { await writeFile(patchPath, original); }
+    } finally {
+      await writeFile(patchPath, original);
+    }
   });
   await t.test('missing recipe-selected combined patch fails rather than falling back to preserved base patch', async () => {
     const selectedPath = path.join(root, 'docs/patches/opencode-v2.0.32-session-ui-combined-v1.patch');
     const original = await readFile(selectedPath);
     await rm(selectedPath);
     try {
-      await assert.rejects(generateOwnedRuntimeRelease({
-        releaseVersion, assetsDirectory, repoRoot: root,
-        outputPath: path.join(temp, 'missing-selected-patch.candidate'),
-      }), /ENOENT/);
-    } finally { await writeFile(selectedPath, original); }
+      await assert.rejects(
+        generateOwnedRuntimeRelease({
+          releaseVersion,
+          assetsDirectory,
+          repoRoot: root,
+          outputPath: path.join(temp, 'missing-selected-patch.candidate'),
+        }),
+        /ENOENT/,
+      );
+    } finally {
+      await writeFile(selectedPath, original);
+    }
   });
   await t.test('legacy recipe patch literal remains supported', async () => {
     const recipePath = path.join(root, 'script/ctg/build-owned-runtime.sh');
     const original = await readFile(recipePath, 'utf8');
-    await writeFile(recipePath, original.replace(
-      'opencode-v2.0.32-session-ui-combined-v1.patch',
-      'opencode-v2.0.32-session-ui.patch',
-    ));
+    await writeFile(recipePath, original.replace('opencode-v2.0.32-session-ui-combined-v1.patch', 'opencode-v2.0.32-session-ui.patch'));
     // Keep the legacy selected patch authoritative and digest-pinned.
     const legacyPatchPath = path.join(root, 'docs/patches/opencode-v2.0.32-session-ui.patch');
     const legacyOriginal = await readFile(legacyPatchPath);
     await writeFile(legacyPatchPath, patchBytes);
     try {
       const manifest = await generateOwnedRuntimeRelease({
-        releaseVersion, assetsDirectory, repoRoot: root,
+        releaseVersion,
+        assetsDirectory,
+        repoRoot: root,
         outputPath: path.join(temp, 'legacy-recipe.candidate'),
       });
       assert.equal(manifest.patchSha256, patchSha256);
@@ -318,37 +453,61 @@ test('rejects a noncanonical release version and a recipe/patch mismatch', async
   await t.test('rejects noncanonical or escaping patch paths without evaluating recipe text', async () => {
     const recipePath = path.join(root, 'script/ctg/build-owned-runtime.sh');
     const original = await readFile(recipePath, 'utf8');
-    await writeFile(recipePath, original.replace(
-      'patch_file="$ROOT/docs/patches/opencode-v2.0.32-session-ui-combined-v1.patch"',
-      'patch_file="$ROOT/docs/patches/../patches/opencode-v2.0.32-session-ui.patch"',
-    ));
+    await writeFile(
+      recipePath,
+      original.replace(
+        'patch_file="$ROOT/docs/patches/opencode-v2.0.32-session-ui-combined-v1.patch"',
+        'patch_file="$ROOT/docs/patches/../patches/opencode-v2.0.32-session-ui.patch"',
+      ),
+    );
     try {
-      await assert.rejects(generateOwnedRuntimeRelease({
-        releaseVersion, assetsDirectory, repoRoot: root,
-        outputPath: path.join(temp, 'escaping-patch.candidate'),
-      }), /canonical docs\/patches-relative path/);
-    } finally { await writeFile(recipePath, original); }
+      await assert.rejects(
+        generateOwnedRuntimeRelease({
+          releaseVersion,
+          assetsDirectory,
+          repoRoot: root,
+          outputPath: path.join(temp, 'escaping-patch.candidate'),
+        }),
+        /canonical docs\/patches-relative path/,
+      );
+    } finally {
+      await writeFile(recipePath, original);
+    }
   });
   await t.test('rejects a second nonliteral patch_file assignment', async () => {
     const recipePath = path.join(root, 'script/ctg/build-owned-runtime.sh');
     const original = await readFile(recipePath, 'utf8');
     await writeFile(recipePath, `${original}\npatch_file="${'${PATCH_FILE}'}"\n`);
     try {
-      await assert.rejects(generateOwnedRuntimeRelease({
-        releaseVersion, assetsDirectory, repoRoot: root,
-        outputPath: path.join(temp, 'multiple-patch-assignments.candidate'),
-      }), /exactly one literal ROOT-relative patch_file/);
-    } finally { await writeFile(recipePath, original); }
+      await assert.rejects(
+        generateOwnedRuntimeRelease({
+          releaseVersion,
+          assetsDirectory,
+          repoRoot: root,
+          outputPath: path.join(temp, 'multiple-patch-assignments.candidate'),
+        }),
+        /exactly one literal ROOT-relative patch_file/,
+      );
+    } finally {
+      await writeFile(recipePath, original);
+    }
   });
   await t.test('rejects a recipe with no selected patch instead of choosing a repository patch', async () => {
     const recipePath = path.join(root, 'script/ctg/build-owned-runtime.sh');
     const original = await readFile(recipePath, 'utf8');
     await writeFile(recipePath, original.replace(/^patch_file=.*\n/m, ''));
     try {
-      await assert.rejects(generateOwnedRuntimeRelease({
-        releaseVersion, assetsDirectory, repoRoot: root,
-        outputPath: path.join(temp, 'missing-patch-selection.candidate'),
-      }), /exactly one literal ROOT-relative patch_file/);
-    } finally { await writeFile(recipePath, original); }
+      await assert.rejects(
+        generateOwnedRuntimeRelease({
+          releaseVersion,
+          assetsDirectory,
+          repoRoot: root,
+          outputPath: path.join(temp, 'missing-patch-selection.candidate'),
+        }),
+        /exactly one literal ROOT-relative patch_file/,
+      );
+    } finally {
+      await writeFile(recipePath, original);
+    }
   });
 });

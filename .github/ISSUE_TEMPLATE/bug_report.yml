@@ -1,0 +1,63 @@
+name: Bug report
+description: Something in ctg does not work as documented
+labels: [bug, 'status: triage']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please remove API keys, tokens and private source code from everything you paste.
+        If ctg crashed, use the **Crash report** template instead; `ctg doctor` prints a prefilled link.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. cd into a project
+        2. run `ctg ...`
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: ctg version
+      description: Output of `ctg --version`.
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Install method
+      options: [install script, npm -g, source checkout, other]
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: OS, architecture and terminal
+      placeholder: macOS 15 arm64, Ghostty
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [CLI / headless, Native TUI, Ship / delivery checks, Cloud sign-in or billing, Voyages, Install or update, Web dashboard, Other]
+  - type: textarea
+    id: doctor
+    attributes:
+      label: ctg doctor output
+      description: Output of `ctg doctor` (it does not print secrets).
+      render: text
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      render: text

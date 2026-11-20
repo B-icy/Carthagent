@@ -1,0 +1,241 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import express from 'express';
+import { API_DOCS, generate, operations, resolvePointer, validateOpenApi } from '../tools/generate-api-docs.mjs';
+import { CloudLedger } from '../lib/cloud/ledger.mjs';
+import { CloudControlPlane } from '../lib/cloud/control-plane.mjs';
+import { cloudRouter } from '../lib/cloud/http.mjs';
+
+const root = resolve(import.meta.dirname, '..');
+const readSpec = name => JSON.parse(readFileSync(join(root, 'docs', 'api', `${name}.openapi.json`), 'utf8'));
+const dashboardSpec = readSpec('dashboard');
+const cloudSpec = readSpec('cloud');
+
+function sourceRoutes(file, receiver) {
+  const source = readFileSync(join(root, file), 'utf8');
+  const pattern = new RegExp(`\\b${receiver}\\.(get|post|put|patch|delete|head|options)\\(\\s*'([^']+)'`, 'g');
+  return [...source.matchAll(pattern)].map(([, method, path]) => `${method.toUpperCase()} ${path.replace(/:([A-Za-z0-9_]+)/g, '{$1}')}`).sort();
+}
+
+function specRoutes(spec) {
+  return operations(spec)
+    .map(({ method, path }) => `${method.toUpperCase()} ${path}`)
+    .sort();
+}
+
+function schemaFor(spec, schema) {
+  return schema?.$ref ? resolvePointer(spec, schema.$ref) : schema;
+}
+
+function responseSchema(spec, path, method, status) {
+  const response = spec.paths[path][method].responses[String(status)];
+  assert.ok(response, `${method.toUpperCase()} ${path} documents status ${status}`);
+  return schemaFor(spec, response.content['application/json'].schema);
+}
+
+function assertBodyMatches(spec, schema, body, label) {
+  const target = schemaFor(spec, schema);
+  assert.equal(typeof body, 'object', `${label}: JSON object body`);
+  for (const key of target.required || []) assert.ok(key in body, `${label}: required key ${key} is present`);
+  const documented = new Set(Object.keys(target.properties || {}));
+  if (target.additionalProperties === false) {
+    for (const key of Object.keys(body)) assert.ok(documented.has(key), `${label}: response key ${key} is documented`);
+  }
+}
+
+test('dashboard spec covers exactly the Express routes in server.mjs', () => {
+  const routes = sourceRoutes('server.mjs', 'app');
+  assert.ok(routes.length >= 11, `route extraction found ${routes.length} routes`);
+  assert.deepEqual(specRoutes(dashboardSpec), routes);
+});
+
+test('cloud spec covers exactly the router routes in lib/cloud/http.mjs', () => {
+  const routes = sourceRoutes('lib/cloud/http.mjs', 'router');
+  assert.ok(routes.length >= 16, `route extraction found ${routes.length} routes`);
+  assert.deepEqual(specRoutes(cloudSpec), routes);
+});
+
+test('specs are structurally valid OpenAPI 3.1 documents with resolvable references', () => {
+  for (const spec of [dashboardSpec, cloudSpec]) {
+    assert.deepEqual(validateOpenApi(spec), [], spec.info.title);
+    for (const { method, path, operation } of operations(spec)) {
+      assert.ok(operation['x-carthagent-auth'], `${method.toUpperCase()} ${path} declares x-carthagent-auth`);
+    }
+  }
+  const broken = structuredClone(dashboardSpec);
+  broken.openapi = '3.0.3';
+  broken.paths['/api/status'].get.responses = {};
+  broken.paths['/api/docs/{name}'].get.parameters = [];
+  broken.components.schemas.Status.properties.plan = { $ref: '#/components/schemas/Missing' };
+  assert.deepEqual(validateOpenApi(broken), [
+    'openapi must be 3.1.x, found 3.0.3',
+    'GET /api/status: no responses',
+    'GET /api/docs/{name}: path parameter {name} is not declared',
+    'unresolved $ref #/components/schemas/Missing',
+  ]);
+});
+
+test('dashboard spec marks exactly the routes behind the workspace lease and documents auth failures', () => {
+  const source = readFileSync(join(root, 'server.mjs'), 'utf8');
+  const leaseList = source.match(/app\.use\(\[([^\]]+)\]/);
+  assert.ok(leaseList, 'server.mjs keeps the mutating-route lease list');
+  const leased = [...leaseList[1].matchAll(/'([^']+)'/g)].map(match => `POST ${match[1]}`).sort();
+  const documented = operations(dashboardSpec)
+    .filter(({ operation }) => operation['x-carthagent-workspace-lease'])
+    .map(({ method, path }) => `${method.toUpperCase()} ${path}`)
+    .sort();
+  assert.deepEqual(documented, leased);
+  for (const { operation, path } of operations(dashboardSpec)) {
+    assert.ok(operation.responses['401'] && operation.responses['403'], `${path} documents token and origin rejection`);
+    if (operation['x-carthagent-workspace-lease']) assert.ok(operation.responses['409'], `${path} documents lease conflicts`);
+  }
+});
+
+test('generated API Markdown is current', () => {
+  const { problems } = generate({ root, check: true });
+  assert.deepEqual(problems, []);
+  for (const { markdown } of API_DOCS) assert.match(readFileSync(join(root, markdown), 'utf8'), /^<!-- Generated by tools\/generate-api-docs\.mjs/);
+});
+
+test('API doc check reports stale Markdown', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'ctg-api-docs-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const docs = [{ spec: 'spec.json', markdown: 'spec.md' }];
+  writeFileSync(join(dir, 'spec.json'), JSON.stringify(dashboardSpec));
+  assert.deepEqual(generate({ root: dir, check: true, docs }).problems, ['spec.md: missing; run node tools/generate-api-docs.mjs']);
+  assert.deepEqual(generate({ root: dir, docs }).written, ['spec.md']);
+  assert.deepEqual(generate({ root: dir, check: true, docs }).problems, []);
+  writeFileSync(join(dir, 'spec.md'), 'edited by hand\n');
+  assert.deepEqual(generate({ root: dir, check: true, docs }).problems, ['spec.md: stale; run node tools/generate-api-docs.mjs']);
+});
+
+async function startDashboard(t) {
+  const workspace = mkdtempSync(join(tmpdir(), 'ctg-openapi-dashboard-'));
+  writeFileSync(join(workspace, 'app.mjs'), 'console.log("ok")\n');
+  const token = 'contract-token';
+  const child = spawn(process.execPath, [join(root, 'server.mjs')], {
+    cwd: root,
+    env: { ...process.env, CARTHAGENT_WORKSPACE: workspace, CARTHAGENT_PORT: '0', CARTHAGENT_SERVER_TOKEN: token, CARTHAGENT_NO_UPDATE_CHECK: '1' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  t.after(() => {
+    child.kill('SIGTERM');
+    rmSync(workspace, { recursive: true, force: true });
+  });
+  const url = await new Promise((resolveUrl, reject) => {
+    const timer = setTimeout(() => reject(new Error('dashboard startup timeout')), 10000);
+    let output = '';
+    child.stdout.on('data', chunk => {
+      output += chunk;
+      const match = output.match(/carthagent dashboard: (http:\/\/127\.0\.0\.1:\d+)\//);
+      if (match) {
+        clearTimeout(timer);
+        resolveUrl(match[1]);
+      }
+    });
+    child.on('exit', code => {
+      clearTimeout(timer);
+      reject(new Error(`dashboard exited ${code}`));
+    });
+  });
+  return { url, headers: { 'x-carthagent-token': token, 'content-type': 'application/json' } };
+}
+
+test('live dashboard responses match the documented schemas', async t => {
+  const { url, headers } = await startDashboard(t);
+  const spec = dashboardSpec;
+  const status = await fetch(`${url}/api/status`, { headers });
+  assert.equal(status.status, 200);
+  assertBodyMatches(spec, responseSchema(spec, '/api/status', 'get', 200), await status.json(), 'GET /api/status');
+
+  const anonymous = await fetch(`${url}/api/status`);
+  assert.equal(anonymous.status, 401);
+  assertBodyMatches(spec, responseSchema(spec, '/api/status', 'get', 401), await anonymous.json(), 'GET /api/status 401');
+
+  const foreign = await fetch(`${url}/api/status`, { headers: { ...headers, origin: 'https://example.com' } });
+  assert.equal(foreign.status, 403);
+
+  const plan = {
+    goal: 'Contract fixture',
+    artifacts: ['.'],
+    steps: ['Run'],
+    acceptance: [{ requirement: 'Runs', checks: ['smoke'] }],
+    checks: [{ id: 'smoke', kind: 'runtime', argv: [process.execPath, 'app.mjs'], timeoutSeconds: 10 }],
+  };
+  const valid = await fetch(`${url}/api/plan/validate`, { method: 'POST', headers, body: JSON.stringify({ plan }) });
+  assert.equal(valid.status, 200);
+  assertBodyMatches(spec, responseSchema(spec, '/api/plan/validate', 'post', 200), await valid.json(), 'POST /api/plan/validate');
+  const invalid = await fetch(`${url}/api/plan/validate`, { method: 'POST', headers, body: JSON.stringify({ plan: { goal: '' } }) });
+  assert.equal(invalid.status, 400);
+  assertBodyMatches(spec, responseSchema(spec, '/api/plan/validate', 'post', 400), await invalid.json(), 'POST /api/plan/validate 400');
+
+  const unknownCheck = await fetch(`${url}/api/checks/run`, { method: 'POST', headers, body: JSON.stringify({ id: 'all' }) });
+  assert.equal(unknownCheck.status, 400, 'no active plan');
+
+  const doc = await fetch(`${url}/api/docs/readme`, { headers });
+  assert.equal(doc.status, 200);
+  assertBodyMatches(spec, responseSchema(spec, '/api/docs/{name}', 'get', 200), await doc.json(), 'GET /api/docs/readme');
+  const missing = await fetch(`${url}/api/docs/not-a-doc`, { headers });
+  assert.equal(missing.status, 404);
+});
+
+test('live cloud router responses match the documented schemas and status codes', async t => {
+  const now = new Date('2026-01-01T00:00:00.000Z');
+  let id = 0;
+  const ledger = new CloudLedger({ id: () => `l-${++id}`, clock: () => now });
+  const control = new CloudControlPlane({
+    ledger,
+    id: () => `c-${++id}`,
+    clock: () => now,
+    random: size => Buffer.alloc(size, 9),
+    tokenSecret: 'contract',
+    publicUrl: 'https://cloud.test',
+  });
+  const gateway = { modelEnvelope: () => ({ object: 'list', data: [] }) };
+  const app = express();
+  app.use('/without-gateway', cloudRouter(control));
+  app.use(cloudRouter(control, { gateway }));
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise(resolveListen => server.once('listening', resolveListen));
+  t.after(() => {
+    server.close();
+    ledger.close();
+  });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const post = (path, body, headers = {}) =>
+    fetch(`${base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
+  const spec = cloudSpec;
+
+  const device = await post('/v1/device/authorizations', { clientName: 'contract' });
+  assert.equal(device.status, 201);
+  const authorization = await device.json();
+  assertBodyMatches(spec, responseSchema(spec, '/v1/device/authorizations', 'post', 201), authorization, 'device authorization');
+
+  const pending = await post('/v1/device/token', { deviceCode: authorization.deviceCode });
+  assert.equal(pending.status, 428);
+  assert.deepEqual(await pending.json(), { error: 'authorization_pending' });
+
+  const approve = await post(`/v1/device/authorizations/${authorization.userCode}/approve`, {});
+  assert.equal(approve.status, 401, 'browser authentication is required');
+  assert.ok(spec.paths['/v1/device/authorizations/{userCode}/approve'].post.responses['401']);
+
+  const account = await fetch(`${base}/v1/account`);
+  assert.equal(account.status, 401);
+  assert.deepEqual(await account.json(), { error: 'invalid_token' });
+
+  const completion = await post('/v1/chat/completions', { model: 'x' }, { authorization: 'Bearer not-a-token' });
+  assert.equal(completion.status, 400, 'token failures inside async gateway handlers answer 400');
+  assert.deepEqual(await completion.json(), { error: 'invalid_token' });
+
+  const noGateway = await fetch(`${base}/without-gateway/v1/models`);
+  assert.equal(noGateway.status, 503);
+  assertBodyMatches(spec, responseSchema(spec, '/v1/models', 'get', 503), await noGateway.json(), 'models without gateway');
+
+  const webhook = await fetch(`${base}/v1/webhooks/stripe`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+  assert.equal(webhook.status, 400);
+  assertBodyMatches(spec, responseSchema(spec, '/v1/webhooks/stripe', 'post', 400), await webhook.json(), 'unsigned webhook');
+});

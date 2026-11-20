@@ -21,9 +21,8 @@ const runId = 4242;
 const runSha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const tagObject = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 const tagCommit = 'cccccccccccccccccccccccccccccccccccccccc';
-const requiresUbuntuWorkflowShell = process.platform !== 'linux'
-  ? 'the workflow steps under test run on ubuntu-latest and require Bash/GNU checksum utilities'
-  : false;
+const requiresUbuntuWorkflowShell =
+  process.platform !== 'linux' ? 'the workflow steps under test run on ubuntu-latest and require Bash/GNU checksum utilities' : false;
 const targets = [
   ['linux-x64', 'linux', 'x64', 'opencode-linux-x64.tar.gz', 'cli-linux-x64/bin/opencode'],
   ['linux-arm64', 'linux', 'arm64', 'opencode-linux-arm64.tar.gz', 'cli-linux-arm64/bin/opencode'],
@@ -34,7 +33,7 @@ const targets = [
 
 function extractRunBlock(selector) {
   const lines = workflow.split(/\r?\n/);
-  const selectorIndex = lines.findIndex((line) => selector(lines, line));
+  const selectorIndex = lines.findIndex(line => selector(lines, line));
   assert.notEqual(selectorIndex, -1, 'workflow step selector must match');
   const selectorIndent = lines[selectorIndex].match(/^ */)?.[0].length ?? 0;
   let stepStart = -1;
@@ -51,7 +50,10 @@ function extractRunBlock(selector) {
   let stepEnd = lines.length;
   const nextStep = new RegExp(`^ {${stepIndent}}- (?:name|uses):`);
   for (let index = stepStart + 1; index < lines.length; index += 1) {
-    if (nextStep.test(lines[index])) { stepEnd = index; break; }
+    if (nextStep.test(lines[index])) {
+      stepEnd = index;
+      break;
+    }
   }
   const runIndex = lines.findIndex((line, index) => index > selectorIndex && index < stepEnd && /^\s+run: \|\s*$/.test(line));
   assert.notEqual(runIndex, -1, 'selected workflow step must use a literal run block');
@@ -71,7 +73,7 @@ const verifyBlock = extractRunBlock((_lines, line) => line.trim() === 'id: verif
 const uploadBlock = extractRunBlock((_lines, line) => line.includes('name: Recheck immutable draft target and upload verified bytes without clobbering'));
 const archiveBlock = extractRunBlock((_lines, line) => line.includes('name: Archive runtime bytes and write native build record'));
 
-test('native archive command uses a relative output path safe for Windows drive-letter workspaces', { skip: requiresUbuntuWorkflowShell }, async (t) => {
+test('native archive command uses a relative output path safe for Windows drive-letter workspaces', { skip: requiresUbuntuWorkflowShell }, async t => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'ctg-owned-runtime-archive-test-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const workspace = path.join(directory, 'D:', 'a', 'Carthagent');
@@ -79,7 +81,7 @@ test('native archive command uses a relative output path safe for Windows drive-
   await mkdir(path.join(workspace, 'opencode/packages/cli/dist-ctg/cli-windows-x64/bin'), { recursive: true });
   await writeFile(path.join(workspace, 'opencode/packages/cli/dist-ctg/cli-windows-x64/bin/opencode.exe'), 'fixture-runtime');
 
-  const archiveLines = archiveBlock.split('\n').filter((line) => line.startsWith('archive=') || line.startsWith('COPYFILE_DISABLE=1 tar '));
+  const archiveLines = archiveBlock.split('\n').filter(line => line.startsWith('archive=') || line.startsWith('COPYFILE_DISABLE=1 tar '));
   assert.equal(archiveLines.length, 2, 'archive fixture must execute the archive path and tar command from the workflow block');
   assert.equal(archiveLines[0], 'archive="candidate-assets/opencode-${TARGET_KEY}.tar.gz"');
   assert.equal(archiveLines[1], 'COPYFILE_DISABLE=1 tar -C opencode/packages/cli/dist-ctg --format=ustar -czf "$archive" .');
@@ -97,11 +99,14 @@ test('native archive command uses a relative output path safe for Windows drive-
 
 function workflowJob(name) {
   const lines = workflow.split(/\r?\n/);
-  const start = lines.findIndex((line) => line === `  ${name}:`);
+  const start = lines.findIndex(line => line === `  ${name}:`);
   assert.notEqual(start, -1, `workflow job ${name} must exist`);
   let end = lines.length;
   for (let index = start + 1; index < lines.length; index += 1) {
-    if (/^  [A-Za-z0-9_-]+:$/.test(lines[index])) { end = index; break; }
+    if (/^  [A-Za-z0-9_-]+:$/.test(lines[index])) {
+      end = index;
+      break;
+    }
   }
   return lines.slice(start, end).join('\n');
 }
@@ -135,27 +140,34 @@ function tarEntry(name, data, type = '0', mode = 0o644) {
 }
 
 function makeRuntimeArchive(key, platform, arch, executablePath, executableBytes, runtimeManifest) {
-  const parentEntries = executablePath.split('/').slice(0, -1).map((_, index, parts) => {
-    const name = `${parts.slice(0, index + 1).join('/')}/`;
-    return tarEntry(name, Buffer.alloc(0), '5');
-  });
-  const packageJson = Buffer.from(JSON.stringify({
-    name: `@opencode/cli-${key}`,
-    version: '0.0.0-ctg.2.0.32',
-    os: [platform === 'windows' ? 'win32' : platform],
-    cpu: [arch],
-  }));
+  const parentEntries = executablePath
+    .split('/')
+    .slice(0, -1)
+    .map((_, index, parts) => {
+      const name = `${parts.slice(0, index + 1).join('/')}/`;
+      return tarEntry(name, Buffer.alloc(0), '5');
+    });
+  const packageJson = Buffer.from(
+    JSON.stringify({
+      name: `@opencode/cli-${key}`,
+      version: '0.0.0-ctg.2.0.32',
+      os: [platform === 'windows' ? 'win32' : platform],
+      cpu: [arch],
+    }),
+  );
   const sums = Buffer.from(`${sha256(executableBytes)}  ${executablePath}\n`);
-  return gzipSync(Buffer.concat([
-    tarEntry('./', Buffer.alloc(0), '5'),
-    ...parentEntries,
-    tarEntry(executablePath, executableBytes, '0', 0o755),
-    tarEntry(`cli-${key}/package.json`, packageJson),
-    tarEntry('LICENSE', Buffer.from('MIT License\n')),
-    tarEntry('SHA256SUMS', sums),
-    tarEntry('ctg-runtime.json', Buffer.from(JSON.stringify(runtimeManifest))),
-    Buffer.alloc(1024),
-  ]));
+  return gzipSync(
+    Buffer.concat([
+      tarEntry('./', Buffer.alloc(0), '5'),
+      ...parentEntries,
+      tarEntry(executablePath, executableBytes, '0', 0o755),
+      tarEntry(`cli-${key}/package.json`, packageJson),
+      tarEntry('LICENSE', Buffer.from('MIT License\n')),
+      tarEntry('SHA256SUMS', sums),
+      tarEntry('ctg-runtime.json', Buffer.from(JSON.stringify(runtimeManifest))),
+      Buffer.alloc(1024),
+    ]),
+  );
 }
 
 async function fixture(t) {
@@ -167,9 +179,13 @@ async function fixture(t) {
   const fakeBin = path.join(directory, 'bin');
   const capture = path.join(directory, 'upload-capture');
   await Promise.all([
-    mkdir(candidate), mkdir(path.join(ctg, 'lib/opencode'), { recursive: true }),
-    mkdir(path.join(ctg, 'script/ctg'), { recursive: true }), mkdir(path.join(ctg, 'docs/patches'), { recursive: true }),
-    mkdir(path.dirname(generator), { recursive: true }), mkdir(fakeBin), mkdir(capture),
+    mkdir(candidate),
+    mkdir(path.join(ctg, 'lib/opencode'), { recursive: true }),
+    mkdir(path.join(ctg, 'script/ctg'), { recursive: true }),
+    mkdir(path.join(ctg, 'docs/patches'), { recursive: true }),
+    mkdir(path.dirname(generator), { recursive: true }),
+    mkdir(fakeBin),
+    mkdir(capture),
   ]);
   await writeFile(path.join(ctg, 'package.json'), JSON.stringify({ name: 'fixture', version: releaseVersion }));
   const patch = await readFile(path.join(root, combinedPatchPath));
@@ -179,15 +195,21 @@ async function fixture(t) {
     copyFile(path.join(root, combinedPatchPath), path.join(ctg, combinedPatchPath)),
   ]);
   execFileSync('git', ['init', '-q'], { cwd: ctg });
-  execFileSync('git', ['-c', 'user.name=Workflow Fixture', '-c', 'user.email=fixture@example.invalid', 'add', combinedPatchPath, 'script/ctg/build-owned-runtime.sh'], { cwd: ctg });
-  execFileSync('git', ['-c', 'user.name=Workflow Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture candidate patch'], { cwd: ctg });
+  execFileSync(
+    'git',
+    ['-c', 'user.name=Workflow Fixture', '-c', 'user.email=fixture@example.invalid', 'add', combinedPatchPath, 'script/ctg/build-owned-runtime.sh'],
+    { cwd: ctg },
+  );
+  execFileSync('git', ['-c', 'user.name=Workflow Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture candidate patch'], {
+    cwd: ctg,
+  });
   // Publication uses a final package whose trust pin has been promoted after
   // prebuild; the working tree may still retain the previous public release.
   const runtimeSource = await readFile(path.join(root, 'lib/opencode/runtime.mjs'), 'utf8');
-  await writeFile(path.join(ctg, 'lib/opencode/runtime.mjs'), runtimeSource.replace(
-    /CTG_RUNTIME_PATCH_SHA256 = '[a-f0-9]{64}'/,
-    `CTG_RUNTIME_PATCH_SHA256 = '${patchSha256}'`,
-  ));
+  await writeFile(
+    path.join(ctg, 'lib/opencode/runtime.mjs'),
+    runtimeSource.replace(/CTG_RUNTIME_PATCH_SHA256 = '[a-f0-9]{64}'/, `CTG_RUNTIME_PATCH_SHA256 = '${patchSha256}'`),
+  );
 
   const manifest = {
     version: 1,
@@ -215,8 +237,15 @@ async function fixture(t) {
     };
     const archiveBytes = makeRuntimeArchive(key, platform, arch, executablePath, executableBytes, runtimeMetadata);
     const record = {
-      version: 1, target: key, platform, arch, sourceRevision: sourceCommit, patchSha256, lockSha256,
-      compatibilityVersion: '2.0.32', runtimeVersion: '0.0.0-ctg.2.0.32',
+      version: 1,
+      target: key,
+      platform,
+      arch,
+      sourceRevision: sourceCommit,
+      patchSha256,
+      lockSha256,
+      compatibilityVersion: '2.0.32',
+      runtimeVersion: '0.0.0-ctg.2.0.32',
       executableSha256: sha256(executableBytes),
     };
     await writeFile(path.join(candidate, name), archiveBytes);
@@ -226,28 +255,36 @@ async function fixture(t) {
   const manifestBytes = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`);
   await writeFile(path.join(ctg, 'lib/opencode/runtime-release.json'), manifestBytes);
   await writeFile(path.join(candidate, 'runtime-release.json.candidate'), manifestBytes);
-  const archiveNames = targets.map((entry) => entry[3]).sort();
+  const archiveNames = targets.map(entry => entry[3]).sort();
   const archiveSums = [];
   for (const name of archiveNames) archiveSums.push(`${sha256(await readFile(path.join(candidate, name)))}  ${name}`);
   await writeFile(path.join(candidate, 'runtime-archives-SHA256SUMS.txt'), `${archiveSums.join('\n')}\n`);
-  await writeFile(path.join(candidate, 'candidate-provenance.json'), JSON.stringify({
-    version: 1, releaseVersion, sourceCommit: runSha,
-    workflowPath: workflowPathName, runId,
-  }));
+  await writeFile(
+    path.join(candidate, 'candidate-provenance.json'),
+    JSON.stringify({
+      version: 1,
+      releaseVersion,
+      sourceCommit: runSha,
+      workflowPath: workflowPathName,
+      runId,
+    }),
+  );
 
   // The real workflow shell blocks are evaluated verbatim. This generator
   // fixture models only the CLI contract: five archive/record pairs, the
   // recipe-to-patch digest binding, and manifest hashes derived from candidate
   // archive bytes. It has no network or external package dependencies.
-  await writeFile(generator, `
+  await writeFile(
+    generator,
+    `
 import { createHash } from 'node:crypto';
 import { readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 const [version, directory, repo] = process.argv.slice(2);
-const names = ${JSON.stringify(targets.map((entry) => entry[3]))};
-const keys = ${JSON.stringify(targets.map((entry) => entry[0]))};
-const platforms = ${JSON.stringify(targets.map((entry) => entry[1]))};
-const arches = ${JSON.stringify(targets.map((entry) => entry[2]))};
+const names = ${JSON.stringify(targets.map(entry => entry[3]))};
+const keys = ${JSON.stringify(targets.map(entry => entry[0]))};
+const platforms = ${JSON.stringify(targets.map(entry => entry[1]))};
+const arches = ${JSON.stringify(targets.map(entry => entry[2]))};
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const entries = await readdir(directory);
 if(entries.length!==10 || names.some(n=>!entries.includes(n)||!entries.includes(n+'.build.json'))) throw new Error('expected exactly five runtime archive/build-record pairs');
@@ -266,7 +303,8 @@ for(let i=0;i<names.length;i++) {
  manifest.assets[keys[i]].executableSha256=record.executableSha256;
 }
 await writeFile(path.resolve(directory,'..','runtime-release.json.candidate'),JSON.stringify(manifest,null,2)+'\\n',{flag:'wx'});
-`);
+`,
+  );
 
   const fakeGh = `#!/usr/bin/env node
 import { copyFile, appendFile } from 'node:fs/promises';
@@ -364,7 +402,8 @@ async function runPublishFixture(f, { tagCommitSha = tagCommit, tamper = false }
   const verifyOutput = path.join(f.directory, 'verify-output');
   await writeFile(validateOutput, '');
   await writeFile(verifyOutput, '');
-  if (tamper) await writeFile(path.join(f.candidate, targets[0][3]), Buffer.concat([await readFile(path.join(f.candidate, targets[0][3])), Buffer.from('tamper')]));
+  if (tamper)
+    await writeFile(path.join(f.candidate, targets[0][3]), Buffer.concat([await readFile(path.join(f.candidate, targets[0][3])), Buffer.from('tamper')]));
   const baseEnv = envFor(f, { FIXTURE_TAG_COMMIT: tagCommitSha });
   const validate = runBlock(validateBlock, f.directory, { ...baseEnv, MODE: 'publish', SOURCE_COMMIT: '', GITHUB_OUTPUT: validateOutput });
   assertSuccess(validate, 'publish validate block');
@@ -409,10 +448,20 @@ test('draft metadata validation has scoped write capability; artifact mutation s
   assert.doesNotMatch(assembly, /contents: write/);
   assert.match(publish, /contents: write/);
   assert.match(uploadBlock, /gh release upload/);
-  assert.match(workflow, /git -C ctg show HEAD:docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v21\.patch > opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v21\.patch/);
+  assert.match(
+    workflow,
+    /git -C ctg show HEAD:docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v21\.patch > opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v21\.patch/,
+  );
   assert.match(workflow, /patch_sha256="\$\(hash_file opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v21\.patch\)"/);
-  assert.equal((workflow.match(/git -C ctg show HEAD:docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v21\.patch > ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui\.patch/g) ?? []).length, 1,
-    'candidate assembly must extract exact committed bytes at the pinned historical path');
+  assert.equal(
+    (
+      workflow.match(
+        /git -C ctg show HEAD:docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v21\.patch > ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui\.patch/g,
+      ) ?? []
+    ).length,
+    1,
+    'candidate assembly must extract exact committed bytes at the pinned historical path',
+  );
   assert.match(verifyBlock, /git -C ctg show HEAD:script\/ctg\/build-owned-runtime\.sh/);
   assert.match(verifyBlock, /git -C ctg show "HEAD:\$patch_file" > ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui\.patch/);
   assert.match(workflow, /git -C ctg show HEAD:script\/ctg\/build-owned-runtime\.sh > opencode\/script\/ctg\/build-owned-runtime\.sh/);
@@ -422,60 +471,72 @@ test('draft metadata validation has scoped write capability; artifact mutation s
   assert.match(workflow, /patch_sha256="\$\(hash_file opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v21\.patch\)"/);
 });
 
-test('review-branch prebuild source is exact dispatch SHA; publish validation is default-branch-only', { skip: requiresUbuntuWorkflowShell, timeout: 60000 }, async (t) => {
-  const f = await fixture(t);
-  const out = path.join(f.directory, 'prebuild-output');
-  await writeFile(out, '');
-  const env = envFor(f, {
-    MODE: 'prebuild',
-    SOURCE_COMMIT: runSha,
-    GITHUB_REF: 'refs/heads/feature/reviewed-prebuild',
-    GITHUB_SHA: runSha,
-    GITHUB_OUTPUT: out,
-  });
-  const allowed = runBlock(validateBlock, f.directory, env);
-  assertSuccess(allowed, 'review-branch prebuild validation');
-  assert.match(await readFile(out, 'utf8'), new RegExp(`source_commit=${runSha}`));
+test(
+  'review-branch prebuild source is exact dispatch SHA; publish validation is default-branch-only',
+  { skip: requiresUbuntuWorkflowShell, timeout: 60000 },
+  async t => {
+    const f = await fixture(t);
+    const out = path.join(f.directory, 'prebuild-output');
+    await writeFile(out, '');
+    const env = envFor(f, {
+      MODE: 'prebuild',
+      SOURCE_COMMIT: runSha,
+      GITHUB_REF: 'refs/heads/feature/reviewed-prebuild',
+      GITHUB_SHA: runSha,
+      GITHUB_OUTPUT: out,
+    });
+    const allowed = runBlock(validateBlock, f.directory, env);
+    assertSuccess(allowed, 'review-branch prebuild validation');
+    assert.match(await readFile(out, 'utf8'), new RegExp(`source_commit=${runSha}`));
 
-  const wrongSha = runBlock(validateBlock, f.directory, { ...env, SOURCE_COMMIT: tagCommit });
-  assertFailure(wrongSha, 'prebuild with mismatched dispatch SHA');
-  const publishOnReviewBranch = runBlock(validateBlock, f.directory, {
-    ...envFor(f, { MODE: 'publish', SOURCE_COMMIT: '', GITHUB_REF: 'refs/heads/feature/reviewed-prebuild', GITHUB_OUTPUT: out }),
-  });
-  assertFailure(publishOnReviewBranch, 'publish validation from non-default branch');
-});
+    const wrongSha = runBlock(validateBlock, f.directory, { ...env, SOURCE_COMMIT: tagCommit });
+    assertFailure(wrongSha, 'prebuild with mismatched dispatch SHA');
+    const publishOnReviewBranch = runBlock(validateBlock, f.directory, {
+      ...envFor(f, { MODE: 'publish', SOURCE_COMMIT: '', GITHUB_REF: 'refs/heads/feature/reviewed-prebuild', GITHUB_OUTPUT: out }),
+    });
+    assertFailure(publishOnReviewBranch, 'publish validation from non-default branch');
+  },
+);
 
-test('positive publish verifies five archive bytes and fake-captures exactly seven identical assets', { skip: requiresUbuntuWorkflowShell, timeout: 60000 }, async (t) => {
-  const f = await fixture(t);
-  const result = await runPublishFixture(f);
-  assertSuccess(result.upload, 'fake upload');
-  const uploaded = (await readFile(path.join(f.capture, 'uploads.log'), 'utf8')).trim().split('\n').sort();
-  assert.deepEqual(uploaded, [
-    'opencode-darwin-arm64.tar.gz', 'opencode-darwin-x64.tar.gz',
-    'opencode-linux-arm64.tar.gz', 'opencode-linux-x64.tar.gz',
-    'opencode-windows-x64.tar.gz', 'runtime-release-SHA256SUMS.txt', 'runtime-release.json',
-  ]);
-  for (const [, , , name] of targets) {
-    assert.deepEqual(await readFile(path.join(f.capture, name)), await readFile(path.join(f.candidate, name)));
-  }
-  assert.deepEqual(await readFile(path.join(f.capture, 'runtime-release.json')), f.manifestBytes);
-  const sums = (await readFile(path.join(f.capture, 'runtime-release-SHA256SUMS.txt'), 'utf8')).trim().split('\n');
-  assert.equal(sums.length, 6);
-  for (const line of sums) {
-    const match = line.match(/^([a-f0-9]{64})  (.+)$/);
-    assert.ok(match, `checksum line should be sha256sum-formatted: ${line}`);
-    assert.equal(match[1], sha256(await readFile(path.join(f.capture, match[2]))), `checksum for ${match[2]}`);
-  }
-});
+test(
+  'positive publish verifies five archive bytes and fake-captures exactly seven identical assets',
+  { skip: requiresUbuntuWorkflowShell, timeout: 60000 },
+  async t => {
+    const f = await fixture(t);
+    const result = await runPublishFixture(f);
+    assertSuccess(result.upload, 'fake upload');
+    const uploaded = (await readFile(path.join(f.capture, 'uploads.log'), 'utf8')).trim().split('\n').sort();
+    assert.deepEqual(uploaded, [
+      'opencode-darwin-arm64.tar.gz',
+      'opencode-darwin-x64.tar.gz',
+      'opencode-linux-arm64.tar.gz',
+      'opencode-linux-x64.tar.gz',
+      'opencode-windows-x64.tar.gz',
+      'runtime-release-SHA256SUMS.txt',
+      'runtime-release.json',
+    ]);
+    for (const [, , , name] of targets) {
+      assert.deepEqual(await readFile(path.join(f.capture, name)), await readFile(path.join(f.candidate, name)));
+    }
+    assert.deepEqual(await readFile(path.join(f.capture, 'runtime-release.json')), f.manifestBytes);
+    const sums = (await readFile(path.join(f.capture, 'runtime-release-SHA256SUMS.txt'), 'utf8')).trim().split('\n');
+    assert.equal(sums.length, 6);
+    for (const line of sums) {
+      const match = line.match(/^([a-f0-9]{64})  (.+)$/);
+      assert.ok(match, `checksum line should be sha256sum-formatted: ${line}`);
+      assert.equal(match[1], sha256(await readFile(path.join(f.capture, match[2]))), `checksum for ${match[2]}`);
+    }
+  },
+);
 
-test('tampered candidate archive is rejected before any fake upload', { skip: requiresUbuntuWorkflowShell, timeout: 60000 }, async (t) => {
+test('tampered candidate archive is rejected before any fake upload', { skip: requiresUbuntuWorkflowShell, timeout: 60000 }, async t => {
   const f = await fixture(t);
   const result = await runPublishFixture(f, { tamper: true });
   assert.equal(result.upload, undefined);
   assert.deepEqual(await (await import('node:fs/promises')).readdir(f.capture), []);
 });
 
-test('stale annotated tag is rejected by upload recheck before any fake upload', { skip: requiresUbuntuWorkflowShell, timeout: 60000 }, async (t) => {
+test('stale annotated tag is rejected by upload recheck before any fake upload', { skip: requiresUbuntuWorkflowShell, timeout: 60000 }, async t => {
   const f = await fixture(t);
   const result = await runPublishFixture(f, { tagCommitSha: 'dddddddddddddddddddddddddddddddddddddddd' });
   assertFailure(result.upload, 'stale-tag upload recheck');

@@ -40,26 +40,36 @@ try {
   assert.equal(archives.total, 0);
   assert.deepEqual(await rpc('carthagent.session', 'framing', { sessionID: session.id, enabled: false }), { enabled: false });
   let connected;
-  const ready = new Promise(resolve => { connected = resolve; });
+  const ready = new Promise(resolve => {
+    connected = resolve;
+  });
   let changed;
-  const updated = new Promise(resolve => { changed = resolve; });
+  const updated = new Promise(resolve => {
+    changed = resolve;
+  });
   watching = (async () => {
     try {
       for await (const event of client.event.subscribe({ signal: stream.signal })) {
         if (event.type === 'server.connected') connected();
         if (event.type === 'rpc.carthagent.workspace.updated' && event.location?.directory === host.cwd) changed(event);
       }
-    } catch (error) { if (!stream.signal.aborted) throw error; }
+    } catch (error) {
+      if (!stream.signal.aborted) throw error;
+    }
   })();
   let timer;
-  const timed = new Promise((_, reject) => { timer = setTimeout(() => reject(Error('Workspace event stream did not reconcile')), 10_000); });
+  const timed = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(Error('Workspace event stream did not reconcile')), 10_000);
+  });
   try {
     await Promise.race([ready, timed]);
     await client.session.prompt({ sessionID: session.id, text: 'Fixture event refresh' }, request());
     await client.session.wait({ sessionID: session.id }, request());
     const event = await Promise.race([updated, timed]);
     assert.equal(typeof event.data.revision, 'string');
-  } finally { clearTimeout(timer); }
+  } finally {
+    clearTimeout(timer);
+  }
   // The native event stream is live-only. Drop the subscriber, perform a whole
   // turn, then recover from authoritative state before watching future events.
   stream.abort();
@@ -67,17 +77,25 @@ try {
   await client.session.prompt({ sessionID: session.id, text: 'Completed while disconnected' }, request());
   assert.equal(await host.outcome(session.id), 'succeeded');
   stream = new AbortController();
-  const reconnected = new Promise(resolve => { connected = resolve; });
-  const refreshed = new Promise(resolve => { changed = resolve; });
+  const reconnected = new Promise(resolve => {
+    connected = resolve;
+  });
+  const refreshed = new Promise(resolve => {
+    changed = resolve;
+  });
   watching = (async () => {
     try {
       for await (const event of client.event.subscribe({ signal: stream.signal })) {
         if (event.type === 'server.connected') connected();
         if (event.type === 'rpc.carthagent.workspace.updated' && event.location?.directory === host.cwd) changed(event);
       }
-    } catch (error) { if (!stream.signal.aborted) throw error; }
+    } catch (error) {
+      if (!stream.signal.aborted) throw error;
+    }
   })();
-  const reconnectTimeout = new Promise((_, reject) => { timer = setTimeout(() => reject(Error('Reconnected workspace events did not refresh')), 10_000); });
+  const reconnectTimeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(Error('Reconnected workspace events did not refresh')), 10_000);
+  });
   try {
     await Promise.race([reconnected, reconnectTimeout]);
     const recovered = await client.session.get({ sessionID: session.id }, request());
@@ -88,15 +106,33 @@ try {
     await client.session.prompt({ sessionID: session.id, text: 'Turn after reconnect' }, request());
     assert.equal(await host.outcome(session.id), 'succeeded');
     assert.equal(typeof (await Promise.race([refreshed, reconnectTimeout])).data.revision, 'string');
-  } finally { clearTimeout(timer); }
-  console.log(JSON.stringify({ host: identity.runtimeVersion, compatibilityVersion: identity.compatibilityVersion,
-    ...(identity.binarySha256 ? { binarySha256: identity.binarySha256 } : {}),
-    entrypoint: 'passed', anyModeQuests: 'passed', quickLabel: 'passed', workspace: 'passed', archive: 'passed', controls: 'passed', eventInvalidation: 'passed', reconnectSnapshot: 'passed', reconnectEvents: 'passed' }));
+  } finally {
+    clearTimeout(timer);
+  }
+  console.log(
+    JSON.stringify({
+      host: identity.runtimeVersion,
+      compatibilityVersion: identity.compatibilityVersion,
+      ...(identity.binarySha256 ? { binarySha256: identity.binarySha256 } : {}),
+      entrypoint: 'passed',
+      anyModeQuests: 'passed',
+      quickLabel: 'passed',
+      workspace: 'passed',
+      archive: 'passed',
+      controls: 'passed',
+      eventInvalidation: 'passed',
+      reconnectSnapshot: 'passed',
+      reconnectEvents: 'passed',
+    }),
+  );
 } catch (error) {
   console.error(host.output);
   throw error;
 } finally {
   stream.abort();
-  try { await watching; }
-  finally { await host.close(); }
+  try {
+    await watching;
+  } finally {
+    await host.close();
+  }
 }

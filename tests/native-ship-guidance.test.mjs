@@ -22,6 +22,6 @@ test('both workflows steer away from secrets files that stall runs on approval',
 });
 
 test('standard guidance steers check choice away from slow builds that cheaper checks cover', () => {
-  assert.match(STANDARD_GUIDANCE, /cheapest checks/)
-  assert.match(STANDARD_GUIDANCE, /production build only when/)
-})
+  assert.match(STANDARD_GUIDANCE, /cheapest checks/);
+  assert.match(STANDARD_GUIDANCE, /production build only when/);
+});

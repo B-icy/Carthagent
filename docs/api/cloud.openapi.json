@@ -1,0 +1,1619 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Carthagent Cloud control-plane API",
+    "version": "1.1.2",
+    "summary": "Express router exported by lib/cloud/http.mjs (`cloudRouter`).",
+    "description": "Device authorization, CLI sessions, account and usage reads, billing and an OpenAI-compatible model gateway. The hosting service mounts the router; paths below are relative to that mount point. JSON bodies are limited to 1 MB (the Stripe webhook takes a raw body up to 256 KB). OAuth-style failures answer `{\"error\": \"<code>\"}` with status 401 (`invalid_grant`, `invalid_token`, `revoked_token`, `access_denied`), 428 (`authorization_pending`), 410 (`expired_token`), 403 (`insufficient_scope`) or 400. Errors raised inside asynchronous handlers reach the router error handler, which answers 401 for `unauthorized` and `browser_auth_not_configured` and 400 for everything else. Gateway errors use the OpenAI error envelope.",
+    "license": {
+      "name": "See LICENSE",
+      "url": "https://github.com/B-icy/Carthagent/blob/main/LICENSE"
+    }
+  },
+  "servers": [
+    {
+      "url": "{base}",
+      "variables": {
+        "base": {
+          "default": "https://cloud.example.invalid",
+          "description": "Mount point of cloudRouter in the hosting service."
+        }
+      }
+    }
+  ],
+  "tags": [
+    {
+      "name": "device",
+      "description": "OAuth 2.0 device authorization for the CLI."
+    },
+    {
+      "name": "session",
+      "description": "Access and refresh tokens."
+    },
+    {
+      "name": "gateway",
+      "description": "OpenAI-compatible model gateway."
+    },
+    {
+      "name": "account",
+      "description": "Account, balance, usage and sessions."
+    },
+    {
+      "name": "billing",
+      "description": "Stripe checkout, portal and webhooks."
+    }
+  ],
+  "paths": {
+    "/v1/device/authorizations": {
+      "post": {
+        "operationId": "createDeviceAuthorization",
+        "tags": [
+          "device"
+        ],
+        "summary": "Start a device authorization",
+        "security": [],
+        "x-carthagent-auth": "none",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "clientName": {
+                    "type": "string",
+                    "description": "Display name (default \"Carthagent CLI\", truncated to 120 characters)."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Authorization created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceAuthorization"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/device/authorizations/{userCode}/approve": {
+      "post": {
+        "operationId": "approveDeviceAuthorization",
+        "tags": [
+          "device"
+        ],
+        "summary": "Approve or deny a device authorization from a signed-in browser",
+        "description": "Authenticated by the hosting service through the `authenticateBrowser(req)` hook (for example a website session cookie); no bearer token is used. Approval grants the one-time trial credit.",
+        "security": [],
+        "x-carthagent-auth": "browser-session",
+        "parameters": [
+          {
+            "name": "userCode",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "ABCDE-FGHIJ"
+            },
+            "description": "User code shown by the CLI (case-insensitive)."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "approve": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Send false to deny."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Decision recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "approved",
+                    "clientName"
+                  ],
+                  "properties": {
+                    "approved": {
+                      "type": "boolean"
+                    },
+                    "clientName": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_user_code`, `expired_token`, or `authorization_<status>` when no longer pending.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` (no browser account) or `browser_auth_not_configured`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/device/token": {
+      "post": {
+        "operationId": "pollDeviceToken",
+        "tags": [
+          "device"
+        ],
+        "summary": "Exchange an approved device code for tokens",
+        "security": [],
+        "x-carthagent-auth": "none",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "deviceCode"
+                ],
+                "properties": {
+                  "deviceCode": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Session issued; the device code is consumed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`invalid_grant` (unknown or already consumed device code) or `access_denied` (the user denied the request).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "`expired_token`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "`authorization_pending`: poll again after `interval` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/token/refresh": {
+      "post": {
+        "operationId": "refreshToken",
+        "tags": [
+          "session"
+        ],
+        "summary": "Rotate a refresh token and obtain a new access token",
+        "security": [],
+        "x-carthagent-auth": "none",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "refreshToken"
+                ],
+                "properties": {
+                  "refreshToken": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "New tokens; the old refresh token is invalidated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`invalid_grant`: unknown, revoked or expired refresh token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/token/revoke": {
+      "post": {
+        "operationId": "revokeToken",
+        "tags": [
+          "session"
+        ],
+        "summary": "Revoke the session of the presented access token",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-carthagent-auth": "bearer",
+        "responses": {
+          "200": {
+            "description": "Whether a live session was revoked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "revoked"
+                  ],
+                  "properties": {
+                    "revoked": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`invalid_token` (malformed or badly signed) or `revoked_token` (session revoked).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "`expired_token`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/models": {
+      "get": {
+        "operationId": "listModels",
+        "tags": [
+          "gateway"
+        ],
+        "summary": "List gateway model aliases (OpenAI list format)",
+        "security": [
+          {
+            "bearerAuth": [
+              "models:read"
+            ]
+          }
+        ],
+        "x-carthagent-auth": "bearer:models:read",
+        "responses": {
+          "200": {
+            "description": "Available models.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`invalid_token` (malformed or badly signed) or `revoked_token` (session revoked).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`insufficient_scope`: the access token lacks the required scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "`expired_token`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`gateway_not_configured`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/chat/completions": {
+      "post": {
+        "operationId": "createChatCompletion",
+        "tags": [
+          "gateway"
+        ],
+        "summary": "Create a chat completion through the gateway",
+        "description": "OpenAI-compatible chat completions proxy. The request body is forwarded to the upstream model; the upstream status code, safe headers and (possibly streamed) body are relayed unchanged, and usage is charged to the account ledger. Token failures pass through the router error handler and therefore answer 400 `{\"error\":\"invalid_token\"}` (or `expired_token`, `revoked_token`, `insufficient_scope`), not 401.",
+        "security": [
+          {
+            "bearerAuth": [
+              "gateway:invoke"
+            ]
+          }
+        ],
+        "x-carthagent-auth": "bearer:gateway:invoke",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Operation key; reusing it with a different body fails with `idempotency_key_reused`."
+          },
+          {
+            "name": "X-Client-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GatewayRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Upstream response relayed as-is (JSON or `text/event-stream`). Other upstream status codes are relayed the same way.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (`model_not_found`, `request_too_large`, `max_output_tokens_exceeded`, `idempotency_key_reused`, `request_reconciliation_required`) as a GatewayError, or `{\"error\": \"<code>\"}` for a token failure (`invalid_token`, `expired_token`, `revoked_token`, `insufficient_scope`) or another gateway failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`insufficient_quota`: Cloud credit is exhausted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`gateway_not_configured`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/responses": {
+      "post": {
+        "operationId": "createResponse",
+        "tags": [
+          "gateway"
+        ],
+        "summary": "Create a response through the gateway",
+        "description": "OpenAI-compatible Responses API proxy. The request body is forwarded to the upstream model; the upstream status code, safe headers and (possibly streamed) body are relayed unchanged, and usage is charged to the account ledger. Token failures pass through the router error handler and therefore answer 400 `{\"error\":\"invalid_token\"}` (or `expired_token`, `revoked_token`, `insufficient_scope`), not 401.",
+        "security": [
+          {
+            "bearerAuth": [
+              "gateway:invoke"
+            ]
+          }
+        ],
+        "x-carthagent-auth": "bearer:gateway:invoke",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Operation key; reusing it with a different body fails with `idempotency_key_reused`."
+          },
+          {
+            "name": "X-Client-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GatewayRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Upstream response relayed as-is (JSON or `text/event-stream`). Other upstream status codes are relayed the same way.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (`model_not_found`, `request_too_large`, `max_output_tokens_exceeded`, `idempotency_key_reused`, `request_reconciliation_required`) as a GatewayError, or `{\"error\": \"<code>\"}` for a token failure (`invalid_token`, `expired_token`, `revoked_token`, `insufficient_scope`) or another gateway failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`insufficient_quota`: Cloud credit is exhausted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`gateway_not_configured`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/account": {
+      "get": {
+        "operationId": "getAccount",
+        "tags": [
+          "account"
+        ],
+        "summary": "Read the account, balance, grants, subscription and sessions",
+        "security": [
+          {
+            "bearerAuth": [
+              "account:read"
+            ]
+          }
+        ],
+        "x-carthagent-auth": "bearer:account:read",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`invalid_token` (malformed or badly signed) or `revoked_token` (session revoked).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`insufficient_scope`: the access token lacks the required scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "`expired_token`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/account/balance": {
+      "get": {
+        "operationId": "getAccountBalance",
+        "tags": [
+          "account"
+        ],
+        "summary": "Read the credit balance and grants",
+        "security": [
+          {
+            "bearerAuth": [
+              "account:read"
+            ]
+          }
+        ],
+        "x-carthagent-auth": "bearer:account:read",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "accountId",
+                    "balance",
+                    "grants"
+                  ],
+                  "properties": {
+                    "accountId": {
+                      "type": "string"
+                    },
+                    "balance": {
+                      "$ref": "#/components/schemas/Balance"
+                    },
+                    "grants": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Grant"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`invalid_token` (malformed or badly signed) or `revoked_token` (session revoked).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`insufficient_scope`: the access token lacks the required scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "`expired_token`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/account/usage": {
+      "get": {
+        "operationId": "getAccountUsage",
+        "tags": [
+          "account"
+        ],
+        "summary": "List recent gateway charges",
+        "security": [
+          {
+            "bearerAuth": [
+              "account:read"
+            ]
+          }
+        ],
+        "x-carthagent-auth": "bearer:account:read",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            },
+            "description": "Clamped to 1..200; non-integers fall back to 50."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "accountId",
+                    "data"
+                  ],
+                  "properties": {
+                    "accountId": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/UsageEntry"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`invalid_token` (malformed or badly signed) or `revoked_token` (session revoked).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`insufficient_scope`: the access token lacks the required scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "`expired_token`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/account/sessions": {
+      "get": {
+        "operationId": "listAccountSessions",
+        "tags": [
+          "account"
+        ],
+        "summary": "List CLI sessions of the account",
+        "security": [
+          {
+            "bearerAuth": [
+              "account:read"
+            ]
+          }
+        ],
+        "x-carthagent-auth": "bearer:account:read",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "accountId",
+                    "currentSessionId",
+                    "data"
+                  ],
+                  "properties": {
+                    "accountId": {
+                      "type": "string"
+                    },
+                    "currentSessionId": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Session"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`invalid_token` (malformed or badly signed) or `revoked_token` (session revoked).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`insufficient_scope`: the access token lacks the required scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "`expired_token`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/account/sessions/{sessionId}": {
+      "delete": {
+        "operationId": "revokeAccountSession",
+        "tags": [
+          "account"
+        ],
+        "summary": "Revoke one CLI session of the account",
+        "security": [
+          {
+            "bearerAuth": [
+              "account:read"
+            ]
+          }
+        ],
+        "x-carthagent-auth": "bearer:account:read",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "revoked",
+                    "sessionId"
+                  ],
+                  "properties": {
+                    "revoked": {
+                      "const": true
+                    },
+                    "sessionId": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`invalid_token` (malformed or badly signed) or `revoked_token` (session revoked).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`insufficient_scope`: the access token lacks the required scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`session_not_found`: unknown, foreign or already revoked session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "`expired_token`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/billing/checkout": {
+      "post": {
+        "operationId": "createCheckout",
+        "tags": [
+          "billing"
+        ],
+        "summary": "Create a Stripe Checkout session for a subscription",
+        "security": [
+          {
+            "bearerAuth": [
+              "account:read"
+            ]
+          }
+        ],
+        "x-carthagent-auth": "bearer:account:read",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "successUrl": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "cancelUrl": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "priceId": {
+                    "type": "string",
+                    "description": "Stripe price ID or plan name; defaults to the configured price."
+                  },
+                  "planId": {
+                    "type": "string",
+                    "description": "Alias for priceId."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Checkout session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StripeSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`billing_not_configured`, an unknown price, or a token failure (`invalid_token`, `expired_token`, `revoked_token`, `insufficient_scope`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/billing/portal": {
+      "post": {
+        "operationId": "createBillingPortal",
+        "tags": [
+          "billing"
+        ],
+        "summary": "Create a Stripe customer portal session",
+        "security": [
+          {
+            "bearerAuth": [
+              "account:read"
+            ]
+          }
+        ],
+        "x-carthagent-auth": "bearer:account:read",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "returnUrl": {
+                    "type": "string",
+                    "format": "uri"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Portal session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StripeSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`billing_not_configured`, `stripe_customer_not_found`, or a token failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/webhooks/stripe": {
+      "post": {
+        "operationId": "stripeWebhook",
+        "tags": [
+          "billing"
+        ],
+        "summary": "Receive a signed Stripe event",
+        "description": "The raw body is verified against the `stripe-signature` header (5 minute tolerance) before processing. Events are idempotent by Stripe event ID.",
+        "security": [],
+        "x-carthagent-auth": "stripe-signature",
+        "parameters": [
+          {
+            "name": "stripe-signature",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "Stripe event, verified as raw bytes (256 KB limit)."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Event processed, or a duplicate was ignored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "duplicate"
+                  ],
+                  "properties": {
+                    "duplicate": {
+                      "type": "boolean"
+                    },
+                    "processed": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid signature, or a malformed event.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "HS256 JWT",
+        "description": "Access token from /v1/device/token or /v1/token/refresh. Scopes are carried in the `scope` claim: `models:read`, `gateway:invoke`, `account:read`. Sessions can be revoked server-side."
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Error code, for example `invalid_grant`."
+          }
+        }
+      },
+      "GatewayError": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": [
+              "message",
+              "type",
+              "code"
+            ],
+            "properties": {
+              "message": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "code": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "DeviceAuthorization": {
+        "type": "object",
+        "required": [
+          "deviceCode",
+          "userCode",
+          "verificationUri",
+          "verificationUriComplete",
+          "expiresIn",
+          "interval"
+        ],
+        "properties": {
+          "deviceCode": {
+            "type": "string",
+            "description": "Secret polled by the CLI (`ctgd_` prefix)."
+          },
+          "userCode": {
+            "type": "string",
+            "description": "Code the user confirms in the browser (`XXXXX-XXXXX`)."
+          },
+          "verificationUri": {
+            "type": "string",
+            "format": "uri"
+          },
+          "verificationUriComplete": {
+            "type": "string",
+            "format": "uri"
+          },
+          "expiresIn": {
+            "type": "integer",
+            "description": "Seconds."
+          },
+          "interval": {
+            "type": "integer",
+            "description": "Minimum polling interval in seconds."
+          }
+        }
+      },
+      "TokenResponse": {
+        "type": "object",
+        "required": [
+          "accessToken",
+          "tokenType",
+          "expiresIn",
+          "refreshToken",
+          "scope"
+        ],
+        "properties": {
+          "accessToken": {
+            "type": "string"
+          },
+          "tokenType": {
+            "const": "Bearer"
+          },
+          "expiresIn": {
+            "type": "integer"
+          },
+          "refreshToken": {
+            "type": "string",
+            "description": "Rotating refresh token (`ctgr_` prefix)."
+          },
+          "scope": {
+            "type": "string",
+            "description": "Space-separated scopes."
+          }
+        }
+      },
+      "ModelList": {
+        "type": "object",
+        "required": [
+          "object",
+          "data"
+        ],
+        "properties": {
+          "object": {
+            "const": "list"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "object",
+                "created",
+                "owned_by"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "object": {
+                  "const": "model"
+                },
+                "created": {
+                  "type": "integer"
+                },
+                "owned_by": {
+                  "const": "carthagent"
+                }
+              }
+            }
+          }
+        }
+      },
+      "GatewayRequest": {
+        "type": "object",
+        "required": [
+          "model"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Gateway model alias from /v1/models."
+          }
+        },
+        "additionalProperties": true
+      },
+      "Balance": {
+        "type": "object",
+        "required": [
+          "currency",
+          "availableNanoUsd"
+        ],
+        "properties": {
+          "currency": {
+            "const": "USD"
+          },
+          "availableNanoUsd": {
+            "type": "integer"
+          }
+        }
+      },
+      "Grant": {
+        "type": "object",
+        "required": [
+          "id",
+          "originalNanoUsd",
+          "remainingNanoUsd",
+          "expiresAt",
+          "source",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "originalNanoUsd": {
+            "type": "integer"
+          },
+          "remainingNanoUsd": {
+            "type": "integer"
+          },
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        }
+      },
+      "Session": {
+        "type": "object",
+        "required": [
+          "id",
+          "scopes",
+          "client_name",
+          "expires_at",
+          "created_at",
+          "last_used_at",
+          "revoked_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "string"
+          },
+          "client_name": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "last_used_at": {
+            "type": "string"
+          },
+          "revoked_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "Subscription": {
+        "type": "object",
+        "description": "Subscription row, or `{account_id, status: \"none\"}` when the account has none.",
+        "required": [
+          "account_id",
+          "status"
+        ],
+        "properties": {
+          "account_id": {
+            "type": "string"
+          },
+          "stripe_customer_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stripe_subscription_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stripe_price_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "current_period_start": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "current_period_end": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "Account": {
+        "type": "object",
+        "required": [
+          "accountId",
+          "email",
+          "balance",
+          "grants",
+          "subscription",
+          "sessions"
+        ],
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "balance": {
+            "$ref": "#/components/schemas/Balance"
+          },
+          "grants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Grant"
+            }
+          },
+          "subscription": {
+            "$ref": "#/components/schemas/Subscription"
+          },
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Session"
+            }
+          }
+        }
+      },
+      "UsageEntry": {
+        "type": "object",
+        "required": [
+          "createdAt",
+          "alias",
+          "inputTokens",
+          "outputTokens",
+          "status",
+          "chargeNanoUsd",
+          "gatewayRequestId",
+          "gatewayAttemptId"
+        ],
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "alias": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "inputTokens": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "outputTokens": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "chargeNanoUsd": {
+            "type": "integer"
+          },
+          "gatewayRequestId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "gatewayAttemptId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "StripeSession": {
+        "type": "object",
+        "required": [
+          "url",
+          "id"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "id": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

@@ -3,15 +3,42 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createVoyagesNavigationState } from '../plugins/carthagent/src/ui/voyages-navigation-state.mjs';
 
-const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
-const account = { profile: { name: 'Captain', shipName: 'Ship', coins: 10, level: 3, totalXp: 200, config: { private: true }, owned: ['secret'] }, items: [{ private: true }], pending: { quoteId: 'private' } };
-const assignments = { day: '2026-10-30', endsAt: '2026-10-31T00:00:00Z', goals: [{ id: 'lines-20', metric: 'lines', title: 'Change 20 lines of code', target: 20, progress: 12, completed: false, coins: 10, xp: 50 }, { id: 'reviews-1', metric: 'reviews', title: 'Run a code review', target: 1, progress: 1, completed: true, coins: 10, xp: 50 }], coins: 10, level: 3 };
+const deferred = () => {
+  let resolve, reject;
+  const promise = new Promise((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  return { promise, resolve, reject };
+};
+const account = {
+  profile: { name: 'Captain', shipName: 'Ship', coins: 10, level: 3, totalXp: 200, config: { private: true }, owned: ['secret'] },
+  items: [{ private: true }],
+  pending: { quoteId: 'private' },
+};
+const assignments = {
+  day: '2026-10-30',
+  endsAt: '2026-10-31T00:00:00Z',
+  goals: [
+    { id: 'lines-20', metric: 'lines', title: 'Change 20 lines of code', target: 20, progress: 12, completed: false, coins: 10, xp: 50 },
+    { id: 'reviews-1', metric: 'reviews', title: 'Run a code review', target: 1, progress: 1, completed: true, coins: 10, xp: 50 },
+  ],
+  coins: 10,
+  level: 3,
+};
 function fixture(overrides = {}) {
-  const updates = [], calls = [];
+  const updates = [],
+    calls = [];
   const controller = createVoyagesNavigationState({
-    changed: (state) => updates.push(structuredClone(state)),
-    profile: async (signal) => { calls.push(['profile', signal]); return account; },
-    daily: async (signal) => { calls.push(['daily', signal]); return assignments; },
+    changed: state => updates.push(structuredClone(state)),
+    profile: async signal => {
+      calls.push(['profile', signal]);
+      return account;
+    },
+    daily: async signal => {
+      calls.push(['daily', signal]);
+      return assignments;
+    },
     ...overrides,
   });
   return { controller, calls, updates, last: () => updates.at(-1) };
@@ -22,12 +49,23 @@ test('navigation loads only when selected, reads once per activation and retains
   await f.controller.refresh();
   assert.equal(f.calls.length, 0);
   await f.controller.activate(true);
-  assert.deepEqual(f.calls.map(([name]) => name), ['profile', 'daily']);
+  assert.deepEqual(
+    f.calls.map(([name]) => name),
+    ['profile', 'daily'],
+  );
   assert.equal(f.calls[0][1], f.calls[1][1]);
   assert.deepEqual(f.last(), {
-    busy: false, error: '',
+    busy: false,
+    error: '',
     profile: { name: 'Captain', shipName: 'Ship', coins: 10, level: 3, totalXp: 200 },
-    daily: { day: '2026-10-30', endsAt: '2026-10-31T00:00:00Z', items: [{ id: 'lines-20', title: 'Change 20 lines of code', status: '12/20' }, { id: 'reviews-1', title: 'Run a code review', status: 'Done' }] },
+    daily: {
+      day: '2026-10-30',
+      endsAt: '2026-10-31T00:00:00Z',
+      items: [
+        { id: 'lines-20', title: 'Change 20 lines of code', status: '12/20' },
+        { id: 'reviews-1', title: 'Run a code review', status: 'Done' },
+      ],
+    },
   });
   assert.doesNotMatch(JSON.stringify(f.last()), /private|quoteId|owned/);
   await f.controller.activate(true);
@@ -50,12 +88,14 @@ test('switching back to Projects synchronously clears protected summaries and ab
 });
 
 test('hidden pane cannot resurrect a late authenticated response', async () => {
-  const profile = deferred(), daily = deferred();
+  const profile = deferred(),
+    daily = deferred();
   const f = fixture({ profile: () => profile.promise, daily: () => daily.promise });
   const pending = f.controller.activate(true);
   assert.equal(f.last().busy, true);
   f.controller.activate(false);
-  profile.resolve(account); daily.resolve(assignments);
+  profile.resolve(account);
+  daily.resolve(assignments);
   await pending;
   assert.equal(f.last().profile, undefined);
   assert.equal(f.last().daily, undefined);
@@ -64,7 +104,11 @@ test('hidden pane cannot resurrect a late authenticated response', async () => {
 
 test('either authentication failure hides both account-bound summaries and never renders server messages', async () => {
   for (const boundary of ['profile', 'daily']) {
-    const f = fixture({ [boundary]: async () => { throw { type: boundary === 'profile' ? 'voyagesError' : 'dailyGoalsError', data: { code: 'authentication_required' }, message: 'private token' }; } });
+    const f = fixture({
+      [boundary]: async () => {
+        throw { type: boundary === 'profile' ? 'voyagesError' : 'dailyGoalsError', data: { code: 'authentication_required' }, message: 'private token' };
+      },
+    });
     await f.controller.activate(true);
     assert.equal(f.last().profile, undefined);
     assert.equal(f.last().daily, undefined);
@@ -75,8 +119,16 @@ test('either authentication failure hides both account-bound summaries and never
 });
 
 test('untrusted error codes and transport messages cannot leak through the rail', async () => {
-  for (const error of [new Error('private message'), { type: 'dailyGoalsError', data: { code: 'private\u001b[31m' } }, { type: 'voyagesError', data: { code: 'x'.repeat(65) } }]) {
-    const f = fixture({ daily: async () => { throw error; } });
+  for (const error of [
+    new Error('private message'),
+    { type: 'dailyGoalsError', data: { code: 'private\u001b[31m' } },
+    { type: 'voyagesError', data: { code: 'x'.repeat(65) } },
+  ]) {
+    const f = fixture({
+      daily: async () => {
+        throw error;
+      },
+    });
     await f.controller.activate(true);
     assert.match(f.last().error, /^(voyages_request_failed|voyages_error)$/);
     assert.doesNotMatch(JSON.stringify(f.updates), /private/);
@@ -86,7 +138,7 @@ test('untrusted error codes and transport messages cannot leak through the rail'
 
 test('refresh clears stale account data before either new response is available', async () => {
   let gate;
-  const f = fixture({ profile: async () => gate ? gate.promise : account });
+  const f = fixture({ profile: async () => (gate ? gate.promise : account) });
   await f.controller.activate(true);
   gate = deferred();
   const pending = f.controller.refresh();
@@ -103,7 +155,12 @@ test('account/location invalidation aborts old requests and only publishes the f
   const old = deferred();
   let count = 0;
   const signals = [];
-  const f = fixture({ profile: (signal) => { signals.push(signal); return ++count === 1 ? old.promise : Promise.resolve({ profile: { ...account.profile, name: 'New captain' } }); } });
+  const f = fixture({
+    profile: signal => {
+      signals.push(signal);
+      return ++count === 1 ? old.promise : Promise.resolve({ profile: { ...account.profile, name: 'New captain' } });
+    },
+  });
   const previous = f.controller.activate(true);
   const next = f.controller.contextChanged();
   assert.equal(signals[0].aborted, true);
@@ -144,7 +201,10 @@ test('duplicate refresh while busy is ignored; disposal revokes every late callb
 
 test('timeout clears busy and fails closed without an unhandled promise', async () => {
   const timeout = new AbortController();
-  const f = fixture({ timeoutSignal: () => timeout.signal, daily: (signal) => new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true })) });
+  const f = fixture({
+    timeoutSignal: () => timeout.signal,
+    daily: signal => new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true })),
+  });
   const pending = f.controller.activate(true);
   timeout.abort(new Error('private transport information'));
   await pending;
@@ -157,7 +217,11 @@ test('timeout clears busy and fails closed without an unhandled promise', async 
 
 test('native extension is optional; navigation and daily goals cannot purchase', async () => {
   const root = new URL('../plugins/carthagent/src/', import.meta.url);
-  const [tui, pane, adapter, daily, voyages] = await Promise.all(['tui.tsx', 'ui/voyages-navigation.tsx', 'ui/native-navigation.ts', 'ui/daily-goals.tsx', 'ui/voyages.tsx'].map((file) => readFile(new URL(file, root), 'utf8')));
+  const [tui, pane, adapter, daily, voyages] = await Promise.all(
+    ['tui.tsx', 'ui/voyages-navigation.tsx', 'ui/native-navigation.ts', 'ui/daily-goals.tsx', 'ui/voyages.tsx'].map(file =>
+      readFile(new URL(file, root), 'utf8'),
+    ),
+  );
   assert.match(tui, /if \(navigation\) cleanups.push\(navigation.register/);
   assert.match(adapter, /navigation\?: NativeNavigation/);
   assert.match(pane, /!props.active \|\| context.keymap.mode.current\(\) !== "navigation" \|\| !props.focused/);

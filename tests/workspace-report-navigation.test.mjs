@@ -15,7 +15,10 @@ test('workspace report Back returns to the originating session or home', () => {
   assert.deepEqual(live.workspaceReturnRoute(undefined), { type: 'home' });
   assert.deepEqual(live.workspaceReturnRoute(''), { type: 'home' });
   // /ctg-workspace keeps its unscoped list but remembers where it was opened from.
-  assert.match(host, /case "ctg-workspace":\s*\n\s*context\.ui\.router\.navigate\(\{ type: "plugin", name: "carthagent", data: \{ view: "workspace", \.\.\.\(sessionID \? \{ returnSessionID: sessionID \} : \{\}\) \} \}\)/);
+  assert.match(
+    host,
+    /case "ctg-workspace":\s*\n\s*context\.ui\.router\.navigate\(\{ type: "plugin", name: "carthagent", data: \{ view: "workspace", \.\.\.\(sessionID \? \{ returnSessionID: sessionID \} : \{\}\) \} \}\)/,
+  );
   assert.match(host, /returnSessionID=\{typeof data\?\.returnSessionID === "string" \? data\.returnSessionID : undefined\}/);
 });
 
@@ -48,10 +51,13 @@ test('report content scrolls in a bounded viewport instead of shrinking rows ove
 });
 
 test('fully returned DTO sections collapse to coverage while truncation stays explicit', () => {
-  const complete = live.renderDeliveryReadiness({ completion: 'ready', gate: 'open', freshness: 'current', truncation: { checks: { returned: 1, total: 1 }, risks: { returned: 0, total: 0 } } });
-  assert.deepEqual(complete.sectionRows, [
-    { text: 'Coverage: complete · 2 sections fully returned', tone: 'returned' },
-  ]);
+  const complete = live.renderDeliveryReadiness({
+    completion: 'ready',
+    gate: 'open',
+    freshness: 'current',
+    truncation: { checks: { returned: 1, total: 1 }, risks: { returned: 0, total: 0 } },
+  });
+  assert.deepEqual(complete.sectionRows, [{ text: 'Coverage: complete · 2 sections fully returned', tone: 'returned' }]);
   const partial = live.renderDeliveryReadiness({ completion: 'incomplete', gate: 'locked', truncation: { checks: { returned: 100, total: 101 } } });
   assert.deepEqual(partial.sectionRows, [{ text: 'Truncated DTO section · checks: 100 of 101 returned', tone: 'truncated' }]);
   const unknown = live.renderDeliveryReadiness({ completion: 'ready' });
@@ -70,8 +76,16 @@ test('workflow shows failed receipts and incomplete steps before coverage diagno
   const workflow = page.slice(page.indexOf('<Show when={props.view === "workflow"}>'), page.indexOf('<Show when={props.view === "architecture"}>'));
   assert.ok(workflow.indexOf('readiness().receipts') < workflow.indexOf('readiness().sectionRows'));
   assert.ok(workflow.indexOf('orderedWorkflowNodes(') < workflow.indexOf('readiness().sectionRows'));
-  const nodes = [{ id: 'done', status: 'passed' }, { id: 'pending', status: 'pending' }, { id: 'failed', status: 'failed' }, { id: 'blocked', status: 'blocked' }];
-  assert.deepEqual(live.orderedWorkflowNodes(nodes).map(node => node.id), ['failed', 'blocked', 'pending', 'done']);
+  const nodes = [
+    { id: 'done', status: 'passed' },
+    { id: 'pending', status: 'pending' },
+    { id: 'failed', status: 'failed' },
+    { id: 'blocked', status: 'blocked' },
+  ];
+  assert.deepEqual(
+    live.orderedWorkflowNodes(nodes).map(node => node.id),
+    ['failed', 'blocked', 'pending', 'done'],
+  );
   assert.equal(nodes[0].id, 'done', 'presentation must not mutate the authoritative graph');
 });
 

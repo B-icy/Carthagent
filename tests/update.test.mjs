@@ -19,7 +19,9 @@ const manifest = { version: '0.3.0', tag: 'v0.3.0', installSpec: 'github:B-icy/C
 
 function withTempDir(fn) {
   const dir = mkdtempSync(join(tmpdir(), 'ctg-update-'));
-  return Promise.resolve().then(() => fn(dir)).finally(() => rmSync(dir, { recursive: true, force: true }));
+  return Promise.resolve()
+    .then(() => fn(dir))
+    .finally(() => rmSync(dir, { recursive: true, force: true }));
 }
 
 // ---- compareVersions
@@ -87,8 +89,7 @@ test('normalizeRelease binds the install ref exactly to the validated version', 
   for (const tag of ['main', 'v0.3.1', 'v0.3.0%2Fmain', ' v0.3.0', 'v0.3.0\n']) {
     assert.equal(normalizeRelease({ version: '0.3.0', tag }), null, `rejected tag ${JSON.stringify(tag)}`);
   }
-  assert.equal(normalizeRelease({ version: '1.2.3-beta.2', tag_name: 'v1.2.3-beta.2' })?.installSpec,
-    'github:B-icy/Carthagent#v1.2.3-beta.2');
+  assert.equal(normalizeRelease({ version: '1.2.3-beta.2', tag_name: 'v1.2.3-beta.2' })?.installSpec, 'github:B-icy/Carthagent#v1.2.3-beta.2');
   assert.equal(normalizeRelease({ version: '1.2.3-beta.2', tag_name: 'v1.2.3' }), null);
   assert.equal(normalizeRelease({ version: '01.2.3', tag: 'v01.2.3' }), null);
 });
@@ -111,53 +112,94 @@ test('fetchLatestRelease falls back to GitHub when the manifest fails validation
   assert.equal(urls.length, 2);
 });
 
+test('release checks retry transient GitHub errors but fall back from an unconfigured control plane at once', async () => {
+  const urls = [];
+  let githubFailures = 1;
+  const fetchImpl = async url => {
+    urls.push(url);
+    if (url.includes('/v1/cli/releases/latest')) return { status: 503, json: async () => null };
+    if (githubFailures-- > 0) return { status: 502, json: async () => null };
+    return { status: 200, json: async () => ({ tag_name: 'v0.3.1' }) };
+  };
+  const { release, source } = await fetchLatestRelease({ cloudUrl: 'https://cloud.test', fetchImpl, channel: 'stable' });
+  assert.equal(source, 'github');
+  assert.equal(release.version, '0.3.1');
+  assert.deepEqual(
+    urls.map(url => new URL(url).host),
+    ['cloud.test', 'api.github.com', 'api.github.com'],
+  );
+});
+
 test('fetchLatestRelease forwards cancellation and does not fall back after an abort', async () => {
   const controller = new AbortController();
   let calls = 0;
-  await assert.rejects(fetchLatestRelease({
-    cloudUrl: 'https://cloud.test',
-    channel: 'stable',
-    signal: controller.signal,
-    fetchImpl: async (_url, options) => {
-      calls++;
-      assert.equal(options.signal.aborted, false);
-      controller.abort(new Error('cancelled'));
-      throw controller.signal.reason;
-    },
-  }), /cancelled/);
+  await assert.rejects(
+    fetchLatestRelease({
+      cloudUrl: 'https://cloud.test',
+      channel: 'stable',
+      signal: controller.signal,
+      fetchImpl: async (_url, options) => {
+        calls++;
+        assert.equal(options.signal.aborted, false);
+        controller.abort(new Error('cancelled'));
+        throw controller.signal.reason;
+      },
+    }),
+    /cancelled/,
+  );
   assert.equal(calls, 1, 'an aborted control-plane request must not trigger GitHub fallback');
 });
 
 // ---- latestReleaseCached
 
-test('latestReleaseCached fetches once, then serves the cache', () => withTempDir(async dir => {
-  const cachePath = join(dir, 'update-check.json');
-  let calls = 0;
-  const fetchImpl = async () => { calls++; return { status: 200, json: async () => manifest }; };
-  // Pinned clock: a slow runner must not outrun the cache TTL mid-test.
-  const t0 = Date.now();
-  const first = await latestReleaseCached({ cachePath, intervalMs: 1000, now: t0, fetchImpl, channel: 'stable' });
-  assert.equal(first.release.version, '0.3.0');
-  assert.equal(first.fresh, false);
-  assert.equal(calls, 1);
-  const second = await latestReleaseCached({ cachePath, intervalMs: 1000, now: t0 + 500, fetchImpl, channel: 'stable' });
-  assert.equal(second.release.version, '0.3.0');
-  assert.equal(second.fresh, true);
-  assert.equal(calls, 1);
-}));
+test('latestReleaseCached fetches once, then serves the cache', () =>
+  withTempDir(async dir => {
+    const cachePath = join(dir, 'update-check.json');
+    let calls = 0;
+    const fetchImpl = async () => {
+      calls++;
+      return { status: 200, json: async () => manifest };
+    };
+    // Pinned clock: a slow runner must not outrun the cache TTL mid-test.
+    const t0 = Date.now();
+    const first = await latestReleaseCached({ cachePath, intervalMs: 1000, now: t0, fetchImpl, channel: 'stable' });
+    assert.equal(first.release.version, '0.3.0');
+    assert.equal(first.fresh, false);
+    assert.equal(calls, 1);
+    const second = await latestReleaseCached({ cachePath, intervalMs: 1000, now: t0 + 500, fetchImpl, channel: 'stable' });
+    assert.equal(second.release.version, '0.3.0');
+    assert.equal(second.fresh, true);
+    assert.equal(calls, 1);
+  }));
 
-test('latestReleaseCached returns stale data when refresh fails', () => withTempDir(async dir => {
-  const cachePath = join(dir, 'update-check.json');
-  writeFileSync(cachePath, JSON.stringify({ checkedAt: Date.now() - 60_000, release: manifest }));
-  const result = await latestReleaseCached({ cachePath, intervalMs: 1000, channel: 'stable', fetchImpl: async () => { throw new Error('offline'); } });
-  assert.equal(result.release.version, '0.3.0');
-  assert.equal(result.fresh, false);
-}));
+test('latestReleaseCached returns stale data when refresh fails', () =>
+  withTempDir(async dir => {
+    const cachePath = join(dir, 'update-check.json');
+    writeFileSync(cachePath, JSON.stringify({ checkedAt: Date.now() - 60_000, release: manifest }));
+    const result = await latestReleaseCached({
+      cachePath,
+      intervalMs: 1000,
+      channel: 'stable',
+      fetchImpl: async () => {
+        throw new Error('offline');
+      },
+    });
+    assert.equal(result.release.version, '0.3.0');
+    assert.equal(result.fresh, false);
+  }));
 
-test('latestReleaseCached swallows a cold-cache failure', () => withTempDir(async dir => {
-  const result = await latestReleaseCached({ cachePath: join(dir, 'update-check.json'), intervalMs: 1000, channel: 'stable', fetchImpl: async () => { throw new Error('offline'); } });
-  assert.equal(result.release, null);
-}));
+test('latestReleaseCached swallows a cold-cache failure', () =>
+  withTempDir(async dir => {
+    const result = await latestReleaseCached({
+      cachePath: join(dir, 'update-check.json'),
+      intervalMs: 1000,
+      channel: 'stable',
+      fetchImpl: async () => {
+        throw new Error('offline');
+      },
+    });
+    assert.equal(result.release, null);
+  }));
 
 // ---- updateCheckEnabled / detectInstallMethod
 
@@ -169,44 +211,59 @@ test('updateCheckEnabled honours opt-out env vars', () => {
   assert.equal(updateCheckEnabled({ CARTHAGENT_UPDATE_CHECK: '1' }), true);
 });
 
-test('detectInstallMethod distinguishes clones from packed installs', () => withTempDir(dir => {
-  assert.equal(detectInstallMethod(dir), 'npm');
-  mkdirSync(join(dir, '.git'));
-  assert.equal(detectInstallMethod(dir), 'clone');
-}));
+test('detectInstallMethod distinguishes clones from packed installs', () =>
+  withTempDir(dir => {
+    assert.equal(detectInstallMethod(dir), 'npm');
+    mkdirSync(join(dir, '.git'));
+    assert.equal(detectInstallMethod(dir), 'clone');
+  }));
 
 test('npmInstallSpec prefers an exact registry version and falls back when lookup fails', async () => {
   const release = { version: '1.2.3', installSpec: 'github:B-icy/Carthagent#v1.2.3' };
   let lookedUp;
-  assert.equal(await npmInstallSpec(release, async spec => { lookedUp = spec; return true; }), 'carthagent@1.2.3');
+  assert.equal(
+    await npmInstallSpec(release, async spec => {
+      lookedUp = spec;
+      return true;
+    }),
+    'carthagent@1.2.3',
+  );
   assert.equal(lookedUp, 'carthagent@1.2.3');
   assert.equal(await npmInstallSpec(release, async () => false), release.installSpec);
-  assert.equal(await npmInstallSpec(release, async () => { throw new Error('npm unavailable'); }), release.installSpec);
+  assert.equal(
+    await npmInstallSpec(release, async () => {
+      throw new Error('npm unavailable');
+    }),
+    release.installSpec,
+  );
 });
 
 // ---- staleGlobalInstallPaths / cleanStaleGlobalInstall
 
-test('staleGlobalInstallPaths flags non-directory carthagent and stash leftovers', () => withTempDir(dir => {
-  writeFileSync(join(dir, 'carthagent'), 'stray file');
-  mkdirSync(join(dir, '.carthagent-WHcGBFBt'));
-  mkdirSync(join(dir, 'other-pkg'));
-  const stale = staleGlobalInstallPaths(dir).map(p => basename(p));
-  assert.deepEqual(stale.sort(), ['.carthagent-WHcGBFBt', 'carthagent']);
-}));
+test('staleGlobalInstallPaths flags non-directory carthagent and stash leftovers', () =>
+  withTempDir(dir => {
+    writeFileSync(join(dir, 'carthagent'), 'stray file');
+    mkdirSync(join(dir, '.carthagent-WHcGBFBt'));
+    mkdirSync(join(dir, 'other-pkg'));
+    const stale = staleGlobalInstallPaths(dir).map(p => basename(p));
+    assert.deepEqual(stale.sort(), ['.carthagent-WHcGBFBt', 'carthagent']);
+  }));
 
-test('staleGlobalInstallPaths leaves a real carthagent install alone', () => withTempDir(dir => {
-  mkdirSync(join(dir, 'carthagent'));
-  assert.deepEqual(staleGlobalInstallPaths(dir), []);
-}));
+test('staleGlobalInstallPaths leaves a real carthagent install alone', () =>
+  withTempDir(dir => {
+    mkdirSync(join(dir, 'carthagent'));
+    assert.deepEqual(staleGlobalInstallPaths(dir), []);
+  }));
 
 test('staleGlobalInstallPaths ignores a missing npm root', () => {
   assert.deepEqual(staleGlobalInstallPaths(join(tmpdir(), 'ctg-no-such-dir')), []);
 });
 
-test('cleanStaleGlobalInstall removes flagged entries and reports them', () => withTempDir(dir => {
-  writeFileSync(join(dir, 'carthagent'), 'stray file');
-  writeFileSync(join(dir, '.carthagent-abandoned'), 'stash leftover');
-  const removed = cleanStaleGlobalInstall(dir);
-  assert.equal(removed.length, 2);
-  assert.deepEqual(staleGlobalInstallPaths(dir), []);
-}));
+test('cleanStaleGlobalInstall removes flagged entries and reports them', () =>
+  withTempDir(dir => {
+    writeFileSync(join(dir, 'carthagent'), 'stray file');
+    writeFileSync(join(dir, '.carthagent-abandoned'), 'stash leftover');
+    const removed = cleanStaleGlobalInstall(dir);
+    assert.equal(removed.length, 2);
+    assert.deepEqual(staleGlobalInstallPaths(dir), []);
+  }));

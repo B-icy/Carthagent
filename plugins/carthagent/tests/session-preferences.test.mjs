@@ -33,8 +33,14 @@ test("autocompact persists explicit, idempotent session preferences without repl
 test("invalid autocompact arguments fail before reading or mutating session state", async () => {
   let calls = 0;
   const client = {
-    async get() { calls++; throw new Error("must not read"); },
-    async update() { calls++; throw new Error("must not update"); },
+    async get() {
+      calls++;
+      throw new Error("must not read");
+    },
+    async update() {
+      calls++;
+      throw new Error("must not update");
+    },
   };
   await assert.rejects(setSessionAutoCompaction(client, "s1", { directory: "/project" }, "sometimes"), /Usage: \/autocompact \[on\|off\]/);
   assert.equal(calls, 0);

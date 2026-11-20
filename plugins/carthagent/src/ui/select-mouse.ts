@@ -42,7 +42,8 @@ export function wheelSelect(node: SelectRenderable | undefined, event: Pick<Mous
   const direction = event.scroll?.direction;
   if (!node || node.isDestroyed || !enabled || (direction !== "up" && direction !== "down")) return;
   const offset = geometry(node).scrollOffset;
-  if (direction === "up") node.moveUp(); else node.moveDown();
+  if (direction === "up") node.moveUp();
+  else node.moveDown();
   pinWindow(node, node.getSelectedIndex(), offset);
 }
 
@@ -58,7 +59,10 @@ type PointerEvent = Pick<MouseEvent, "button" | "y">;
  */
 export function createSelectPointer(node: () => SelectRenderable | undefined, enabled: () => boolean) {
   let pressed: { y: number; index: number; value: unknown } | undefined;
-  const live = () => { const current = node(); return current && !current.isDestroyed ? current : undefined; };
+  const live = () => {
+    const current = node();
+    return current && !current.isDestroyed ? current : undefined;
+  };
   return {
     press(event: PointerEvent) {
       pressed = undefined;
@@ -89,7 +93,10 @@ export function createSelectMemory(node: () => SelectRenderable | undefined, fal
   let chosen = false;
   let offset = 0;
   let applying = false;
-  const live = () => { const current = node(); return current && !current.isDestroyed ? current : undefined; };
+  const live = () => {
+    const current = node();
+    return current && !current.isDestroyed ? current : undefined;
+  };
   return {
     changed(option: SelectOption | null | undefined) {
       const current = live();
@@ -99,19 +106,42 @@ export function createSelectMemory(node: () => SelectRenderable | undefined, fal
       offset = geometry(current).scrollOffset;
       // Pointer helpers pin the window after the change event; record the window the user is left looking at.
       const chosenValue = value;
-      queueMicrotask(() => { const node = live(); if (node && chosen && value === chosenValue && node.getSelectedOption()?.value === chosenValue) offset = geometry(node).scrollOffset; });
+      queueMicrotask(() => {
+        const node = live();
+        if (node && chosen && value === chosenValue && node.getSelectedOption()?.value === chosenValue) offset = geometry(node).scrollOffset;
+      });
     },
-    reset() { value = undefined; chosen = false; offset = 0; },
+    reset() {
+      value = undefined;
+      chosen = false;
+      offset = 0;
+    },
     /** Runs index changes made for safety (for example an event handler resetting to row 0) without recording them as a choice. */
-    quiet(run: () => void) { applying = true; try { run(); } finally { applying = false; } },
-    forget(match: (value: unknown) => boolean) { if (chosen && match(value)) { value = undefined; chosen = false; } },
+    quiet(run: () => void) {
+      applying = true;
+      try {
+        run();
+      } finally {
+        applying = false;
+      }
+    },
+    forget(match: (value: unknown) => boolean) {
+      if (chosen && match(value)) {
+        value = undefined;
+        chosen = false;
+      }
+    },
     sync() {
       const current = live();
       if (!current || !current.options.length) return;
       const remembered = chosen ? current.options.findIndex((option) => option.value === value) : -1;
       const index = remembered >= 0 ? remembered : Math.max(0, Math.min(current.options.length - 1, fallback(current.options)));
       applying = true;
-      try { current.setSelectedIndex(index); } finally { applying = false; }
+      try {
+        current.setSelectedIndex(index);
+      } finally {
+        applying = false;
+      }
       pinWindow(current, index, offset);
       // A transient list (reload in progress) must not move the window the remembered option returns to.
       if (!chosen || remembered >= 0) offset = geometry(current).scrollOffset;

@@ -57,7 +57,9 @@ export async function loadNativeTestRuntime({
   const expectedBinary = resolve(root, `cli-${platform}`, 'bin', executableName);
   if (executable !== expectedBinary) throw new Error(`Owned runtime executable must be ${expectedBinary}`);
 
-  const actualSha256 = createHash('sha256').update(await readFile(executable)).digest('hex');
+  const actualSha256 = createHash('sha256')
+    .update(await readFile(executable))
+    .digest('hex');
   const expectedSha256 = env.CTG_TEST_RUNTIME_SHA256 ?? target.executableSha256;
   if (!SHA256.test(expectedSha256)) throw new Error('Expected owned runtime executable SHA-256 is invalid');
   if (actualSha256 !== expectedSha256) {
@@ -128,13 +130,24 @@ export async function preflightNativeTestRuntimeArtifact({
 }
 
 function validateTrustedRelease(release, platform) {
-  const invalid = reason => { throw new Error(`Invalid trusted native runtime release manifest: ${reason}`); };
-  if (!release || release.version !== 1 || !RELEASE_VERSION.test(release.releaseVersion ?? '')
-    || release.compatibilityVersion !== NATIVE_TEST_COMPATIBILITY_VERSION
-    || typeof release.runtimeVersion !== 'string' || !release.runtimeVersion.startsWith('0.0.0-ctg.')
-    || !REVISION.test(release.sourceRevision ?? '')
-    || !SHA256.test(release.patchSha256 ?? '') || !SHA256.test(release.lockSha256 ?? '')
-    || !release.assets || typeof release.assets !== 'object' || Array.isArray(release.assets)) invalid('required pinned identity fields are missing or invalid');
+  const invalid = reason => {
+    throw new Error(`Invalid trusted native runtime release manifest: ${reason}`);
+  };
+  if (
+    !release ||
+    release.version !== 1 ||
+    !RELEASE_VERSION.test(release.releaseVersion ?? '') ||
+    release.compatibilityVersion !== NATIVE_TEST_COMPATIBILITY_VERSION ||
+    typeof release.runtimeVersion !== 'string' ||
+    !release.runtimeVersion.startsWith('0.0.0-ctg.') ||
+    !REVISION.test(release.sourceRevision ?? '') ||
+    !SHA256.test(release.patchSha256 ?? '') ||
+    !SHA256.test(release.lockSha256 ?? '') ||
+    !release.assets ||
+    typeof release.assets !== 'object' ||
+    Array.isArray(release.assets)
+  )
+    invalid('required pinned identity fields are missing or invalid');
   const asset = release.assets[platform];
   if (!asset || asset.name !== `opencode-${platform}.tar.gz` || !SHA256.test(asset.executableSha256 ?? '') || !SHA256.test(asset.archiveSha256 ?? '')) {
     invalid(`no exact asset digest is pinned for ${platform}`);

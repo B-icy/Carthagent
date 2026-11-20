@@ -13,7 +13,7 @@ import { prepareManualKit } from '../tools/prepare-native-manual.mjs';
 import { readPinnedOwnedRuntimeInputs } from '../tools/pinned-owned-runtime-inputs.mjs';
 import { fileURLToPath } from 'node:url';
 
-test('manual fixtures have green baselines, red feature acceptance, clean git, and no dependencies', async (t) => {
+test('manual fixtures have green baselines, red feature acceptance, clean git, and no dependencies', async t => {
   const temp = await mkdtemp(join(tmpdir(), 'ctg-manual-projects-'));
   t.after(() => rm(temp, { recursive: true, force: true }));
   const result = await createManualProjects(join(temp, 'projects'), {
@@ -23,26 +23,12 @@ test('manual fixtures have green baselines, red feature acceptance, clean git, a
   delete env.NODE_TEST_CONTEXT;
   for (const name of ['tiny', 'product', 'scale']) {
     const cwd = join(result.root, name);
-    const manifest = JSON.parse(
-      await readFile(join(cwd, 'package.json'), 'utf8'),
-    );
+    const manifest = JSON.parse(await readFile(join(cwd, 'package.json'), 'utf8'));
     assert.equal(manifest.dependencies, undefined);
-    const baseline = spawnSync(
-      process.execPath,
-      ['--test', 'test/*.test.mjs'],
-      { cwd, env, encoding: 'utf8' },
-    );
+    const baseline = spawnSync(process.execPath, ['--test', 'test/*.test.mjs'], { cwd, env, encoding: 'utf8' });
     assert.equal(baseline.status, 0, baseline.stdout + baseline.stderr);
-    const acceptance = spawnSync(
-      process.execPath,
-      ['--test', 'acceptance/*.test.mjs'],
-      { cwd, env, encoding: 'utf8' },
-    );
-    assert.equal(
-      acceptance.status,
-      1,
-      'new-feature acceptance must fail against the baseline',
-    );
+    const acceptance = spawnSync(process.execPath, ['--test', 'acceptance/*.test.mjs'], { cwd, env, encoding: 'utf8' });
+    assert.equal(acceptance.status, 1, 'new-feature acceptance must fail against the baseline');
     const status = spawnSync('git', ['status', '--porcelain'], {
       cwd,
       encoding: 'utf8',
@@ -55,13 +41,10 @@ test('manual fixtures have green baselines, red feature acceptance, clean git, a
   await writeFile(sentinel, 'keep');
   await assert.rejects(createManualProjects(result.root), { code: 'EEXIST' });
   assert.equal(await readFile(sentinel, 'utf8'), 'keep');
-  await assert.rejects(
-    createManualProjects(join(temp, 'invalid'), { packages: 0 }),
-    /integer from 2 to 1024/,
-  );
+  await assert.rejects(createManualProjects(join(temp, 'invalid'), { packages: 0 }), /integer from 2 to 1024/);
 });
 
-test('manual kit preparation refuses existing directories and removes only its own failed staging', async (t) => {
+test('manual kit preparation refuses existing directories and removes only its own failed staging', async t => {
   const temp = await mkdtemp(join(tmpdir(), 'ctg-manual-kit-safety-'));
   t.after(() => rm(temp, { recursive: true, force: true }));
   const sentinel = join(temp, 'keep.txt');
@@ -80,20 +63,13 @@ test('manual kit preparation refuses existing directories and removes only its o
   await writeFile(runtimeManifest, bytes);
   const manifestSha256 = createHash('sha256').update(bytes).digest('hex');
   const missing = join(temp, 'failed-kit');
-  await assert.rejects(
-    prepareManualKit(missing, { assetsDirectory: temp, runtimeManifest, manifestSha256 }),
-    /Could not acquire/,
-  );
+  await assert.rejects(prepareManualKit(missing, { assetsDirectory: temp, runtimeManifest, manifestSha256 }), /Could not acquire/);
   await assert.rejects(readFile(join(missing, 'manual-kit.json')), {
     code: 'ENOENT',
   });
   assert.equal(await readFile(sentinel, 'utf8'), 'keep');
-  await assert.rejects(
-    prepareManualKit(join(temp, 'invalid'), { packages: 0 }),
-    /integer from 2 to 1024/,
-  );
+  await assert.rejects(prepareManualKit(join(temp, 'invalid'), { packages: 0 }), /integer from 2 to 1024/);
 });
-
 
 test('packaged manual kits retain published pins after the development recipe advances', async () => {
   const bytes = await readFile(new URL('../lib/opencode/runtime-release.json', import.meta.url));
@@ -122,7 +98,10 @@ test('explicit manual candidates cannot borrow the packaged-release recipe excep
   manifest.patchSha256 = '0'.repeat(64);
   const bytes = JSON.stringify(manifest);
   await writeFile(runtimeManifest, bytes);
-  await assert.rejects(readManualRuntimeManifest({ runtimeManifest, manifestSha256: createHash('sha256').update(bytes).digest('hex') }), /patchSha256.*build recipe/i);
+  await assert.rejects(
+    readManualRuntimeManifest({ runtimeManifest, manifestSha256: createHash('sha256').update(bytes).digest('hex') }),
+    /patchSha256.*build recipe/i,
+  );
 });
 
 test('manual candidate overrides require an independent digest and reject altered or incompatible manifests', async t => {

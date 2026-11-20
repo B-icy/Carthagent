@@ -16,13 +16,24 @@ function host(overrides = {}) {
   return {
     calls,
     value: {
-      sync: async () => { calls.syncs++; },
+      sync: async () => {
+        calls.syncs++;
+      },
       list: () => [ship, other],
-      select: async (options) => { calls.selects.push(options.map((option) => option.title)); return options[0]?.value; },
-      switchModel: async (sessionID, model) => { calls.switched.push({ sessionID, model }); },
-      openNativePicker: (query) => { calls.native.push(query); },
-      providerName: (id) => (id === 'carthagent-cloud' ? 'Carthagent Ship' : id),
-      toast: (message, variant) => { calls.toasts.push({ message, variant }); },
+      select: async options => {
+        calls.selects.push(options.map(option => option.title));
+        return options[0]?.value;
+      },
+      switchModel: async (sessionID, model) => {
+        calls.switched.push({ sessionID, model });
+      },
+      openNativePicker: query => {
+        calls.native.push(query);
+      },
+      providerName: id => (id === 'carthagent-cloud' ? 'Carthagent Ship' : id),
+      toast: (message, variant) => {
+        calls.toasts.push({ message, variant });
+      },
       ...overrides,
     },
   };
@@ -38,7 +49,10 @@ test('pre-session /model opens the native configured-model picker with its argum
   for (const run of [bare, named]) {
     assert.deepEqual(run.calls.switched, []);
     assert.deepEqual(run.calls.selects, []);
-    assert.equal(run.calls.toasts.some((toast) => /Open or create a session/.test(toast.message)), false);
+    assert.equal(
+      run.calls.toasts.some(toast => /Open or create a session/.test(toast.message)),
+      false,
+    );
   }
 });
 

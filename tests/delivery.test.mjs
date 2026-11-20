@@ -4,7 +4,27 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync, utimesSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { checkDigest, fingerprint, validatePlan, planD2, pendingChecks, restoreState, runCommand, shouldContinue, localPath, createSerialQueue, validateRevision, turnBudgetExceeded, maxEvidenceFiles, maxEvidenceBytes, bindRequiredChecks, verificationMode, looksInformational, computePhase, revisePlan } from '../lib/delivery.mjs';
+import {
+  checkDigest,
+  fingerprint,
+  validatePlan,
+  planD2,
+  pendingChecks,
+  restoreState,
+  runCommand,
+  shouldContinue,
+  localPath,
+  createSerialQueue,
+  validateRevision,
+  turnBudgetExceeded,
+  maxEvidenceFiles,
+  maxEvidenceBytes,
+  bindRequiredChecks,
+  verificationMode,
+  looksInformational,
+  computePhase,
+  revisePlan,
+} from '../lib/delivery.mjs';
 import { createReport, latestReport, saveReport, reconcileReport } from '../lib/reports.mjs';
 
 function fixture(t) {
@@ -13,28 +33,51 @@ function fixture(t) {
   writeFileSync(join(cwd, 'app.py'), 'print(1)');
   return cwd;
 }
-function plan() { return { goal: 'Working app', assumptions: [], artifacts: ['app.py'], steps: ['Launch', 'Implement and test'], acceptance: [{ requirement: 'Runs', checks: ['smoke'] }], checks: [{ id: 'smoke', kind: 'runtime', argv: [process.execPath, '-e', 'console.log("ok")'], timeoutSeconds: 2 }] }; }
+function plan() {
+  return {
+    goal: 'Working app',
+    assumptions: [],
+    artifacts: ['app.py'],
+    steps: ['Launch', 'Implement and test'],
+    acceptance: [{ requirement: 'Runs', checks: ['smoke'] }],
+    checks: [{ id: 'smoke', kind: 'runtime', argv: [process.execPath, '-e', 'console.log("ok")'], timeoutSeconds: 2 }],
+  };
+}
 
 test('contract validates mapping, IDs, deadlines and meaningful checks', t => {
   const cwd = fixture(t);
   assert.deepEqual(validatePlan(plan(), cwd), plan());
-  for (const mutate of [p => p.acceptance[0].checks.push('missing'), p => p.checks.push(p.checks[0]), p => p.checks[0].timeoutSeconds = 0, p => p.checks[0].kind = 'static', p => p.artifacts = ['../outside']]) {
-    const p = plan(); mutate(p); assert.throws(() => validatePlan(p, cwd));
+  for (const mutate of [
+    p => p.acceptance[0].checks.push('missing'),
+    p => p.checks.push(p.checks[0]),
+    p => (p.checks[0].timeoutSeconds = 0),
+    p => (p.checks[0].kind = 'static'),
+    p => (p.artifacts = ['../outside']),
+  ]) {
+    const p = plan();
+    mutate(p);
+    assert.throws(() => validatePlan(p, cwd));
   }
 });
 test('D2 escapes arbitrary labels and records repair loop', () => {
-  const p = plan(); p.steps[0] = 'Quoted "value"\nand newline';
+  const p = plan();
+  p.steps[0] = 'Quoted "value"\nand newline';
   const d2 = planD2(p);
-  assert.ok(d2.includes('\\"value\\"\\nand newline')); assert.ok(d2.includes('repair -> verify'));
+  assert.ok(d2.includes('\\"value\\"\\nand newline'));
+  assert.ok(d2.includes('repair -> verify'));
 });
 test('fingerprints detect edits, additions and deletion; ignore generated evidence', t => {
-  const cwd = fixture(t), initial = fingerprint(cwd, ['.']);
-  mkdirSync(join(cwd, 'artifacts')); writeFileSync(join(cwd, 'artifacts', 'frame.png'), 'frame');
+  const cwd = fixture(t),
+    initial = fingerprint(cwd, ['.']);
+  mkdirSync(join(cwd, 'artifacts'));
+  writeFileSync(join(cwd, 'artifacts', 'frame.png'), 'frame');
   assert.equal(fingerprint(cwd, ['.']), initial);
   writeFileSync(join(cwd, 'test.py'), 'assert True');
   assert.notEqual(fingerprint(cwd, ['.']), initial);
-  rmSync(join(cwd, 'test.py')); assert.equal(fingerprint(cwd, ['.']), initial);
-  writeFileSync(join(cwd, 'app.py'), 'print(2)'); assert.notEqual(fingerprint(cwd, ['.']), initial);
+  rmSync(join(cwd, 'test.py'));
+  assert.equal(fingerprint(cwd, ['.']), initial);
+  writeFileSync(join(cwd, 'app.py'), 'print(2)');
+  assert.notEqual(fingerprint(cwd, ['.']), initial);
 });
 test('fingerprints ignore git-ignored build output (tsbuildinfo, .next-style dirs) but not tracked or untracked source', t => {
   const cwd = fixture(t);
@@ -44,18 +87,24 @@ test('fingerprints ignore git-ignored build output (tsbuildinfo, .next-style dir
   // `tsc` / `next build` rewrite these on every run; they must not invalidate evidence.
   writeFileSync(join(cwd, 'tsconfig.tsbuildinfo'), String(Math.random()));
   writeFileSync(join(cwd, 'next-env.d.ts'), '/// <reference types="next" />');
-  mkdirSync(join(cwd, 'out-cache')); writeFileSync(join(cwd, 'out-cache', 'BUILD_ID'), String(Math.random()));
+  mkdirSync(join(cwd, 'out-cache'));
+  writeFileSync(join(cwd, 'out-cache', 'BUILD_ID'), String(Math.random()));
   assert.equal(fingerprint(cwd, ['.']), initial);
   // Untracked (not ignored) source still counts, as do edits and the .gitignore itself.
-  writeFileSync(join(cwd, 'new.py'), 'x = 1'); assert.notEqual(fingerprint(cwd, ['.']), initial);
-  rmSync(join(cwd, 'new.py')); assert.equal(fingerprint(cwd, ['.']), initial);
-  writeFileSync(join(cwd, 'app.py'), 'print(2)'); assert.notEqual(fingerprint(cwd, ['.']), initial);
+  writeFileSync(join(cwd, 'new.py'), 'x = 1');
+  assert.notEqual(fingerprint(cwd, ['.']), initial);
+  rmSync(join(cwd, 'new.py'));
+  assert.equal(fingerprint(cwd, ['.']), initial);
+  writeFileSync(join(cwd, 'app.py'), 'print(2)');
+  assert.notEqual(fingerprint(cwd, ['.']), initial);
   writeFileSync(join(cwd, 'app.py'), 'print(1)');
   writeFileSync(join(cwd, '.gitignore'), '*.tsbuildinfo\nnext-env.d.ts\n/out-cache/\n.env*\n');
   const withEnvIgnored = fingerprint(cwd, ['.']);
   // Ignored dotenv files still change what checks see.
-  writeFileSync(join(cwd, '.env.test'), 'MODE=a'); assert.notEqual(fingerprint(cwd, ['.']), withEnvIgnored);
-  writeFileSync(join(cwd, '.gitignore'), '*.tsbuildinfo\n'); assert.notEqual(fingerprint(cwd, ['.']), initial);
+  writeFileSync(join(cwd, '.env.test'), 'MODE=a');
+  assert.notEqual(fingerprint(cwd, ['.']), withEnvIgnored);
+  writeFileSync(join(cwd, '.gitignore'), '*.tsbuildinfo\n');
+  assert.notEqual(fingerprint(cwd, ['.']), initial);
 });
 test('evidence cannot pass on missing, failed or stale checks', () => {
   const state = { runId: 'run-a', revision: 1, plan: plan(), evidence: {} };
@@ -81,24 +130,37 @@ test('evidence cannot pass on missing, failed or stale checks', () => {
     assert.deepEqual(pendingChecks(state, 'new'), ['smoke']);
   }
   state.plan.checks[0] = original;
-  state.evidence.smoke.passed = false; assert.deepEqual(pendingChecks(state, 'new'), ['smoke']);
+  state.evidence.smoke.passed = false;
+  assert.deepEqual(pendingChecks(state, 'new'), ['smoke']);
 });
 test('branch restoration only uses provided active-branch entries and clones state', () => {
   const entry = { type: 'custom', customType: 'delivery-state-v1', data: { status: 'implementing' } };
   assert.equal(restoreState([]), null);
   const restored = restoreState([entry, { type: 'message' }]);
-  restored.status = 'verified'; assert.equal(entry.data.status, 'implementing');
+  restored.status = 'verified';
+  assert.equal(entry.data.status, 'implementing');
 });
 test('follow-ups are bounded and respect abort, errors, blocking and user queues', () => {
   const args = { state: null, touched: true, nudges: 0, stopReason: 'stop', pendingMessages: false, fresh: false };
   assert.equal(shouldContinue(args), true);
-  for (const change of [{ nudges: 2 }, { stopReason: 'aborted' }, { stopReason: 'error' }, { pendingMessages: true }, { touched: false }, { state: { status: 'blocked' } }, { state: { status: 'verified' }, fresh: true }]) assert.equal(shouldContinue({ ...args, ...change }), false);
+  for (const change of [
+    { nudges: 2 },
+    { stopReason: 'aborted' },
+    { stopReason: 'error' },
+    { pendingMessages: true },
+    { touched: false },
+    { state: { status: 'blocked' } },
+    { state: { status: 'verified' }, fresh: true },
+  ])
+    assert.equal(shouldContinue({ ...args, ...change }), false);
   assert.equal(shouldContinue({ ...args, state: { status: 'verified' }, fresh: false }), true);
 });
 test('argv execution captures output without shell expansion, including spaces', async t => {
-  const cwd = fixture(t), logPath = join(cwd, '.harness', 'ok.log');
+  const cwd = fixture(t),
+    logPath = join(cwd, '.harness', 'ok.log');
   const result = await runCommand([process.execPath, '-e', 'console.log(process.argv[1])', 'literal $HOME ; echo bad'], { cwd, logPath });
-  assert.equal(result.code, 0); assert.match(result.output, /literal \$HOME ; echo bad/);
+  assert.equal(result.code, 0);
+  assert.match(result.output, /literal \$HOME ; echo bad/);
   assert.match(readFileSync(logPath, 'utf8'), /literal/);
 });
 test('runCommand strips runtime transport tokens case-insensitively without mutating parent env', async t => {
@@ -121,19 +183,24 @@ test('runCommand strips runtime transport tokens case-insensitively without muta
   const result = await runCommand([process.execPath, '-e', script], { cwd });
   assert.equal(result.code, 0);
   assert.deepEqual(JSON.parse(result.output.trim()), { tokensAbsent: true, preserved: true });
-  assert.deepEqual(tokenKeys.map(key => process.env[key]), tokenKeys.map(key => 'test-only-marker'));
+  assert.deepEqual(
+    tokenKeys.map(key => process.env[key]),
+    tokenKeys.map(key => 'test-only-marker'),
+  );
 });
 test('nonzero exit and missing executable cannot be successful', async t => {
   const cwd = fixture(t);
   const fail = await runCommand([process.execPath, '-e', 'process.exit(7)'], { cwd, logPath: join(cwd, 'fail.log') });
   assert.equal(fail.code, 7);
   const missing = await runCommand(['definitely-no-such-delivery-command'], { cwd, logPath: join(cwd, 'missing.log') });
-  assert.notEqual(missing.code, 0); assert.match(missing.output, /ENOENT/);
+  assert.notEqual(missing.code, 0);
+  assert.match(missing.output, /ENOENT/);
 });
 test('timeout terminates long-lived check; cancellation before launch is cheap', async t => {
   const cwd = fixture(t);
-  const result = await runCommand([process.execPath, '-e', 'setInterval(()=>{},1000)'], { cwd, timeoutSeconds: .15, logPath: join(cwd, 'timeout.log') });
-  assert.equal(result.timedOut, true); assert.notEqual(result.code, 0);
+  const result = await runCommand([process.execPath, '-e', 'setInterval(()=>{},1000)'], { cwd, timeoutSeconds: 0.15, logPath: join(cwd, 'timeout.log') });
+  assert.equal(result.timedOut, true);
+  assert.notEqual(result.code, 0);
   const signal = AbortSignal.abort();
   const cancelled = await runCommand(['never-launched'], { cwd, signal, logPath: join(cwd, 'cancel.log') });
   assert.equal(cancelled.cancelled, true);
@@ -141,26 +208,42 @@ test('timeout terminates long-lived check; cancellation before launch is cheap',
 test('generated-only scopes cannot create empty fingerprints as evidence', t => {
   const cwd = fixture(t);
   for (const root of ['artifacts/', './artifacts', '.harness', '.venv', 'nested/node_modules']) {
-    const p = plan(); p.artifacts = [root];
+    const p = plan();
+    p.artifacts = [root];
     assert.throws(() => validatePlan(p, cwd), /Artifact roots/);
   }
 });
 test('replanning cannot silently drop requirements', () => {
   const previous = { plan: plan(), status: 'verifying' };
-  const next = plan(); next.acceptance = [{ requirement: 'A weaker requirement', checks: ['smoke'] }];
+  const next = plan();
+  next.acceptance = [{ requirement: 'A weaker requirement', checks: ['smoke'] }];
   assert.throws(() => validateRevision(previous, next), /remove acceptance/);
   assert.doesNotThrow(() => validateRevision(previous, plan()));
 });
 test('parallel delivery operations serialize and recover after failure', async () => {
-  const enqueue = createSerialQueue(), order = [];
-  const a = enqueue(async () => { order.push('a-start'); await new Promise(r => setTimeout(r, 15)); order.push('a-end'); });
-  const b = enqueue(async () => { order.push('b'); throw Error('expected'); });
-  const c = enqueue(async () => { order.push('c'); return 7; });
-  await a; await assert.rejects(b, /expected/); assert.equal(await c, 7);
+  const enqueue = createSerialQueue(),
+    order = [];
+  const a = enqueue(async () => {
+    order.push('a-start');
+    await new Promise(r => setTimeout(r, 15));
+    order.push('a-end');
+  });
+  const b = enqueue(async () => {
+    order.push('b');
+    throw Error('expected');
+  });
+  const c = enqueue(async () => {
+    order.push('c');
+    return 7;
+  });
+  await a;
+  await assert.rejects(b, /expected/);
+  assert.equal(await c, 7);
   assert.deepEqual(order, ['a-start', 'a-end', 'b', 'c']);
 });
 test('local path boundary is not fooled by sibling prefixes', t => {
-  const cwd = fixture(t); assert.throws(() => localPath(cwd, cwd + '-sibling/file'));
+  const cwd = fixture(t);
+  assert.throws(() => localPath(cwd, cwd + '-sibling/file'));
   assert.equal(localPath(cwd, '@app.py'), join(cwd, 'app.py'));
 });
 test('provider errors do not consume the productive turn budget', () => {
@@ -174,7 +257,11 @@ test('provider errors do not consume the productive turn budget', () => {
   assert.equal(turnBudgetExceeded({ turns: 10, providerErrors: 13, maxTurns: 90 }), false);
   assert.equal(turnBudgetExceeded({ turns: 0, providerErrors: 0, maxTurns: 0 }), false);
   assert.equal(turnBudgetExceeded({ turns: 1, providerErrors: 0, maxTurns: 0 }), true);
-  for (const bad of [{ turns: 1.5, providerErrors: 0, maxTurns: 1 }, { turns: 1, providerErrors: -1, maxTurns: 1 }, { turns: 1, providerErrors: 0, maxTurns: -1 }])
+  for (const bad of [
+    { turns: 1.5, providerErrors: 0, maxTurns: 1 },
+    { turns: 1, providerErrors: -1, maxTurns: 1 },
+    { turns: 1, providerErrors: 0, maxTurns: -1 },
+  ])
     assert.throws(() => turnBudgetExceeded(bad));
 });
 test('runCommand works without a log path', async t => {
@@ -235,10 +322,19 @@ test('simultaneous subprocess report writers cannot overwrite each other', async
   const report = createReport(cwd, { status: 'implementing', evidence: {} });
   const moduleUrl = new URL('../lib/reports.mjs', import.meta.url).href;
   const snapshot = JSON.stringify(report.state);
-  const results = await Promise.all(['one', 'two'].map(review => runCommand([
-    process.execPath, '--input-type=module', '-e',
-    `import {saveReport} from ${JSON.stringify(moduleUrl)}; const state = ${snapshot}; state.review = ${JSON.stringify(review)}; saveReport(${JSON.stringify(report.path)}, state);`
-  ], { cwd, timeoutSeconds: 10 })));
+  const results = await Promise.all(
+    ['one', 'two'].map(review =>
+      runCommand(
+        [
+          process.execPath,
+          '--input-type=module',
+          '-e',
+          `import {saveReport} from ${JSON.stringify(moduleUrl)}; const state = ${snapshot}; state.review = ${JSON.stringify(review)}; saveReport(${JSON.stringify(report.path)}, state);`,
+        ],
+        { cwd, timeoutSeconds: 10 },
+      ),
+    ),
+  );
   assert.equal(results.filter(result => result.code === 0).length, 1);
   assert.match(results.find(result => result.code !== 0).output, /write conflict|Report is locked/);
   const saved = JSON.parse(readFileSync(report.path));
@@ -310,7 +406,9 @@ test('verification classification: none/advisory rules keep required strict', t 
 
 test('required validators force strict verification and cannot be downgraded away', () => {
   const informative = { goal: 'Q', artifacts: ['.'], steps: ['Answer'], verification: 'none', acceptance: [], checks: [] };
-  const bound = bindRequiredChecks(informative, [{ id: 'required_oracle', kind: 'test', argv: [process.execPath, '-e', 'process.exit(0)'], timeoutSeconds: 5 }]);
+  const bound = bindRequiredChecks(informative, [
+    { id: 'required_oracle', kind: 'test', argv: [process.execPath, '-e', 'process.exit(0)'], timeoutSeconds: 5 },
+  ]);
   assert.equal(bound.verification, 'required');
   assert.equal(bound.checks.length, 1);
   assert.equal(bound.acceptance.length, 1);
@@ -343,7 +441,8 @@ test('looksInformational recognizes scoped and read-only-constrained questions f
     'For the api package: where is the retry configured?',
     'Which of the tests in parse.test.mjs currently fail, and why? Just tell me, I will fix them myself.',
     "Why does startup crash on Node 22? I'll fix it myself later.",
-  ]) assert.equal(looksInformational(text), true, text);
+  ])
+    assert.equal(looksInformational(text), true, text);
   for (const text of [
     'In invest-with-friends, add a test for normalizeMarketSymbol.',
     'In the api package, fix the retry bug. Answer with a summary.',
@@ -351,7 +450,8 @@ test('looksInformational recognizes scoped and read-only-constrained questions f
     'Which file defines X? Then update it to use Y.',
     'Fix the failing parse tests. I will review them myself.',
     'Tell me why it fails, then fix it.',
-  ]) assert.equal(looksInformational(text), false, text);
+  ])
+    assert.equal(looksInformational(text), false, text);
 });
 
 test('looksInformational recognizes read-only asks but not build tasks', () => {
@@ -373,7 +473,10 @@ test('informational plans are terminal and skip repair nudges', () => {
 test('computePhase treats persisted verifying with fresh evidence as ready for review', () => {
   const p = plan();
   const state = {
-    runId: 'run-a', revision: 1, plan: p, status: 'verifying',
+    runId: 'run-a',
+    revision: 1,
+    plan: p,
+    status: 'verifying',
     evidence: { smoke: { runId: 'run-a', revision: 1, passed: true, fingerprint: 'h', checkDigest: checkDigest(p.checks[0]) } },
   };
   assert.deepEqual(pendingChecks(state, 'h'), []);
@@ -410,14 +513,24 @@ test('plan paths in a monorepo package must be workspace-relative', () => {
   try {
     mkdirSync(join(root, 'packages', 'api', 'src'), { recursive: true });
     const cwd = join(root, 'packages', 'api');
-    const plan = extra => ({ goal: 'Add statuses', assumptions: [], steps: [{ id: 'build', title: 'Build' }], acceptance: [{ requirement: 'Statuses map', checks: ['unit'] }], checks: [{ id: 'unit', kind: 'test', argv: ['node', '--test'], timeoutSeconds: 60 }], artifacts: ['.'], ...extra });
+    const plan = extra => ({
+      goal: 'Add statuses',
+      assumptions: [],
+      steps: [{ id: 'build', title: 'Build' }],
+      acceptance: [{ requirement: 'Statuses map', checks: ['unit'] }],
+      checks: [{ id: 'unit', kind: 'test', argv: ['node', '--test'], timeoutSeconds: 60 }],
+      artifacts: ['.'],
+      ...extra,
+    });
     // Repository-root paths can never exist from this workspace; say which path to use.
     assert.throws(() => validatePlan(plan({ outputs: ['packages/api/status.mjs'] }), cwd, { strictPaths: true }), /use "status\.mjs"/);
     assert.throws(() => validatePlan(plan({ artifacts: ['packages/api'] }), cwd, { strictPaths: true }), /use "\."/);
     // Prose deliverables are not paths; completion would require them to exist on disk.
     assert.throws(() => validatePlan(plan({ artifacts: ['Updated status.mjs with 201 mappings'] }), cwd, { strictPaths: true }), /description, not a path/);
     // Genuine new files and directories stay valid.
-    assert.doesNotThrow(() => validatePlan(plan({ artifacts: ['src', 'docs/guide.md'], outputs: ['src/new.mjs', 'status.test.mjs'] }), cwd, { strictPaths: true }));
+    assert.doesNotThrow(() =>
+      validatePlan(plan({ artifacts: ['src', 'docs/guide.md'], outputs: ['src/new.mjs', 'status.test.mjs'] }), cwd, { strictPaths: true }),
+    );
     // Saved reports from older plans still load.
     assert.doesNotThrow(() => validatePlan(plan({ outputs: ['packages/api/status.mjs'] }), cwd));
     // A stuck plan can be corrected: replacing the root-relative output is not dropping it.
@@ -425,7 +538,9 @@ test('plan paths in a monorepo package must be workspace-relative', () => {
     const next = revisePlan(previous, { outputs: ['status.mjs'] }, { cwd, reason: 'workspace-relative paths', hash: 'h' });
     assert.deepEqual(next.plan.outputs, ['status.mjs']);
     assert.throws(() => revisePlan(previous, { outputs: ['other.mjs'] }, { cwd, reason: 'drop', hash: 'h' }), /cannot silently remove promised outputs/);
-  } finally { rmSync(root, { recursive: true, force: true }); }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('workspace path hints do not reject legitimate new paths', () => {
@@ -433,13 +548,30 @@ test('workspace path hints do not reject legitimate new paths', () => {
   try {
     const cwd = join(root, 'mylib');
     mkdirSync(cwd, { recursive: true });
-    const plan = extra => ({ goal: 'g', assumptions: [], steps: [{ id: 'a', title: 't' }], acceptance: [{ requirement: 'r', checks: ['c'] }], checks: [{ id: 'c', kind: 'test', argv: ['node', '--test'], timeoutSeconds: 60 }], artifacts: ['.'], ...extra });
+    const plan = extra => ({
+      goal: 'g',
+      assumptions: [],
+      steps: [{ id: 'a', title: 't' }],
+      acceptance: [{ requirement: 'r', checks: ['c'] }],
+      checks: [{ id: 'c', kind: 'test', argv: ['node', '--test'], timeoutSeconds: 60 }],
+      artifacts: ['.'],
+      ...extra,
+    });
     // A package directory named like the workspace is a real new path.
     assert.doesNotThrow(() => validatePlan(plan({ artifacts: ['mylib', 'mylib/__init__.py'], outputs: ['mylib/__init__.py'] }), cwd, { strictPaths: true }));
     // File names with spaces are paths, not prose.
     assert.doesNotThrow(() => validatePlan(plan({ artifacts: ['docs/Release Notes 2026.md'] }), cwd, { strictPaths: true }));
     // Revising one field does not re-judge an untouched legacy field.
-    const previous = { runId: 'r', revision: 1, status: 'implementing', evidence: {}, stepStatus: {}, plan: plan({ artifacts: ['New parser module with tests'] }) };
+    const previous = {
+      runId: 'r',
+      revision: 1,
+      status: 'implementing',
+      evidence: {},
+      stepStatus: {},
+      plan: plan({ artifacts: ['New parser module with tests'] }),
+    };
     assert.doesNotThrow(() => revisePlan(previous, { outputs: ['parser.mjs'] }, { cwd, reason: 'add output', hash: 'h' }));
-  } finally { rmSync(root, { recursive: true, force: true }); }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

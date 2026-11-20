@@ -39,9 +39,7 @@ export async function verifyOwnedRuntimeRelease({
   validateRuntimeReleaseManifest(manifest, releaseVersion);
   await validateRuntimeBuildInputs(manifest, path.resolve(repoRoot ?? process.cwd()));
   const acquireOwnedRuntime = acquireRuntime ?? (await import('../lib/opencode/runtime-artifact.mjs')).acquireOwnedRuntime;
-  const runtimeFetch = runtimeToken
-    ? createRuntimeGithubFetch({ token: runtimeToken, fetchImpl: fetchImpl ?? globalThis.fetch })
-    : fetchImpl;
+  const runtimeFetch = runtimeToken ? createRuntimeGithubFetch({ token: runtimeToken, fetchImpl: fetchImpl ?? globalThis.fetch }) : fetchImpl;
 
   for (const [key, [platform, arch, name]] of Object.entries(REQUIRED_RUNTIME_TARGETS)) {
     const asset = manifest.assets[key];

@@ -4,9 +4,16 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  REVIEW_MODES, normalizeReviewMode, resolveReviewMode,
-  loadCarthagentConfig, saveCarthagentConfig, resolveStickyDefaults, shouldOfferReview,
-  reviewKickoff, reviewerPrompt, parseVerdict,
+  REVIEW_MODES,
+  normalizeReviewMode,
+  resolveReviewMode,
+  loadCarthagentConfig,
+  saveCarthagentConfig,
+  resolveStickyDefaults,
+  shouldOfferReview,
+  reviewKickoff,
+  reviewerPrompt,
+  parseVerdict,
 } from '../lib/review.mjs';
 
 function configFixture(t) {
@@ -17,7 +24,15 @@ function configFixture(t) {
 
 test('review modes normalize strictly to ask|yes|no', () => {
   assert.deepEqual(REVIEW_MODES, ['ask', 'yes', 'no']);
-  for (const [input, expected] of [['ask', 'ask'], [' YES ', 'yes'], ['No', 'no'], ['', null], ['always', null], [undefined, null], [42, null]]) {
+  for (const [input, expected] of [
+    ['ask', 'ask'],
+    [' YES ', 'yes'],
+    ['No', 'no'],
+    ['', null],
+    ['always', null],
+    [undefined, null],
+    [42, null],
+  ]) {
     assert.equal(normalizeReviewMode(input), expected, JSON.stringify(input));
   }
 });

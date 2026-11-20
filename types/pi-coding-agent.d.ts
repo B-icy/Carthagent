@@ -6,10 +6,7 @@
 declare module '@earendil-works/pi-coding-agent' {
   export const CONFIG_DIR_NAME: string;
   export function getAgentDir(): string;
-  export function truncateTail(
-    text: string,
-    options: { maxBytes?: number; maxLines?: number }
-  ): { content: string; truncated: boolean };
+  export function truncateTail(text: string, options: { maxBytes?: number; maxLines?: number }): { content: string; truncated: boolean };
 
   export interface ExtensionFlag {
     description: string;

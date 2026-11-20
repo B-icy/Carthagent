@@ -12,15 +12,23 @@ import { selectReport } from '../lib/workspace.mjs';
 const { createJiti } = createRequire(import.meta.url)('jiti');
 const jiti = createJiti(import.meta.url);
 const { DailySource } = await jiti.import('../plugins/carthagent/src/daily-source-rpc.ts');
-const { createDailySourceRpcHandlers, registerDailySourceRpc, verifiedRewardSource } = await jiti.import('../plugins/carthagent/src/server/daily-source-rpc.ts');
+const { createDailySourceRpcHandlers, registerDailySourceRpc, verifiedRewardSource } = await jiti.import(
+  '../plugins/carthagent/src/server/daily-source-rpc.ts',
+);
 const { createVoyagesRpcHandlers } = await jiti.import('../plugins/carthagent/src/server/voyages-rpc.ts');
-const call = { signal: new AbortController().signal, error(type, message, data) { throw Object.assign(new Error(message), { type, data }); } };
-const rejected = (promise, code) => assert.rejects(promise, error => {
-  assert.equal(error.type, 'dailySourceError');
-  assert.equal(error.message, code);
-  assert.deepEqual(error.data, { code });
-  return true;
-});
+const call = {
+  signal: new AbortController().signal,
+  error(type, message, data) {
+    throw Object.assign(new Error(message), { type, data });
+  },
+};
+const rejected = (promise, code) =>
+  assert.rejects(promise, error => {
+    assert.equal(error.type, 'dailySourceError');
+    assert.equal(error.message, code);
+    assert.deepEqual(error.data, { code });
+    return true;
+  });
 const check = id => ({ id, kind: 'test', argv: ['never-execute-this', 'sensitive-argv'], timeoutSeconds: 20 });
 
 function fixture(t, checks = [check('unit')]) {
@@ -28,40 +36,98 @@ function fixture(t, checks = [check('unit')]) {
   // aliases such as macOS /var -> /private/var, distinct from linked leaves.
   const base = realpathSync(mkdtempSync(join(tmpdir(), 'daily-source-')));
   t.after(() => rmSync(base, { recursive: true, force: true }));
-  const root = join(base, 'project'); mkdirSync(root);
+  const root = join(base, 'project');
+  mkdirSync(root);
   writeFileSync(join(root, 'source.txt'), 'actual source');
   const sessionID = 'native-session';
   const current = fingerprint(root, ['.']);
   const plan = {
-    goal: 'Actual plan goal', artifacts: ['.'], steps: ['Implement'],
-    acceptance: [{ requirement: 'Actual requirement', checks: checks.map(item => item.id) }], checks,
+    goal: 'Actual plan goal',
+    artifacts: ['.'],
+    steps: ['Implement'],
+    acceptance: [{ requirement: 'Actual requirement', checks: checks.map(item => item.id) }],
+    checks,
   };
   const state = { runId: 'native-run', revision: 3, status: 'implementing', plan, evidence: {} };
   const session = { id: sessionID, projectID: 'native-project', location: { directory: root } };
   const nativeWorktrees = [];
   const sessions = new Map([[sessionID, session]]);
-  let registrations = 0, disposed = 0;
+  let registrations = 0,
+    disposed = 0;
   const ctx = {
     location: { directory: root, project: { id: 'native-project', canonical: root } },
-    session: { async get({ sessionID: id }, { signal }) { signal.throwIfAborted(); const found = sessions.get(id); if (!found) throw new Error(`private path ${root}`); return found; } },
-    worktree: { async list({ projectID }, { signal }) { assert.equal(projectID, 'native-project'); signal.throwIfAborted(); return nativeWorktrees.map(directory => ({ directory })); } },
-    rpc: { async register(definition, handlers) { registrations++; assert.equal(definition.id, DailySource.id); assert.deepEqual(Object.keys(handlers), ['report']); return { async dispose() { disposed++; } }; } },
+    session: {
+      async get({ sessionID: id }, { signal }) {
+        signal.throwIfAborted();
+        const found = sessions.get(id);
+        if (!found) throw new Error(`private path ${root}`);
+        return found;
+      },
+    },
+    worktree: {
+      async list({ projectID }, { signal }) {
+        assert.equal(projectID, 'native-project');
+        signal.throwIfAborted();
+        return nativeWorktrees.map(directory => ({ directory }));
+      },
+    },
+    rpc: {
+      async register(definition, handlers) {
+        registrations++;
+        assert.equal(definition.id, DailySource.id);
+        assert.deepEqual(Object.keys(handlers), ['report']);
+        return {
+          async dispose() {
+            disposed++;
+          },
+        };
+      },
+    },
     // Any attempt to look up credentials, transcripts or write storage must fail.
-    get integration() { throw new Error('must not access credentials'); },
-    get storage() { throw new Error('must not access storage'); },
+    get integration() {
+      throw new Error('must not access credentials');
+    },
+    get storage() {
+      throw new Error('must not access storage');
+    },
   };
   const report = createReport(root, state, sessionID);
   selectReport(root, report.path);
   const save = () => writeFileSync(report.path, JSON.stringify(state));
   const receipt = (id = checks[0].id, overrides = {}) => ({
-    passed: true, runId: state.runId, revision: state.revision, executedRevision: state.revision,
-    checkDigest: checkDigest(checks.find(item => item.id === id)), fingerprint: current,
-    code: 0, timedOut: false, cancelled: false, changedDuringCheck: false, durationMs: 9,
-    outputTail: 'actual bounded output tail', logPath: join(base, 'must-not-read.log'), ...overrides,
+    passed: true,
+    runId: state.runId,
+    revision: state.revision,
+    executedRevision: state.revision,
+    checkDigest: checkDigest(checks.find(item => item.id === id)),
+    fingerprint: current,
+    code: 0,
+    timedOut: false,
+    cancelled: false,
+    changedDuringCheck: false,
+    durationMs: 9,
+    outputTail: 'actual bounded output tail',
+    logPath: join(base, 'must-not-read.log'),
+    ...overrides,
   });
   const handlers = createDailySourceRpcHandlers(ctx);
-  return { base, root, current, sessionID, session, sessions, ctx, state, report, save, receipt, nativeWorktrees, handlers,
-    read: () => handlers.report({ sessionID }, call), counts: () => ({ registrations, disposed }) };
+  return {
+    base,
+    root,
+    current,
+    sessionID,
+    session,
+    sessions,
+    ctx,
+    state,
+    report,
+    save,
+    receipt,
+    nativeWorktrees,
+    handlers,
+    read: () => handlers.report({ sessionID }, call),
+    counts: () => ({ registrations, disposed }),
+  };
 }
 
 test('local source uses actual receipt identity, actual goal, no synthetic before/change or log imports', async t => {
@@ -74,16 +140,25 @@ test('local source uses actual receipt identity, actual goal, no synthetic befor
   f.save();
   const { source } = await f.read();
   assert.deepEqual(source, {
-    runId: 'native-run', revision: f.current, planRevision: 3, freshness: 'current', goal: 'Actual plan goal', change: '',
+    runId: 'native-run',
+    revision: f.current,
+    planRevision: 3,
+    freshness: 'current',
+    goal: 'Actual plan goal',
+    change: '',
     checks: [
       { id: 'unit', before: 'not_run', after: 'passed', revision: f.current, result: 'actual bounded output tail' },
       { id: 'missing', before: 'not_run', after: 'not_run', revision: f.current, result: '' },
       { id: 'failure', before: 'not_run', after: 'failed', revision: f.current, result: 'actual failing assertion' },
-    ], findings: [], truncated: false,
+    ],
+    findings: [],
+    truncated: false,
   });
-  for (const forbidden of ['sensitive-argv', 'logPath', f.root, 'must-not-return', 'not a change summary']) assert.equal(JSON.stringify(source).includes(forbidden), false);
+  for (const forbidden of ['sensitive-argv', 'logPath', f.root, 'must-not-return', 'not a change summary'])
+    assert.equal(JSON.stringify(source).includes(forbidden), false);
   // The current receipt overwrites prior outcomes. Never invent a historical failure.
-  f.state.evidence.failure = f.receipt('failure'); f.save();
+  f.state.evidence.failure = f.receipt('failure');
+  f.save();
   assert.equal((await f.read()).source.checks[2].before, 'not_run');
   assert.equal((await f.read()).source.checks[2].after, 'passed');
 });
@@ -101,52 +176,131 @@ test('reward source requires a fresh required verified finish and only exports b
   assert.match(source.projectId, /^[a-f0-9]{64}$/);
   assert.match(source.reviewDigest, /^[a-f0-9]{64}$/);
   assert.deepEqual(source.checks, [{ digest: checkDigest(f.state.plan.checks[0]), snapshot: f.current, passed: true }]);
-  for (const privateText of [f.root, 'sensitive-argv', 'actual bounded output tail', 'Actual plan goal']) assert.equal(JSON.stringify(source).includes(privateText), false);
+  for (const privateText of [f.root, 'sensitive-argv', 'actual bounded output tail', 'Actual plan goal'])
+    assert.equal(JSON.stringify(source).includes(privateText), false);
   const original = structuredClone(f.state);
   for (const mutate of [
-    state => { state.status = 'blocked'; }, state => { state.plan.verification = 'advisory'; },
-    state => { state.handoff.advisory = true; }, state => { state.handoff.fingerprint = '0'.repeat(64); },
-    state => { delete state.reviewEvidence; }, state => { state.reviewFindings = [{ id: 'gap', description: 'unresolved' }]; },
-    state => { state.evidence.unit.code = 1; }, state => { state.evidence.unit.timedOut = true; },
-    state => { state.evidence.unit.revision--; }, state => { state.plan.outputs = ['missing.txt']; },
-    state => { state.stepStatus = { step0: 'pending' }; },
+    state => {
+      state.status = 'blocked';
+    },
+    state => {
+      state.plan.verification = 'advisory';
+    },
+    state => {
+      state.handoff.advisory = true;
+    },
+    state => {
+      state.handoff.fingerprint = '0'.repeat(64);
+    },
+    state => {
+      delete state.reviewEvidence;
+    },
+    state => {
+      state.reviewFindings = [{ id: 'gap', description: 'unresolved' }];
+    },
+    state => {
+      state.evidence.unit.code = 1;
+    },
+    state => {
+      state.evidence.unit.timedOut = true;
+    },
+    state => {
+      state.evidence.unit.revision--;
+    },
+    state => {
+      state.plan.outputs = ['missing.txt'];
+    },
+    state => {
+      state.stepStatus = { step0: 'pending' };
+    },
   ]) {
-    Object.keys(f.state).forEach(key => delete f.state[key]); Object.assign(f.state, structuredClone(original));
-    mutate(f.state); f.save();
+    Object.keys(f.state).forEach(key => delete f.state[key]);
+    Object.assign(f.state, structuredClone(original));
+    mutate(f.state);
+    f.save();
     await assert.rejects(verifiedRewardSource(f.ctx, f.sessionID, call.signal));
   }
-  Object.assign(f.state, original); f.save();
+  Object.assign(f.state, original);
+  f.save();
   writeFileSync(join(f.root, 'source.txt'), 'changed after handoff');
   await assert.rejects(verifiedRewardSource(f.ctx, f.sessionID, call.signal), /delivery_ineligible/);
 });
 
 test('native reward claim binds authenticated preview, fresh source and exact retry payload', async t => {
   const f = fixture(t);
-  f.state.status = 'verified'; f.state.reviewRequired = true;
+  f.state.status = 'verified';
+  f.state.reviewRequired = true;
   f.state.evidence.unit = f.receipt();
   f.state.reviewEvidence = { runId: f.state.runId, revision: f.state.revision, fingerprint: f.current };
-  f.state.handoff = { status: 'verified', verification: 'required', advisory: false, fingerprint: f.current }; f.save();
-  let account = 'owner-a', fail = true, committed = false;
-  const sent = [], store = new Map();
-  const ctx = { location: f.ctx.location, session: f.ctx.session, worktree: f.ctx.worktree, integration: { connection: {
-    active: async () => ({ id: account, type: 'credential', method: 'oauth' }),
-    resolve: async () => ({ type: 'oauth', methodID: 'carthagent-device', access: 'fixture-token' }),
-  } } };
-  const options = { profileRoot: join(f.base, 'private-profile'), journal: { get: async key => structuredClone(store.get(key)), set: async (key, state) => { store.set(key, structuredClone(state)); } }, cloudClient: { request: async (path, input) => {
-    if (path.endsWith('/policy')) return { policy: { version: 'verified-delivery-beta-v1', basis: 'local_harness_attested', coins: 25, xp: 100, km: 1, dailyLimit: 3 } };
-    if (input.method === 'GET') {
-      if (!committed) throw Object.assign(Error('not_found'), { status: 404, code: 'not_found' });
-      return { reward: { id: 'reward', runId: f.state.runId, policyVersion: 'verified-delivery-beta-v1', coins: 25, xp: 100, km: 1, awardedAt: new Date().toISOString(), basis: 'local_harness_attested' } };
-    }
-    sent.push(structuredClone(input.body));
-    if (fail) throw Error('lost response after commit');
-    return { reward: { id: 'reward', runId: input.body.runId, policyVersion: 'verified-delivery-beta-v1', coins: 25, xp: 100, km: 1, awardedAt: new Date().toISOString(), basis: 'local_harness_attested' }, replayed: true };
-  } } };
+  f.state.handoff = { status: 'verified', verification: 'required', advisory: false, fingerprint: f.current };
+  f.save();
+  let account = 'owner-a',
+    fail = true,
+    committed = false;
+  const sent = [],
+    store = new Map();
+  const ctx = {
+    location: f.ctx.location,
+    session: f.ctx.session,
+    worktree: f.ctx.worktree,
+    integration: {
+      connection: {
+        active: async () => ({ id: account, type: 'credential', method: 'oauth' }),
+        resolve: async () => ({ type: 'oauth', methodID: 'carthagent-device', access: 'fixture-token' }),
+      },
+    },
+  };
+  const options = {
+    profileRoot: join(f.base, 'private-profile'),
+    journal: {
+      get: async key => structuredClone(store.get(key)),
+      set: async (key, state) => {
+        store.set(key, structuredClone(state));
+      },
+    },
+    cloudClient: {
+      request: async (path, input) => {
+        if (path.endsWith('/policy'))
+          return { policy: { version: 'verified-delivery-beta-v1', basis: 'local_harness_attested', coins: 25, xp: 100, km: 1, dailyLimit: 3 } };
+        if (input.method === 'GET') {
+          if (!committed) throw Object.assign(Error('not_found'), { status: 404, code: 'not_found' });
+          return {
+            reward: {
+              id: 'reward',
+              runId: f.state.runId,
+              policyVersion: 'verified-delivery-beta-v1',
+              coins: 25,
+              xp: 100,
+              km: 1,
+              awardedAt: new Date().toISOString(),
+              basis: 'local_harness_attested',
+            },
+          };
+        }
+        sent.push(structuredClone(input.body));
+        if (fail) throw Error('lost response after commit');
+        return {
+          reward: {
+            id: 'reward',
+            runId: input.body.runId,
+            policyVersion: 'verified-delivery-beta-v1',
+            coins: 25,
+            xp: 100,
+            km: 1,
+            awardedAt: new Date().toISOString(),
+            basis: 'local_harness_attested',
+          },
+          replayed: true,
+        };
+      },
+    },
+  };
   let handlers = createVoyagesRpcHandlers(ctx, options);
   const preview = await handlers.previewReward({ sessionID: f.sessionID }, call);
   const input = { sessionID: f.sessionID, runId: preview.runId, snapshot: preview.snapshot };
   account = 'owner-b';
-  await assert.rejects(handlers.claimReward(input, call), /reward_preview_required/); assert.equal(sent.length, 0);
+  await assert.rejects(handlers.claimReward(input, call), /reward_preview_required/);
+  assert.equal(sent.length, 0);
   account = 'owner-a';
   await assert.rejects(handlers.claimReward(input, call), error => error.data.uncertain === true);
   fail = false;
@@ -154,9 +308,11 @@ test('native reward claim binds authenticated preview, fresh source and exact re
   assert.equal((await handlers.claimReward(input, call)).replayed, true);
   assert.deepEqual(sent[0], sent[1]);
   writeFileSync(join(f.root, 'source.txt'), 'changed after confirmation');
-  await assert.rejects(handlers.claimReward(input, call), /delivery_ineligible/); assert.equal(sent.length, 2);
+  await assert.rejects(handlers.claimReward(input, call), /delivery_ineligible/);
+  assert.equal(sent.length, 2);
   committed = true;
-  assert.equal((await handlers.claimReward(input, call)).replayed, true); assert.equal(sent.length, 2);
+  assert.equal((await handlers.claimReward(input, call)).replayed, true);
+  assert.equal(sent.length, 2);
   assert.deepEqual(await handlers.previewReward({ sessionID: f.sessionID }, call), preview);
   await assert.rejects(handlers.claimReward({ ...input, sessionID: 'another-session' }, call), /reward_preview_required/);
 });
@@ -180,24 +336,35 @@ test('explicit finish change summary, first-run failed baseline and long output 
   assert.match(source.checks[0].result, /ok 17 - final$/);
   assert.equal(source.truncated, true);
   assert.ok(Buffer.byteLength(source.checks[0].result) <= 1024);
-  f.state.handoff.fingerprint = '2'.repeat(64); f.save();
+  f.state.handoff.fingerprint = '2'.repeat(64);
+  f.save();
   assert.equal((await f.read()).source.change, '');
 });
 
 test('stale, mismatched or contradictory passing receipts never become current passing evidence', async t => {
   const f = fixture(t);
   const invalidations = [
-    { fingerprint: '0'.repeat(64) }, { runId: 'other-run' }, { revision: 2 }, { checkDigest: '0'.repeat(64) },
-    { code: 1 }, { timedOut: true }, { cancelled: true }, { changedDuringCheck: true }, { outputLimit: true }, { code: undefined },
+    { fingerprint: '0'.repeat(64) },
+    { runId: 'other-run' },
+    { revision: 2 },
+    { checkDigest: '0'.repeat(64) },
+    { code: 1 },
+    { timedOut: true },
+    { cancelled: true },
+    { changedDuringCheck: true },
+    { outputLimit: true },
+    { code: undefined },
   ];
   for (const overrides of invalidations) {
-    f.state.evidence.unit = f.receipt('unit', overrides); f.save();
+    f.state.evidence.unit = f.receipt('unit', overrides);
+    f.save();
     const { source } = await f.read();
     assert.equal(source.freshness, 'stale', JSON.stringify(overrides));
     assert.equal(source.checks[0].after, 'not_run');
     assert.equal(source.checks[0].revision, f.current);
   }
-  f.state.evidence.unit = f.receipt(); f.save();
+  f.state.evidence.unit = f.receipt();
+  f.save();
   writeFileSync(join(f.root, 'source.txt'), 'changed actual source');
   const { source } = await f.read();
   assert.equal(source.revision, fingerprint(f.root, ['.']));
@@ -205,17 +372,25 @@ test('stale, mismatched or contradictory passing receipts never become current p
   assert.equal(source.checks[0].after, 'not_run');
   assert.equal(source.freshness, 'stale');
   // The native failure path explicitly records a null fingerprint on scope failure.
-  f.state.evidence.unit = f.receipt('unit', { passed: false, fingerprint: null, code: 1 }); f.save();
+  f.state.evidence.unit = f.receipt('unit', { passed: false, fingerprint: null, code: 1 });
+  f.save();
   assert.equal((await f.read()).source.checks[0].after, 'not_run');
 });
 
 test('failed receipts are current-only: old source, mismatched identity and scope errors cannot fabricate a current failure', async t => {
   const f = fixture(t);
   for (const overrides of [
-    { runId: 'other-run' }, { revision: 2 }, { checkDigest: '0'.repeat(64) },
-    { fingerprint: '0'.repeat(64) }, { fingerprint: null }, { fingerprint: undefined },
-    { code: undefined }, { code: 0 }, { changedDuringCheck: true },
-    { fingerprint: null, timedOut: true }, { fingerprint: undefined, cancelled: true },
+    { runId: 'other-run' },
+    { revision: 2 },
+    { checkDigest: '0'.repeat(64) },
+    { fingerprint: '0'.repeat(64) },
+    { fingerprint: null },
+    { fingerprint: undefined },
+    { code: undefined },
+    { code: 0 },
+    { changedDuringCheck: true },
+    { fingerprint: null, timedOut: true },
+    { fingerprint: undefined, cancelled: true },
   ]) {
     f.state.evidence.unit = f.receipt('unit', { passed: false, code: 1, outputTail: 'old or unexecuted failure', ...overrides });
     f.save();
@@ -233,7 +408,8 @@ test('failed receipts are current-only: old source, mismatched identity and scop
     assert.equal(source.checks[0].revision, f.current);
     assert.equal(source.checks[0].result, 'actual current failure');
   }
-  f.state.evidence.unit = f.receipt('unit', { passed: false, code: 1, outputTail: 'failure at A, not B' }); f.save();
+  f.state.evidence.unit = f.receipt('unit', { passed: false, code: 1, outputTail: 'failure at A, not B' });
+  f.save();
   assert.equal((await f.read()).source.checks[0].after, 'failed');
   writeFileSync(join(f.root, 'source.txt'), 'workspace B');
   const { source } = await f.read();
@@ -248,7 +424,21 @@ test('failed receipts are current-only: old source, mismatched identity and scop
 test('review findings expose only actual model-authored resolution claims without verification labels', async t => {
   const f = fixture(t);
   f.state.reviewFindings = [
-    { id: 'finding-one', description: 'Actual review issue', captureId: 'capture-private', fingerprint: f.current, at: 'then', resolution: { id: 'finding-one', change: 'Actual described repair', evidence: 'Actual model-authored evidence claim', captureId: 'capture-private', fingerprint: f.current, at: 'now' } },
+    {
+      id: 'finding-one',
+      description: 'Actual review issue',
+      captureId: 'capture-private',
+      fingerprint: f.current,
+      at: 'then',
+      resolution: {
+        id: 'finding-one',
+        change: 'Actual described repair',
+        evidence: 'Actual model-authored evidence claim',
+        captureId: 'capture-private',
+        fingerprint: f.current,
+        at: 'now',
+      },
+    },
     { id: 'finding-two', description: 'Unresolved issue' },
     { id: 'finding-three', description: 'Legacy resolution without evidence', resolution: { id: 'finding-three', change: 'Recorded change only' } },
   ];
@@ -264,11 +454,18 @@ test('review findings expose only actual model-authored resolution claims withou
 });
 
 test('selection is bounded, UTF-8 safe and explicitly reports omitted claims/items', async t => {
-  const f = fixture(t, Array.from({ length: 13 }, (_, i) => check(`check_${i}`)));
+  const f = fixture(
+    t,
+    Array.from({ length: 13 }, (_, i) => check(`check_${i}`)),
+  );
   f.state.plan.goal = '界'.repeat(342); // 1026 UTF-8 bytes, not 342-byte ASCII.
   f.state.evidence.check_0 = f.receipt('check_0', { outputTail: '界'.repeat(341) });
   f.state.evidence.check_1 = f.receipt('check_1', { outputTail: '😀'.repeat(257) });
-  f.state.reviewFindings = Array.from({ length: 6 }, (_, i) => ({ id: `finding-${i}`, description: i ? 'Actual issue' : 'x'.repeat(2001), resolution: { id: `finding-${i}`, change: 'Recorded repair', evidence: i ? 'Claimed evidence' : 'x'.repeat(2001) } }));
+  f.state.reviewFindings = Array.from({ length: 6 }, (_, i) => ({
+    id: `finding-${i}`,
+    description: i ? 'Actual issue' : 'x'.repeat(2001),
+    resolution: { id: `finding-${i}`, change: 'Recorded repair', evidence: i ? 'Claimed evidence' : 'x'.repeat(2001) },
+  }));
   f.save();
   const { source } = await f.read();
   assert.equal(source.checks.length, 12);
@@ -288,7 +485,8 @@ test('selection is bounded, UTF-8 safe and explicitly reports omitted claims/ite
 test('unrepresentable/control text is omitted rather than silently sanitized into a different claim', async t => {
   const f = fixture(t);
   for (const outputTail of ['prefix\u001b[31mprivate', 'bad\ud800surrogate', 'nul\u0000byte']) {
-    f.state.evidence.unit = f.receipt('unit', { outputTail }); f.save();
+    f.state.evidence.unit = f.receipt('unit', { outputTail });
+    f.save();
     const { source } = await f.read();
     assert.equal(source.checks[0].result, '');
     assert.equal(source.truncated, true);
@@ -299,16 +497,23 @@ test('freshness inspects receipts outside the selection cap and required final-r
   const checks = Array.from({ length: 13 }, (_, i) => check(`check_${i}`));
   const f = fixture(t, checks);
   for (const item of checks) f.state.evidence[item.id] = f.receipt(item.id);
-  f.state.evidence.check_12.fingerprint = '0'.repeat(64); f.save();
+  f.state.evidence.check_12.fingerprint = '0'.repeat(64);
+  f.save();
   assert.equal((await f.read()).source.freshness, 'stale');
-  assert.equal((await f.read()).source.checks.every(item => item.after === 'passed'), true, 'fresh displayed receipts do not hide stale omitted receipts');
+  assert.equal(
+    (await f.read()).source.checks.every(item => item.after === 'passed'),
+    true,
+    'fresh displayed receipts do not hide stale omitted receipts',
+  );
   f.state.evidence.check_12 = f.receipt('check_12');
   f.state.plan.steps = [{ id: 'implement', title: 'Implement', dependsOn: [], checks: checks.map(item => item.id) }];
   f.save();
   assert.equal((await f.read()).source.freshness, 'stale', 'missing required review cannot claim current report');
-  f.state.reviewEvidence = { runId: f.state.runId, revision: f.state.revision, fingerprint: f.current }; f.save();
+  f.state.reviewEvidence = { runId: f.state.runId, revision: f.state.revision, fingerprint: f.current };
+  f.save();
   assert.equal((await f.read()).source.freshness, 'current');
-  f.state.reviewEvidence.fingerprint = '0'.repeat(64); f.save();
+  f.state.reviewEvidence.fingerprint = '0'.repeat(64);
+  f.save();
   assert.equal((await f.read()).source.freshness, 'stale');
 });
 
@@ -332,14 +537,17 @@ test('foreign sessions, mismatched IDs, forged task worktrees and arbitrary path
   f.sessions.set('wrong-id', f.session);
   await rejected(f.handlers.report({ sessionID: 'wrong-id' }, call), 'not_owned');
   await rejected(f.handlers.report({ sessionID: 'unknown-session' }, call), 'invalid_source');
-  for (const input of [{ sessionID: '../escape' }, { sessionID: f.sessionID, path: f.report.path }, { sessionID: f.sessionID, includeGoal: true }, null]) await rejected(f.handlers.report(input, call), 'invalid_request');
-  const worktree = join(f.base, 'forged-worktree'); mkdirSync(worktree);
+  for (const input of [{ sessionID: '../escape' }, { sessionID: f.sessionID, path: f.report.path }, { sessionID: f.sessionID, includeGoal: true }, null])
+    await rejected(f.handlers.report(input, call), 'invalid_request');
+  const worktree = join(f.base, 'forged-worktree');
+  mkdirSync(worktree);
   f.session.location.directory = worktree;
   await rejected(f.read(), 'not_owned');
   writeFileSync(join(f.root, '.harness', 'opencode-tasks.json'), JSON.stringify({ version: 1, tasks: [{ sessionID: f.sessionID, worktree }], operations: [] }));
   await rejected(f.read(), 'not_owned', 'forged journal alone must not authorize a worktree');
   f.nativeWorktrees.push(worktree);
-  const actual = createReport(worktree, f.state, f.sessionID); selectReport(worktree, actual.path);
+  const actual = createReport(worktree, f.state, f.sessionID);
+  selectReport(worktree, actual.path);
   assert.equal((await f.read()).source.runId, f.state.runId);
   // The journal must agree with the native session location even for a known worktree.
   f.session.location.directory = f.root;
@@ -354,8 +562,10 @@ test('any-mode session evidence is opt-in, revision-bound, empty of claims and i
   assert.equal(first.source.origin, 'session');
   assert.equal(first.source.revision, f.current);
   assert.match(first.source.runId, /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-a[a-f0-9]{3}-[a-f0-9]{12}$/);
-  assert.equal(first.source.goal, ''); assert.equal(first.source.change, '');
-  assert.deepEqual(first.source.checks, []); assert.deepEqual(first.source.findings, []);
+  assert.equal(first.source.goal, '');
+  assert.equal(first.source.change, '');
+  assert.deepEqual(first.source.checks, []);
+  assert.deepEqual(first.source.findings, []);
   assert.deepEqual(await f.handlers.report(input, call), first);
   assert.deepEqual(await f.read(), { source: null });
   await assert.rejects(verifiedRewardSource(f.ctx, f.sessionID, call.signal));
@@ -373,7 +583,8 @@ test('native ancestor aliases use canonical root/location/session identity, incl
   symlinkSync(f.base, alias, 'junction');
   const aliasedRoot = join(alias, 'project');
   assert.equal(realpathSync(aliasedRoot), f.root);
-  f.state.evidence.unit = f.receipt(); f.save();
+  f.state.evidence.unit = f.receipt();
+  f.save();
   const baseline = await f.read();
   for (let mask = 0; mask < 8; mask++) {
     f.ctx.location.project.canonical = mask & 1 ? aliasedRoot : f.root;
@@ -388,16 +599,24 @@ test('native ancestor aliases use canonical root/location/session identity, incl
 
 test('task and operation worktrees require canonically matching session, journal and native inventory', async t => {
   const f = fixture(t);
-  const worktree = join(f.base, 'worktree'); mkdirSync(worktree);
-  const foreign = join(f.base, 'foreign'); mkdirSync(foreign);
-  const alias = join(f.base, 'namespace'); symlinkSync(f.base, alias, 'junction');
-  const foreignAlias = join(f.base, 'foreign-namespace'); symlinkSync(foreign, foreignAlias, 'junction');
+  const worktree = join(f.base, 'worktree');
+  mkdirSync(worktree);
+  const foreign = join(f.base, 'foreign');
+  mkdirSync(foreign);
+  const alias = join(f.base, 'namespace');
+  symlinkSync(f.base, alias, 'junction');
+  const foreignAlias = join(f.base, 'foreign-namespace');
+  symlinkSync(foreign, foreignAlias, 'junction');
   // Both paths have the same suffix, but different canonical targets.
-  const foreignWorktree = join(foreign, 'worktree'); mkdirSync(foreignWorktree);
-  const aliased = join(alias, 'worktree'), foreignAliased = join(foreignAlias, 'worktree');
-  const report = createReport(worktree, f.state, f.sessionID); selectReport(worktree, report.path);
+  const foreignWorktree = join(foreign, 'worktree');
+  mkdirSync(foreignWorktree);
+  const aliased = join(alias, 'worktree'),
+    foreignAliased = join(foreignAlias, 'worktree');
+  const report = createReport(worktree, f.state, f.sessionID);
+  selectReport(worktree, report.path);
   const journal = join(f.root, '.harness', 'opencode-tasks.json');
-  const saveJournal = (kind, directory) => writeFileSync(journal, JSON.stringify({ version: 1, tasks: [], operations: [], [kind]: [{ sessionID: f.sessionID, worktree: directory }] }));
+  const saveJournal = (kind, directory) =>
+    writeFileSync(journal, JSON.stringify({ version: 1, tasks: [], operations: [], [kind]: [{ sessionID: f.sessionID, worktree: directory }] }));
   f.ctx.location.project.canonical = join(alias, 'project');
   f.ctx.location.directory = join(alias, 'project');
   for (const kind of ['tasks', 'operations']) {
@@ -435,10 +654,14 @@ test('linked native directory leaves are rejected even when they resolve to an o
         if (target === 'location') f.ctx.location.directory = leaf;
         if (target === 'session') f.session.location.directory = leaf;
       } else {
-        const worktree = join(f.base, 'worktree'); mkdirSync(worktree);
+        const worktree = join(f.base, 'worktree');
+        mkdirSync(worktree);
         symlinkSync(worktree, leaf, 'junction');
         f.session.location.directory = worktree;
-        writeFileSync(join(f.root, '.harness', 'opencode-tasks.json'), JSON.stringify({ version: 1, tasks: [{ sessionID: f.sessionID, worktree: target === 'journal' ? leaf : worktree }], operations: [] }));
+        writeFileSync(
+          join(f.root, '.harness', 'opencode-tasks.json'),
+          JSON.stringify({ version: 1, tasks: [{ sessionID: f.sessionID, worktree: target === 'journal' ? leaf : worktree }], operations: [] }),
+        );
         f.nativeWorktrees.push(target === 'inventory' ? leaf : worktree);
       }
       await rejected(f.read(), 'invalid_source');
@@ -447,31 +670,39 @@ test('linked native directory leaves are rejected even when they resolve to an o
 });
 
 test('evidence symlink components and final files stay forbidden under canonical or ancestor-aliased authority', async t => {
-  for (const aliased of [false, true]) for (const target of ['report', 'run', 'session', 'harness', 'pointer', 'journal', 'root']) {
-    await t.test(`${aliased ? 'aliased' : 'canonical'} ${target}`, async t => {
-      const f = fixture(t);
-      if (aliased) {
-        const alias = join(f.base, 'alias'); symlinkSync(f.base, alias, 'junction');
-        f.ctx.location.directory = join(alias, 'project');
-        f.ctx.location.project.canonical = f.ctx.location.directory;
-        f.session.location.directory = f.ctx.location.directory;
-      }
-      writeFileSync(join(f.root, '.harness', 'opencode-tasks.json'), JSON.stringify({ version: 1, tasks: [], operations: [] }));
-      const replacements = {
-        report: f.report.path, run: f.report.dir, session: join(f.root, '.harness', f.sessionID),
-        harness: join(f.root, '.harness'), pointer: join(f.root, '.harness', 'active.json'), journal: join(f.root, '.harness', 'opencode-tasks.json'), root: f.root,
-      };
-      const path = replacements[target];
-      // Preserve fully valid content: a followed link must not merely fail later
-      // because its target contains malformed evidence or a missing pointer.
-      const elsewhere = join(f.base, 'private-target');
-      renameSync(path, elsewhere);
-      symlinkSync(elsewhere, path, ['report', 'pointer', 'journal'].includes(target) ? 'file' : 'junction');
-      await rejected(f.read(), 'invalid_source');
-    });
-  }
+  for (const aliased of [false, true])
+    for (const target of ['report', 'run', 'session', 'harness', 'pointer', 'journal', 'root']) {
+      await t.test(`${aliased ? 'aliased' : 'canonical'} ${target}`, async t => {
+        const f = fixture(t);
+        if (aliased) {
+          const alias = join(f.base, 'alias');
+          symlinkSync(f.base, alias, 'junction');
+          f.ctx.location.directory = join(alias, 'project');
+          f.ctx.location.project.canonical = f.ctx.location.directory;
+          f.session.location.directory = f.ctx.location.directory;
+        }
+        writeFileSync(join(f.root, '.harness', 'opencode-tasks.json'), JSON.stringify({ version: 1, tasks: [], operations: [] }));
+        const replacements = {
+          report: f.report.path,
+          run: f.report.dir,
+          session: join(f.root, '.harness', f.sessionID),
+          harness: join(f.root, '.harness'),
+          pointer: join(f.root, '.harness', 'active.json'),
+          journal: join(f.root, '.harness', 'opencode-tasks.json'),
+          root: f.root,
+        };
+        const path = replacements[target];
+        // Preserve fully valid content: a followed link must not merely fail later
+        // because its target contains malformed evidence or a missing pointer.
+        const elsewhere = join(f.base, 'private-target');
+        renameSync(path, elsewhere);
+        symlinkSync(elsewhere, path, ['report', 'pointer', 'journal'].includes(target) ? 'file' : 'junction');
+        await rejected(f.read(), 'invalid_source');
+      });
+    }
   const f = fixture(t);
-  rmSync(f.report.path); mkdirSync(f.report.path);
+  rmSync(f.report.path);
+  mkdirSync(f.report.path);
   await rejected(f.read(), 'invalid_source');
 });
 
@@ -483,24 +714,64 @@ test('oversized/corrupt reports, forged run IDs, malformed schemas and unsafe po
     await rejected(f.read(), 'invalid_source');
   }
   const mutations = [
-    state => { state.runId = 'other-run'; }, state => { state.revision = 0; }, state => { state.revision = 1.5; },
-    state => { state.plan.checks = []; }, state => { state.evidence = []; },
-    state => { state.evidence.unknown = {}; }, state => { state.status = 'bogus'; },
-    state => { state.evidence.unit = f.receipt('unit', { passed: 'true' }); },
-    state => { state.evidence.unit = f.receipt('unit', { fingerprint: 'invalid-hash' }); },
-    state => { state.evidence.unit = f.receipt('unit', { outputTail: {} }); },
-    state => { state.reviewFindings = [{ id: '../private', description: 'bad ID' }]; },
-    state => { state.reviewFindings = [{ id: 'finding', description: 'bad resolution', resolution: { id: 'different', change: 'claim' } }]; },
-    state => { state.reviewFindings = [{ id: 'same', description: 'one' }, { id: 'same', description: 'two' }]; },
+    state => {
+      state.runId = 'other-run';
+    },
+    state => {
+      state.revision = 0;
+    },
+    state => {
+      state.revision = 1.5;
+    },
+    state => {
+      state.plan.checks = [];
+    },
+    state => {
+      state.evidence = [];
+    },
+    state => {
+      state.evidence.unknown = {};
+    },
+    state => {
+      state.status = 'bogus';
+    },
+    state => {
+      state.evidence.unit = f.receipt('unit', { passed: 'true' });
+    },
+    state => {
+      state.evidence.unit = f.receipt('unit', { fingerprint: 'invalid-hash' });
+    },
+    state => {
+      state.evidence.unit = f.receipt('unit', { outputTail: {} });
+    },
+    state => {
+      state.reviewFindings = [{ id: '../private', description: 'bad ID' }];
+    },
+    state => {
+      state.reviewFindings = [{ id: 'finding', description: 'bad resolution', resolution: { id: 'different', change: 'claim' } }];
+    },
+    state => {
+      state.reviewFindings = [
+        { id: 'same', description: 'one' },
+        { id: 'same', description: 'two' },
+      ];
+    },
   ];
   for (const mutate of mutations) {
-    const state = JSON.parse(original); mutate(state);
+    const state = JSON.parse(original);
+    mutate(state);
     writeFileSync(f.report.path, JSON.stringify(state));
     await rejected(f.read(), 'invalid_source');
   }
   writeFileSync(f.report.path, original);
   const pointer = join(f.root, '.harness', 'active.json');
-  for (const body of ['{corrupt', ' '.repeat(4097), JSON.stringify({ version: 1, path: '/private/report.json' }), JSON.stringify({ version: 1, path: '.harness/../private/report.json' }), JSON.stringify({ version: 1, path: '.harness/session/run/../report.json' })]) {
+  for (const body of [
+    '{corrupt',
+    ' '.repeat(4097),
+    JSON.stringify({ version: 1, path: '/private/report.json' }),
+    JSON.stringify({ version: 1, path: '.harness/../private/report.json' }),
+    JSON.stringify({ version: 1, path: '.harness/session/run/../report.json' }),
+  ]) {
     writeFileSync(pointer, body);
     await rejected(f.read(), 'invalid_source');
   }
@@ -508,28 +779,36 @@ test('oversized/corrupt reports, forged run IDs, malformed schemas and unsafe po
 
 test('local read and registration have no automatic outbound requests or filesystem mutations', async t => {
   const f = fixture(t);
-  f.state.evidence.unit = f.receipt(); f.save();
-  const snapshot = directory => readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
-    const path = join(directory, entry.name);
-    return entry.isDirectory() ? snapshot(path) : [[path, readFileSync(path).toString('hex')]];
-  });
+  f.state.evidence.unit = f.receipt();
+  f.save();
+  const snapshot = directory =>
+    readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
+      const path = join(directory, entry.name);
+      return entry.isDirectory() ? snapshot(path) : [[path, readFileSync(path).toString('hex')]];
+    });
   const before = snapshot(f.root);
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => { throw new Error('unexpected network'); };
+  globalThis.fetch = async () => {
+    throw new Error('unexpected network');
+  };
   try {
     const registration = await registerDailySourceRpc(f.ctx);
     assert.equal((await f.read()).source.checks[0].after, 'passed');
     await registration.dispose();
-  } finally { globalThis.fetch = originalFetch; }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
   assert.deepEqual(f.counts(), { registrations: 1, disposed: 1 });
   assert.deepEqual(snapshot(f.root), before);
-  const controller = new AbortController(); controller.abort(new Error('cancelled'));
+  const controller = new AbortController();
+  controller.abort(new Error('cancelled'));
   await assert.rejects(f.handlers.report({ sessionID: f.sessionID }, { ...call, signal: controller.signal }), /cancelled/);
 });
 
 test('pinned Effect RPC conversion accepts local source, null, input and safe typed error data', async t => {
   const f = fixture(t);
-  f.state.evidence.unit = f.receipt(); f.save();
+  f.state.evidence.unit = f.receipt();
+  f.save();
   const decode = (schema, value) => Schema.decodeUnknownSync(SchemaRepresentation.fromJsonSchemaDocument(JsonSchema.fromSchemaDraft2020_12(schema)))(value);
   assert.throws(() => decode({ type: 'string', pattern: '^[a-z]+$' }, 'value'), 'exercise the actual pinned conversion unsupported-pattern failure');
   assert.equal(DailySource.id, 'carthagent.daily-source');
@@ -539,8 +818,10 @@ test('pinned Effect RPC conversion accepts local source, null, input and safe ty
   for (const value of [await f.read(), { source: null }]) assert.deepEqual(decode(method.output, value), value);
   assert.deepEqual(decode(method.errors.dailySourceError, { code: 'not_owned' }), { code: 'not_owned' });
   assert.throws(() => decode(method.input, {}));
-  const forged = await f.read(); forged.source.checks[0].before = 'passed';
+  const forged = await f.read();
+  forged.source.checks[0].before = 'passed';
   assert.throws(() => decode(method.output, forged));
-  const wrongRevision = await f.read(); wrongRevision.source.revision = 3;
+  const wrongRevision = await f.read();
+  wrongRevision.source.revision = 3;
   assert.throws(() => decode(method.output, wrongRevision));
 });

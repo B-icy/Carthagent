@@ -14,10 +14,17 @@ test('subscriptions extension registers both overlays and refreshes them on sess
   const providers = [];
   const hooks = {};
   factory({
-    registerProvider(id, config) { providers.push([id, config]); },
-    on(name, callback) { hooks[name] = callback; },
+    registerProvider(id, config) {
+      providers.push([id, config]);
+    },
+    on(name, callback) {
+      hooks[name] = callback;
+    },
   });
-  assert.deepEqual(providers.map(([id]) => id), ['anthropic', 'openai-codex']);
+  assert.deepEqual(
+    providers.map(([id]) => id),
+    ['anthropic', 'openai-codex'],
+  );
   for (const [, config] of providers) assert.equal(typeof config.refreshModels, 'function');
 
   assert.equal(typeof hooks.session_start, 'function');

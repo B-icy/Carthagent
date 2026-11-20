@@ -33,6 +33,9 @@ async function fixture(t, patchSha256 = developmentPatch) {
     }
     await writeFile(path.join(moduleRoot, name), source);
   }
+  for (const name of ['logger.mjs', 'http-resilience.mjs']) {
+    await writeFile(path.join(packageRoot, 'lib', name), await readFile(new URL(`../lib/${name}`, import.meta.url), 'utf8'));
+  }
   await writeFile(path.join(packageRoot, 'package.json'), await readFile(new URL('../package.json', import.meta.url)));
   const runtime = await import(pathToFileURL(path.join(moduleRoot, 'runtime.mjs')).href);
   assert.notEqual(runtime.CTG_DEVELOPMENT_RUNTIME_PATCH_SHA256, runtime.CTG_RUNTIME_PATCH_SHA256);
@@ -42,11 +45,16 @@ async function fixture(t, patchSha256 = developmentPatch) {
   const payload = Buffer.from('independently hashed runtime fixture');
   const digest = sha256(payload);
   const manifest = {
-    owner: 'Carthagent', sourceRepository: 'https://github.com/anomalyco/opencode',
-    sourceRevision: runtime.CTG_RUNTIME_SOURCE, lockSha256: runtime.CTG_RUNTIME_LOCK_SHA256,
-    patchSha256, compatibilityVersion: runtime.OPENCODE_VERSION,
-    runtimeVersion: runtime.CTG_RUNTIME_VERSION, channel: `ctg.${runtime.OPENCODE_VERSION}`,
-    platform: target, webUI: false,
+    owner: 'Carthagent',
+    sourceRepository: 'https://github.com/anomalyco/opencode',
+    sourceRevision: runtime.CTG_RUNTIME_SOURCE,
+    lockSha256: runtime.CTG_RUNTIME_LOCK_SHA256,
+    patchSha256,
+    compatibilityVersion: runtime.OPENCODE_VERSION,
+    runtimeVersion: runtime.CTG_RUNTIME_VERSION,
+    channel: `ctg.${runtime.OPENCODE_VERSION}`,
+    platform: target,
+    webUI: false,
   };
   await mkdir(path.dirname(binary), { recursive: true });
   await writeFile(binary, payload, { mode: 0o755 });
@@ -76,10 +84,30 @@ async function fixture(t, patchSha256 = developmentPatch) {
   const spawnImpl = spawnVersion(`opencode v${runtime.CTG_RUNTIME_VERSION}`);
   const publicOptions = {
     spawnImpl,
-    acquireOwnedRuntime: async input => { calls.push(input); return ownedRoot; },
+    acquireOwnedRuntime: async input => {
+      calls.push(input);
+      return ownedRoot;
+    },
   };
-  return { root, runtime, ownedRoot, binary, payload, digest, relativeExecutable, manifest, release, releasePath,
-    writeManifest, writeSums, calls, spawns, spawnVersion, spawnImpl, publicOptions };
+  return {
+    root,
+    runtime,
+    ownedRoot,
+    binary,
+    payload,
+    digest,
+    relativeExecutable,
+    manifest,
+    release,
+    releasePath,
+    writeManifest,
+    writeSums,
+    calls,
+    spawns,
+    spawnVersion,
+    spawnImpl,
+    publicOptions,
+  };
 }
 
 test('packaged release trust stays valid independently of the development patch pin', async t => {
@@ -116,9 +144,12 @@ test('default acquisition rejects development provenance even with matching pinn
 test('public release manifest cannot promote the development pin or unpinned provenance', async t => {
   const f = await fixture(t);
   for (const changes of [
-    { patchSha256: developmentPatch }, { sourceRevision: 'e'.repeat(40) },
-    { lockSha256: 'e'.repeat(64) }, { runtimeVersion: '0.0.0-ctg.2.0.33' },
-    { compatibilityVersion: '2.0.33' }, { releaseVersion: '1.1.0-preview.14' },
+    { patchSha256: developmentPatch },
+    { sourceRevision: 'e'.repeat(40) },
+    { lockSha256: 'e'.repeat(64) },
+    { runtimeVersion: '0.0.0-ctg.2.0.33' },
+    { compatibilityVersion: '2.0.33' },
+    { releaseVersion: '1.1.0-preview.14' },
   ]) {
     await writeFile(f.releasePath, JSON.stringify({ ...f.release, ...changes }));
     await assert.rejects(f.runtime.resolveOpenCode(f.publicOptions), /Invalid or incompatible.*release manifest/);
@@ -200,8 +231,7 @@ test('explicit development roots require exact executable layout, actual hash, c
 test('explicit binary remains upstream-compatible and takes precedence over an owned root', async t => {
   const f = await fixture(t);
   await f.writeManifest({ ...f.manifest, patchSha256: 'f'.repeat(64) });
-  const options = { binary: f.binary, ownedRuntime: f.ownedRoot,
-    spawnImpl: f.spawnVersion(`opencode v${f.runtime.OPENCODE_VERSION}`) };
+  const options = { binary: f.binary, ownedRuntime: f.ownedRoot, spawnImpl: f.spawnVersion(`opencode v${f.runtime.OPENCODE_VERSION}`) };
   assert.equal(await f.runtime.resolveOpenCode(options), f.binary);
   const identity = await f.runtime.runtimeIdentity(f.binary, options);
   assert.equal(identity.kind, 'upstream-compatible');

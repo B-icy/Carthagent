@@ -7,8 +7,36 @@ import { getEventListeners } from 'node:events';
 import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { nativeCommandConfig } from '../lib/opencode/compatibility.mjs';
-import { CTG_RUNTIME_LOCK_SHA256, CTG_RUNTIME_PATCH_SHA256, CTG_RUNTIME_SOURCE, CTG_RUNTIME_VERSION, OPENCODE_VERSION, provisionRuntime, readRuntimeReleaseManifest, resolveOpenCode, resolveOwnedOpenCode, resolvePathCommand, runtimeEnvironment, runtimeIdentity, runtimePaths, withFileLock, workspaceEnvironment, processAlive } from '../lib/opencode/runtime.mjs';
-import { cancelSession, createSession, ensureService, getSession, launchTui, promptSession, serviceRequest, sessionMessages, setSessionEnvironment, stopService } from '../lib/opencode/service.mjs';
+import {
+  CTG_RUNTIME_LOCK_SHA256,
+  CTG_RUNTIME_PATCH_SHA256,
+  CTG_RUNTIME_SOURCE,
+  CTG_RUNTIME_VERSION,
+  OPENCODE_VERSION,
+  provisionRuntime,
+  readRuntimeReleaseManifest,
+  resolveOpenCode,
+  resolveOwnedOpenCode,
+  resolvePathCommand,
+  runtimeEnvironment,
+  runtimeIdentity,
+  runtimePaths,
+  withFileLock,
+  workspaceEnvironment,
+  processAlive,
+} from '../lib/opencode/runtime.mjs';
+import {
+  cancelSession,
+  createSession,
+  ensureService,
+  getSession,
+  launchTui,
+  promptSession,
+  serviceRequest,
+  sessionMessages,
+  setSessionEnvironment,
+  stopService,
+} from '../lib/opencode/service.mjs';
 import { runHeadless } from '../lib/opencode/headless.mjs';
 
 function pendingUntilAbort(signal) {
@@ -26,7 +54,10 @@ function pendingUntilAbort(signal) {
 test('CTG runtime paths and env are isolated from host OpenCode roots', () => {
   const root = path.join(os.tmpdir(), 'ctg-test-profile');
   const paths = runtimePaths({ root });
-  const env = runtimeEnvironment({ root, env: { ANTHROPIC_API_KEY: 'test', CTG_RUNTIME_GITHUB_TOKEN: 'fake-runtime-token', CTG_TUI_SERVICE_FILE: '/other/profile/service.json' } });
+  const env = runtimeEnvironment({
+    root,
+    env: { ANTHROPIC_API_KEY: 'test', CTG_RUNTIME_GITHUB_TOKEN: 'fake-runtime-token', CTG_TUI_SERVICE_FILE: '/other/profile/service.json' },
+  });
   assert.equal(env.XDG_CONFIG_HOME, paths.config);
   assert.equal(env.XDG_DATA_HOME, paths.data);
   assert.equal(env.XDG_STATE_HOME, paths.state);
@@ -62,14 +93,17 @@ test('runtime passes the real user home separately from the private profile HOME
 test('runtime removes inherited OpenCode profile overrides', () => {
   const root = path.resolve('/tmp/ctg-isolated');
   const paths = runtimePaths({ root });
-  const env = runtimeEnvironment({ root, env: {
-    OPENCODE_CONFIG_DIR: '/user/config',
-    OPENCODE_CONFIG: '/user/opencode.json',
-    OPENCODE_CONFIG_PROJECT_DISABLE: 'false',
-    OPENCODE_SERVER_PASSWORD: 'user-service-secret',
-    OPENAI_API_KEY: 'preserved',
-    CTG_RUNTIME_GITHUB_TOKEN: 'fake-runtime-token',
-  } });
+  const env = runtimeEnvironment({
+    root,
+    env: {
+      OPENCODE_CONFIG_DIR: '/user/config',
+      OPENCODE_CONFIG: '/user/opencode.json',
+      OPENCODE_CONFIG_PROJECT_DISABLE: 'false',
+      OPENCODE_SERVER_PASSWORD: 'user-service-secret',
+      OPENAI_API_KEY: 'preserved',
+      CTG_RUNTIME_GITHUB_TOKEN: 'fake-runtime-token',
+    },
+  });
   assert.equal(env.OPENCODE_CONFIG_DIR, paths.configDir);
   assert.equal(env.OPENCODE_CONFIG, paths.configFile);
   assert.equal(env.OPENCODE_CONFIG_PROJECT_DISABLE, undefined);
@@ -97,11 +131,14 @@ test('isolated runtime explicitly disables project and Claude skill discovery', 
 test('runtime overrides inherited Windows profile roots with CTG-owned paths', () => {
   const root = path.resolve('/tmp/ctg-windows-roots');
   const paths = runtimePaths({ root });
-  const env = runtimeEnvironment({ root, env: {
-    APPDATA: 'C:\\Users\\foreign\\AppData\\Roaming',
-    LOCALAPPDATA: 'C:\\Users\\foreign\\AppData\\Local',
-    OPENCODE_CONFIG_PROJECT_DISABLE: 'false',
-  } });
+  const env = runtimeEnvironment({
+    root,
+    env: {
+      APPDATA: 'C:\\Users\\foreign\\AppData\\Roaming',
+      LOCALAPPDATA: 'C:\\Users\\foreign\\AppData\\Local',
+      OPENCODE_CONFIG_PROJECT_DISABLE: 'false',
+    },
+  });
   assert.equal(env.APPDATA, paths.appData);
   assert.equal(env.LOCALAPPDATA, paths.localAppData);
   assert.equal(env.OPENCODE_CONFIG_PROJECT_DISABLE, undefined);
@@ -115,7 +152,9 @@ test('stale-lock recovery is serialized across independent processes', async () 
   const markerDir = path.join(root, 'active');
   await mkdir(markerDir);
   await writeFile(lock, JSON.stringify({ pid: 2_000_000_000, token: 'dead-owner', startedAt: 0 }));
-  await writeFile(worker, `
+  await writeFile(
+    worker,
+    `
     import { readFile, rm, writeFile } from 'node:fs/promises';
     import { withFileLock } from ${JSON.stringify(new URL('../lib/opencode/runtime.mjs', import.meta.url).href)};
     const [lock, gate, markerDir, name] = process.argv.slice(2);
@@ -134,19 +173,27 @@ test('stale-lock recovery is serialized across independent processes', async () 
         catch { await new Promise(r => setTimeout(r, 2)); }
       }
     } });
-  `);
+  `,
+  );
   try {
     const a = spawn(process.execPath, [worker, lock, gate, markerDir, 'a'], { stdio: 'ignore' });
     const b = spawn(process.execPath, [worker, lock, gate, markerDir, 'b'], { stdio: 'ignore' });
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise(resolve => setTimeout(resolve, 100));
     await writeFile(gate, 'go');
-    const exited = Promise.all([a, b].map((child) => new Promise((resolve, reject) => {
-      child.once('error', reject);
-      child.once('exit', (code) => code === 0 ? resolve() : reject(new Error(`lock worker exited ${code}`)));
-    })));
+    const exited = Promise.all(
+      [a, b].map(
+        child =>
+          new Promise((resolve, reject) => {
+            child.once('error', reject);
+            child.once('exit', code => (code === 0 ? resolve() : reject(new Error(`lock worker exited ${code}`))));
+          }),
+      ),
+    );
     await exited;
     await assert.rejects(readFile(path.join(markerDir, 'overlap')), { code: 'ENOENT' });
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('persistent stale recovery marker fails closed at the lock deadline with manual recovery guidance', async () => {
@@ -156,19 +203,24 @@ test('persistent stale recovery marker fails closed at the lock deadline with ma
     await writeFile(lock, JSON.stringify({ pid: 2_000_000_000, token: 'dead-owner', startedAt: 0 }));
     await writeFile(`${lock}.recovery`, JSON.stringify({ pid: 2_000_000_000, token: 'abandoned-recovery' }));
     const startedAt = Date.now();
-    await assert.rejects(withFileLock(lock, async () => assert.fail('must not acquire lock'), {
-      timeout: 75,
-      pollInterval: 250,
-      staleLockAge: 0,
-    }), (error) => {
-      assert.match(error.message, /Timed out waiting for CTG runtime lock/);
-      assert.match(error.message, /inspect and remove the stale lock\/recovery files/);
-      assert.ok(error.message.includes(`${lock}.recovery`), 'manual guidance must name the recovery marker path');
-      return true;
-    });
+    await assert.rejects(
+      withFileLock(lock, async () => assert.fail('must not acquire lock'), {
+        timeout: 75,
+        pollInterval: 250,
+        staleLockAge: 0,
+      }),
+      error => {
+        assert.match(error.message, /Timed out waiting for CTG runtime lock/);
+        assert.match(error.message, /inspect and remove the stale lock\/recovery files/);
+        assert.ok(error.message.includes(`${lock}.recovery`), 'manual guidance must name the recovery marker path');
+        return true;
+      },
+    );
     assert.ok(Date.now() - startedAt < 400, 'recovery-marker retries must observe the bounded deadline');
     assert.equal((await readFile(`${lock}.recovery`, 'utf8')).includes('abandoned-recovery'), true, 'stale marker remains for deliberate manual recovery');
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('profile provisioning creates private isolated profile and absolute plugin reference', async () => {
@@ -188,7 +240,9 @@ test('profile provisioning creates private isolated profile and absolute plugin 
     assert.equal(updated.theme, 'kept-theme');
     assert.deepEqual(updated.commands, { keep: 'hello' });
     assert.deepEqual(updated.plugins, ['kept-plugin', path.join(root, 'plugins/carthagent')]);
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('profile provisioning replaces stale CTG checkout plugins and preserves unrelated settings', async t => {
@@ -197,13 +251,25 @@ test('profile provisioning replaces stale CTG checkout plugins and preserves unr
   const pluginPath = path.join(root, 'installed/plugins/carthagent');
   const paths = await provisionRuntime({ root });
   const unrelated = { package: 'other-plugin', options: { enabled: true } };
-  await writeFile(paths.configFile, JSON.stringify({
-    model: 'kept/model', providers: { custom: { name: 'Keep me' } },
-    plugins: ['before-plugin', '/deleted/pr169/plugins/carthagent', unrelated,
-      '/old/checkout/plugins/carthagent/index.ts', '/old/checkout/plugins/carthagent/src/index.ts',
-      pathToFileURL(path.join(root, 'deleted/review/plugins/carthagent')).href, 'C:\\old\\checkout\\plugins\\carthagent\\',
-      pluginPath, 'after-plugin', '/unrelated/plugins/carthagent-extra'],
-  }));
+  await writeFile(
+    paths.configFile,
+    JSON.stringify({
+      model: 'kept/model',
+      providers: { custom: { name: 'Keep me' } },
+      plugins: [
+        'before-plugin',
+        '/deleted/pr169/plugins/carthagent',
+        unrelated,
+        '/old/checkout/plugins/carthagent/index.ts',
+        '/old/checkout/plugins/carthagent/src/index.ts',
+        pathToFileURL(path.join(root, 'deleted/review/plugins/carthagent')).href,
+        'C:\\old\\checkout\\plugins\\carthagent\\',
+        pluginPath,
+        'after-plugin',
+        '/unrelated/plugins/carthagent-extra',
+      ],
+    }),
+  );
   await provisionRuntime({ root, pluginPath });
   const updated = JSON.parse(await readFile(paths.configFile, 'utf8'));
   assert.deepEqual(updated.plugins, ['before-plugin', pluginPath, unrelated, 'after-plugin', '/unrelated/plugins/carthagent-extra']);
@@ -213,8 +279,13 @@ test('profile provisioning replaces stale CTG checkout plugins and preserves unr
   assert.deepEqual(JSON.parse(await readFile(paths.configFile, 'utf8')), updated, 'repeated launch is idempotent');
   const next = path.join(root, 'next-install/plugins/carthagent');
   await provisionRuntime({ root, pluginPath: next });
-  assert.deepEqual(JSON.parse(await readFile(paths.configFile, 'utf8')).plugins,
-    ['before-plugin', next, unrelated, 'after-plugin', '/unrelated/plugins/carthagent-extra']);
+  assert.deepEqual(JSON.parse(await readFile(paths.configFile, 'utf8')).plugins, [
+    'before-plugin',
+    next,
+    unrelated,
+    'after-plugin',
+    '/unrelated/plugins/carthagent-extra',
+  ]);
 });
 
 test('managed plugin replacement retains object options and prefers the selected installation', async t => {
@@ -223,11 +294,17 @@ test('managed plugin replacement retains object options and prefers the selected
   const pluginPath = path.join(root, 'installed/plugins/carthagent');
   const paths = await provisionRuntime({ root });
   const chosen = { package: pluginPath, options: { maxTools: 42 } };
-  await writeFile(paths.configFile, JSON.stringify({ plugins: [
-    '/deleted/plugins/carthagent', chosen,
-    { package: '/another/plugins/carthagent', options: { maxTools: 10 } },
-    '/last/deleted/plugins/carthagent',
-  ] }));
+  await writeFile(
+    paths.configFile,
+    JSON.stringify({
+      plugins: [
+        '/deleted/plugins/carthagent',
+        chosen,
+        { package: '/another/plugins/carthagent', options: { maxTools: 10 } },
+        '/last/deleted/plugins/carthagent',
+      ],
+    }),
+  );
   await provisionRuntime({ root, pluginPath });
   assert.deepEqual(JSON.parse(await readFile(paths.configFile, 'utf8')).plugins, [chosen]);
   const next = path.join(root, 'next/plugins/carthagent');
@@ -235,8 +312,11 @@ test('managed plugin replacement retains object options and prefers the selected
   assert.deepEqual(JSON.parse(await readFile(paths.configFile, 'utf8')).plugins, [{ ...chosen, package: next }]);
   await writeFile(paths.configFile, JSON.stringify({ plugins: [chosen, '/last/deleted/plugins/carthagent'] }));
   await provisionRuntime({ root, pluginPath: next });
-  assert.deepEqual(JSON.parse(await readFile(paths.configFile, 'utf8')).plugins, [{ ...chosen, package: next }],
-    'a trailing string reference must not discard saved plugin options');
+  assert.deepEqual(
+    JSON.parse(await readFile(paths.configFile, 'utf8')).plugins,
+    [{ ...chosen, package: next }],
+    'a trailing string reference must not discard saved plugin options',
+  );
 });
 
 test('workspace environment records workspace without leaking CTG XDG overrides', () => {
@@ -285,7 +365,9 @@ test('native API requests preserve structured responses and reject status failur
     assert.deepEqual(await serviceRequest({ url: 'http://127.0.0.1:1', headers: {} }, 'GET', '/api/info'), { ok: true });
     globalThis.fetch = async () => new Response('{"message":"bad"}', { status: 500 });
     await assert.rejects(serviceRequest({ url: 'http://127.0.0.1:1', headers: {} }, 'GET', '/api/info'), /failed \(500\)/);
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('default packaged OpenCode resolves through Node package exports when hoisted beside CTG', async () => {
@@ -301,8 +383,14 @@ test('default packaged OpenCode resolves through Node package exports when hoist
     await writeFile(path.join(packageRoot, 'lib', 'opencode', 'runtime.mjs'), runtime);
     await writeFile(path.join(packageRoot, 'lib', 'opencode', 'runtime-artifact.mjs'), artifactModule);
     await writeFile(path.join(packageRoot, 'lib', 'opencode', 'runtime-github-transport.mjs'), transportModule);
+    for (const name of ['logger.mjs', 'http-resilience.mjs']) {
+      await writeFile(path.join(packageRoot, 'lib', name), await readFile(new URL(`../lib/${name}`, import.meta.url), 'utf8'));
+    }
     await writeFile(path.join(packageRoot, 'package.json'), JSON.stringify({ name: 'carthagent', version: '1.0.0', type: 'module' }));
-    await writeFile(path.join(dependencyRoot, 'package.json'), JSON.stringify({ name: '@opencode/cli', bin: { opencode: './bin/opencode.exe' }, version: OPENCODE_VERSION }));
+    await writeFile(
+      path.join(dependencyRoot, 'package.json'),
+      JSON.stringify({ name: '@opencode/cli', bin: { opencode: './bin/opencode.exe' }, version: OPENCODE_VERSION }),
+    );
     const binary = path.join(dependencyRoot, 'bin', 'opencode.exe');
     await writeFile(binary, 'hoisted package fixture');
     const { pathToFileURL } = await import('node:url');
@@ -312,7 +400,9 @@ test('default packaged OpenCode resolves through Node package exports when hoist
       return child;
     };
     assert.equal(await realpath(await imported.resolveOpenCode({ spawnImpl })), await realpath(binary));
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('packaged release manifest automatically acquires the pinned owned runtime and binds identity', async () => {
@@ -327,24 +417,44 @@ test('packaged release manifest automatically acquires the pinned owned runtime 
   const binaryBytes = Buffer.from('pinned acquired executable');
   const binaryHash = createHash('sha256').update(binaryBytes).digest('hex');
   const platformKeys = ['linux-x64', 'linux-arm64', 'darwin-x64', 'darwin-arm64', 'windows-x64'];
-  const assets = Object.fromEntries(platformKeys.map((key) => [key, {
-    name: `opencode-${key}.tar.gz`, archiveSha256: 'a'.repeat(64), executableSha256: key === target ? binaryHash : 'b'.repeat(64),
-  }]));
+  const assets = Object.fromEntries(
+    platformKeys.map(key => [
+      key,
+      {
+        name: `opencode-${key}.tar.gz`,
+        archiveSha256: 'a'.repeat(64),
+        executableSha256: key === target ? binaryHash : 'b'.repeat(64),
+      },
+    ]),
+  );
   const release = {
-    version: 1, releaseVersion: packageMetadata.version, compatibilityVersion: OPENCODE_VERSION,
-    runtimeVersion: CTG_RUNTIME_VERSION, sourceRevision: CTG_RUNTIME_SOURCE,
-    patchSha256: CTG_RUNTIME_PATCH_SHA256, lockSha256: CTG_RUNTIME_LOCK_SHA256, assets,
+    version: 1,
+    releaseVersion: packageMetadata.version,
+    compatibilityVersion: OPENCODE_VERSION,
+    runtimeVersion: CTG_RUNTIME_VERSION,
+    sourceRevision: CTG_RUNTIME_SOURCE,
+    patchSha256: CTG_RUNTIME_PATCH_SHA256,
+    lockSha256: CTG_RUNTIME_LOCK_SHA256,
+    assets,
   };
   try {
     await mkdir(path.dirname(binary), { recursive: true });
     await writeFile(binary, binaryBytes, { mode: 0o755 });
-    await writeFile(path.join(artifact, 'ctg-runtime.json'), JSON.stringify({
-      owner: 'Carthagent', sourceRepository: 'https://github.com/anomalyco/opencode',
-      sourceRevision: CTG_RUNTIME_SOURCE, lockSha256: CTG_RUNTIME_LOCK_SHA256,
-      patchSha256: CTG_RUNTIME_PATCH_SHA256, compatibilityVersion: OPENCODE_VERSION,
-      runtimeVersion: CTG_RUNTIME_VERSION, channel: `ctg.${OPENCODE_VERSION}`,
-      platform: target, webUI: false,
-    }));
+    await writeFile(
+      path.join(artifact, 'ctg-runtime.json'),
+      JSON.stringify({
+        owner: 'Carthagent',
+        sourceRepository: 'https://github.com/anomalyco/opencode',
+        sourceRevision: CTG_RUNTIME_SOURCE,
+        lockSha256: CTG_RUNTIME_LOCK_SHA256,
+        patchSha256: CTG_RUNTIME_PATCH_SHA256,
+        compatibilityVersion: OPENCODE_VERSION,
+        runtimeVersion: CTG_RUNTIME_VERSION,
+        channel: `ctg.${OPENCODE_VERSION}`,
+        platform: target,
+        webUI: false,
+      }),
+    );
     await writeFile(path.join(artifact, 'SHA256SUMS'), `${binaryHash}  cli-${target}/bin/${process.platform === 'win32' ? 'opencode.exe' : 'opencode'}\n`);
     await writeFile(manifestPath, JSON.stringify(release));
     const calls = [];
@@ -353,9 +463,11 @@ test('packaged release manifest automatically acquires the pinned owned runtime 
       runtimeReleaseManifestPath: manifestPath,
       runtimeCacheRoot: path.join(root, 'owned-cache'),
       runtimeReleaseBaseUrl: `https://example.test/releases/v${packageMetadata.version}`,
-      acquireOwnedRuntime: async (input) => {
+      acquireOwnedRuntime: async input => {
         calls.push(input);
-        const currentHash = createHash('sha256').update(await readFile(binary)).digest('hex');
+        const currentHash = createHash('sha256')
+          .update(await readFile(binary))
+          .digest('hex');
         if (currentHash !== input.expectedExecutableSha256) throw new Error('pinned executable SHA-256 mismatch');
         return artifact;
       },
@@ -385,7 +497,9 @@ test('packaged release manifest automatically acquires the pinned owned runtime 
     await writeFile(path.join(artifact, 'SHA256SUMS'), `${tamperedHash}  cli-${target}/bin/${process.platform === 'win32' ? 'opencode.exe' : 'opencode'}\n`);
     await assert.rejects(resolveOpenCode(options), /pinned executable SHA-256 mismatch/);
     assert.equal(calls.length, 2);
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('present but invalid runtime release manifest fails closed instead of selecting package CLI', async () => {
@@ -395,7 +509,9 @@ test('present but invalid runtime release manifest fails closed instead of selec
     await writeFile(manifestPath, JSON.stringify({ version: 1, releaseVersion: '1.2.3', assets: {} }));
     await assert.rejects(resolveOpenCode({ runtimeReleaseManifestPath: manifestPath }), /Invalid or incompatible CTG Carthagent runtime release manifest/);
     await assert.rejects(readRuntimeReleaseManifest(manifestPath), /Invalid or incompatible CTG Carthagent runtime release manifest/);
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('incomplete release platform matrix fails closed without acquisition', async () => {
@@ -403,24 +519,46 @@ test('incomplete release platform matrix fails closed without acquisition', asyn
   const manifestPath = path.join(root, 'runtime-release.json');
   const packageMetadata = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
   const keys = ['linux-x64', 'linux-arm64', 'darwin-x64', 'darwin-arm64', 'windows-x64'];
-  const assets = Object.fromEntries(keys.map((key) => [key, {
-    name: `opencode-${key}.tar.gz`, archiveSha256: 'a'.repeat(64), executableSha256: 'b'.repeat(64),
-  }]));
+  const assets = Object.fromEntries(
+    keys.map(key => [
+      key,
+      {
+        name: `opencode-${key}.tar.gz`,
+        archiveSha256: 'a'.repeat(64),
+        executableSha256: 'b'.repeat(64),
+      },
+    ]),
+  );
   delete assets[`${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch}`];
   try {
-    await writeFile(manifestPath, JSON.stringify({
-      version: 1, releaseVersion: packageMetadata.version,
-      compatibilityVersion: OPENCODE_VERSION, runtimeVersion: CTG_RUNTIME_VERSION,
-      sourceRevision: CTG_RUNTIME_SOURCE, patchSha256: CTG_RUNTIME_PATCH_SHA256,
-      lockSha256: CTG_RUNTIME_LOCK_SHA256, assets,
-    }));
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        version: 1,
+        releaseVersion: packageMetadata.version,
+        compatibilityVersion: OPENCODE_VERSION,
+        runtimeVersion: CTG_RUNTIME_VERSION,
+        sourceRevision: CTG_RUNTIME_SOURCE,
+        patchSha256: CTG_RUNTIME_PATCH_SHA256,
+        lockSha256: CTG_RUNTIME_LOCK_SHA256,
+        assets,
+      }),
+    );
     let acquired = false;
-    await assert.rejects(resolveOpenCode({
-      runtimeReleaseManifestPath: manifestPath,
-      acquireOwnedRuntime: async () => { acquired = true; throw new Error('must not acquire'); },
-    }), /Invalid or incompatible CTG Carthagent runtime release manifest/);
+    await assert.rejects(
+      resolveOpenCode({
+        runtimeReleaseManifestPath: manifestPath,
+        acquireOwnedRuntime: async () => {
+          acquired = true;
+          throw new Error('must not acquire');
+        },
+      }),
+      /Invalid or incompatible CTG Carthagent runtime release manifest/,
+    );
     assert.equal(acquired, false);
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('missing runtime release manifest keeps the developer-preview package resolver available', async () => {
@@ -433,15 +571,23 @@ test('missing runtime release manifest keeps the developer-preview package resol
     for (const name of ['runtime.mjs', 'runtime-artifact.mjs', 'runtime-github-transport.mjs']) {
       await writeFile(path.join(packageRoot, 'lib', 'opencode', name), await readFile(new URL(`../lib/opencode/${name}`, import.meta.url), 'utf8'));
     }
+    for (const name of ['logger.mjs', 'http-resilience.mjs']) {
+      await writeFile(path.join(packageRoot, 'lib', name), await readFile(new URL(`../lib/${name}`, import.meta.url), 'utf8'));
+    }
     await writeFile(path.join(packageRoot, 'package.json'), JSON.stringify({ name: 'carthagent', version: '1.0.0', type: 'module' }));
-    await writeFile(path.join(dependencyRoot, 'package.json'), JSON.stringify({ name: '@opencode/cli', version: OPENCODE_VERSION, bin: { opencode: './bin/opencode' } }));
+    await writeFile(
+      path.join(dependencyRoot, 'package.json'),
+      JSON.stringify({ name: '@opencode/cli', version: OPENCODE_VERSION, bin: { opencode: './bin/opencode' } }),
+    );
     const binary = path.join(dependencyRoot, 'bin', 'opencode');
     await writeFile(binary, 'preview fixture');
     const { pathToFileURL } = await import('node:url');
     const imported = await import(`${pathToFileURL(path.join(packageRoot, 'lib/opencode/runtime.mjs')).href}?missing=${Date.now()}`);
     const spawnImpl = (_command, _args, options) => spawn(process.execPath, ['-e', `process.stdout.write('opencode v${OPENCODE_VERSION}')`], options);
     assert.equal(await realpath(await imported.resolveOpenCode({ spawnImpl })), await realpath(binary));
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('session API helpers use the v2 envelope, prompt payload, and endpoint contracts', async () => {
@@ -477,7 +623,9 @@ test('session API helpers use the v2 envelope, prompt payload, and endpoint cont
     await getSession(service, 'ses_example', { location: workspace });
     assert.equal(new URL(calls[5].url).pathname, '/api/session/ses_example');
     assert.equal(new URL(calls[5].url).searchParams.get('location[directory]'), workspace);
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('native TUI attaches to the ensured authenticated service', () => {
@@ -489,7 +637,13 @@ test('native TUI attaches to the ensured authenticated service', () => {
     paths: { root: '/ctg/profile', serviceFile: '/ctg/profile/state/opencode/service.json' },
     runtimeIdentity: { kind: 'ctg-owned' },
   };
-  launchTui(service, '/work', { sessionID: 'ses_123', theme: 'nebula', glyphs: 'ascii', env: { CTG_RUNTIME_GITHUB_TOKEN: 'fake-token', ctg_runtime_github_token: 'fake-lowercase-token' }, spawnImpl: (...args) => (captured = args) });
+  launchTui(service, '/work', {
+    sessionID: 'ses_123',
+    theme: 'nebula',
+    glyphs: 'ascii',
+    env: { CTG_RUNTIME_GITHUB_TOKEN: 'fake-token', ctg_runtime_github_token: 'fake-lowercase-token' },
+    spawnImpl: (...args) => (captured = args),
+  });
   assert.deepEqual(captured[0], '/ctg/opencode');
   assert.deepEqual(captured[1], ['--server', 'http://127.0.0.1:4567', '/work', '--session', 'ses_123']);
   assert.equal(captured[2].env.OPENCODE_PASSWORD, 'ctg-test-password');
@@ -511,12 +665,17 @@ test('a live registered process is retained when health inspection fails', async
     await provisionRuntime({ root });
     const record = { id: 'ctg-live', pid: process.pid, url: 'http://127.0.0.1:1', password: 'test', version: '2.0.32' };
     await writeFile(paths.serviceFile, JSON.stringify(record));
-    globalThis.fetch = async () => { throw new Error('temporary outage'); };
+    globalThis.fetch = async () => {
+      throw new Error('temporary outage');
+    };
     const options = { root, binary: '/missing/binary', healthPatience: 300 };
     // stopService does not need to resolve an executable and must not discard ownership.
     await assert.rejects(stopService(options), /alive but its service identity cannot be verified/);
     assert.deepEqual(JSON.parse(await readFile(paths.serviceFile, 'utf8')), record);
-  } finally { globalThis.fetch = original; await rm(root, { recursive: true, force: true }); }
+  } finally {
+    globalThis.fetch = original;
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('a slow but live service is given patience instead of being declared unhealthy', async () => {
@@ -536,12 +695,22 @@ test('a slow but live service is given patience instead of being declared unheal
       return new Response(JSON.stringify({ version: '2.0.32', pid: process.pid }), { status: 200 });
     };
     // Health succeeds on the third probe, so stop proceeds to signal the registered pid.
-    process.kill = (pid, signal) => { if (signal === 0) return originalKill.call(process, pid, 0); killed.push([pid, signal]); throw Object.assign(new Error('stub'), { code: 'EPERM' }); };
-    try { await stopService({ root, binary: '/missing/binary', healthPatience: 5_000 }).catch(() => {}); }
-    finally { process.kill = originalKill; }
+    process.kill = (pid, signal) => {
+      if (signal === 0) return originalKill.call(process, pid, 0);
+      killed.push([pid, signal]);
+      throw Object.assign(new Error('stub'), { code: 'EPERM' });
+    };
+    try {
+      await stopService({ root, binary: '/missing/binary', healthPatience: 5_000 }).catch(() => {});
+    } finally {
+      process.kill = originalKill;
+    }
     assert.ok(calls >= 3, `expected retries, saw ${calls}`);
     assert.deepEqual(killed[0], [process.pid, 'SIGTERM']);
-  } finally { globalThis.fetch = original; await rm(root, { recursive: true, force: true }); }
+  } finally {
+    globalThis.fetch = original;
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('runtime identity binds compatibility services to the exact executable path and digest', async () => {
@@ -557,7 +726,9 @@ test('runtime identity binds compatibility services to the exact executable path
     assert.equal(firstIdentity.version, OPENCODE_VERSION);
     assert.notEqual(firstIdentity.binaryPath, secondIdentity.binaryPath);
     assert.notEqual(firstIdentity.binarySha256, secondIdentity.binarySha256);
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('PATH-selected commands resolve to a concrete executable identity', async () => {
@@ -581,7 +752,9 @@ test('PATH-selected commands resolve to a concrete executable identity', async (
     assert.deepEqual(invocations, [{ command: 'opencode', args: ['--version'] }]);
     const identity = await runtimeIdentity('opencode', { binary: 'opencode', env });
     assert.equal(identity.binaryPath, canonicalExecutable);
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('Windows PATH lookup does not append PATHEXT to an already suffixed executable', async () => {
@@ -595,7 +768,9 @@ test('Windows PATH lookup does not append PATHEXT to an already suffixed executa
     await writeFile(extensionless, 'fixture');
     assert.equal(resolvePathCommand('foo.exe', { PATH: bin, PATHEXT: '.COM;.EXE;.CMD' }, 'win32'), executable);
     assert.equal(resolvePathCommand('foo', { PATH: bin, PATHEXT: '.COM;.EXE;.CMD' }, 'win32'), extensionless);
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('ensureService rejects normal/owned selector switches without stopping the registered process', async () => {
@@ -609,18 +784,36 @@ test('ensureService rejects normal/owned selector switches without stopping the 
   const originalFetch = globalThis.fetch;
   let registeredProcess;
   try {
-    await writeFile(script, `if (process.argv[3] === '--version') console.log(process.argv[2].includes('owned-artifact') ? 'opencode v${CTG_RUNTIME_VERSION}' : 'opencode v2.0.32');\n`);
+    await writeFile(
+      script,
+      `if (process.argv[3] === '--version') console.log(process.argv[2].includes('owned-artifact') ? 'opencode v${CTG_RUNTIME_VERSION}' : 'opencode v2.0.32');\n`,
+    );
     await writeFile(binary, 'upstream executable fixture');
     await mkdir(path.dirname(ownedBinary), { recursive: true });
     await writeFile(ownedBinary, 'owned executable fixture');
     const { createHash } = await import('node:crypto');
-    const ownedHash = createHash('sha256').update(await readFile(ownedBinary)).digest('hex');
-    await writeFile(path.join(artifact, 'SHA256SUMS'), `${ownedHash}  cli-${artifactPlatform}/bin/${process.platform === 'win32' ? 'opencode.exe' : 'opencode'}\n`);
-    await writeFile(path.join(artifact, 'ctg-runtime.json'), JSON.stringify({
-      owner: 'Carthagent', sourceRepository: 'https://github.com/anomalyco/opencode',
-      sourceRevision: CTG_RUNTIME_SOURCE, lockSha256: CTG_RUNTIME_LOCK_SHA256, patchSha256: CTG_RUNTIME_PATCH_SHA256,
-      compatibilityVersion: OPENCODE_VERSION, runtimeVersion: CTG_RUNTIME_VERSION, channel: 'ctg.2.0.32', platform: ownedPlatform, webUI: false,
-    }));
+    const ownedHash = createHash('sha256')
+      .update(await readFile(ownedBinary))
+      .digest('hex');
+    await writeFile(
+      path.join(artifact, 'SHA256SUMS'),
+      `${ownedHash}  cli-${artifactPlatform}/bin/${process.platform === 'win32' ? 'opencode.exe' : 'opencode'}\n`,
+    );
+    await writeFile(
+      path.join(artifact, 'ctg-runtime.json'),
+      JSON.stringify({
+        owner: 'Carthagent',
+        sourceRepository: 'https://github.com/anomalyco/opencode',
+        sourceRevision: CTG_RUNTIME_SOURCE,
+        lockSha256: CTG_RUNTIME_LOCK_SHA256,
+        patchSha256: CTG_RUNTIME_PATCH_SHA256,
+        compatibilityVersion: OPENCODE_VERSION,
+        runtimeVersion: CTG_RUNTIME_VERSION,
+        channel: 'ctg.2.0.32',
+        platform: ownedPlatform,
+        webUI: false,
+      }),
+    );
     const spawnImpl = (command, args, options) => spawn(process.execPath, [script, command, ...args], options);
     const upstream = await runtimeIdentity(binary, { binary });
     const owned = await runtimeIdentity(ownedBinary, { ownedRuntime: artifact });
@@ -631,7 +824,14 @@ test('ensureService rejects normal/owned selector switches without stopping the 
       registeredProcess.once('spawn', resolve);
       registeredProcess.once('error', reject);
     });
-    const registered = { id: 'existing', pid: registeredProcess.pid, url: 'http://127.0.0.1:4567', password: 'fixture', version: upstream.version, runtimeIdentity: upstream };
+    const registered = {
+      id: 'existing',
+      pid: registeredProcess.pid,
+      url: 'http://127.0.0.1:4567',
+      password: 'fixture',
+      version: upstream.version,
+      runtimeIdentity: upstream,
+    };
     await writeFile(paths.serviceFile, JSON.stringify(registered));
     globalThis.fetch = async () => new Response(JSON.stringify({ data: { version: upstream.version, pid: registeredProcess.pid } }));
     for (const selected of [
@@ -644,11 +844,16 @@ test('ensureService rejects normal/owned selector switches without stopping the 
     }
     const ownedRecord = { ...registered, version: owned.version, runtimeIdentity: owned };
     await writeFile(paths.serviceFile, JSON.stringify(ownedRecord));
-    globalThis.fetch = async () => new Response(JSON.stringify({ data: { version: owned.version, pid: registeredProcess.pid, capabilities: { shellOrigin: true } } }));
-    await assert.rejects(ensureService({ root: paths.root, ownedRuntime: artifact, binary, spawnImpl }), /already running runtime .* selected .* active service was left running/);
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify({ data: { version: owned.version, pid: registeredProcess.pid, capabilities: { shellOrigin: true } } }));
+    await assert.rejects(
+      ensureService({ root: paths.root, ownedRuntime: artifact, binary, spawnImpl }),
+      /already running runtime .* selected .* active service was left running/,
+    );
     assert.deepEqual(JSON.parse(await readFile(paths.serviceFile, 'utf8')), ownedRecord);
     await writeFile(paths.serviceFile, JSON.stringify(ownedRecord));
-    globalThis.fetch = async () => new Response(JSON.stringify({ data: { version: owned.version, pid: registeredProcess.pid, capabilities: { shellOrigin: true } } }));
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify({ data: { version: owned.version, pid: registeredProcess.pid, capabilities: { shellOrigin: true } } }));
     await assert.rejects(ensureService({ root: paths.root, binary, spawnImpl }), /already running runtime .* selected .* active service was left running/);
     assert.deepEqual(JSON.parse(await readFile(paths.serviceFile, 'utf8')), ownedRecord);
 
@@ -669,11 +874,17 @@ test('owned runtime upgrades restart the authenticated service and preserve the 
   const executable = `cli-${target}/bin/${process.platform === 'win32' ? 'opencode.exe' : 'opencode'}`;
   const binary = path.join(artifact, executable);
   const script = path.join(root, 'server.cjs');
-  const options = { root: path.join(root, 'profile'), ownedRuntime: artifact,
-    spawnImpl: (command, args, opts) => spawn(process.execPath, [script, ...args], opts), startupTimeout: 5000 };
+  const options = {
+    root: path.join(root, 'profile'),
+    ownedRuntime: artifact,
+    spawnImpl: (command, args, opts) => spawn(process.execPath, [script, ...args], opts),
+    startupTimeout: 5000,
+  };
   try {
     await mkdir(path.dirname(binary), { recursive: true });
-    await writeFile(script, `
+    await writeFile(
+      script,
+      `
       if (process.argv[2] === '--version') { console.log('opencode v${CTG_RUNTIME_VERSION}'); process.exit(0); }
       const http = require('node:http');
       const server = http.createServer((req, res) => {
@@ -682,14 +893,25 @@ test('owned runtime upgrades restart the authenticated service and preserve the 
         res.end(JSON.stringify({version:'${CTG_RUNTIME_VERSION}',pid:process.pid,capabilities:{shellOrigin:true}}));
       });
       server.listen(0, '127.0.0.1', () => console.log('server listening on http://127.0.0.1:' + server.address().port));
-    `);
-    await writeFile(path.join(artifact, 'ctg-runtime.json'), JSON.stringify({
-      owner: 'Carthagent', sourceRepository: 'https://github.com/anomalyco/opencode',
-      sourceRevision: CTG_RUNTIME_SOURCE, lockSha256: CTG_RUNTIME_LOCK_SHA256, patchSha256: CTG_RUNTIME_PATCH_SHA256,
-      compatibilityVersion: OPENCODE_VERSION, runtimeVersion: CTG_RUNTIME_VERSION, channel: 'ctg.2.0.32', platform: target, webUI: false,
-    }));
+    `,
+    );
+    await writeFile(
+      path.join(artifact, 'ctg-runtime.json'),
+      JSON.stringify({
+        owner: 'Carthagent',
+        sourceRepository: 'https://github.com/anomalyco/opencode',
+        sourceRevision: CTG_RUNTIME_SOURCE,
+        lockSha256: CTG_RUNTIME_LOCK_SHA256,
+        patchSha256: CTG_RUNTIME_PATCH_SHA256,
+        compatibilityVersion: OPENCODE_VERSION,
+        runtimeVersion: CTG_RUNTIME_VERSION,
+        channel: 'ctg.2.0.32',
+        platform: target,
+        webUI: false,
+      }),
+    );
     const { createHash } = await import('node:crypto');
-    const install = async (bytes) => {
+    const install = async bytes => {
       await writeFile(binary, bytes);
       await writeFile(path.join(artifact, 'SHA256SUMS'), `${createHash('sha256').update(bytes).digest('hex')}  ${executable}\n`);
     };
@@ -724,7 +946,10 @@ test('dead mismatched registration is cleaned before a replacement service start
   const paths = runtimePaths({ root });
   const script = path.join(root, 'server.cjs');
   try {
-    await writeFile(script, `if (process.argv[2] === '--version') { console.log('2.0.32'); process.exit(0); }\nconst http=require('node:http');const s=http.createServer((q,r)=>{if(q.url==='/api/info'){r.setHeader('content-type','application/json');r.end(JSON.stringify({version:'2.0.32',pid:process.pid}));return}r.statusCode=404;r.end()});s.listen(Number(process.argv[process.argv.indexOf('--port')+1]),'127.0.0.1',()=>console.log('server listening on http://127.0.0.1:'+s.address().port));`);
+    await writeFile(
+      script,
+      `if (process.argv[2] === '--version') { console.log('2.0.32'); process.exit(0); }\nconst http=require('node:http');const s=http.createServer((q,r)=>{if(q.url==='/api/info'){r.setHeader('content-type','application/json');r.end(JSON.stringify({version:'2.0.32',pid:process.pid}));return}r.statusCode=404;r.end()});s.listen(Number(process.argv[process.argv.indexOf('--port')+1]),'127.0.0.1',()=>console.log('server listening on http://127.0.0.1:'+s.address().port));`,
+    );
     await mkdir(path.dirname(paths.serviceFile), { recursive: true });
     await writeFile(paths.serviceFile, JSON.stringify({ id: 'dead-legacy', pid: 2_000_000_000, url: 'http://127.0.0.1:1', version: '2.0.32' }));
     const spawnImpl = (command, args, options) => spawn(process.execPath, [script, ...args], options);
@@ -733,7 +958,9 @@ test('dead mismatched registration is cleaned before a replacement service start
     assert.equal(service.info.pid, service.pid);
     assert.notEqual(service.pid, 2_000_000_000);
     await stopService({ root });
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('ensure and stop serialize on the same lifecycle lock', async () => {
@@ -746,15 +973,27 @@ test('ensure and stop serialize on the same lifecycle lock', async () => {
     const options = { root, binary: process.execPath, spawnImpl, startupTimeout: 5000, stopTimeout: 3000 };
     const [ensured, stopped] = await Promise.all([ensureService(options), stopService(options)]);
     assert.equal(typeof stopped, 'boolean');
-    assert.ok((await readFile(path.join(runtimePaths({ root }).configDir, 'themes', 'carthage.json'), 'utf8')).includes('opencode.ai/theme.json'), 'production service startup provisions the native Carthage theme before host scan');
+    assert.ok(
+      (await readFile(path.join(runtimePaths({ root }).configDir, 'themes', 'carthage.json'), 'utf8')).includes('opencode.ai/theme.json'),
+      'production service startup provisions the native Carthage theme before host scan',
+    );
     if (ensured?.pid) {
       // It either remains the correctly registered live service or stop removed it.
-      const current = await readFile(runtimePaths({ root }).serviceFile, 'utf8').then(JSON.parse).catch(() => undefined);
+      const current = await readFile(runtimePaths({ root }).serviceFile, 'utf8')
+        .then(JSON.parse)
+        .catch(() => undefined);
       if (current) assert.equal(current.pid, ensured.pid);
     }
     await stopService(options).catch(() => {});
-    assert.equal(await readFile(runtimePaths({ root }).serviceFile, 'utf8').then(JSON.parse).catch(() => undefined), undefined);
-  } finally { await rm(root, { recursive: true, force: true }); }
+    assert.equal(
+      await readFile(runtimePaths({ root }).serviceFile, 'utf8')
+        .then(JSON.parse)
+        .catch(() => undefined),
+      undefined,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('an explicitly selected unusable OpenCode binary does not fall back', async () => {
@@ -772,12 +1011,20 @@ test('owned runtime resolver requires pinned manifest, native platform, checksum
   await writeFile(fake, `if (process.argv[2] === '--version') console.log('opencode v${CTG_RUNTIME_VERSION}'); else process.exit(1);\n`);
   await writeFile(executable, 'fixture');
   const { createHash } = await import('node:crypto');
-  const checksum = createHash('sha256').update(await readFile(executable)).digest('hex');
+  const checksum = createHash('sha256')
+    .update(await readFile(executable))
+    .digest('hex');
   const manifest = {
-    owner: 'Carthagent', sourceRepository: 'https://github.com/anomalyco/opencode',
-    sourceRevision: CTG_RUNTIME_SOURCE, lockSha256: CTG_RUNTIME_LOCK_SHA256, patchSha256: CTG_RUNTIME_PATCH_SHA256,
-    compatibilityVersion: OPENCODE_VERSION, runtimeVersion: CTG_RUNTIME_VERSION,
-    channel: 'ctg.2.0.32', platform, webUI: false,
+    owner: 'Carthagent',
+    sourceRepository: 'https://github.com/anomalyco/opencode',
+    sourceRevision: CTG_RUNTIME_SOURCE,
+    lockSha256: CTG_RUNTIME_LOCK_SHA256,
+    patchSha256: CTG_RUNTIME_PATCH_SHA256,
+    compatibilityVersion: OPENCODE_VERSION,
+    runtimeVersion: CTG_RUNTIME_VERSION,
+    channel: 'ctg.2.0.32',
+    platform,
+    webUI: false,
   };
   await writeFile(path.join(root, 'ctg-runtime.json'), `${JSON.stringify(manifest)}\n`);
   await writeFile(path.join(root, 'SHA256SUMS'), `${checksum}  cli-${artifactPlatform}/bin/${process.platform === 'win32' ? 'opencode.exe' : 'opencode'}\n`);
@@ -807,7 +1054,8 @@ test('headless runner passes workspace environment and returns assistant content
       if (pathname.endsWith('/prompt')) return new Response('{"data":{"id":"user_headless"}}');
       if (pathname.endsWith('/wait')) return new Response(null, { status: 204 });
       if (/\/api\/session\/ses_headless$/.test(pathname)) return new Response('{"data":{"id":"ses_headless","outcome":"succeeded"}}');
-      if (pathname.endsWith('/message')) return new Response(JSON.stringify({ data: [{ type: 'assistant', finish: 'stop', content: [{ type: 'text', text: 'fixture result' }] }] }));
+      if (pathname.endsWith('/message'))
+        return new Response(JSON.stringify({ data: [{ type: 'assistant', finish: 'stop', content: [{ type: 'text', text: 'fixture result' }] }] }));
       throw new Error(`Unexpected endpoint ${pathname}`);
     };
     let admission;
@@ -825,13 +1073,15 @@ test('headless runner passes workspace environment and returns assistant content
       error: undefined,
       message: { type: 'assistant', finish: 'stop', content: [{ type: 'text', text: 'fixture result' }] },
     });
-    assert.equal(calls.find((call) => call.pathname.endsWith('/environment')).init.method, 'PUT');
-    assert.equal(JSON.parse(calls.find((call) => call.pathname.endsWith('/environment')).init.body).variables.FIXTURE_KEY, 'injected');
-    assert.equal(JSON.parse(calls.find((call) => call.pathname.endsWith('/prompt')).init.body).text, 'say the fixture');
+    assert.equal(calls.find(call => call.pathname.endsWith('/environment')).init.method, 'PUT');
+    assert.equal(JSON.parse(calls.find(call => call.pathname.endsWith('/environment')).init.body).variables.FIXTURE_KEY, 'injected');
+    assert.equal(JSON.parse(calls.find(call => call.pathname.endsWith('/prompt')).init.body).text, 'say the fixture');
     assert.equal(result.outcome, 'succeeded');
     assert.equal(result.terminal, true);
     assert.equal(result.budgetReason, undefined, 'a successful terminal session has no budget failure reason');
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('headless follows message pages back to the accepted prompt in long runs', async () => {
@@ -868,26 +1118,41 @@ test('headless follows message pages back to the accepted prompt in long runs', 
     assert.equal(result.messages[0].id, 'user_long', 'the turn keeps its prompt anchor');
     assert.equal(result.result.text, 'Delivered and verified.');
     assert.equal(result.outcome, 'succeeded');
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('headless reattaches after HTTP wait header timeouts without replaying admitted work', async () => {
   const original = globalThis.fetch;
-  let waits = 0, prompts = 0, environments = 0;
+  let waits = 0,
+    prompts = 0,
+    environments = 0;
   try {
     globalThis.fetch = async url => {
       const pathname = new URL(url).pathname;
-      if (pathname.endsWith('/environment')) { environments++; return new Response(null, { status: 204 }); }
-      if (pathname.endsWith('/prompt')) { prompts++; return new Response('{"data":{"id":"user-long"}}'); }
+      if (pathname.endsWith('/environment')) {
+        environments++;
+        return new Response(null, { status: 204 });
+      }
+      if (pathname.endsWith('/prompt')) {
+        prompts++;
+        return new Response('{"data":{"id":"user-long"}}');
+      }
       if (pathname.endsWith('/wait')) {
         if (++waits < 3) throw new TypeError('fetch failed', { cause: Object.assign(new Error('Headers Timeout Error'), { code: 'UND_ERR_HEADERS_TIMEOUT' }) });
         return new Response(null, { status: 204 });
       }
       if (pathname === '/api/session/ses_long') return new Response('{"data":{"id":"ses_long","outcome":"succeeded"}}');
-      if (pathname.endsWith('/message')) return new Response(JSON.stringify({ data: [
-        { id: 'user-long', type: 'user', time: { created: 1 } },
-        { id: 'answer-long', type: 'assistant', finish: 'stop', time: { created: 2 }, content: [{ type: 'text', text: 'Long task completed' }] },
-      ] }));
+      if (pathname.endsWith('/message'))
+        return new Response(
+          JSON.stringify({
+            data: [
+              { id: 'user-long', type: 'user', time: { created: 1 } },
+              { id: 'answer-long', type: 'assistant', finish: 'stop', time: { created: 2 }, content: [{ type: 'text', text: 'Long task completed' }] },
+            ],
+          }),
+        );
       throw new Error(`Unexpected endpoint ${pathname}`);
     };
     const result = await runHeadless({ url: 'http://127.0.0.1:3333', headers: {} }, '/workspace', 'long task', { sessionID: 'ses_long' });
@@ -896,14 +1161,17 @@ test('headless reattaches after HTTP wait header timeouts without replaying admi
     assert.equal(waits, 3);
     assert.equal(prompts, 1);
     assert.equal(environments, 1);
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('headless does not retry failed prompt admission or unrelated wait errors', async () => {
   const original = globalThis.fetch;
   try {
     for (const admissionFails of [true, false]) {
-      let prompts = 0, waits = 0;
+      let prompts = 0,
+        waits = 0;
       globalThis.fetch = async url => {
         const pathname = new URL(url).pathname;
         if (pathname.endsWith('/environment')) return new Response(null, { status: 204 });
@@ -912,21 +1180,32 @@ test('headless does not retry failed prompt admission or unrelated wait errors',
           if (admissionFails) throw Object.assign(new Error('admission unknown'), { code: 'UND_ERR_HEADERS_TIMEOUT' });
           return new Response('{"data":{"id":"user-long"}}');
         }
-        if (pathname.endsWith('/wait')) { waits++; return new Response('unauthorized', { status: 401 }); }
+        if (pathname.endsWith('/wait')) {
+          waits++;
+          return new Response('unauthorized', { status: 401 });
+        }
         throw new Error(`Unexpected endpoint ${pathname}`);
       };
-      await assert.rejects(runHeadless({ url: 'http://127.0.0.1:3333', headers: {} }, '/workspace', 'task', { sessionID: 'ses_long' }), admissionFails ? /admission unknown/ : /401/);
+      await assert.rejects(
+        runHeadless({ url: 'http://127.0.0.1:3333', headers: {} }, '/workspace', 'task', { sessionID: 'ses_long' }),
+        admissionFails ? /admission unknown/ : /401/,
+      );
       assert.equal(prompts, 1);
       assert.equal(waits, admissionFails ? 0 : 1);
     }
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('pre-aborted headless calls do not create or resume a session or return prior output', async () => {
   const original = globalThis.fetch;
   let requests = 0;
   try {
-    globalThis.fetch = async () => { requests += 1; throw new Error('pre-aborted execution must not make API requests'); };
+    globalThis.fetch = async () => {
+      requests += 1;
+      throw new Error('pre-aborted execution must not make API requests');
+    };
     const controller = new AbortController();
     controller.abort(new Error('already cancelled'));
     const service = { url: 'http://127.0.0.1:3333', headers: {} };
@@ -946,39 +1225,51 @@ test('pre-aborted headless calls do not create or resume a session or return pri
       assert.equal(getEventListeners(controller.signal, 'abort').length, 0, 'pre-aborted resumed calls must not leak forwarding listeners');
     }
     assert.equal(requests, 0);
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('headless result uses newest terminal assistant from chronological conversation history', async () => {
   const original = globalThis.fetch;
   try {
-    globalThis.fetch = async (url) => {
+    globalThis.fetch = async url => {
       const pathname = new URL(url).pathname;
       if (pathname === '/api/session') return new Response('{"data":{"id":"ses_resume"}}');
       if (pathname.endsWith('/environment') || pathname.endsWith('/wait')) return new Response(null, { status: 204 });
       if (pathname.endsWith('/prompt')) return new Response('{"data":{"id":"user-new"}}');
       if (pathname === '/api/session/ses_resume') return new Response('{"data":{"id":"ses_resume","outcome":"succeeded"}}');
-      if (pathname.endsWith('/message')) return new Response(JSON.stringify({ data: [
-        { id: 'assistant-final', type: 'assistant', time: { created: 300 }, finish: 'stop', content: [{ type: 'text', text: 'final answer' }] },
-        { id: 'assistant-tool', type: 'assistant', time: { created: 250 }, finish: 'tool-calls', content: [{ type: 'tool-call', text: '' }] },
-        { id: 'user-new', type: 'user', time: { created: 200 }, content: [{ type: 'text', text: 'new prompt' }] },
-        { id: 'assistant-old', type: 'assistant', time: { created: 100 }, finish: 'stop', content: [{ type: 'text', text: 'old result' }] },
-      ] }));
+      if (pathname.endsWith('/message'))
+        return new Response(
+          JSON.stringify({
+            data: [
+              { id: 'assistant-final', type: 'assistant', time: { created: 300 }, finish: 'stop', content: [{ type: 'text', text: 'final answer' }] },
+              { id: 'assistant-tool', type: 'assistant', time: { created: 250 }, finish: 'tool-calls', content: [{ type: 'tool-call', text: '' }] },
+              { id: 'user-new', type: 'user', time: { created: 200 }, content: [{ type: 'text', text: 'new prompt' }] },
+              { id: 'assistant-old', type: 'assistant', time: { created: 100 }, finish: 'stop', content: [{ type: 'text', text: 'old result' }] },
+            ],
+          }),
+        );
       throw new Error(`Unexpected endpoint ${pathname}`);
     };
     const result = await runHeadless({ url: 'http://127.0.0.1:3333', headers: {} }, '/workspace', 'continue', { sessionID: 'ses_resume' });
-    assert.deepEqual(result.messages.map((item) => item.id), ['user-new', 'assistant-tool', 'assistant-final']);
+    assert.deepEqual(
+      result.messages.map(item => item.id),
+      ['user-new', 'assistant-tool', 'assistant-final'],
+    );
     assert.equal(result.result.text, 'final answer');
     assert.equal(result.result.message.id, 'assistant-final', 'a preceding tool-call assistant must not replace the final response');
     assert.equal(result.budgetReason, undefined, 'a terminal successful resumed turn has no budget failure reason');
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('headless fails closed for 503 outcome projection and preserves terminal idle errors', async () => {
   const original = globalThis.fetch;
   let projectionCalls = 0;
   try {
-    globalThis.fetch = async (url) => {
+    globalThis.fetch = async url => {
       const pathname = new URL(url).pathname;
       if (pathname === '/api/session') return new Response('{"data":{"id":"ses_projection"}}');
       if (pathname.endsWith('/environment') || pathname.endsWith('/wait')) return new Response(null, { status: 204 });
@@ -987,10 +1278,15 @@ test('headless fails closed for 503 outcome projection and preserves terminal id
         projectionCalls += 1;
         return new Response('{"error":"projection unavailable"}', { status: 503 });
       }
-      if (pathname.endsWith('/message')) return new Response(JSON.stringify({ data: [
-        { id: 'idle-error', type: 'idle', outcome: 'failed', error: { message: 'provider offline' }, time: { created: 300 } },
-        { id: 'user-current', type: 'user', time: { created: 200 } },
-      ] }));
+      if (pathname.endsWith('/message'))
+        return new Response(
+          JSON.stringify({
+            data: [
+              { id: 'idle-error', type: 'idle', outcome: 'failed', error: { message: 'provider offline' }, time: { created: 300 } },
+              { id: 'user-current', type: 'user', time: { created: 200 } },
+            ],
+          }),
+        );
       throw new Error(`Unexpected endpoint ${pathname}`);
     };
     const result = await runHeadless({ url: 'http://127.0.0.1:3333', headers: {} }, '/workspace', 'go', { timeout: 100 });
@@ -999,7 +1295,9 @@ test('headless fails closed for 503 outcome projection and preserves terminal id
     assert.equal(result.terminal, true);
     assert.equal(result.error.message, 'provider offline');
     assert.equal(result.result, undefined, 'idle failure must not accidentally select an earlier assistant result');
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('aborting headless execution sends a native interrupt for that session', async () => {
@@ -1018,13 +1316,15 @@ test('aborting headless execution sends a native interrupt for that session', as
     };
     const controller = new AbortController();
     const resultPromise = runHeadless({ url: 'http://127.0.0.1:3333', headers: {} }, '/workspace', 'wait', { signal: controller.signal });
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await new Promise(resolve => setTimeout(resolve, 20));
     controller.abort(new Error('test cancellation'));
     const result = await resultPromise;
     assert.equal(result.outcome, 'interrupted');
     assert.equal(result.budgetReason, undefined);
     assert.ok(paths.includes('/api/session/ses_cancel/interrupt'));
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('headless timeout aborts the wait request and interrupts the native session', async () => {
@@ -1047,7 +1347,9 @@ test('headless timeout aborts the wait request and interrupts the native session
     assert.equal(result.terminal, true);
     assert.equal(result.budgetReason, undefined);
     assert.ok(paths.includes('/api/session/ses_timeout/interrupt'));
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('headless reports timeout distinctly when no terminal outcome can be observed', async () => {
@@ -1068,7 +1370,9 @@ test('headless reports timeout distinctly when no terminal outcome can be observ
     assert.equal(result.outcome, 'timed-out');
     assert.equal(result.terminal, false);
     assert.equal(result.budgetReason, 'timed-out');
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('accepted timeout does not inherit the previous session outcome and keeps the admitted turn', async () => {
@@ -1081,38 +1385,56 @@ test('accepted timeout does not inherit the previous session outcome and keeps t
       if (pathname.endsWith('/wait')) return pendingUntilAbort(init.signal);
       if (pathname.endsWith('/interrupt')) return new Response(null, { status: 204 });
       if (pathname === '/api/session/ses_previous') return new Response('{"data":{"id":"ses_previous","outcome":"succeeded"}}');
-      if (pathname.endsWith('/message')) return new Response(JSON.stringify({ data: [
-        { id: 'assistant-old', type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'stale prior result' }], time: { created: 1 } },
-        { id: 'user-new', type: 'user', time: { created: 2 } },
-        { id: 'assistant-new', type: 'assistant', finish: 'tool-calls', parts: [{ type: 'tool', callID: 'tool-new' }], time: { created: 3 } },
-      ] }));
+      if (pathname.endsWith('/message'))
+        return new Response(
+          JSON.stringify({
+            data: [
+              { id: 'assistant-old', type: 'assistant', finish: 'stop', parts: [{ type: 'text', text: 'stale prior result' }], time: { created: 1 } },
+              { id: 'user-new', type: 'user', time: { created: 2 } },
+              { id: 'assistant-new', type: 'assistant', finish: 'tool-calls', parts: [{ type: 'tool', callID: 'tool-new' }], time: { created: 3 } },
+            ],
+          }),
+        );
       throw new Error(`Unexpected endpoint ${pathname}`);
     };
     const controller = new AbortController();
-    const resultPromise = runHeadless({ url: 'http://127.0.0.1:3333', headers: {} }, '/workspace', 'new turn', { sessionID: 'ses_previous', signal: controller.signal });
+    const resultPromise = runHeadless({ url: 'http://127.0.0.1:3333', headers: {} }, '/workspace', 'new turn', {
+      sessionID: 'ses_previous',
+      signal: controller.signal,
+    });
     await new Promise(resolve => setTimeout(resolve, 20));
     controller.abort(new Error('test timeout/cancel'));
     const result = await resultPromise;
     assert.equal(result.session.id, 'ses_previous');
     assert.equal(result.outcome, 'interrupted');
     assert.equal(result.terminal, false, 'prior successful session state is not terminal for this admission');
-    assert.deepEqual(result.messages.map(message => message.id), ['user-new', 'assistant-new']);
+    assert.deepEqual(
+      result.messages.map(message => message.id),
+      ['user-new', 'assistant-new'],
+    );
     assert.notEqual(result.result?.text, 'stale prior result', 'previous assistant response is never reused');
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });
-
 
 test('runtime liveness treats an unreaped Linux zombie as stopped but preserves live processes', { skip: process.platform !== 'linux' }, async t => {
   const { once } = await import('node:events');
-  const child = spawn('python3', ['-c', `import os,time
+  const child = spawn('python3', [
+    '-c',
+    `import os,time
 pid=os.fork()
 if pid == 0: os._exit(0)
 print(pid,flush=True)
-time.sleep(30)`]);
+time.sleep(30)`,
+  ]);
   t.after(() => child.kill());
   let output = '';
   const zombie = await new Promise((resolvePID, reject) => {
-    child.stdout.on('data', chunk => { output += chunk; if (output.includes('\n')) resolvePID(Number(output.trim())); });
+    child.stdout.on('data', chunk => {
+      output += chunk;
+      if (output.includes('\n')) resolvePID(Number(output.trim()));
+    });
     child.once('error', reject);
   });
   for (let i = 0; i < 100; i++) {
@@ -1137,13 +1459,22 @@ test('headless runs reject pending permission requests and question forms instea
   let listed = 0;
   const server = createServer((req, res) => {
     let body = '';
-    req.on('data', chunk => { body += chunk; });
+    req.on('data', chunk => {
+      body += chunk;
+    });
     req.on('end', () => {
       const url = new URL(req.url, 'http://x');
       if (req.method === 'GET' && url.pathname === '/api/session/ses_1/permission') {
         listed++;
         res.setHeader('content-type', 'application/json');
-        res.end(JSON.stringify({ data: [{ id: 'per_1', sessionID: 'ses_1', action: 'read', resources: ['.env.test'] }, { id: 'per_x', sessionID: 'ses_other' }] }));
+        res.end(
+          JSON.stringify({
+            data: [
+              { id: 'per_1', sessionID: 'ses_1', action: 'read', resources: ['.env.test'] },
+              { id: 'per_x', sessionID: 'ses_other' },
+            ],
+          }),
+        );
         return;
       }
       if (req.method === 'GET' && url.pathname === '/api/session/ses_1/form') {
@@ -1151,9 +1482,20 @@ test('headless runs reject pending permission requests and question forms instea
         res.end(JSON.stringify({ data: [{ id: 'frm_1', sessionID: 'ses_1' }] }));
         return;
       }
-      if (req.method === 'DELETE' && url.pathname === '/api/session/ses_1/form/frm_1') { cancels.push(url.searchParams.get('message')); res.statusCode = 204; res.end(); return; }
-      if (req.method === 'POST' && url.pathname.endsWith('/reply')) { replies.push({ path: url.pathname, body: JSON.parse(body) }); res.setHeader('content-type', 'application/json'); res.end('true'); return; }
-      res.statusCode = 404; res.end('{}');
+      if (req.method === 'DELETE' && url.pathname === '/api/session/ses_1/form/frm_1') {
+        cancels.push(url.searchParams.get('message'));
+        res.statusCode = 204;
+        res.end();
+        return;
+      }
+      if (req.method === 'POST' && url.pathname.endsWith('/reply')) {
+        replies.push({ path: url.pathname, body: JSON.parse(body) });
+        res.setHeader('content-type', 'application/json');
+        res.end('true');
+        return;
+      }
+      res.statusCode = 404;
+      res.end('{}');
     });
   });
   await new Promise(done => server.listen(0, '127.0.0.1', done));
@@ -1183,10 +1525,18 @@ test('sessionMessages reads one page without an anchor and keeps pages read befo
       return new Response(JSON.stringify({ data: page, cursor: { next: cursor ? 'boom' : 'p2' } }));
     };
     const service = { url: 'http://127.0.0.1:1', headers: {} };
-    assert.deepEqual((await sessionMessages(service, 's')).map(m => m.id), ['idle', 'final']);
+    assert.deepEqual(
+      (await sessionMessages(service, 's')).map(m => m.id),
+      ['idle', 'final'],
+    );
     assert.equal(requests, 1, 'no anchor: only the latest page');
     requests = 0;
-    assert.deepEqual((await sessionMessages(service, 's', { untilID: 'missing' })).map(m => m.id), ['idle', 'final', 'older']);
+    assert.deepEqual(
+      (await sessionMessages(service, 's', { untilID: 'missing' })).map(m => m.id),
+      ['idle', 'final', 'older'],
+    );
     assert.equal(requests, 3, 'a failing later page keeps the pages already read');
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });

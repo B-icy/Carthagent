@@ -1,0 +1,21 @@
+{
+  "path": ["bin", "lib", "plugins", "extensions", "tools", "tests", "server.mjs", "evaluate.mjs", "eslint.config.mjs"],
+  "format": ["javascript", "typescript", "tsx"],
+  "ignore": [
+    "**/node_modules/**",
+    "**/fixtures/**",
+    "**/*.d.ts",
+    "**/*.d.mts",
+    "vendor/**",
+    "docs/**",
+    "scenarios/**",
+    "artifacts/**",
+    "public/**"
+  ],
+  "minTokens": 50,
+  "minLines": 5,
+  "gitignore": true,
+  "reporters": ["console", "json"],
+  "output": "artifacts/jscpd",
+  "threshold": 2.8
+}

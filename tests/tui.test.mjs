@@ -1,7 +1,20 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseD2, layoutD2, renderD2 } from '../lib/tui/d2.mjs';
-import { syncActiveModel, planSideWidth, makeKeyParser, matchSlash, slashCardDimensions, renderSlashCard, computeNodeStates, barRange, scrollCell, paneClipCols, cloudManagedUsageNotice, isCloudCreditExhaustion } from '../lib/tui/app.mjs';
+import {
+  syncActiveModel,
+  planSideWidth,
+  makeKeyParser,
+  matchSlash,
+  slashCardDimensions,
+  renderSlashCard,
+  computeNodeStates,
+  barRange,
+  scrollCell,
+  paneClipCols,
+  cloudManagedUsageNotice,
+  isCloudCreditExhaustion,
+} from '../lib/tui/app.mjs';
 import { UNICODE_GLYPHS, ASCII_GLYPHS, detectGlyphMode, resolveGlyphs } from '../lib/tui/glyphs.mjs';
 import { checkDigest, planD2, computePhase, freshChecks, PHASES } from '../lib/delivery.mjs';
 import { createFeed, resetFeed, applyEvent, summarizeArgs, renderFeed, hydrateFeed } from '../lib/tui/feed.mjs';
@@ -21,24 +34,60 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 test('compaction notices distinguish success, failure and cancellation', () => {
   for (const [event, expected] of [
-    [{errorMessage:'Summarization failed: request_too_large'},'compaction failed'],
-    [{aborted:true},'compaction aborted'],
-    [{},'context compacted'],
+    [{ errorMessage: 'Summarization failed: request_too_large' }, 'compaction failed'],
+    [{ aborted: true }, 'compaction aborted'],
+    [{}, 'context compacted'],
   ]) {
-    const feed=createFeed();
-    applyEvent(feed,{type:'compaction_end',...event});
+    const feed = createFeed();
+    applyEvent(feed, { type: 'compaction_end', ...event });
     assert.ok(feed.blocks.at(-1).text.startsWith(expected));
-    if (event.errorMessage) assert.equal(feed.blocks.at(-1).tone,'error');
+    if (event.errorMessage) assert.equal(feed.blocks.at(-1).tone, 'error');
   }
 });
 
 test('Cloud managed-usage exhaustion is detected only for failed Cloud assistant messages', () => {
-  assert.equal(isCloudCreditExhaustion({ type: 'message_end', message: { role: 'assistant', provider: 'carthagent-cloud', stopReason: 'error', errorMessage: 'insufficient_quota' } }), true);
-  assert.equal(isCloudCreditExhaustion({ type: 'message_end', message: { role: 'assistant', stopReason: 'error', errorMessage: 'credit is exhausted' } }, 'carthagent-cloud/model'), true);
-  assert.match(cloudManagedUsageNotice({ type: 'message_end', message: { role: 'assistant', provider: 'carthagent-cloud', stopReason: 'error', errorMessage: '429: {"error":{"code":"daily_limit_reached"}}' } }), /00:00 UTC/);
-  assert.match(cloudManagedUsageNotice({ type: 'message_end', message: { role: 'assistant', provider: 'carthagent-cloud', stopReason: 'error', errorMessage: 'monthly_allowance_exhausted' } }), /billing portal/);
-  assert.match(cloudManagedUsageNotice({ type: 'message_end', message: { role: 'assistant', provider: 'carthagent-cloud', stopReason: 'error', errorMessage: 'subscription_inactive' } }), /awaiting payment or activation/);
-  assert.equal(isCloudCreditExhaustion({ type: 'message_end', message: { role: 'assistant', provider: 'openai', stopReason: 'error', errorMessage: 'daily_limit_reached' } }), false);
+  assert.equal(
+    isCloudCreditExhaustion({
+      type: 'message_end',
+      message: { role: 'assistant', provider: 'carthagent-cloud', stopReason: 'error', errorMessage: 'insufficient_quota' },
+    }),
+    true,
+  );
+  assert.equal(
+    isCloudCreditExhaustion(
+      { type: 'message_end', message: { role: 'assistant', stopReason: 'error', errorMessage: 'credit is exhausted' } },
+      'carthagent-cloud/model',
+    ),
+    true,
+  );
+  assert.match(
+    cloudManagedUsageNotice({
+      type: 'message_end',
+      message: { role: 'assistant', provider: 'carthagent-cloud', stopReason: 'error', errorMessage: '429: {"error":{"code":"daily_limit_reached"}}' },
+    }),
+    /00:00 UTC/,
+  );
+  assert.match(
+    cloudManagedUsageNotice({
+      type: 'message_end',
+      message: { role: 'assistant', provider: 'carthagent-cloud', stopReason: 'error', errorMessage: 'monthly_allowance_exhausted' },
+    }),
+    /billing portal/,
+  );
+  assert.match(
+    cloudManagedUsageNotice({
+      type: 'message_end',
+      message: { role: 'assistant', provider: 'carthagent-cloud', stopReason: 'error', errorMessage: 'subscription_inactive' },
+    }),
+    /awaiting payment or activation/,
+  );
+  assert.equal(
+    isCloudCreditExhaustion({
+      type: 'message_end',
+      message: { role: 'assistant', provider: 'openai', stopReason: 'error', errorMessage: 'daily_limit_reached' },
+    }),
+    false,
+  );
   assert.equal(isCloudCreditExhaustion({ type: 'message_end', message: { role: 'assistant', provider: 'carthagent-cloud', stopReason: 'stop' } }), false);
 });
 
@@ -106,7 +155,10 @@ test('layoutD2 ranks spine linearly and puts repair in the side column', () => {
 
 test('renderD2 emits styled lines that fit the requested width', () => {
   const g = parseD2(planD2(SAMPLE_PLAN));
-  const states = new Map([['goal', 'done'], ['step0', 'active']]);
+  const states = new Map([
+    ['goal', 'done'],
+    ['step0', 'active'],
+  ]);
   const { lines, hotRow, frontierId, frontierLabel } = renderD2(g, { width: 44, theme: getTheme('opencode'), states, frame: 2 });
   assert.ok(lines.length >= 7 * 3); // variable-height boxes: >=3 rows per rank
   for (const l of lines) assert.ok(width(l) <= 44, `overflow: ${JSON.stringify(l)}`);
@@ -120,7 +172,11 @@ test('renderD2 emits styled lines that fit the requested width', () => {
 test('renderD2 breathes the arrowhead into the active node', () => {
   const g = parseD2(planD2(SAMPLE_PLAN));
   const theme = getTheme('mono');
-  const states = new Map([['goal', 'done'], ['step0', 'active'], ['verify', 'active']]);
+  const states = new Map([
+    ['goal', 'done'],
+    ['step0', 'active'],
+    ['verify', 'active'],
+  ]);
   const plain = f => strip(renderD2(g, { width: 44, theme, states, frame: f }).lines.join('\n'));
   // Hollow ~1/4 of the cycle, solid the rest — forward ▼ and back-edge ◀ alike.
   assert.ok(plain(0).includes('▽'));
@@ -130,7 +186,10 @@ test('renderD2 breathes the arrowhead into the active node', () => {
   assert.ok(plain(2).includes('▼'));
   assert.ok(plain(2).includes('◀'));
   // No active target → arrowheads stay solid at every frame.
-  const idle = new Map([['goal', 'done'], ['step0', 'done']]);
+  const idle = new Map([
+    ['goal', 'done'],
+    ['step0', 'done'],
+  ]);
   for (const f of [0, 1, 2]) {
     const p = strip(renderD2(g, { width: 44, theme, states: idle, frame: f }).lines.join('\n'));
     assert.ok(!p.includes('▽') && !p.includes('◁'), `frame ${f}`);
@@ -145,9 +204,15 @@ test('renderD2 swirls a comet around the active node border', () => {
     const env = { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor', CARTHAGENT_TRUECOLOR: '1' };
     delete env.NO_COLOR;
     delete env.CARTHAGENT_NO_TRUECOLOR;
-    const result = spawnSync(process.execPath, ['--test', '--test-name-pattern=^renderD2 swirls a comet around the active node border$', fileURLToPath(import.meta.url)], {
-      env, encoding: 'utf8', timeout: 30_000,
-    });
+    const result = spawnSync(
+      process.execPath,
+      ['--test', '--test-name-pattern=^renderD2 swirls a comet around the active node border$', fileURLToPath(import.meta.url)],
+      {
+        env,
+        encoding: 'utf8',
+        timeout: 30_000,
+      },
+    );
     assert.ifError(result.error);
     assert.equal(result.status, 0, result.stdout + result.stderr);
     return;
@@ -168,14 +233,19 @@ test('renderD2 swirls a comet around the active node border', () => {
     }
     return null;
   };
-  const active = new Map([['goal', 'done'], ['step0', 'active']]);
+  const active = new Map([
+    ['goal', 'done'],
+    ['step0', 'active'],
+  ]);
   assert.ok(pos(0, active) != null, 'comet head present on the active node');
   assert.notEqual(pos(0, active), pos(7, active), 'comet orbits the perimeter between frames');
-  const idle = new Map([['goal', 'done'], ['step0', 'done']]);
+  const idle = new Map([
+    ['goal', 'done'],
+    ['step0', 'done'],
+  ]);
   const { lines } = renderD2(g, { width: 44, theme, states: idle, frame: 0 });
   assert.ok(!lines.join('\n').includes(head), 'no comet when no active node');
 });
-
 
 test('renderD2 works at tiny widths without crashing', () => {
   const g = parseD2(planD2(SAMPLE_PLAN));
@@ -190,7 +260,11 @@ test('renderD2 light themes use plain panel fills (text stays readable)', () => 
   const g = parseD2(planD2(SAMPLE_PLAN));
   for (const name of ['paper', 'daylight', 'solarized-light', 'contrast-light', 'okabe-light']) {
     const theme = getTheme(name, 'light');
-    const states = new Map([['goal', 'done'], ['step0', 'active'], ['verify', 'fail']]);
+    const states = new Map([
+      ['goal', 'done'],
+      ['step0', 'active'],
+      ['verify', 'fail'],
+    ]);
     const { lines } = renderD2(g, { width: 60, theme, states, frame: 0 });
     // The fill for every state on a light theme is the panel background —
     // text on the fill is text on the panel, which passes WCAG AA by design.
@@ -211,7 +285,15 @@ test('renderD2 wraps long labels across rows instead of truncating', () => {
 
 test('renderD2 exposes the frontier for the rail detail line', () => {
   const g = parseD2(planD2(SAMPLE_PLAN));
-  const r = renderD2(g, { width: 44, theme: getTheme('opencode'), states: new Map([['goal', 'done'], ['verify', 'fail']]), frame: 0 });
+  const r = renderD2(g, {
+    width: 44,
+    theme: getTheme('opencode'),
+    states: new Map([
+      ['goal', 'done'],
+      ['verify', 'fail'],
+    ]),
+    frame: 0,
+  });
   assert.equal(r.frontierId, 'verify');
   assert.ok(r.frontierLabel.length > 0);
   assert.ok(Array.isArray(r.boxes), 'boxes metadata should be returned');
@@ -245,7 +327,7 @@ test('planSideWidth tiers widen the rail on wide terminals', () => {
   // Tier boundaries: <120 legacy, 120/160/200 steps up. Feed guard keeps 36.
   assert.equal(planSideWidth(100), Math.max(34, Math.min(56, Math.floor(100 * 0.36))));
   assert.equal(planSideWidth(120), Math.min(64, Math.floor(120 * 0.38)));
-  assert.equal(planSideWidth(160), Math.min(72, Math.floor(160 * 0.40)));
+  assert.equal(planSideWidth(160), Math.min(72, Math.floor(160 * 0.4)));
   assert.equal(planSideWidth(200), Math.min(84, Math.floor(200 * 0.42)));
   assert.ok(planSideWidth(200) > planSideWidth(100));
 });
@@ -272,8 +354,17 @@ test('feed reducer handles a full run lifecycle', () => {
   applyEvent(S, { type: 'message_update', assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: 'on it' } });
   applyEvent(S, { type: 'message_update', assistantMessageEvent: { type: 'toolcall_start', contentIndex: 1, id: 't1', toolName: 'bash' } });
   applyEvent(S, { type: 'tool_execution_start', toolCallId: 't1', toolName: 'bash', args: { command: 'npm test' } });
-  applyEvent(S, { type: 'tool_execution_end', toolCallId: 't1', toolName: 'bash', isError: false, result: { content: [{ type: 'text', text: 'ok\npassed' }] } });
-  applyEvent(S, { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'working on it' }], usage: { totalTokens: 100, cost: { total: 0.01 } }, stopReason: 'stop' } });
+  applyEvent(S, {
+    type: 'tool_execution_end',
+    toolCallId: 't1',
+    toolName: 'bash',
+    isError: false,
+    result: { content: [{ type: 'text', text: 'ok\npassed' }] },
+  });
+  applyEvent(S, {
+    type: 'message_end',
+    message: { role: 'assistant', content: [{ type: 'text', text: 'working on it' }], usage: { totalTokens: 100, cost: { total: 0.01 } }, stopReason: 'stop' },
+  });
   applyEvent(S, { type: 'agent_end', messages: [], willRetry: false });
   applyEvent(S, { type: 'agent_settled' });
 
@@ -295,9 +386,17 @@ test('run completion is announced only after the whole run settles, with Aleph a
   applyEvent(S, { type: 'message_start', message: { role: 'assistant', content: [] } });
   applyEvent(S, { type: 'message_update', assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: 'Done.' } });
   applyEvent(S, { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'Done.' }], stopReason: 'stop' } });
-  assert.equal(S.blocks.some(b => b.kind === 'completion'), false, 'assistant message alone is not the whole run');
+  assert.equal(
+    S.blocks.some(b => b.kind === 'completion'),
+    false,
+    'assistant message alone is not the whole run',
+  );
   applyEvent(S, { type: 'agent_end', messages: [] });
-  assert.equal(S.blocks.some(b => b.kind === 'completion'), false, 'wait for settled event');
+  assert.equal(
+    S.blocks.some(b => b.kind === 'completion'),
+    false,
+    'wait for settled event',
+  );
   applyEvent(S, { type: 'agent_settled' });
   const completion = S.blocks.find(b => b.kind === 'completion');
   assert.ok(completion);
@@ -322,7 +421,10 @@ test('resetFeed clears blocks, tools, and resets tokens and cost counters', () =
   applyEvent(S, { type: 'turn_start' });
   applyEvent(S, { type: 'message_start', message: { role: 'user', content: [{ type: 'text', text: 'hi' }] } });
   applyEvent(S, { type: 'message_update', assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: 'done' } });
-  applyEvent(S, { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'done' }], usage: { totalTokens: 350, cost: { total: 0.05 } }, stopReason: 'stop' } });
+  applyEvent(S, {
+    type: 'message_end',
+    message: { role: 'assistant', content: [{ type: 'text', text: 'done' }], usage: { totalTokens: 350, cost: { total: 0.05 } }, stopReason: 'stop' },
+  });
   assert.equal(S.tokens, 350);
   assert.equal(S.cost, 0.05);
   assert.ok(S.blocks.length > 0);
@@ -354,7 +456,13 @@ test('renderFeed stays width-bounded across all themes', () => {
     applyEvent(S, { type: 'message_start', message: { role: 'assistant', content: [] } });
     applyEvent(S, { type: 'message_update', assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: 'B '.repeat(120) } });
     applyEvent(S, { type: 'tool_execution_start', toolCallId: 't1', toolName: 'delivery_check', args: { id: 'all' } });
-    applyEvent(S, { type: 'tool_execution_end', toolCallId: 't1', toolName: 'delivery_check', isError: true, result: { content: [{ type: 'text', text: 'fail line 1\nfail line 2' }] } });
+    applyEvent(S, {
+      type: 'tool_execution_end',
+      toolCallId: 't1',
+      toolName: 'delivery_check',
+      isError: true,
+      result: { content: [{ type: 'text', text: 'fail line 1\nfail line 2' }] },
+    });
     const { lines } = renderFeed(S, 60, getTheme(name), { frame: 0 });
     for (const l of lines) assert.ok(width(l) <= 60, `overflow ${name}`);
   }
@@ -454,14 +562,22 @@ test('computePhase derives the rail tracker state', () => {
   assert.deepEqual(computePhase(null, 'abc').phase, 'inspect');
   assert.deepEqual(PHASES, ['inspect', 'plan', 'build', 'verify', 'review', 'deliver']);
   const plan = {
-    goal: 'g', steps: ['s'], acceptance: [{ requirement: 'r', checks: ['tests'] }],
+    goal: 'g',
+    steps: ['s'],
+    acceptance: [{ requirement: 'r', checks: ['tests'] }],
     checks: [{ id: 'tests', kind: 'test', argv: ['node', '--test'], timeoutSeconds: 30 }],
   };
   assert.equal(computePhase({ plan, evidence: {}, status: 'implementing', revision: 2 }, 'h1').phase, 'plan');
   assert.equal(computePhase({ plan, evidence: {}, status: 'implementing', revision: 2 }, 'h1').revision, 2);
   assert.equal(computePhase({ plan, evidence: {}, status: 'implementing', stepStatus: { step0: 'active' } }, 'h1').phase, 'build');
   assert.equal(computePhase({ plan, evidence: {}, status: 'verifying' }, 'h1', true).phase, 'verify');
-  const fresh = { runId: 'run-a', revision: 1, plan, evidence: { tests: { runId: 'run-a', revision: 1, passed: true, fingerprint: 'h1', checkDigest: checkDigest(plan.checks[0]) } }, status: 'implementing' };
+  const fresh = {
+    runId: 'run-a',
+    revision: 1,
+    plan,
+    evidence: { tests: { runId: 'run-a', revision: 1, passed: true, fingerprint: 'h1', checkDigest: checkDigest(plan.checks[0]) } },
+    status: 'implementing',
+  };
   assert.equal(computePhase(fresh, 'h1').phase, 'review');
   const structured = { ...fresh, plan: { ...plan, steps: [{ id: 'review', title: 'Review consumers' }] } };
   assert.equal(computePhase(structured, 'h1').phase, 'build');
@@ -481,11 +597,18 @@ test('hydrateFeed rebuilds history blocks from session entries', () => {
   const entries = [
     { type: 'session', id: 's1', timestamp: '2026-01-01T00:00:00Z' },
     { type: 'message', message: { role: 'user', content: [{ type: 'text', text: framePrompt('do the thing') }] } },
-    { type: 'message', message: { role: 'assistant', content: [
-      { type: 'thinking', thinking: 'hmm' },
-      { type: 'text', text: 'planning' },
-      { type: 'toolCall', id: 'c1', name: 'bash', arguments: { command: 'ls' } },
-    ], usage: { totalTokens: 10, cost: { total: 0.01 } } } },
+    {
+      type: 'message',
+      message: {
+        role: 'assistant',
+        content: [
+          { type: 'thinking', thinking: 'hmm' },
+          { type: 'text', text: 'planning' },
+          { type: 'toolCall', id: 'c1', name: 'bash', arguments: { command: 'ls' } },
+        ],
+        usage: { totalTokens: 10, cost: { total: 0.01 } },
+      },
+    },
     { type: 'message', message: { role: 'toolResult', toolCallId: 'c1', toolName: 'bash', content: [{ type: 'text', text: 'ok\nline2' }], isError: false } },
     { type: 'custom', customType: 'delivery-gate' },
     { type: 'message', message: { role: 'assistant', content: [{ type: 'text', text: 'done' }], usage: { totalTokens: 5, cost: { total: 0.005 } } } },
@@ -508,9 +631,7 @@ test('hydrateFeed rebuilds history blocks from session entries', () => {
 });
 
 test('hydrateFeed unwraps framed prompts without badges', () => {
-  const entries = [
-    { type: 'message', message: { role: 'user', content: [{ type: 'text', text: framePrompt('framed task') }] } },
-  ];
+  const entries = [{ type: 'message', message: { role: 'user', content: [{ type: 'text', text: framePrompt('framed task') }] } }];
   const S = createFeed();
   hydrateFeed(S, entries);
   const user = S.blocks.find(b => b.kind === 'user');
@@ -521,12 +642,16 @@ test('hydrateFeed unwraps framed prompts without badges', () => {
 test('listSessions reads metadata newest-first and mostRecentSession picks the head', t => {
   const dir = mkdtempSync(join(tmpdir(), 'carthagent sessions '));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const mk = (file, id, userText, extra = []) => writeFileSync(join(dir, file), [
-    JSON.stringify({ type: 'session', version: 3, id, timestamp: '2026-01-01T00:00:00Z', cwd: '/x' }),
-    ...extra.map(e => JSON.stringify(e)),
-    JSON.stringify({ type: 'message', id: 'm1', message: { role: 'user', content: [{ type: 'text', text: userText }] } }),
-    '',
-  ].join('\n'));
+  const mk = (file, id, userText, extra = []) =>
+    writeFileSync(
+      join(dir, file),
+      [
+        JSON.stringify({ type: 'session', version: 3, id, timestamp: '2026-01-01T00:00:00Z', cwd: '/x' }),
+        ...extra.map(e => JSON.stringify(e)),
+        JSON.stringify({ type: 'message', id: 'm1', message: { role: 'user', content: [{ type: 'text', text: userText }] } }),
+        '',
+      ].join('\n'),
+    );
   mk('old_aaaa.jsonl', 'aaaa', 'first task', [{ type: 'session_info', name: 'alpha work' }]);
   mk('new_bbbb.jsonl', 'bbbb', 'second task');
   writeFileSync(join(dir, 'not-a-session.txt'), 'nope');
@@ -540,7 +665,16 @@ test('listSessions reads metadata newest-first and mostRecentSession picks the h
   assert.equal(list[1].firstMessage, 'first task');
   assert.equal(list[1].messageCount, 1);
   assert.equal(mostRecentSession('/unused', dir), list[0].path);
-  assert.equal(sessionDirFor('/home/u/proj', '/agent'), join('/agent', 'sessions', `--${resolve('/home/u/proj').replace(/^[/\\]/, '').replace(/[/\\:]/g, '-')}--`));
+  assert.equal(
+    sessionDirFor('/home/u/proj', '/agent'),
+    join(
+      '/agent',
+      'sessions',
+      `--${resolve('/home/u/proj')
+        .replace(/^[/\\]/, '')
+        .replace(/[/\\:]/g, '-')}--`,
+    ),
+  );
 });
 
 test('buildEngineArgs forwards session selection but never --resume', () => {
@@ -574,19 +708,22 @@ test('ctrl-v is parsed so the console can paste from the OS clipboard', () => {
 test('mouse SGR events map to press, drag, release, and wheel keys', () => {
   const keys = [];
   const parse = makeKeyParser(k => keys.push(k));
-  parse('\x1b[<0;10;5M');   // left press at col 10, row 5
-  parse('\x1b[<32;14;5M');  // left drag to col 14
-  parse('\x1b[<0;14;5m');   // release
-  parse('\x1b[<64;3;3M');   // wheel up
-  assert.deepEqual(keys.map(k => k.key), ['mousedown', 'mousedrag', 'mouseup', 'wheelup']);
+  parse('\x1b[<0;10;5M'); // left press at col 10, row 5
+  parse('\x1b[<32;14;5M'); // left drag to col 14
+  parse('\x1b[<0;14;5m'); // release
+  parse('\x1b[<64;3;3M'); // wheel up
+  assert.deepEqual(
+    keys.map(k => k.key),
+    ['mousedown', 'mousedrag', 'mouseup', 'wheelup'],
+  );
   assert.deepEqual({ x: keys[0].x, y: keys[0].y, button: keys[0].button }, { x: 10, y: 5, button: 0 });
   assert.equal(keys[1].button, 0);
   assert.equal(keys[2].x, 14);
   // modifier bits are masked off button but preserved in flags; right-button presses don't masquerade as left
   const more = [];
   const parse2 = makeKeyParser(k => more.push(k));
-  parse2('\x1b[<4;1;1M');   // shift+left press → still a left mousedown with shift: true
-  parse2('\x1b[<34;2;2M');  // right-button drag → button 2
+  parse2('\x1b[<4;1;1M'); // shift+left press → still a left mousedown with shift: true
+  parse2('\x1b[<34;2;2M'); // right-button drag → button 2
   assert.equal(more[0].button, 0);
   assert.equal(more[0].shift, true);
   assert.equal(more[1].key, 'mousedrag');
@@ -596,22 +733,17 @@ test('mouse SGR events map to press, drag, release, and wheel keys', () => {
 test('key parser handles cmd/ctrl/alt deletion and backspace sequences', () => {
   const keys = [];
   const parse = makeKeyParser(k => keys.push(k));
-  parse('\x1b[3;5~');      // ctrl-delete
-  parse('\x1b[3;9~');      // cmd-delete
+  parse('\x1b[3;5~'); // ctrl-delete
+  parse('\x1b[3;9~'); // cmd-delete
   parse('\x1b[27;5;127~'); // ctrl-backspace
   parse('\x1b[27;9;127~'); // cmd-backspace
-  parse('\x1b[127;8u');    // cmd-backspace (Kitty)
-  parse('\x1b\x7f');       // alt-backspace
+  parse('\x1b[127;8u'); // cmd-backspace (Kitty)
+  parse('\x1b\x7f'); // alt-backspace
   parse('\x1b[<16;12;20M'); // ctrl-click (button 0 + ctrl bit 16)
-  assert.deepEqual(keys.map(k => k.key), [
-    'ctrl-delete',
-    'cmd-delete',
-    'ctrl-backspace',
-    'cmd-delete',
-    'cmd-delete',
-    'alt-backspace',
-    'mousedown'
-  ]);
+  assert.deepEqual(
+    keys.map(k => k.key),
+    ['ctrl-delete', 'cmd-delete', 'ctrl-backspace', 'cmd-delete', 'cmd-delete', 'alt-backspace', 'mousedown'],
+  );
   assert.equal(keys[6].ctrl, true);
   assert.equal(keys[6].button, 0);
 });
@@ -657,23 +789,49 @@ test('matchSlash filters commands by prefix and closes on args', () => {
   // bare '/' matches every command
   assert.ok(matchSlash('/').length >= 16, 'bare slash lists all commands');
   // '/h' narrows to /help
-  assert.deepEqual(matchSlash('/h').map(c => c.name), ['/help']);
+  assert.deepEqual(
+    matchSlash('/h').map(c => c.name),
+    ['/help'],
+  );
   // '/r' matches commands and aliases starting with r
-  const r = matchSlash('/r').map(c => c.name).sort();
+  const r = matchSlash('/r')
+    .map(c => c.name)
+    .sort();
   assert.ok(r.includes('/resume'));
   assert.ok(r.includes('/restart'));
   assert.ok(r.includes('/raw'));
   assert.ok(r.includes('/review'));
   // alias prefix match: '/se' → /sessions (alias of /resume)
-  assert.deepEqual(matchSlash('/se').map(c => c.name), ['/resume']);
+  assert.deepEqual(
+    matchSlash('/se').map(c => c.name),
+    ['/resume'],
+  );
   // '/q' matches /quit via alias
-  assert.deepEqual(matchSlash('/q').map(c => c.name), ['/quit']);
+  assert.deepEqual(
+    matchSlash('/q').map(c => c.name),
+    ['/quit'],
+  );
   // '/l' includes login/logout-cloud; '/auth' is login's alias
-  assert.deepEqual(matchSlash('/l').map(c => c.name), ['/login', '/logout-cloud']);
-  assert.deepEqual(matchSlash('/auth').map(c => c.name), ['/login']);
-  assert.deepEqual(matchSlash('/account').map(c => c.name), ['/account']);
-  assert.deepEqual(matchSlash('/cloud').map(c => c.name), ['/account']);
-  assert.deepEqual(matchSlash('/usa').map(c => c.name), ['/usage']);
+  assert.deepEqual(
+    matchSlash('/l').map(c => c.name),
+    ['/login', '/logout-cloud'],
+  );
+  assert.deepEqual(
+    matchSlash('/auth').map(c => c.name),
+    ['/login'],
+  );
+  assert.deepEqual(
+    matchSlash('/account').map(c => c.name),
+    ['/account'],
+  );
+  assert.deepEqual(
+    matchSlash('/cloud').map(c => c.name),
+    ['/account'],
+  );
+  assert.deepEqual(
+    matchSlash('/usa').map(c => c.name),
+    ['/usage'],
+  );
   // unknown prefix → empty
   assert.deepEqual(matchSlash('/xyz'), []);
   // a space (args mode) closes the popup
@@ -708,19 +866,9 @@ test('renderSlashCard contains all rows strictly within bounding box without ove
     for (let i = 0; i < card.length; i++) {
       const line = card[i];
       const stripped = strip(line);
-      assert.equal(
-        width(line),
-        cardW,
-        `Row ${i} width (${width(line)}) must exactly match cardW (${cardW}) for W=${W}`
-      );
-      assert.ok(
-        stripped.startsWith('╭') || stripped.startsWith('│') || stripped.startsWith('╰'),
-        `Row ${i} should start with box border`
-      );
-      assert.ok(
-        stripped.endsWith('╮') || stripped.endsWith('│') || stripped.endsWith('╯'),
-        `Row ${i} should end with box border`
-      );
+      assert.equal(width(line), cardW, `Row ${i} width (${width(line)}) must exactly match cardW (${cardW}) for W=${W}`);
+      assert.ok(stripped.startsWith('╭') || stripped.startsWith('│') || stripped.startsWith('╰'), `Row ${i} should start with box border`);
+      assert.ok(stripped.endsWith('╮') || stripped.endsWith('│') || stripped.endsWith('╯'), `Row ${i} should end with box border`);
     }
   }
 });
@@ -760,9 +908,17 @@ test('the ASCII glyph tier is 100% ASCII', () => {
 
 test('renderD2 ASCII output contains no non-ASCII bytes', () => {
   const g = parseD2(planD2(SAMPLE_PLAN));
-  const states = new Map([['goal', 'done'], ['step0', 'done'], ['step1', 'active'], ['verify', 'fail']]);
+  const states = new Map([
+    ['goal', 'done'],
+    ['step0', 'done'],
+    ['step1', 'active'],
+    ['verify', 'fail'],
+  ]);
   const graph = renderD2(g, { width: 44, theme: getTheme('opencode'), states, frame: 2, glyphs: ASCII_GLYPHS }).lines.join('\n');
-  assert.ok([...strip(graph)].every(ch => ch.codePointAt(0) < 128), 'ascii graph is pure ASCII');
+  assert.ok(
+    [...strip(graph)].every(ch => ch.codePointAt(0) < 128),
+    'ascii graph is pure ASCII',
+  );
 });
 
 // ------------------------------------------------------------------ step states

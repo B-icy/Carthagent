@@ -4,8 +4,17 @@ export function nativePtySmokeArgs({ root, binary, plugin, selection, probe }) {
     throw new Error('Native PTY selection is missing its independently verified lowercase SHA-256 digest.');
   }
   const args = [
-    `${root}/tools/native-pty-smoke.py`, '--binary', binary, '--plugin', plugin,
-    '--command', probe.command, '--expect', probe.expect, '--ready', '◆ CTG',
+    `${root}/tools/native-pty-smoke.py`,
+    '--binary',
+    binary,
+    '--plugin',
+    plugin,
+    '--command',
+    probe.command,
+    '--expect',
+    probe.expect,
+    '--ready',
+    '◆ CTG',
     ...(probe.secondEnter ? ['--second-enter'] : ['--confirm']),
   ];
   for (const next of probe.next ?? []) args.push('--after-command', next.command, '--after-expect', next.expect);

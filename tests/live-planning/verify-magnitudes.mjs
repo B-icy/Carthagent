@@ -9,7 +9,8 @@ const failures = [];
 for (const magnitude of [1, 1000, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12]) {
   for (const fraction of ['01', '03', '04', '05', '07', '09', '29', '99']) {
     for (const sign of ['', '-']) {
-      const text = `${sign}${magnitude}.${fraction}`, amount = Number(text);
+      const text = `${sign}${magnitude}.${fraction}`,
+        amount = Number(text);
       cases++;
       try {
         const numeric = handleSummary({ entries: [{ amount }] });
@@ -17,7 +18,9 @@ for (const magnitude of [1, 1000, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12]) {
         assert.equal(numeric.status, 200, JSON.stringify(numeric));
         assert.equal(string.status, 200, JSON.stringify(string));
         assert.equal(numeric.body.totalDecimal, string.body.totalDecimal);
-      } catch (error) { failures.push({ text, error: error.message }); }
+      } catch (error) {
+        failures.push({ text, error: error.message });
+      }
     }
   }
 }

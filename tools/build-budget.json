@@ -1,0 +1,11 @@
+{
+  "$comment": "Wall-time budgets in ms for tools/build-timings.mjs, set to about 1.5x a cold-cache run on a 1-vCPU Linux machine (2026-11: check 10.1 s, typecheck:legacy 3.0 s, typecheck:native 17.2 s, eslint 21.2 s). A step over budgetMs * (1 + marginPercent/100) warns, and fails with --strict. Change a budget only with a measured reason in the commit message.",
+  "version": 1,
+  "marginPercent": 25,
+  "steps": {
+    "check": { "command": "npm run check", "budgetMs": 15000 },
+    "typecheck:legacy": { "command": "npm run typecheck:legacy", "budgetMs": 8000 },
+    "typecheck:native": { "command": "npm run typecheck:native", "budgetMs": 30000 },
+    "eslint": { "command": "npx eslint .", "budgetMs": 35000 }
+  }
+}

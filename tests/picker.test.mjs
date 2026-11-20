@@ -16,19 +16,37 @@ test('picker keyboard navigation never commits until Enter and Escape cancels', 
 
 test('picker serializes pending commits and retains failures for retry', async () => {
   const p = { sel: 0 };
-  let resolve, calls = 0, closed = 0;
-  const action = () => { calls++; return new Promise(r => { resolve = r; }); };
+  let resolve,
+    calls = 0,
+    closed = 0;
+  const action = () => {
+    calls++;
+    return new Promise(r => {
+      resolve = r;
+    });
+  };
   const first = commitPicker(p, action, () => closed++);
   assert.equal(pickerKey(p, 'enter', 2), 'pending');
   await commitPicker(p, action, () => closed++);
   assert.equal(calls, 1);
-  resolve(); await first;
+  resolve();
+  await first;
   assert.equal(closed, 1);
-  await commitPicker(p, async () => { throw Error('Cannot switch'); }, () => closed++);
+  await commitPicker(
+    p,
+    async () => {
+      throw Error('Cannot switch');
+    },
+    () => closed++,
+  );
   assert.equal(p.error, 'Cannot switch');
   assert.equal(p.pending, false);
   assert.equal(closed, 1);
-  await commitPicker(p, async () => {}, () => closed++);
+  await commitPicker(
+    p,
+    async () => {},
+    () => closed++,
+  );
   assert.equal(p.error, '');
   assert.equal(closed, 2);
 });

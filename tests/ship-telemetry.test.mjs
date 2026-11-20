@@ -8,8 +8,15 @@ import os from 'node:os';
 
 const packageVersion = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')).version;
 import {
-  installIdPath, shipInstallId, providerMode, installPingHeaders, isCiEnvironment,
-  noteEngineSession, noteAgentTurn, shipRequestHeaders, resetShipContext,
+  installIdPath,
+  shipInstallId,
+  providerMode,
+  installPingHeaders,
+  isCiEnvironment,
+  noteEngineSession,
+  noteAgentTurn,
+  shipRequestHeaders,
+  resetShipContext,
 } from '../lib/ship-telemetry.mjs';
 import { managedCloudRequestOptions } from '../lib/providers/experiential.mjs';
 import { fetchLatestRelease } from '../lib/update.mjs';
@@ -44,10 +51,12 @@ test('concurrent first runs and corrupt repairs converge on one install id', asy
     const gate = join(agentDir, `${label}.start`);
     const children = Array.from({ length: count }, (_, index) => {
       const ready = join(agentDir, `${label}.${index}.ready`);
-      const unsupportedHardlinks = noHardlinks ? `import fs from 'node:fs';
+      const unsupportedHardlinks = noHardlinks
+        ? `import fs from 'node:fs';
         import { syncBuiltinESMExports } from 'node:module';
         fs.linkSync = () => { const error = new Error('hard links unsupported in test'); error.code = 'ENOTSUP'; throw error; };
-        syncBuiltinESMExports();` : '';
+        syncBuiltinESMExports();`
+        : '';
       const minted = `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`;
       const code = `import { existsSync, writeFileSync } from 'node:fs';
         ${unsupportedHardlinks}
@@ -60,12 +69,18 @@ test('concurrent first runs and corrupt repairs converge on one install id', asy
       const child = spawn(process.execPath, ['--input-type=module', '-e', code], { stdio: ['ignore', 'pipe', 'pipe'] });
       let stdout = '';
       let stderr = '';
-      child.stdout.setEncoding('utf8').on('data', chunk => { stdout += chunk; });
-      child.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk; });
-      const result = new Promise((resolve, reject) => child.once('error', reject).once('close', code => {
-        if (code !== 0) reject(new Error(`install-id worker exited ${code}: ${stderr}`));
-        else resolve(stdout.trim());
-      }));
+      child.stdout.setEncoding('utf8').on('data', chunk => {
+        stdout += chunk;
+      });
+      child.stderr.setEncoding('utf8').on('data', chunk => {
+        stderr += chunk;
+      });
+      const result = new Promise((resolve, reject) =>
+        child.once('error', reject).once('close', code => {
+          if (code !== 0) reject(new Error(`install-id worker exited ${code}: ${stderr}`));
+          else resolve(stdout.trim());
+        }),
+      );
       return { child, ready, result };
     });
     try {
@@ -168,12 +183,18 @@ test('concurrent malformed-seed repair preserves a valid legacy primary', async 
       const child = spawn(process.execPath, ['--input-type=module', '-e', code], { stdio: ['ignore', 'pipe', 'pipe'] });
       let stdout = '';
       let stderr = '';
-      child.stdout.setEncoding('utf8').on('data', chunk => { stdout += chunk; });
-      child.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk; });
-      const result = new Promise((resolve, reject) => child.once('error', reject).once('close', code => {
-        if (code !== 0) reject(new Error(`install-id worker exited ${code}: ${stderr}`));
-        else resolve(stdout.trim());
-      }));
+      child.stdout.setEncoding('utf8').on('data', chunk => {
+        stdout += chunk;
+      });
+      child.stderr.setEncoding('utf8').on('data', chunk => {
+        stderr += chunk;
+      });
+      const result = new Promise((resolve, reject) =>
+        child.once('error', reject).once('close', code => {
+          if (code !== 0) reject(new Error(`install-id worker exited ${code}: ${stderr}`));
+          else resolve(stdout.trim());
+        }),
+      );
       return { child, ready, result };
     });
     try {
@@ -234,7 +255,10 @@ test('update check sends the install headers to the control plane only', async t
   const agentDir = tmp(t);
   const seen = [];
   const { release, source } = await fetchLatestRelease({
-    cloudUrl: 'https://cloud.test', env: {}, agentDir, channel: 'stable',
+    cloudUrl: 'https://cloud.test',
+    env: {},
+    agentDir,
+    channel: 'stable',
     fetchImpl: async (url, options) => {
       seen.push({ url, headers: options.headers });
       if (url.includes('/v1/cli/releases/latest')) return { status: 503, json: async () => ({}) };
@@ -272,8 +296,12 @@ test('managed requests carry thread, turn, install and run-mode headers', t => {
   const env = { CARTHAGENT_CODING_AGENT_DIR: agentDir, CARTHAGENT_RUN_MODE: 'interactive' };
   const previous = { dir: process.env.CARTHAGENT_CODING_AGENT_DIR, mode: process.env.CARTHAGENT_RUN_MODE };
   t.after(() => {
-    for (const [key, value] of [['CARTHAGENT_CODING_AGENT_DIR', previous.dir], ['CARTHAGENT_RUN_MODE', previous.mode]]) {
-      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    for (const [key, value] of [
+      ['CARTHAGENT_CODING_AGENT_DIR', previous.dir],
+      ['CARTHAGENT_RUN_MODE', previous.mode],
+    ]) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
     }
     resetShipContext();
   });
@@ -321,11 +349,16 @@ test('device authorization sends the install id', async t => {
   const installId = shipInstallId({ agentDir });
   const bodies = [];
   const client = new CloudClient({
-    baseUrl: 'https://cloud.test', sleep: async () => {},
+    baseUrl: 'https://cloud.test',
+    sleep: async () => {},
     fetchImpl: async (url, options) => {
       bodies.push(JSON.parse(options.body));
       if (url.endsWith('/v1/device/authorizations')) {
-        return { status: 201, ok: true, text: async () => JSON.stringify({ deviceCode: 'd', userCode: 'U', verificationUri: 'https://v', expiresIn: 1, interval: 1 }) };
+        return {
+          status: 201,
+          ok: true,
+          text: async () => JSON.stringify({ deviceCode: 'd', userCode: 'U', verificationUri: 'https://v', expiresIn: 1, interval: 1 }),
+        };
       }
       return { status: 200, ok: true, text: async () => JSON.stringify({ accessToken: 'a', refreshToken: 'r', expiresIn: 1 }) };
     },

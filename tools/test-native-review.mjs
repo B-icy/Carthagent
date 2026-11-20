@@ -28,8 +28,8 @@ try {
   git('-c', 'user.name=CTG Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Review fixture');
   await host.active();
   const worker = await host.client.session.create({ location: host.location, model: host.model, title: 'Implementation session' }, host.request());
-  const rpc = async method => (await host.client.rpc.call({ rpcID: 'carthagent.workspace', method,
-    input: { sessionID: worker.id }, location: host.location }, host.request())).output;
+  const rpc = async method =>
+    (await host.client.rpc.call({ rpcID: 'carthagent.workspace', method, input: { sessionID: worker.id }, location: host.location }, host.request())).output;
   const before = await rpc('review');
   assert.equal(before.status, 'unreviewed');
   const result = await rpc('startReview');
@@ -58,9 +58,17 @@ try {
   const admissions = reviewRequests;
   await assert.rejects(rpc('startReview'), error => error.type === 'reviewFailed' && /round limit/i.test(error.message));
   assert.equal(reviewRequests, admissions, 'Restart and changed source must not bypass the three-review admission limit');
-  console.log(JSON.stringify({ host: identity.runtimeVersion, compatibilityVersion: identity.compatibilityVersion,
-    ...(identity.binarySha256 ? { binarySha256: identity.binarySha256 } : {}),
-    independentReview: 'passed', persistedReceipt: 'passed', staleInvalidation: 'passed', persistentAdmissionLimit: 'passed' }));
+  console.log(
+    JSON.stringify({
+      host: identity.runtimeVersion,
+      compatibilityVersion: identity.compatibilityVersion,
+      ...(identity.binarySha256 ? { binarySha256: identity.binarySha256 } : {}),
+      independentReview: 'passed',
+      persistedReceipt: 'passed',
+      staleInvalidation: 'passed',
+      persistentAdmissionLimit: 'passed',
+    }),
+  );
 } catch (error) {
   console.error(host.output);
   const reviews = join(host.cwd, '.harness/reviews');
@@ -68,7 +76,8 @@ try {
     if (entry.endsWith('.json')) console.error(await readFile(join(reviews, entry), 'utf8'));
   }
   const inventory = await host.client.session.list({ location: host.location }, host.request());
-  for (const session of inventory.data ?? []) console.error(JSON.stringify({ title: session.title, messages: await host.client.session.context({ sessionID: session.id }, host.request()) }));
+  for (const session of inventory.data ?? [])
+    console.error(JSON.stringify({ title: session.title, messages: await host.client.session.context({ sessionID: session.id }, host.request()) }));
   throw error;
 } finally {
   await host.close();

@@ -1,0 +1,23 @@
+# Categories for GitHub's generated release notes ("Generate release notes" on
+# a release, and tools/release-notes.mjs). PRs are grouped by their labels.
+changelog:
+  exclude:
+    labels: ['release-notes: skip']
+    authors: ['dependabot[bot]']
+  categories:
+    - title: Breaking changes
+      labels: [breaking-change]
+    - title: Security
+      labels: [security]
+    - title: Features
+      labels: [enhancement]
+    - title: Fixes
+      labels: [bug]
+    - title: Performance
+      labels: [performance]
+    - title: Documentation
+      labels: [documentation]
+    - title: Dependencies
+      labels: [dependencies]
+    - title: Other changes
+      labels: ['*']
