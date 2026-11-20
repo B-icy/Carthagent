@@ -30,6 +30,7 @@ const probes = [
   { command: '/ctg-help', expect: 'Carthagent commands', dismissCompletion: true },
   // One Enter on the open completion menu must open help, not just complete the text.
   { command: '/help', expect: 'Carthagent commands', postSubmitMarker: 'search to filter' },
+  { command: '/ctg-help', expect: 'Carthagent commands', postSubmitMarker: 'search to filter' },
   { command: '/compact', expect: '/compact requires an open session.', secondEnter: true, dismissCompletion: true },
   {
     command: '/theme carthage', expect: 'Theme “carthage” saved', postSubmitMarker: 'Carthagent reloads valid theme selections', expectedTheme: 'carthage', dismissCompletion: true,

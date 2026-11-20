@@ -188,10 +188,10 @@ Experimental software may still contain bugs; read its release notes first.
 
 ## Release status
 
-**1.1.2 is the current stable release** (npm `latest`, `ctg update` on the
-stable channel): first-use guidance, a nonmodal optional review offer, scrollable
-question forms, `ctg doctor`, `/goal` and the Ship fast lane; see the
-[1.1.2 release notes](docs/release-notes-1.1.2.md). The 1.1 line makes
+**1.1.3 is the current stable release** (npm `latest`, `ctg update` on the
+stable channel): a faster start, a polished Projects sidebar, one-Enter `/help`
+and Voyages that load after a session's folder moves; see the
+[1.1.3 release notes](docs/release-notes-1.1.3.md). The 1.1 line makes
 the native console the default for everyone. Upgrading from 1.0.7 changes the
 console, the profile location and the Node floor; read the
 [1.1.0 release notes](docs/release-notes-1.1.0.md) first.
