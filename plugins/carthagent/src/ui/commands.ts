@@ -112,9 +112,9 @@ export interface SlashRegistration {
  * argument-taking entry from slash completion only inserts `/name `; prompt
  * submission dispatches only argument-taking entries. A `submitSlash` command
  * without arguments therefore registers an argument-taking twin (for a
- * submitted `/name`) and then a plain entry. The host's completion runs the
- * last plain `/help` registration on the first Enter; for any other name,
- * including aliases, it still prefers the argument-taking twin.
+ * submitted `/name`) and then a plain entry with exactly the same names. The
+ * host's completion recognizes the twin and runs the plain entry on the first
+ * Enter, for the name and every alias (owned runtime v21 and later).
  */
 export function slashRegistrations(command: CarthagentCommand): SlashRegistration[] {
   // Host-equivalent commands stay in the palette and /help without a duplicate slash row.
