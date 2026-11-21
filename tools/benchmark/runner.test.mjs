@@ -36,8 +36,24 @@ test('offline fixture runner logs runtime and uses no provider credentials', asy
   assert.equal(result.runtime,'opencode-2');
   assert.equal(result.status,'completed');
   assert.equal(result.outcome,'succeeded');
+  assert.equal(result.toolErrors,null);
+  assert.equal(JSON.parse(readFileSync(join(root,'smoke-plain','result.json'))).toolErrors,null);
   assert.equal(JSON.parse(readFileSync(join(root,'smoke-plain','invocation.json'))).runtime,'opencode-2');
   assert.equal(existsSync(join(root,'smoke-plain','config','runtime.json')),true);
+});
+
+test('benchmark retains observed tool errors and inclusive operation counts', async () => {
+  const root=mk(), campaignPath=join(root,'campaign.json');
+  initializeCampaign(campaignPath,{historicalCandidate:0,historicalSmoke:0});
+  const fake = Object.assign(async options => {
+    options.onEvent({type:'session.step.ended',data:{sessionID:'fixture',finish:'stop'}});
+    return {exitCode:0,productiveTurns:1,tools:{execute:1,delivery_plan:2},toolErrors:{delivery_plan:1},cost:0,outcome:'succeeded'};
+  }, {fixture:true});
+  const result=await runCandidate('smoke','plain',{smoke:true,root,campaignPath,nativeRunner:fake});
+  assert.deepEqual(result.toolErrors,{delivery_plan:1});
+  assert.deepEqual(JSON.parse(readFileSync(join(root,'smoke-plain','result.json'))).toolErrors,{delivery_plan:1});
+  assert.equal(result.toolStarts,3);
+  assert.equal(result.toolAdmittedByBudget,0);
 });
 
 test('benchmark refuses arbitrary service endpoints before creating a run', async () => {
