@@ -234,10 +234,12 @@ The following delivery-engine documentation describes Carthagent's shared delive
 | `delivery_check` | Runs check argv with deadlines; `all` collects ordinary failures across suites; records exit codes, logs, workspace SHA-256 |
 | `delivery_status` | Contract + evidence state (missing/failed/stale) |
 | `delivery_progress` | Step progress for the plan panel |
-| `delivery_review` | Captures the actual diff; records per-requirement assertions, boundary probes and limitations against the unchanged snapshot |
+| `delivery_review` | Inspect the diff, then record its captureId, full requirement coverage, actual probes, explicit findings and limitations arrays against the unchanged snapshot |
 | `delivery_finish` | `verified` requires fresh checks, new-requirement executions, existing artifacts/output files, completed structured steps and a review receipt; otherwise `blocked` |
 
 The discipline: evidence is bound to the run, contract revision, executable check definition and workspace source fingerprint. Source edits invalidate evidence; dependency, cache and generated-output exclusions mean this is not a hash of every file. `verified` means declared required checks passed with current evidence—not independent proof of task completeness or correctness. Checks are real subprocesses (`argv`, no implicit shell), FIFO-queued, 1–300 s deadlines, logs under `.harness/`. Failed or missing checks get at most two automatic repair nudges per prompt. This is a workflow guardrail, not a security sandbox — for untrusted code use a container.
+
+Plan `artifacts` name source/tests/config/docs roots (`["."]` is allowed), not fingerprint-omitted directories such as `dist` or `node_modules`. Individual generated files belong in `outputs`. Review resolutions use `{id,change,evidence}` with returned unresolved finding IDs, not check IDs. See [review record requirements](docs/delivery-review-evidence.md).
 
 `extensions/codegraph.ts` adds a `code_nav` tool: a deterministic tree-sitter index of the workspace (JS/TS/Python/Rust) with ops `definition`, `symbols`, `callers`, `callees`, `imports`, `importers`, `outline`, `status`. It parses lazily on first call and re-parses only files whose mtime changed; `--codegraph-max-files N` caps the scan (default 8000).
 
