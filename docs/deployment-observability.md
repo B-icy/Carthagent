@@ -112,36 +112,6 @@ Rollback moves every pointer back to the previous good version `P` (for example 
 
 5. Run `gh workflow run release-health.yml`. Expect it to report `P` as healthy, then post a comment on the incident issue and close it.
 
-## Proposed deployment summary step for the Release workflow
+## Deployment summary in the Release workflow
 
-The following final step for the `publish-release-manifest` job in `.github/workflows/release.yml` writes a deployment summary and starts the post-deploy health run. The job needs `actions: write` so the token can dispatch workflows. It is not in `release.yml` yet. Adding it is the maintainer's decision.
-
-```yaml
-    permissions:
-      contents: read
-      actions: write
-    steps:
-      # ...existing steps...
-      - name: Summarize the deployment and start the release health check
-        if: success()
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
-          EXPECTED_SHA: ${{ needs.verify-release.outputs.tested_sha }}
-        run: |
-          set -euo pipefail
-          version="${RELEASE_TAG#v}"
-          {
-            echo "## Deployed Carthagent ${version}"
-            echo
-            echo "| Item | Value |"
-            echo "| --- | --- |"
-            echo "| Version | \`${version}\` |"
-            echo "| Commit | \`${EXPECTED_SHA}\` |"
-            echo "| GitHub release | ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG} |"
-            echo "| npm | https://www.npmjs.com/package/carthagent/v/${version} |"
-            echo "| Release health | ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/workflows/release-health.yml |"
-            echo "| Runbook | ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/main/docs/deployment-observability.md |"
-          } >> "$GITHUB_STEP_SUMMARY"
-          gh workflow run release-health.yml --repo "$GITHUB_REPOSITORY" --ref main
-```
+The `report-release-health` job in `.github/workflows/release.yml` runs for stable tags after `publish-npm` and `publish-release-manifest` have both succeeded. It writes a deployment summary (version, commit, GitHub release, npm page, health workflow and this runbook) and dispatches `release-health.yml` on `main`. Waiting for both publish jobs keeps the first health run from reporting the previous version as `npm latest` or as the update manifest. The job needs `actions: write` so the token can dispatch workflows.

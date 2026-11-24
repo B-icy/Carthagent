@@ -94,7 +94,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      actions: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -183,8 +182,18 @@ jobs:
             -H "authorization: Bearer ${CARTHAGENT_CLI_RELEASE_TOKEN}" \
             -H 'content-type: application/json' \
             -d "{\"version\":\"${version}\",\"minNode\":\"${min_node}\"}"
+
+  # The health check verifies npm latest and the update manifest, so it must not
+  # start until both publish jobs have finished.
+  report-release-health:
+    if: ${{ !contains(inputs.release_tag, '-') }}
+    needs: [verify-release, publish-npm, publish-release-manifest]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    steps:
       - name: Summarize the deployment and start the release health check
-        if: success()
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag }}
