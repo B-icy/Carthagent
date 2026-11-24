@@ -22,7 +22,10 @@ for some users and off again without a release.
 3. **User file**: `~/.carthagent/flags.json`, or the file named by
    `CARTHAGENT_FLAGS_FILE`. It sits next to `update-channel.json` and
    `config.json` as per-user settings. Agent state lives separately in the
-   `CARTHAGENT_CODING_AGENT_DIR` directory.
+   `CARTHAGENT_CODING_AGENT_DIR` directory. Inside the native runtime, whose
+   `HOME` is a private profile, `~` here means the real home that `ctg`
+   passes as `CTG_USER_HOME`, so the login dialog sees the same file as
+   `ctg flags`.
 
    ```json
    { "version": 1, "flags": { "advanced-auth": "on" } }

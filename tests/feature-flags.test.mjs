@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -21,6 +21,8 @@ import {
 } from '../lib/feature-flags.mjs';
 import { checkFeatureFlags, findFlagReferences } from '../tools/check-feature-flags.mjs';
 import { runOpenCodeCli } from '../lib/opencode/cli.mjs';
+import { runtimeEnvironment } from '../lib/opencode/runtime.mjs';
+import { updateChannelPath } from '../lib/update-channel.mjs';
 
 const REGISTRY = [
   { name: 'dark-launch', description: 'd', owner: '@o', default: false, stage: 'off', expires: '2030-01-01' },
@@ -149,6 +151,27 @@ test('an unreadable update channel falls back to registry defaults', t => {
   assert.ok(broken.flags.every(flag => flag.source === 'default'));
 });
 
+test('the native runtime reads flags and the update channel from the real user home, not its private HOME', t => {
+  const realHome = mkdtempSync(join(tmpdir(), 'ctg-flags-home-'));
+  const profile = mkdtempSync(join(tmpdir(), 'ctg-flags-profile-'));
+  t.after(() => {
+    rmSync(realHome, { recursive: true, force: true });
+    rmSync(profile, { recursive: true, force: true });
+  });
+  mkdirSync(join(realHome, '.carthagent'));
+  writeFileSync(join(realHome, '.carthagent', 'flags.json'), JSON.stringify({ version: 1, flags: { 'advanced-auth': 'on' } }));
+  writeFileSync(join(realHome, '.carthagent', 'update-channel.json'), JSON.stringify({ version: 1, channel: 'beta' }));
+  const env = runtimeEnvironment({ root: profile, env: { CTG_USER_HOME: realHome, HOME: realHome, USERPROFILE: realHome } });
+  assert.notEqual(env.HOME, realHome);
+  assert.equal(flagsFilePath(env), join(realHome, '.carthagent', 'flags.json'));
+  assert.equal(updateChannelPath(env), join(realHome, '.carthagent', 'update-channel.json'));
+  const report = resolveAllFlags({ env });
+  assert.equal(report.channel, 'beta');
+  assert.deepEqual(pick(report.flags.find(flag => flag.name === 'advanced-auth')), [true, 'user']);
+  assert.equal(isEnabled('advanced-auth', { env }), true);
+  // Outside the runtime, a relative CTG_USER_HOME is ignored like runtimeEnvironment ignores it.
+  assert.equal(flagsFilePath({ CTG_USER_HOME: 'relative', HOME: '/home/u' }).replace(/\\/g, '/'), '/home/u/.carthagent/flags.json');
+});
 test('expired flags are detected by date', () => {
   const registry = [{ ...REGISTRY[0], expires: '2026-01-31' }, REGISTRY[1]];
   assert.deepEqual(
