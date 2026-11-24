@@ -46,6 +46,9 @@ function fixture(t) {
 test('review captures real diff/new files and binds complete assertions to final snapshot', async t => {
   const { cwd, state, params, dir } = fixture(t);
   const capture = await captureDeliveryReview(state, cwd, dir);
+  assert.match(capture.next, /action=record.*captureId.*coverage.*probes.*findings.*limitations/);
+  assert.match(capture.next, /unresolvedFindings.*not check IDs/);
+  assert.match(capture.next, /explicit.*only when.*none/);
   assert.match(capture.diff, /-export const amount = 1/);
   assert.match(capture.diff, /\+export const amount = 2/);
   assert.match(capture.diff, /new.mjs/);
@@ -54,6 +57,9 @@ test('review captures real diff/new files and binds complete assertions to final
   assert.throws(() => recordDeliveryReview(state, cwd, { ...params(capture.id), probes: [] }), /boundary/);
   // All shape problems in one error, so the model fixes them in one retry.
   const { probes: _p, findings: _f, limitations: _l, ...bare } = params(capture.id);
+  const { findings: _omitted, ...missingFindings } = params(capture.id);
+  assert.throws(() => recordDeliveryReview(state, cwd, missingFindings), /findings: array/);
+  assert.equal(state.reviewEvidence, undefined);
   assert.throws(
     () => recordDeliveryReview(state, cwd, bare),
     error => /probes:[\s\S]*findings:[\s\S]*limitations:/.test(error.message) && /one call/.test(error.message),

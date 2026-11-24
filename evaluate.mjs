@@ -300,6 +300,7 @@ for (const mode of args.mode === 'both' ? ['baseline', 'custom'] : [args.mode]) 
       deliveryStatus: result.deliveryStatus,
       errors: result.errors,
       tools: result.tools,
+      toolErrors: result.toolErrors,
       sessionID: result.sessionID,
       campaignComparability: 'not-comparable-to-pi-runtime',
       durationMs: result.durationMs,

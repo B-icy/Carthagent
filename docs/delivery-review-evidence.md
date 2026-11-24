@@ -14,6 +14,20 @@ form needs submission/persistence agreement. A valid screenshot file or passing
 physics test does not demonstrate those connections. Local changes still need
 only relevant focused checks: this is not an extra mandatory planning loop.
 
+Plan `artifacts` are workspace-relative product source/tests/config/docs roots;
+`["."]` is allowed. Do not put fingerprint-omitted directories such as `dist`,
+`build`, `node_modules` or `artifacts` in those roots. This is a directory-name
+exclusion, not a ban on all Git-ignored paths. Individual generated files such
+as `dist/index.html` may instead be promised in `outputs`.
+
+After `delivery_review action=inspect`, read the capture and perform the actual
+review. `action=record` needs the returned `captureId`, `coverage` entries with
+concrete assertions for every exact acceptance requirement (including required
+validators), a nonempty `probes` array describing actual probes and observed
+results, and explicit `findings` and `limitations` arrays. Use `[]` only when
+there are no open defects or no review limits, respectively; neither is defaulted.
+Do not invent assertions or probe results to complete the shape.
+
 `coverage` accepts optional `status: "demonstrated" | "unverified"`. Use
 `unverified` when assertions do not establish a requirement. Such gaps and all
 submitted findings are saved with stable IDs. A failed review record returns
@@ -22,7 +36,8 @@ and persists through both CLI and HTTP entry points. Empty findings, recapture,
 session restore, and plan revision do not erase them.
 
 Resolve a finding with `resolutions:[{id,change,evidence}]` on a current capture
-after checks pass. Explain the repair or concrete evidence that the original
+after checks pass. Use the finding ID returned in `unresolvedFindings` by inspect
+or record, not a check ID or an invented label. Explain the repair or concrete evidence that the original
 requirement is met. An environment limitation is not a resolution of untested
 core behavior. If it cannot be demonstrated, finish blocked and describe what
 did pass. The finding and resolution history is retained in the review evidence.

@@ -97,9 +97,6 @@
   "lib/opencode/evaluation.mjs": {
     "complexity": {
       "count": 2
-    },
-    "max-depth": {
-      "count": 2
     }
   },
   "lib/opencode/file-lock.mjs": {

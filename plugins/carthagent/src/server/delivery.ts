@@ -129,13 +129,13 @@ const planSchema = O(
     assumptions: A(short),
     artifacts: A(
       S(
-        'Workspace-relative file or directory path that will exist at completion, e.g. src or "." (paths are relative to the session workspace, not the repository root). Not a description.',
+        'Workspace-relative product source/tests/config/docs root that will exist at completion; ["."] is allowed. Exclude fingerprint-omitted directories such as dist, build, node_modules and artifacts (not all Git-ignored paths). Not prose.',
       ),
       40,
     ),
     outputs: A(
       S(
-        'Workspace-relative file path that must exist at completion, e.g. invoice.mjs. Not a prose deliverable or command result; put test commands in checks. Omit outputs when no files are promised.',
+        'Workspace-relative file path that must exist at completion, including individual generated files such as dist/index.html. Not a prose deliverable or command result; put test commands in checks. Omit outputs when no files are promised.',
       ),
       40,
     ),
@@ -771,30 +771,43 @@ export async function registerDelivery(ctx: Context, options: DeliveryOptions = 
       add(
         editor,
         'delivery_review',
-        'Inspect final diff or record assertion coverage, boundary probes and findings. Required for structured plans; assertions are model-authored.',
+        'action=inspect captures the final diff; action=record needs captureId, full coverage, actual probes, explicit findings and limitations arrays. Required for structured plans; assertions are model-authored.',
         O(
           {
             action: { type: 'string', enum: ['inspect', 'record'] },
-            captureId: short,
-            coverage: A(
-              {
-                type: 'object',
-                properties: {
-                  requirement: { type: 'string', description: 'Exact acceptance requirement text' },
-                  assertions: { anyOf: [{ type: 'string' }, A({ type: 'string' }, 32)], description: 'Concrete assertions the linked checks make' },
-                  assertion: { type: 'string', description: 'Alias for a single assertion' },
-                  status: { type: 'string', enum: ['demonstrated', 'unverified'] },
+            captureId: S('record: ID returned by the latest inspect on unchanged source'),
+            coverage: {
+              description: 'record: concrete check assertions for every exact acceptance requirement, including required validators',
+              ...A(
+                {
+                  type: 'object',
+                  properties: {
+                    requirement: { type: 'string', description: 'Exact acceptance requirement text' },
+                    assertions: { anyOf: [{ type: 'string' }, A({ type: 'string' }, 32)], description: 'Concrete assertions the linked checks make' },
+                    assertion: { type: 'string', description: 'Alias for a single assertion' },
+                    status: { type: 'string', enum: ['demonstrated', 'unverified'] },
+                  },
+                  required: ['requirement'],
+                  additionalProperties: true,
                 },
-                required: ['requirement'],
-                additionalProperties: true,
-              },
-              64,
+                64,
+              ),
+            },
+            resolutions: A(
+              O({
+                id: S('ID returned in unresolvedFindings by inspect or record; not a check ID or invented label'),
+                change: S('Repair or explanation addressing this finding'),
+                evidence: S('Concrete evidence that the original requirement is met'),
+              }),
+              40,
             ),
-            resolutions: A({ type: 'object', additionalProperties: true }, 40),
             outcomes: A({ type: 'object', additionalProperties: true }, 32),
-            probes: A(short, 40),
-            findings: A(short, 40),
-            limitations: A(short),
+            probes: { ...A(short, 40), description: 'record: nonempty array of actual boundary/metamorphic probes and observed results' },
+            findings: {
+              ...A(short, 40),
+              description: 'record: explicit array of still-open defects; [] only when none. Earlier findings still require resolutions.',
+            },
+            limitations: { ...A(short), description: 'record: explicit array of review limits; [] only when none' },
           },
           ['action'],
         ),

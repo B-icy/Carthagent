@@ -88,6 +88,29 @@ test('delivery_review coverage schema accepts assertion aliases models emit', as
   assert.equal(item.properties.assertion.type, 'string');
 });
 
+test('registered schemas explain artifact roots and action-specific review records', async t => {
+  const h = host(t);
+  t.after(await registerDelivery(h.ctx, { workflow: 'standard' }));
+  const plan = h.tools.get('delivery_plan').input.properties;
+  assert.match(plan.artifacts.items.description, /source\/tests\/config\/docs/);
+  assert.match(plan.artifacts.items.description, /dist.*build.*node_modules/);
+  assert.match(plan.artifacts.items.description, /not all Git-ignored/);
+  assert.match(plan.outputs.items.description, /dist\/index.html/);
+  const review = h.tools.get('delivery_review');
+  assert.match(review.description, /inspect.*record/);
+  const p = review.input.properties;
+  assert.match(p.captureId.description, /record.*inspect/);
+  assert.match(p.coverage.description, /every exact acceptance requirement/);
+  assert.match(p.probes.description, /nonempty.*observed/);
+  for (const field of ['findings', 'limitations']) {
+    assert.match(p[field].description, /record.*explicit/);
+    assert.equal(p[field].default, undefined);
+  }
+  assert.deepEqual(p.resolutions.items.required, ['id', 'change', 'evidence']);
+  assert.match(p.resolutions.items.properties.id.description, /unresolvedFindings.*not a check ID/);
+  for (const field of ['id', 'change', 'evidence']) assert.equal(p.resolutions.items.properties[field].type, 'string');
+});
+
 test('code-mode catalog always lists the delivery_plan entry point', async t => {
   const h = host(t);
   await registerDelivery(h.ctx, { workflow: 'standard' });

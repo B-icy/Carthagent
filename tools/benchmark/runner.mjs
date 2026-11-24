@@ -288,6 +288,7 @@ export async function runCandidate(
       reportedCost: result.cost,
       finishedAt: new Date().toISOString(),
     };
+    final.toolErrors = result.toolErrors ?? null;
     writeFileSync(join(run, 'result.json'), JSON.stringify(final, null, 2));
     console.log(JSON.stringify(final));
     return final;
