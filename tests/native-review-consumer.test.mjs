@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { reviewKickoff } from '../lib/review.mjs';
-import { createNativeReviewConsumer, nativeReviewMode, sendNativeReviewKickoff, subscribeNativeReviewEvents } from '../plugins/carthagent/src/ui/native-review.mjs';
+import {
+  createNativeReviewConsumer,
+  nativeReviewMode,
+  sendNativeReviewKickoff,
+  subscribeNativeReviewEvents,
+} from '../plugins/carthagent/src/ui/native-review.mjs';
 
 const execution = (id, sessionID) => ({ id, data: { sessionID } });
 const changed = [{ file: 'src/change.ts', additions: 1, deletions: 0, status: 'modified', patch: '@@ change' }];
@@ -21,8 +26,15 @@ test('native prompt payload is the legacy PR-review kickoff and only bypasses fr
   let request;
   const signal = new AbortController().signal;
   await sendNativeReviewKickoff({
-    client: { session: { async prompt(input, options) { request = { input, options }; } } },
-    sessionID: 'working-session', signal,
+    client: {
+      session: {
+        async prompt(input, options) {
+          request = { input, options };
+        },
+      },
+    },
+    sessionID: 'working-session',
+    signal,
   });
   assert.equal(request.input.sessionID, 'working-session');
   assert.equal(request.input.text, reviewKickoff());
@@ -44,8 +56,10 @@ test('ask confirmation is current-run-bound and one-shot; a later run invalidate
   const offers = [];
   const kickoffs = [];
   const consumer = createNativeReviewConsumer({
-    mode: () => 'ask', diff: makeDiff(), offer: async (offer) => offers.push(offer),
-    kickoff: async (sessionID) => kickoffs.push(sessionID),
+    mode: () => 'ask',
+    diff: makeDiff(),
+    offer: async offer => offers.push(offer),
+    kickoff: async sessionID => kickoffs.push(sessionID),
   });
   consumer.onStarted(execution('run-1', 'session-a'));
   await consumer.onSucceeded(execution('run-1', 'session-a'));
@@ -61,18 +75,33 @@ test('ask confirmation is current-run-bound and one-shot; a later run invalidate
 
 test('a run whose formal delivery is not reviewable is never offered or kicked off', async () => {
   for (const mode of ['ask', 'yes']) {
-    const offers = [], kickoffs = [], asked = [];
+    const offers = [],
+      kickoffs = [],
+      asked = [];
     const consumer = createNativeReviewConsumer({
-      mode: () => mode, diff: makeDiff(), offer: async (offer) => offers.push(offer),
-      eligible: async (sessionID) => { asked.push(sessionID); return false; },
-      kickoff: async (sessionID) => kickoffs.push(sessionID),
+      mode: () => mode,
+      diff: makeDiff(),
+      offer: async offer => offers.push(offer),
+      eligible: async sessionID => {
+        asked.push(sessionID);
+        return false;
+      },
+      kickoff: async sessionID => kickoffs.push(sessionID),
     });
     consumer.onStarted(execution('run-1', 'session-a'));
     await consumer.onSucceeded(execution('run-1', 'session-a'));
     assert.deepEqual([offers.length, kickoffs.length, asked], [0, 0, ['session-a']], mode);
   }
   const offers = [];
-  const failing = createNativeReviewConsumer({ mode: () => 'ask', diff: makeDiff(), offer: async (offer) => offers.push(offer), eligible: async () => { throw new Error('rpc down'); }, kickoff: async () => {} });
+  const failing = createNativeReviewConsumer({
+    mode: () => 'ask',
+    diff: makeDiff(),
+    offer: async offer => offers.push(offer),
+    eligible: async () => {
+      throw new Error('rpc down');
+    },
+    kickoff: async () => {},
+  });
   failing.onStarted(execution('run-1', 'session-a'));
   await failing.onSucceeded(execution('run-1', 'session-a'));
   assert.equal(offers.length, 0, 'an unknown delivery state fails closed');
@@ -82,17 +111,16 @@ test('yes kicks off only successful new-change runs and suppresses only that ses
   const loops = new Set();
   const started = [];
   const consumer = createNativeReviewConsumer({
-    mode: () => 'yes', diff: makeDiff(), offer: async () => assert.fail('yes does not prompt'),
-    kickoff: async (sessionID) => started.push(sessionID),
-    isLoopActive: (sessionID) => loops.has(sessionID),
-    setLoopActive: (sessionID, active) => active ? loops.add(sessionID) : loops.delete(sessionID),
+    mode: () => 'yes',
+    diff: makeDiff(),
+    offer: async () => assert.fail('yes does not prompt'),
+    kickoff: async sessionID => started.push(sessionID),
+    isLoopActive: sessionID => loops.has(sessionID),
+    setLoopActive: (sessionID, active) => (active ? loops.add(sessionID) : loops.delete(sessionID)),
   });
   consumer.onStarted(execution('run-a1', 'session-a'));
   consumer.onStarted(execution('run-b1', 'session-b'));
-  await Promise.all([
-    consumer.onSucceeded(execution('run-a1', 'session-a')),
-    consumer.onSucceeded(execution('run-b1', 'session-b')),
-  ]);
+  await Promise.all([consumer.onSucceeded(execution('run-a1', 'session-a')), consumer.onSucceeded(execution('run-b1', 'session-b'))]);
   assert.deepEqual(started.sort(), ['session-a', 'session-b'], 'one session loop must not suppress an unrelated session');
   assert.ok(loops.has('session-a') && loops.has('session-b'));
   consumer.onUserPromptAdmitted('session-a', { type: 'user', metadata: {} });
@@ -100,10 +128,7 @@ test('yes kicks off only successful new-change runs and suppresses only that ses
   assert.equal(loops.has('session-b'), true, 'unrelated session loop state remains active');
   consumer.onStarted(execution('run-a2', 'session-a'));
   consumer.onStarted(execution('run-b2', 'session-b'));
-  await Promise.all([
-    consumer.onSucceeded(execution('run-a2', 'session-a')),
-    consumer.onSucceeded(execution('run-b2', 'session-b')),
-  ]);
+  await Promise.all([consumer.onSucceeded(execution('run-a2', 'session-a')), consumer.onSucceeded(execution('run-b2', 'session-b'))]);
   assert.equal(started.length, 3, 'only session-a may re-enter a loop after a new user prompt');
 });
 
@@ -111,13 +136,21 @@ test('inbox.delivered resets restored loop only for the admitted message, not au
   const persisted = new Set(['session-restored', 'session-kickoff']);
   const messages = new Map();
   const consumer = createNativeReviewConsumer({
-    mode: () => 'no', diff: async () => [], offer: async () => {}, kickoff: async () => {},
-    isLoopActive: (sessionID) => persisted.has(sessionID),
-    setLoopActive: (sessionID, active) => active ? persisted.add(sessionID) : persisted.delete(sessionID),
+    mode: () => 'no',
+    diff: async () => [],
+    offer: async () => {},
+    kickoff: async () => {},
+    isLoopActive: sessionID => persisted.has(sessionID),
+    setLoopActive: (sessionID, active) => (active ? persisted.add(sessionID) : persisted.delete(sessionID)),
   });
   const handlers = new Map();
   const cleanups = subscribeNativeReviewEvents(
-    { on(type, handler) { handlers.set(type, handler); return () => {}; } },
+    {
+      on(type, handler) {
+        handlers.set(type, handler);
+        return () => {};
+      },
+    },
     consumer,
     assert.fail,
     async (sessionID, messageID) => messages.get(`${sessionID}:${messageID}`),
@@ -125,14 +158,14 @@ test('inbox.delivered resets restored loop only for the admitted message, not au
 
   messages.set('session-restored:user-2', { type: 'user', metadata: {} });
   handlers.get('session.inbox.delivered')({ data: { sessionID: 'session-restored', inboxID: 'user-2' } });
-  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
   assert.equal(persisted.has('session-restored'), false, 'restored session loop state is explicitly persisted as cleared');
   messages.set('session-kickoff:review-1', { type: 'user', metadata: { 'ctg.raw': true, 'ctg.reviewKickoff': true } });
   handlers.get('session.inbox.delivered')({ data: { sessionID: 'session-kickoff', inboxID: 'review-1' } });
-  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
   assert.equal(persisted.has('session-kickoff'), true, 'review kickoff does not clear its own loop suppression');
 
-  cleanups.forEach((cleanup) => cleanup());
+  cleanups.forEach(cleanup => cleanup());
   consumer.dispose();
 });
 
@@ -146,13 +179,27 @@ test('execution.started does not use stale cached message state; inbox deliverie
   ]);
   const writes = [];
   const consumer = createNativeReviewConsumer({
-    mode: () => 'no', diff: async () => [], offer: async () => {}, kickoff: async () => {},
-    isLoopActive: (sessionID) => persisted.has(sessionID),
-    setLoopActive: (sessionID, active) => { writes.push([sessionID, active]); if (active) persisted.add(sessionID); else persisted.delete(sessionID); },
+    mode: () => 'no',
+    diff: async () => [],
+    offer: async () => {},
+    kickoff: async () => {},
+    isLoopActive: sessionID => persisted.has(sessionID),
+    setLoopActive: (sessionID, active) => {
+      writes.push([sessionID, active]);
+      if (active) persisted.add(sessionID);
+      else persisted.delete(sessionID);
+    },
   });
   const handlers = new Map();
   const cleanups = subscribeNativeReviewEvents(
-    { on(type, handler) { handlers.set(type, handler); return () => {}; } }, consumer, assert.fail,
+    {
+      on(type, handler) {
+        handlers.set(type, handler);
+        return () => {};
+      },
+    },
+    consumer,
+    assert.fail,
     async (sessionID, messageID) => messages.get(`${sessionID}:${messageID}`),
   );
   // The execution-start lifecycle fires first; it must not inspect an old
@@ -160,21 +207,21 @@ test('execution.started does not use stale cached message state; inbox deliverie
   handlers.get('session.execution.started')(execution('run-1', 'session-a'));
   assert.deepEqual(writes, []);
   handlers.get('session.inbox.delivered')({ data: { sessionID: 'session-a', inboxID: 'kickoff' } });
-  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(writes, [], 'kickoff delivery preserves suppression');
 
   // Multiple queued user messages are distinct admissions even if the host
   // coalesces them into one later execution.started event.
   handlers.get('session.inbox.delivered')({ data: { sessionID: 'session-a', inboxID: 'user-1' } });
   handlers.get('session.inbox.delivered')({ data: { sessionID: 'session-a', inboxID: 'user-2' } });
-  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(writes, [['session-a', false]], 'restored state is persisted cleared once on real user admission');
   assert.equal(persisted.has('session-a'), false);
 
   handlers.get('session.inbox.delivered')({ data: { sessionID: 'session-a', inboxID: 'assistant' } });
-  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(writes, [['session-a', false]], 'non-user delivered message is ignored');
-  cleanups.forEach((cleanup) => cleanup());
+  cleanups.forEach(cleanup => cleanup());
   consumer.dispose();
 });
 
@@ -184,30 +231,40 @@ test('terminal handling waits for exact inbox admission lookup before deciding l
   const handlers = new Map();
   let resolveMessage;
   const consumer = createNativeReviewConsumer({
-    mode: () => 'yes', diff: makeDiff(), offer: async () => assert.fail(),
-    kickoff: async (sessionID) => kickoffs.push(sessionID),
-    isLoopActive: (sessionID) => persisted.has(sessionID),
-    setLoopActive: (sessionID, active) => active ? persisted.add(sessionID) : persisted.delete(sessionID),
+    mode: () => 'yes',
+    diff: makeDiff(),
+    offer: async () => assert.fail(),
+    kickoff: async sessionID => kickoffs.push(sessionID),
+    isLoopActive: sessionID => persisted.has(sessionID),
+    setLoopActive: (sessionID, active) => (active ? persisted.add(sessionID) : persisted.delete(sessionID)),
   });
   const cleanups = subscribeNativeReviewEvents(
-    { on(type, handler) { handlers.set(type, handler); return () => {}; } }, consumer, assert.fail,
-    async (_sessionID, _messageID, lookupSignal) => await new Promise((resolve) => {
-      resolveMessage = resolve;
-      lookupSignal.addEventListener('abort', () => resolve(undefined), { once: true });
-    }),
+    {
+      on(type, handler) {
+        handlers.set(type, handler);
+        return () => {};
+      },
+    },
+    consumer,
+    assert.fail,
+    async (_sessionID, _messageID, lookupSignal) =>
+      await new Promise(resolve => {
+        resolveMessage = resolve;
+        lookupSignal.addEventListener('abort', () => resolve(undefined), { once: true });
+      }),
   );
   handlers.get('session.execution.started')(execution('run-race', 'session-race'));
   const admission = handlers.get('session.inbox.delivered')({ data: { sessionID: 'session-race', inboxID: 'admitted-user' } });
-  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
   const terminal = handlers.get('session.execution.succeeded')(execution('run-race', 'session-race'));
-  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(kickoffs, [], 'success waits while admitted-message metadata is unresolved');
   resolveMessage({ type: 'user', metadata: {} });
   await admission;
   await terminal;
   assert.equal(kickoffs.length, 1, 'the admitted user prompt clears restored suppression before successful-run handling');
   assert.equal(persisted.has('session-race'), true, 'the changed successful run starts its next review loop');
-  cleanups.forEach((cleanup) => cleanup());
+  cleanups.forEach(cleanup => cleanup());
   consumer.dispose();
 });
 
@@ -217,48 +274,63 @@ test('inbox lookup queue preserves event order, times out, and disposal cancels 
   const requested = [];
   let resolveStale;
   const consumer = createNativeReviewConsumer({
-    mode: () => 'no', diff: async () => [], offer: async () => {}, kickoff: async () => {},
-    isLoopActive: (sessionID) => loops.has(sessionID),
-    setLoopActive: (sessionID, active) => active ? loops.add(sessionID) : loops.delete(sessionID),
+    mode: () => 'no',
+    diff: async () => [],
+    offer: async () => {},
+    kickoff: async () => {},
+    isLoopActive: sessionID => loops.has(sessionID),
+    setLoopActive: (sessionID, active) => (active ? loops.add(sessionID) : loops.delete(sessionID)),
   });
   const cleanups = subscribeNativeReviewEvents(
-    { on(type, handler) { handlers.set(type, handler); return () => {}; } }, consumer, assert.fail,
+    {
+      on(type, handler) {
+        handlers.set(type, handler);
+        return () => {};
+      },
+    },
+    consumer,
+    assert.fail,
     async (_sessionID, messageID, signal) => {
       requested.push(messageID);
-      if (messageID === 'stale-slow') return await new Promise((resolve) => { resolveStale = resolve; });
-      if (messageID === 'kickoff-slow') await new Promise((resolve) => setTimeout(resolve, 30));
-      if (messageID === 'pending') await new Promise((resolve) => setTimeout(resolve, 50));
+      if (messageID === 'stale-slow')
+        return await new Promise(resolve => {
+          resolveStale = resolve;
+        });
+      if (messageID === 'kickoff-slow') await new Promise(resolve => setTimeout(resolve, 30));
+      if (messageID === 'pending') await new Promise(resolve => setTimeout(resolve, 50));
       signal.throwIfAborted();
       return { type: 'user', metadata: messageID === 'kickoff-slow' ? { 'ctg.reviewKickoff': true } : {} };
     },
   );
   handlers.get('session.inbox.delivered')({ data: { sessionID: 'session-ordered', inboxID: 'kickoff-slow' } });
   handlers.get('session.inbox.delivered')({ data: { sessionID: 'session-ordered', inboxID: 'normal-next' } });
-  await new Promise((resolve) => setTimeout(resolve, 60));
+  await new Promise(resolve => setTimeout(resolve, 60));
   assert.deepEqual(requested.slice(0, 2), ['kickoff-slow', 'normal-next']);
   assert.equal(loops.has('session-ordered'), false, 'later normal prompt wins after earlier kickoff lookup completes');
 
   const staleLookup = handlers.get('session.inbox.delivered')({ data: { sessionID: 'session-stale', inboxID: 'stale-slow' } });
-  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
   consumer.setLoopActive('session-stale', true);
   resolveStale({ type: 'user', metadata: {} });
   await staleLookup;
   assert.equal(loops.has('session-stale'), true, 'a lookup started before a newer loop generation cannot clear it');
 
   const pendingLookup = handlers.get('session.inbox.delivered')({ data: { sessionID: 'session-disposed', inboxID: 'pending' } });
-  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
   consumer.dispose();
   await pendingLookup;
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  await new Promise(resolve => setTimeout(resolve, 20));
   assert.equal(loops.has('session-disposed'), true, 'a lookup completing after disposal cannot mutate persisted state');
-  cleanups.forEach((cleanup) => cleanup());
+  cleanups.forEach(cleanup => cleanup());
 });
 
 test('failed/interrupted and unchanged executions do not launch a workflow', async () => {
   const starts = [];
   const consumer = createNativeReviewConsumer({
-    mode: () => 'yes', diff: async () => [], offer: async () => assert.fail(),
-    kickoff: async (sessionID) => starts.push(sessionID),
+    mode: () => 'yes',
+    diff: async () => [],
+    offer: async () => assert.fail(),
+    kickoff: async sessionID => starts.push(sessionID),
   });
   consumer.onStarted(execution('failed', 'failed'));
   await consumer.onFailed(execution('failed', 'failed'));
@@ -272,29 +344,37 @@ test('failed/interrupted and unchanged executions do not launch a workflow', asy
 test('host execution subscriptions are disposed and plugin shutdown blocks pending review admission', async () => {
   const handlers = new Map();
   const unsubscribed = [];
-  const data = { on(type, handler) { handlers.set(type, handler); return () => unsubscribed.push(type); } };
+  const data = {
+    on(type, handler) {
+      handlers.set(type, handler);
+      return () => unsubscribed.push(type);
+    },
+  };
   const offers = [];
-  const consumer = createNativeReviewConsumer({ mode: () => 'ask', diff: makeDiff(), offer: async (value) => offers.push(value), kickoff: async () => {} });
+  const consumer = createNativeReviewConsumer({ mode: () => 'ask', diff: makeDiff(), offer: async value => offers.push(value), kickoff: async () => {} });
   const cleanups = subscribeNativeReviewEvents(data, consumer);
   handlers.get('session.execution.started')(execution('run', 'session'));
   handlers.get('session.execution.succeeded')(execution('run', 'session'));
-  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
   assert.equal(offers.length, 1);
   consumer.dispose();
   assert.equal(await offers[0].start(), false);
-  cleanups.forEach((cleanup) => cleanup());
+  cleanups.forEach(cleanup => cleanup());
   assert.equal(unsubscribed.length, 5);
 });
 
 test('default successful finish offers review without a modal or kickoff; duplicate events do not spam', async () => {
   const { showNativeReviewOffer } = await import('../plugins/carthagent/src/ui/native-review.mjs');
-  const notices = [], kickoffs = [];
+  const notices = [],
+    kickoffs = [];
   // Only the nonmodal toast capability is supplied: no dialog or prompt access.
-  const toast = { show: (options) => notices.push(options) };
+  const toast = { show: options => notices.push(options) };
   const consumer = createNativeReviewConsumer({
-    mode: () => nativeReviewMode({}, {}), diff: makeDiff(), eligible: async () => true,
-    offer: async (offer) => showNativeReviewOffer(toast, offer),
-    kickoff: async (sessionID) => kickoffs.push(sessionID),
+    mode: () => nativeReviewMode({}, {}),
+    diff: makeDiff(),
+    eligible: async () => true,
+    offer: async offer => showNativeReviewOffer(toast, offer),
+    kickoff: async sessionID => kickoffs.push(sessionID),
   });
   consumer.onStarted(execution('verified-run', 'session-a'));
   await Promise.all([1, 2, 3].map(() => consumer.onSucceeded(execution('verified-run', 'session-a'))));
@@ -309,7 +389,8 @@ test('default successful finish offers review without a modal or kickoff; duplic
 
 test('no mode still suppresses offers and automatic kickoff after changed successful runs', async () => {
   const consumer = createNativeReviewConsumer({
-    mode: () => 'no', diff: makeDiff(),
+    mode: () => 'no',
+    diff: makeDiff(),
     offer: async () => assert.fail('no must not offer'),
     kickoff: async () => assert.fail('no must not start automatically'),
   });

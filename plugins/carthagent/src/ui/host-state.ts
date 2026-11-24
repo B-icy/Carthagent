@@ -17,7 +17,7 @@ export function cliConfigDirectory(env = process.env, home = process.env.HOME ??
 export async function readCliConfig(path: string): Promise<NativeCliConfig> {
   try {
     const value: unknown = JSON.parse(await readFile(path, "utf8"));
-    return value && typeof value === "object" && !Array.isArray(value) ? value as NativeCliConfig : {};
+    return value && typeof value === "object" && !Array.isArray(value) ? (value as NativeCliConfig) : {};
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
     throw error;
@@ -27,9 +27,7 @@ export async function readCliConfig(path: string): Promise<NativeCliConfig> {
 /** Atomically preserve unrelated native CLI settings while selecting a theme. */
 export async function writeNativeTheme(path: string, name: string) {
   const config = await readCliConfig(path);
-  config.theme = typeof config.theme === "object" && config.theme !== null
-    ? { ...config.theme, name }
-    : { name };
+  config.theme = typeof config.theme === "object" && config.theme !== null ? { ...config.theme, name } : { name };
   await mkdir(dirname(path), { recursive: true });
   const temp = `${path}.${process.pid}.${crypto.randomUUID()}.tmp`;
   try {

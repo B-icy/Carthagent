@@ -1,7 +1,10 @@
 import { isCarthagentShipProviderId } from '../../../../lib/providers/names.mjs';
 
 class LocalVoyagesError extends Error {
-  constructor(code) { super(code); this.code = code; }
+  constructor(code) {
+    super(code);
+    this.code = code;
+  }
 }
 
 const SIGN_IN = 'Sign in to Carthagent Cloud to load Voyages. Choose Sign in, then Refresh; no success assumed.';
@@ -19,20 +22,22 @@ const AUTH_GUIDANCE = {
 };
 
 /** UI transaction lifetime. Credentials and durable purchase keys remain server-only. */
-export function createVoyagesState({ api, changed = (_state) => {}, now = Date.now, timeoutSignal = () => AbortSignal.timeout(15_000) }) {
+export function createVoyagesState({ api, changed = _state => {}, now = Date.now, timeoutSignal = () => AbortSignal.timeout(15_000) }) {
   let generation = 0;
   let disposed = false;
   let controller = new AbortController();
-  const state = { snapshot: undefined, busy: false, error: "", notice: "" };
-  const emit = () => { if (!disposed) changed({ ...state }); };
+  const state = { snapshot: undefined, busy: false, error: '', notice: '' };
+  const emit = () => {
+    if (!disposed) changed({ ...state });
+  };
   const invalidate = () => {
     generation++;
     controller.abort();
     controller = new AbortController();
     state.snapshot = undefined;
     state.busy = false;
-    state.error = "";
-    state.notice = "";
+    state.error = '';
+    state.notice = '';
     emit();
   };
   async function run(action) {
@@ -41,68 +46,91 @@ export function createVoyagesState({ api, changed = (_state) => {}, now = Date.n
     const signal = controller.signal;
     const live = () => !disposed && current === generation && !signal.aborted;
     state.busy = true;
-    state.error = "";
-    state.notice = "";
+    state.error = '';
+    state.notice = '';
     emit();
-    try { await action({ signal, live }); }
-    catch (error) {
+    try {
+      await action({ signal, live });
+    } catch (error) {
       if (!disposed && current === generation) {
         state.snapshot = undefined;
         const code = voyagesErrorCode(error);
-        state.error = code === 'insufficient_coins'
-          ? 'insufficient_coins. Not enough coins for this item. No purchase was made; wallet refreshed.'
-          : AUTH_GUIDANCE[code] ?? `${code}. Refresh required; no success assumed. Sign in again if access expired or was revoked.`;
+        state.error =
+          code === 'insufficient_coins'
+            ? 'insufficient_coins. Not enough coins for this item. No purchase was made; wallet refreshed.'
+            : (AUTH_GUIDANCE[code] ?? `${code}. Refresh required; no success assumed. Sign in again if access expired or was revoked.`);
         emit();
         // Reconcile all failed writes, never replay them. Even if this succeeds,
         // retain the failure message rather than claiming a successful mutation.
         try {
           const snapshot = await api.snapshot(AbortSignal.any([controller.signal, timeoutSignal()]));
           if (!disposed && current === generation) state.snapshot = snapshot;
-        } catch { /* fail closed */ }
+        } catch {
+          /* fail closed */
+        }
       }
     } finally {
-      if (!disposed && current === generation) { state.busy = false; emit(); }
+      if (!disposed && current === generation) {
+        state.busy = false;
+        emit();
+      }
     }
   }
   async function load({ signal, live }) {
     const snapshot = await api.snapshot(networkSignal(signal));
-    if (live()) { state.snapshot = snapshot; emit(); }
+    if (live()) {
+      state.snapshot = snapshot;
+      emit();
+    }
   }
-  const networkSignal = (signal) => AbortSignal.any([signal, timeoutSignal()]);
+  const networkSignal = signal => AbortSignal.any([signal, timeoutSignal()]);
   return {
     invalidate,
-    dispose() { invalidate(); disposed = true; controller.abort(); },
-    refresh() { return run(async (tx) => { state.snapshot = undefined; emit(); await load(tx); }); },
+    dispose() {
+      invalidate();
+      disposed = true;
+      controller.abort();
+    },
+    refresh() {
+      return run(async tx => {
+        state.snapshot = undefined;
+        emit();
+        await load(tx);
+      });
+    },
     claimReward(sessionID, confirm) {
-      return run(async (tx) => {
+      return run(async tx => {
         if (!state.snapshot || !sessionID) return;
         const preview = await api.previewReward({ sessionID }, networkSignal(tx.signal));
-        if (!tx.live() || await confirm(preview) !== true || !tx.live()) return;
+        if (!tx.live() || (await confirm(preview)) !== true || !tx.live()) return;
         const result = await api.claimReward({ sessionID, runId: preview.runId, snapshot: preview.snapshot }, networkSignal(tx.signal));
         if (!tx.live()) return;
         await load(tx);
-        if (tx.live()) state.notice = result.replayed ? 'This delivery was already rewarded. No duplicate grant.' : `Delivery rewarded: +${result.reward.coins} coins · +${result.reward.xp} XP · +${result.reward.km} km.`;
+        if (tx.live())
+          state.notice = result.replayed
+            ? 'This delivery was already rewarded. No duplicate grant.'
+            : `Delivery rewarded: +${result.reward.coins} coins · +${result.reward.xp} XP · +${result.reward.km} km.`;
       });
     },
     customize(draft, confirm) {
-      return run(async (tx) => {
+      return run(async tx => {
         const profile = state.snapshot?.profile;
         if (!profile) return;
         const patch = await draft(profile, tx.live);
         if (!patch || !tx.live()) return;
-        if (await confirm(profile, patch) !== true || !tx.live()) return;
+        if ((await confirm(profile, patch)) !== true || !tx.live()) return;
         await api.customize({ version: profile.version, ...patch }, networkSignal(tx.signal));
         if (!tx.live()) return;
         await load(tx);
-        if (tx.live()) state.notice = "Customization saved and refreshed.";
+        if (tx.live()) state.notice = 'Customization saved and refreshed.';
       });
     },
     equip(item, confirm) {
-      return run(async (tx) => {
+      return run(async tx => {
         const snapshot = state.snapshot;
-        if (!snapshot || !snapshot.items.some((entry) => entry.item === item.item)) return;
-        if (!canEquip(snapshot, item)) throw new Error("equip unavailable");
-        if (await confirm(snapshot.profile, item) !== true || !tx.live()) return;
+        if (!snapshot || !snapshot.items.some(entry => entry.item === item.item)) return;
+        if (!canEquip(snapshot, item)) throw new Error('equip unavailable');
+        if ((await confirm(snapshot.profile, item)) !== true || !tx.live()) return;
         await api.equip({ version: snapshot.profile.version, slot: item.slot, item: item.itemKey }, networkSignal(tx.signal));
         if (!tx.live()) return;
         await load(tx);
@@ -110,18 +138,29 @@ export function createVoyagesState({ api, changed = (_state) => {}, now = Date.n
       });
     },
     purchase(item, confirm) {
-      return run(async (tx) => {
+      return run(async tx => {
         const snapshot = state.snapshot;
-        if (!snapshot || snapshot.pending || !snapshot.items.some((entry) => entry.item === item.item) || item.price === null || !item.requiresPurchase || !item.available || !item.eligible || snapshot.profile.owned.includes(item.item)) return;
+        if (
+          !snapshot ||
+          snapshot.pending ||
+          !snapshot.items.some(entry => entry.item === item.item) ||
+          item.price === null ||
+          !item.requiresPurchase ||
+          !item.available ||
+          !item.eligible ||
+          snapshot.profile.owned.includes(item.item)
+        )
+          return;
         const { quote } = await api.quote({ slot: item.slot, item: item.itemKey }, networkSignal(tx.signal));
         if (!tx.live()) return;
         const validate = () => {
-          if (quote.item !== item.item || !Number.isSafeInteger(quote.price) || quote.price < 0 || !Number.isFinite(Date.parse(quote.expiresAt))) throw new LocalVoyagesError('invalid_quote');
+          if (quote.item !== item.item || !Number.isSafeInteger(quote.price) || quote.price < 0 || !Number.isFinite(Date.parse(quote.expiresAt)))
+            throw new LocalVoyagesError('invalid_quote');
           if (Date.parse(quote.expiresAt) <= now()) throw new LocalVoyagesError('quote_expired');
           if (quote.price > snapshot.profile.coins) throw new LocalVoyagesError('insufficient_coins');
         };
         validate();
-        if (await confirm(quote, snapshot.profile) !== true || !tx.live()) return;
+        if ((await confirm(quote, snapshot.profile)) !== true || !tx.live()) return;
         validate();
         await api.purchase({ quoteId: quote.id }, networkSignal(tx.signal));
         if (!tx.live()) return;
@@ -130,13 +169,13 @@ export function createVoyagesState({ api, changed = (_state) => {}, now = Date.n
       });
     },
     retry(confirm) {
-      return run(async (tx) => {
+      return run(async tx => {
         const pending = state.snapshot?.pending ? { ...state.snapshot.pending } : undefined;
-        if (!pending || await confirm(pending) !== true || !tx.live()) return;
+        if (!pending || (await confirm(pending)) !== true || !tx.live()) return;
         await api.retryPurchase({ quoteId: pending.quoteId }, networkSignal(tx.signal));
         if (!tx.live()) return;
         await load(tx);
-        if (tx.live()) state.notice = "Pending purchase resolved; your items are up to date.";
+        if (tx.live()) state.notice = 'Pending purchase resolved; your items are up to date.';
       });
     },
   };
@@ -156,7 +195,9 @@ export function voyagesEventAction(event, location) {
   if (event.location && (event.location.directory !== location.directory || event.location.workspaceID !== location.workspaceID)) return 'ignore';
   if (event.type === 'server.disconnected') return 'clear';
   if (event.type === 'credential.switched' && !isCarthagentShipProviderId(event.data?.integrationID)) return 'ignore';
-  return ['server.connected', 'provider.updated', 'integration.updated', 'credential.updated', 'credential.switched'].includes(event.type) ? 'refresh' : 'ignore';
+  return ['server.connected', 'provider.updated', 'integration.updated', 'credential.updated', 'credential.switched'].includes(event.type)
+    ? 'refresh'
+    : 'ignore';
 }
 
 /** Synchronously remove the old identity before fetching, including any dialog
@@ -177,14 +218,21 @@ export const ACTION_SETTLE_MS = 600;
 export function createActionGuard(now = Date.now, settleMs = ACTION_SETTLE_MS) {
   let until = 0;
   return {
-    settle() { until = now() + settleMs; },
-    ready() { return now() >= until; },
+    settle() {
+      until = now() + settleMs;
+    },
+    ready() {
+      return now() >= until;
+    },
   };
 }
 
 export function canEquip(snapshot, item) {
-  return item.available === true && item.eligible === true &&
-    (snapshot.profile.owned.includes(item.item) || (item.requiresPurchase === false && item.price !== null));
+  return (
+    item.available === true &&
+    item.eligible === true &&
+    (snapshot.profile.owned.includes(item.item) || (item.requiresPurchase === false && item.price !== null))
+  );
 }
 
 export function voyagesCatalogLabel(snapshot, item) {

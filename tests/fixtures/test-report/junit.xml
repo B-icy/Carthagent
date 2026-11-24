@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testcase name="fast &quot;quoted&quot; test" time="0.010000" classname="test" file="/repo/tests/alpha.test.mjs"/>
+	<testcase name="slow test" time="2.500000" classname="test" file="/repo/tests/alpha.test.mjs"/>
+	<testsuite name="parent &amp; children" time="1.200000" disabled="0" errors="0" tests="3" failures="1" skipped="1" hostname="ci">
+		<testcase name="child passes" time="0.700000" classname="test" file="/repo/tests/beta.test.mjs"/>
+		<testcase name="child fails" time="0.400000" classname="test" file="/repo/tests/beta.test.mjs" failure="boom">
+			<failure type="testCodeFailure" message="boom">
+Error: boom &lt;details&gt;
+			</failure>
+		</testcase>
+		<testcase name="child skipped" time="0.000100" classname="test" file="/repo/tests/beta.test.mjs">
+			<skipped type="skipped" message="not on this platform"/>
+		</testcase>
+	</testsuite>
+	<testcase name="planned" time="0.000050" classname="test" file="/repo/tests/gamma.test.mjs">
+		<skipped type="todo" message="later"/>
+	</testcase>
+	<!-- tests 5 -->
+	<!-- suites 1 -->
+	<!-- pass 2 -->
+	<!-- fail 1 -->
+	<!-- cancelled 0 -->
+	<!-- skipped 1 -->
+	<!-- todo 1 -->
+	<!-- duration_ms 4321.5 -->
+</testsuites>

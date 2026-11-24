@@ -31,7 +31,7 @@ export default Plugin.define({
           const messageID = event.data.assistantMessageID;
           const turns = await loadTurns(sessionID);
           const failed = event.type === 'session.step.failed' || event.data.finish === 'error';
-          turns.set(messageID, { id: messageID, finish: failed ? 'error' : event.data.finish ?? 'error', productive: !failed });
+          turns.set(messageID, { id: messageID, finish: failed ? 'error' : (event.data.finish ?? 'error'), productive: !failed });
           await saveTurns(sessionID, turns);
         } else if (event.type === 'session.execution.failed') {
           // Retry exhaustion can terminate an execution without a final step event.
@@ -59,8 +59,17 @@ export default Plugin.define({
       const persisted = await ctx.storage.get(ledgerKey(sessionID));
       if (Array.isArray(persisted)) {
         for (const item of persisted) {
-          if (item && typeof item === 'object' && 'id' in item && 'finish' in item && 'productive' in item
-            && typeof item.id === 'string' && typeof item.finish === 'string' && typeof item.productive === 'boolean') turns.set(item.id, item as Turn);
+          if (
+            item &&
+            typeof item === 'object' &&
+            'id' in item &&
+            'finish' in item &&
+            'productive' in item &&
+            typeof item.id === 'string' &&
+            typeof item.finish === 'string' &&
+            typeof item.productive === 'boolean'
+          )
+            turns.set(item.id, item as Turn);
         }
       }
       for (const [id, turn] of turnsBySession.get(sessionID) ?? []) turns.set(id, turn);
@@ -72,8 +81,11 @@ export default Plugin.define({
       const before = pendingWrites.get(sessionID) ?? Promise.resolve();
       const write = before.catch(() => undefined).then(() => ctx.storage.set(ledgerKey(sessionID), [...turns.values()]));
       pendingWrites.set(sessionID, write);
-      try { await write; }
-      finally { if (pendingWrites.get(sessionID) === write) pendingWrites.delete(sessionID); }
+      try {
+        await write;
+      } finally {
+        if (pendingWrites.get(sessionID) === write) pendingWrites.delete(sessionID);
+      }
     }
 
     let modelRequest;
@@ -87,29 +99,29 @@ export default Plugin.define({
         // This hook is an admission guard for evaluation sessions, not a
         // general model-request gate for unrelated native host workflows.
         if (configured === undefined) return;
-        if (!configured || typeof configured !== 'object'
-          || configured.maxTurns !== maxTurns || configured.maxCost !== maxCost) {
+        if (!configured || typeof configured !== 'object' || configured.maxTurns !== maxTurns || configured.maxCost !== maxCost) {
           throw Error('Evaluation session budget handshake is missing or differs from the active admission guard');
         }
         const turns = await loadTurns(event.sessionID);
         // Reconcile the host's durable session projection before every admission.
         // The storage ledger retains pre-compaction IDs; context contributes any
         // completed assistant turns written before a service/plugin restart.
-        const transcript = await ctx.session.context({ sessionID:event.sessionID });
+        const transcript = await ctx.session.context({ sessionID: event.sessionID });
         for (const message of transcript) {
           if (message.type !== 'assistant' || !message.finish) continue;
           // A retained compacted summary is a new assistant message, but never
           // an admitted model request; only IDs seen in durable step events count.
           if (message.metadata?.synthetic === true || message.content?.some(part => part.type === 'compaction')) continue;
-          turns.set(message.id, { id:message.id, finish:message.finish, productive:message.finish !== 'error' });
+          turns.set(message.id, { id: message.id, finish: message.finish, productive: message.finish !== 'error' });
         }
         await saveTurns(event.sessionID, turns);
         const usedTurns = [...turns.values()].filter(turn => turn.productive).length;
         if (usedTurns >= maxTurns) throw Error('Evaluation productive model-turn budget exhausted before request admission');
 
         const info = session;
-        const model = (await ctx.model.list({ location: { directory: ctx.location.directory } })).data
-          .find(candidate => candidate.providerID === event.model.providerID && candidate.id === event.model.id);
+        const model = (await ctx.model.list({ location: { directory: ctx.location.directory } })).data.find(
+          candidate => candidate.providerID === event.model.providerID && candidate.id === event.model.id,
+        );
         const rates = model?.cost;
         if (!Number.isFinite(info.cost) || !rates?.length || !Number.isFinite(model?.limit?.context) || !Number.isFinite(model?.limit?.output)) {
           throw Error('Evaluation usage or model pricing limits unavailable; refusing request admission');
@@ -137,10 +149,12 @@ export default Plugin.define({
       throw error;
     }
     return async () => {
-      try { await retry.dispose(); }
-      finally {
-        try { await modelRequest.dispose(); }
-        finally {
+      try {
+        await retry.dispose();
+      } finally {
+        try {
+          await modelRequest.dispose();
+        } finally {
           eventAbort.abort();
           await eventTask.catch(() => undefined);
         }

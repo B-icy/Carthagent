@@ -16,33 +16,52 @@ test('owned staging hash mismatch is rejected before product resolver can execut
   await mkdir(join(ownedRoot, `cli-${platform}`, 'bin'), { recursive: true });
   await writeFile(binary, `#!/bin/sh\nprintf 'opencode v0.0.0-ctg.2.0.32\\n'\nprintf ran > '${marker}'\n`);
   if (process.platform !== 'win32') await chmod(binary, 0o755);
-  const digest = createHash('sha256').update(await (await import('node:fs/promises')).readFile(binary)).digest('hex');
+  const digest = createHash('sha256')
+    .update(await (await import('node:fs/promises')).readFile(binary))
+    .digest('hex');
   const releasePath = join(root, 'lib/opencode/runtime-release.json');
   await mkdir(join(root, 'lib/opencode'), { recursive: true });
-  await writeFile(releasePath, JSON.stringify({
-    version: 1,
-    releaseVersion: '1.2.3',
-    compatibilityVersion: '2.0.32',
-    runtimeVersion: '0.0.0-ctg.2.0.32',
-    sourceRevision: '843a6c514e606b436a7fe713422ace0a93ad3d61',
-    patchSha256: 'b'.repeat(64),
-    lockSha256: 'c'.repeat(64),
-    assets: { [platform]: {
-      name: `opencode-${platform}.tar.gz`, archiveSha256: 'd'.repeat(64),
-      executableSha256: digest === 'a'.repeat(64) ? 'b'.repeat(64) : 'a'.repeat(64),
-    } },
-  }));
+  await writeFile(
+    releasePath,
+    JSON.stringify({
+      version: 1,
+      releaseVersion: '1.2.3',
+      compatibilityVersion: '2.0.32',
+      runtimeVersion: '0.0.0-ctg.2.0.32',
+      sourceRevision: '843a6c514e606b436a7fe713422ace0a93ad3d61',
+      patchSha256: 'b'.repeat(64),
+      lockSha256: 'c'.repeat(64),
+      assets: {
+        [platform]: {
+          name: `opencode-${platform}.tar.gz`,
+          archiveSha256: 'd'.repeat(64),
+          executableSha256: digest === 'a'.repeat(64) ? 'b'.repeat(64) : 'a'.repeat(64),
+        },
+      },
+    }),
+  );
   let productResolverCalled = false;
-  await assert.rejects(resolveFixtureRuntime({
-    packageRoot: root,
-    env: { CTG_OWNED_OPENCODE_RUNTIME: ownedRoot },
-    productRuntime: {
-      async resolveOpenCode() { productResolverCalled = true; throw Error('resolver should not be reached'); },
-      async runtimeIdentity() { throw Error('identity should not be reached'); },
-    },
-  }), /binary SHA-256 mismatch/);
+  await assert.rejects(
+    resolveFixtureRuntime({
+      packageRoot: root,
+      env: { CTG_OWNED_OPENCODE_RUNTIME: ownedRoot },
+      productRuntime: {
+        async resolveOpenCode() {
+          productResolverCalled = true;
+          throw Error('resolver should not be reached');
+        },
+        async runtimeIdentity() {
+          throw Error('identity should not be reached');
+        },
+      },
+    }),
+    /binary SHA-256 mismatch/,
+  );
   assert.equal(productResolverCalled, false);
-  await assert.rejects(import('node:fs/promises').then(fs => fs.access(marker)), { code: 'ENOENT' });
+  await assert.rejects(
+    import('node:fs/promises').then(fs => fs.access(marker)),
+    { code: 'ENOENT' },
+  );
 });
 
 test('product runtime selection is reverified by the trusted helper and preserves separate versions', async t => {
@@ -88,9 +107,13 @@ test('product runtime selection is reverified by the trusted helper and preserve
         assert.equal(receivedBinary, binary);
         assert.equal(received, options);
         return {
-          kind: 'ctg-owned', binaryPath: binary, binarySha256: verified.binarySha256,
-          version: verified.runtimeVersion, sourceRevision: verified.sourceRevision,
-          patchSha256: verified.patchSha256, lockSha256: verified.lockSha256,
+          kind: 'ctg-owned',
+          binaryPath: binary,
+          binarySha256: verified.binarySha256,
+          version: verified.runtimeVersion,
+          sourceRevision: verified.sourceRevision,
+          patchSha256: verified.patchSha256,
+          lockSha256: verified.lockSha256,
         };
       },
     },

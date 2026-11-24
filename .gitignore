@@ -1,12 +1,51 @@
+# Dependencies
 node_modules/
-__pycache__/
-*.pyc
-*.pyo
-.harness/
-artifacts/
-saves/
 .venv/
 venv/
 .tools/
+
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
 .pytest_cache/
 .ruff_cache/
+
+# Local state, evidence and generated output
+.harness/
+artifacts/
+saves/
+# Root-anchored: vendor/agent/dist is committed vendored code.
+/coverage/
+/dist/
+/build/
+*.tsbuildinfo
+.eslintcache
+*.cpuprofile
+*.heapprofile
+*.heapsnapshot
+
+# Logs
+*.log
+npm-debug.log*
+# Retained review evidence is committed deliberately.
+!docs/**/*.log
+
+# Secrets: keep only the committed template
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Editors and IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini

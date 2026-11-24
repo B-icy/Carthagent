@@ -5,11 +5,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import {
-  loadNativeTestRuntime,
-  preflightNativeTestRuntimeArtifact,
-  NATIVE_TEST_COMPATIBILITY_VERSION,
-} from '../tools/native-runtime-identity.mjs';
+import { loadNativeTestRuntime, preflightNativeTestRuntimeArtifact, NATIVE_TEST_COMPATIBILITY_VERSION } from '../tools/native-runtime-identity.mjs';
 
 const payload = Buffer.from('reviewed fixture executable bytes');
 const digest = createHash('sha256').update(payload).digest('hex');
@@ -108,7 +104,9 @@ test('independent native version verification removes only the draft transport c
     ownedRoot,
     expectedManifest: release,
     env: { PATH: '/fixture/path', LANG: 'C.UTF-8', CTG_RUNTIME_GITHUB_TOKEN: 'fake-runtime-token' },
-    spawnImpl: versionSpawnerWithEnv(`opencode v${runtimeVersion}`, env => { childEnv = env; }),
+    spawnImpl: versionSpawnerWithEnv(`opencode v${runtimeVersion}`, env => {
+      childEnv = env;
+    }),
   });
   assert.equal(childEnv.CTG_RUNTIME_GITHUB_TOKEN, undefined);
   assert.equal(childEnv.PATH, '/fixture/path');
@@ -167,10 +165,13 @@ test('requires a trusted test manifest before preflighting an injected artifact'
 
 test('rejects versions that merely contain the compatibility version', async t => {
   const { binary } = await fixture(t);
-  await assert.rejects(loadNativeTestRuntime({
-    binary,
-    spawnImpl: versionSpawner('opencode v9.0.0-ctg.2.0.32'),
-  }), /Unsupported native test runtime version/);
+  await assert.rejects(
+    loadNativeTestRuntime({
+      binary,
+      spawnImpl: versionSpawner('opencode v9.0.0-ctg.2.0.32'),
+    }),
+    /Unsupported native test runtime version/,
+  );
 });
 
 test('requires trusted release metadata for owned artifacts', async t => {
@@ -189,7 +190,18 @@ test('rejects self-declared provenance mismatches against trusted release metada
   for (const [field, value, error] of cases) {
     const { binary, ownedRoot, release } = await fixture(t, { [field]: value });
     let spawned = false;
-    await assert.rejects(loadNativeTestRuntime({ binary, ownedRoot, expectedManifest: release, spawnImpl: (...args) => { spawned = true; return versionSpawner(`opencode v${runtimeVersion}`)(...args); } }), error);
+    await assert.rejects(
+      loadNativeTestRuntime({
+        binary,
+        ownedRoot,
+        expectedManifest: release,
+        spawnImpl: (...args) => {
+          spawned = true;
+          return versionSpawner(`opencode v${runtimeVersion}`)(...args);
+        },
+      }),
+      error,
+    );
     assert.equal(spawned, false, `${field} mismatch must be rejected before executing binary`);
   }
 });
@@ -197,18 +209,30 @@ test('rejects self-declared provenance mismatches against trusted release metada
 test('checks owned executable path and bytes before invoking version command', async t => {
   const { binary, ownedRoot, release } = await fixture(t);
   let spawned = false;
-  await assert.rejects(loadNativeTestRuntime({
-    binary: join(ownedRoot, '..', 'opencode'),
-    ownedRoot,
-    expectedManifest: release,
-    spawnImpl: () => { spawned = true; throw Error('must not execute'); },
-  }), /executable must be/);
+  await assert.rejects(
+    loadNativeTestRuntime({
+      binary: join(ownedRoot, '..', 'opencode'),
+      ownedRoot,
+      expectedManifest: release,
+      spawnImpl: () => {
+        spawned = true;
+        throw Error('must not execute');
+      },
+    }),
+    /executable must be/,
+  );
   await writeFile(binary, 'tampered executable');
-  await assert.rejects(loadNativeTestRuntime({
-    binary,
-    ownedRoot,
-    expectedManifest: release,
-    spawnImpl: () => { spawned = true; throw Error('must not execute'); },
-  }), /binary SHA-256 mismatch/);
+  await assert.rejects(
+    loadNativeTestRuntime({
+      binary,
+      ownedRoot,
+      expectedManifest: release,
+      spawnImpl: () => {
+        spawned = true;
+        throw Error('must not execute');
+      },
+    }),
+    /binary SHA-256 mismatch/,
+  );
   assert.equal(spawned, false);
 });

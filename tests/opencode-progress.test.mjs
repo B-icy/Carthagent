@@ -6,7 +6,12 @@ import { createTerminalProgress } from '../lib/opencode/progress.mjs';
 test('progress animates, fits the terminal, clears on abort and never writes again', async () => {
   const output = [];
   const controller = new AbortController();
-  const progress = createTerminalProgress({ stream: { isTTY: true, columns: 24, write: value => output.push(value) }, env: {}, ascii: true, signal: controller.signal });
+  const progress = createTerminalProgress({
+    stream: { isTTY: true, columns: 24, write: value => output.push(value) },
+    env: {},
+    ascii: true,
+    signal: controller.signal,
+  });
   try {
     progress.update('Starting a very long workspace name');
     await delay(200);
@@ -19,7 +24,9 @@ test('progress animates, fits the terminal, clears on abort and never writes aga
     progress.update('must not appear');
     await delay(120);
     assert.equal(output.length, count);
-  } finally { progress.stop(); }
+  } finally {
+    progress.stop();
+  }
 });
 
 test('redirected, disabled and dumb-terminal progress emits no control sequences or text', () => {
@@ -40,5 +47,7 @@ test('reduced motion renders a static stage and strips terminal controls from la
     await delay(120);
     assert.equal(output.length, 1);
     assert.match(output[0], /Installing package \[31m/);
-  } finally { progress.stop(); }
+  } finally {
+    progress.stop();
+  }
 });

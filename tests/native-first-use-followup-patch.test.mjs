@@ -18,11 +18,17 @@ test('v18 keeps its reviewed digest and v17 stays frozen', () => {
 });
 
 test('v18 changes only seven separator expectations in two native tests', () => {
-  const sections = patch => new Map(patch.split(/(?=^diff --git )/m).filter(Boolean).map(section => {
-    const path = section.match(/^diff --git a\/(\S+) b\/\1\n/)?.[1];
-    assert.ok(path);
-    return [path, section.replace(/^index .*\n/gm, '')];
-  }));
+  const sections = patch =>
+    new Map(
+      patch
+        .split(/(?=^diff --git )/m)
+        .filter(Boolean)
+        .map(section => {
+          const path = section.match(/^diff --git a\/(\S+) b\/\1\n/)?.[1];
+          assert.ok(path);
+          return [path, section.replace(/^index .*\n/gm, '')];
+        }),
+    );
   const before = sections(baseline);
   const after = sections(candidate);
   assert.deepEqual([...after.keys()], [...before.keys()]);
@@ -38,15 +44,19 @@ test('v18 changes only seven separator expectations in two native tests', () => 
   ];
   let count = 0;
   for (const path of changed) {
-    const expected = before.get(path).split('\n').map(line => {
-      // Removed lines describe pristine upstream, not the candidate source.
-      if (!line.startsWith('+') || line.startsWith('+++')) return line;
-      for (const [oldLabel, newLabel] of replacements) {
-        count += line.split(oldLabel).length - 1;
-        line = line.replaceAll(oldLabel, newLabel);
-      }
-      return line;
-    }).join('\n');
+    const expected = before
+      .get(path)
+      .split('\n')
+      .map(line => {
+        // Removed lines describe pristine upstream, not the candidate source.
+        if (!line.startsWith('+') || line.startsWith('+++')) return line;
+        for (const [oldLabel, newLabel] of replacements) {
+          count += line.split(oldLabel).length - 1;
+          line = line.replaceAll(oldLabel, newLabel);
+        }
+        return line;
+      })
+      .join('\n');
     assert.equal(after.get(path), expected, `${path}: no assertion, timing, or behavior changes beyond the separator`);
   }
   assert.equal(count, 7);

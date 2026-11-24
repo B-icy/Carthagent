@@ -11,21 +11,35 @@ const root = resolve(import.meta.dirname, '..');
 let verdict = 'APPROVE';
 let reviews = 0;
 let mutateSource = false;
-const host = await nativeFixture({ respond(body, response) {
-  const text = JSON.stringify(body.messages);
-  const snapshot = text.match(/Snapshot(?: SHA-256)?: ([a-f0-9]+)/)?.[1];
-  const head = text.match(/HEAD: ([a-f0-9]+)/)?.[1];
-  if (!snapshot || !head || !text.includes('REVIEW_JSON:')) return streamText(response, 'NATIVE_DEFAULT_EXECUTABLE_OK');
-  reviews++;
-  if (mutateSource) execFileSync(process.execPath, ['-e', 'require("node:fs").writeFileSync("mutated.txt", "changed during review")'], { cwd: mutationWorkspace });
-  const findings = verdict === 'CHANGES-REQUESTED' ? [{ file: 'fixture.txt', line: 1, severity: 'blocking', issue: 'Fixture content needs repair.', fix: 'Repair fixture content.' }] : [];
-  return streamText(response, verdict === 'MISSING' ? 'No verdict was supplied.' : `Native reviewer fixture.\nREVIEW_JSON: ${JSON.stringify({ version: 1, snapshot, head, findings })}\nVERDICT: ${verdict}`);
-} });
+const host = await nativeFixture({
+  respond(body, response) {
+    const text = JSON.stringify(body.messages);
+    const snapshot = text.match(/Snapshot(?: SHA-256)?: ([a-f0-9]+)/)?.[1];
+    const head = text.match(/HEAD: ([a-f0-9]+)/)?.[1];
+    if (!snapshot || !head || !text.includes('REVIEW_JSON:')) return streamText(response, 'NATIVE_DEFAULT_EXECUTABLE_OK');
+    reviews++;
+    if (mutateSource)
+      execFileSync(process.execPath, ['-e', 'require("node:fs").writeFileSync("mutated.txt", "changed during review")'], { cwd: mutationWorkspace });
+    const findings =
+      verdict === 'CHANGES-REQUESTED'
+        ? [{ file: 'fixture.txt', line: 1, severity: 'blocking', issue: 'Fixture content needs repair.', fix: 'Repair fixture content.' }]
+        : [];
+    return streamText(
+      response,
+      verdict === 'MISSING'
+        ? 'No verdict was supplied.'
+        : `Native reviewer fixture.\nREVIEW_JSON: ${JSON.stringify({ version: 1, snapshot, head, findings })}\nVERDICT: ${verdict}`,
+    );
+  },
+});
 const profileRoot = join(host.temp, 'cli-profile');
 const mutationWorkspace = join(host.temp, 'mutation-workspace');
-const env = Object.fromEntries(['PATH', 'SystemRoot', 'WINDIR', 'COMSPEC', 'PATHEXT', 'LANG', 'LC_ALL'].filter(key => process.env[key]).map(key => [key, process.env[key]]));
+const env = Object.fromEntries(
+  ['PATH', 'SystemRoot', 'WINDIR', 'COMSPEC', 'PATHEXT', 'LANG', 'LC_ALL'].filter(key => process.env[key]).map(key => [key, process.env[key]]),
+);
 Object.assign(env, {
-  HOME: join(host.temp, 'cli-home'), USERPROFILE: join(host.temp, 'cli-home'),
+  HOME: join(host.temp, 'cli-home'),
+  USERPROFILE: join(host.temp, 'cli-home'),
   CTG_OPENCODE_HOME: profileRoot,
   CARTHAGENT_CONFIG: join(host.temp, 'carthagent-config.json'),
 });
@@ -34,20 +48,39 @@ else env.CTG_OPENCODE_BIN = host.runtimeIdentity.binary;
 async function cli(args, cwd = host.cwd) {
   const child = spawn(process.execPath, [join(root, 'bin/ctg.mjs'), ...args], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
   let output = '';
-  child.stdout.on('data', chunk => { output += chunk; });
-  child.stderr.on('data', chunk => { output += chunk; });
+  child.stdout.on('data', chunk => {
+    output += chunk;
+  });
+  child.stderr.on('data', chunk => {
+    output += chunk;
+  });
   const timer = setTimeout(() => child.kill('SIGTERM'), 45_000);
-  try { const [code] = await once(child, 'close'); return { code, output }; }
-  finally { clearTimeout(timer); }
+  try {
+    const [code] = await once(child, 'close');
+    return { code, output };
+  } finally {
+    clearTimeout(timer);
+  }
 }
-function git(cwd, ...args) { return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }); }
+function git(cwd, ...args) {
+  return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+}
 async function baseline(cwd) {
   await mkdir(cwd, { recursive: true });
   git(cwd, 'init', '--initial-branch=main');
   await writeFile(join(cwd, 'fixture.txt'), 'baseline\n');
   await writeFile(join(cwd, 'task.txt'), 'Review the exact fixture content.\n');
   git(cwd, 'add', 'fixture.txt', 'task.txt');
-  git(cwd, '-c', 'user.name=openhands', '-c', 'user.email=openhands@all-hands.dev', 'commit', '-m', 'Native executable fixture\n\nCo-authored-by: openhands <openhands@all-hands.dev>');
+  git(
+    cwd,
+    '-c',
+    'user.name=openhands',
+    '-c',
+    'user.email=openhands@all-hands.dev',
+    'commit',
+    '-m',
+    'Native executable fixture\n\nCo-authored-by: openhands <openhands@all-hands.dev>',
+  );
 }
 try {
   await mkdir(join(profileRoot, 'config/opencode'), { recursive: true });
@@ -99,7 +132,20 @@ try {
   const restarted = await cli(['native', '-p', '--no-guide', '--no-delivery', '--model', 'ctg-fixture/fixture', 'Native alias after service restart']);
   assert.equal(restarted.code, 0, restarted.output);
   assert.match(restarted.output, /NATIVE_DEFAULT_EXECUTABLE_OK/);
-  console.log(JSON.stringify({ runtime: host.runtimeIdentity.runtimeVersion, executable: 'default ctg without opt-in', headless: 'passed', modelDiscovery: 'passed', accountFailClosed: 'passed', reviewApprovalChangesAndMalformedVerdict: 'passed', persistedReviewAdmission: 'passed', reviewSourceMutationRejected: 'passed', explicitServiceStopAndRestart: 'passed', reviewRequests: reviews }));
+  console.log(
+    JSON.stringify({
+      runtime: host.runtimeIdentity.runtimeVersion,
+      executable: 'default ctg without opt-in',
+      headless: 'passed',
+      modelDiscovery: 'passed',
+      accountFailClosed: 'passed',
+      reviewApprovalChangesAndMalformedVerdict: 'passed',
+      persistedReviewAdmission: 'passed',
+      reviewSourceMutationRejected: 'passed',
+      explicitServiceStopAndRestart: 'passed',
+      reviewRequests: reviews,
+    }),
+  );
 } finally {
   await stopService({ root: profileRoot }).catch(() => {});
   await host.close();

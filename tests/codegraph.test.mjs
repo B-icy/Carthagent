@@ -8,28 +8,20 @@ import { createCodeIndex } from '../lib/codegraph.mjs';
 const fixture = () => {
   const dir = mkdtempSync(join(tmpdir(), 'codegraph-'));
   mkdirSync(join(dir, 'src'), { recursive: true });
-  writeFileSync(join(dir, 'src', 'a.ts'), [
-    `import { helper } from './b';`,
-    `import './side';`,
-    `export function main() { helper(); thing.h(); }`,
-    `export class K { m() { helper(); } }`,
-    `export const arrow = () => helper();`,
-  ].join('\n'));
+  writeFileSync(
+    join(dir, 'src', 'a.ts'),
+    [
+      `import { helper } from './b';`,
+      `import './side';`,
+      `export function main() { helper(); thing.h(); }`,
+      `export class K { m() { helper(); } }`,
+      `export const arrow = () => helper();`,
+    ].join('\n'),
+  );
   writeFileSync(join(dir, 'src', 'b.ts'), `export function helper() {}\n`);
   writeFileSync(join(dir, 'src', 'side.ts'), `export const sideEffect = 1;\n`);
-  writeFileSync(join(dir, 'src', 'c.py'), [
-    `import os`,
-    `def f():`,
-    `    helper()`,
-    `class K:`,
-    `    def m(self):`,
-    `        main()`,
-  ].join('\n'));
-  writeFileSync(join(dir, 'src', 'd.rs'), [
-    `fn f() { g(); obj.h(); }`,
-    `struct S {}`,
-    `impl S { fn m(&self) { main(); } }`,
-  ].join('\n'));
+  writeFileSync(join(dir, 'src', 'c.py'), [`import os`, `def f():`, `    helper()`, `class K:`, `    def m(self):`, `        main()`].join('\n'));
+  writeFileSync(join(dir, 'src', 'd.rs'), [`fn f() { g(); obj.h(); }`, `struct S {}`, `impl S { fn m(&self) { main(); } }`].join('\n'));
   return dir;
 };
 
@@ -57,12 +49,18 @@ test('codegraph traces callers and callees', async t => {
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const ix = await createCodeIndex(dir);
 
-  const callers = ix.callers('helper').map(c => c.caller?.name).sort();
+  const callers = ix
+    .callers('helper')
+    .map(c => c.caller?.name)
+    .sort();
   assert.deepEqual(callers, ['arrow', 'f', 'm', 'main'].sort());
   // Member calls record the method name.
   assert.ok(ix.callers('h').length >= 2);
 
-  const callees = ix.callees('main').map(c => c.name).sort();
+  const callees = ix
+    .callees('main')
+    .map(c => c.name)
+    .sort();
   assert.deepEqual(callees, ['h', 'helper']);
 });
 
@@ -83,7 +81,10 @@ test('codegraph outlines a file and finds symbols by substring', async t => {
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const ix = await createCodeIndex(dir);
 
-  assert.deepEqual(ix.outline('src/b.ts').map(d => d.name), ['helper']);
+  assert.deepEqual(
+    ix.outline('src/b.ts').map(d => d.name),
+    ['helper'],
+  );
   const outline = ix.outline('src/a.ts').map(d => d.name);
   assert.deepEqual(outline, ['main', 'K', 'm', 'arrow']);
 
@@ -115,14 +116,17 @@ test('codegraph refreshes incrementally on mtime change', async t => {
 test('codegraph callees distinguishes same-named methods in one file', async t => {
   const dir = fixture();
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  writeFileSync(join(dir, 'src', 'two.ts'), [
-    `class A { run() { alpha(); } }`,
-    `class B { run() { beta(); } }`,
-  ].join('\n'));
+  writeFileSync(join(dir, 'src', 'two.ts'), [`class A { run() { alpha(); } }`, `class B { run() { beta(); } }`].join('\n'));
   const ix = await createCodeIndex(dir);
 
-  assert.deepEqual(ix.callees('A.run').map(c => c.name), ['alpha']);
-  assert.deepEqual(ix.callees('B.run').map(c => c.name), ['beta']);
+  assert.deepEqual(
+    ix.callees('A.run').map(c => c.name),
+    ['alpha'],
+  );
+  assert.deepEqual(
+    ix.callees('B.run').map(c => c.name),
+    ['beta'],
+  );
 });
 
 test('codegraph drops stale entries when a file grows past maxBytes', async t => {

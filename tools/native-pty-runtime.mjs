@@ -7,7 +7,12 @@ import { loadNativeTestRuntime, preflightNativeTestRuntimeArtifact } from './nat
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Select the production runtime, binding every owned path to trusted release metadata. */
-export async function selectNativePtyRuntime({ runtime, env = process.env, root = PACKAGE_ROOT, identityTools = { loadNativeTestRuntime, preflightNativeTestRuntimeArtifact } }) {
+export async function selectNativePtyRuntime({
+  runtime,
+  env = process.env,
+  root = PACKAGE_ROOT,
+  identityTools = { loadNativeTestRuntime, preflightNativeTestRuntimeArtifact },
+}) {
   if (env.CTG_TEST_RUNTIME_ARTIFACT_ROOT && (env.CTG_OPENCODE_BIN || env.OPENCODE_BIN)) {
     throw new Error('Do not combine an injected owned artifact root with an explicit binary override.');
   }
@@ -28,13 +33,17 @@ export async function selectNativePtyRuntime({ runtime, env = process.env, root 
     expectedManifest = preflight.expectedManifest;
     options = { ownedRuntime: ownedRoot };
   } else if (env.CTG_OWNED_OPENCODE_RUNTIME) {
-    throw new Error('CTG_OWNED_OPENCODE_RUNTIME is a developer selector, not an acceptance trust root; use CTG_TEST_RUNTIME_ARTIFACT_ROOT and CTG_TEST_RUNTIME_RELEASE_MANIFEST.');
+    throw new Error(
+      'CTG_OWNED_OPENCODE_RUNTIME is a developer selector, not an acceptance trust root; use CTG_TEST_RUNTIME_ARTIFACT_ROOT and CTG_TEST_RUNTIME_RELEASE_MANIFEST.',
+    );
   } else if (env.CTG_OPENCODE_BIN || env.OPENCODE_BIN) {
     const binary = env.CTG_OPENCODE_BIN ?? env.OPENCODE_BIN;
     if (!binary.includes('/') && !binary.includes('\\')) throw new Error('Explicit native PTY binary must be a filesystem path.');
     const expectedHash = env.CTG_NATIVE_PTY_EXPECTED_SHA256;
     if (!/^[a-f0-9]{64}$/i.test(expectedHash ?? '')) throw new Error('Explicit native PTY binary requires CTG_NATIVE_PTY_EXPECTED_SHA256.');
-    const actualHash = createHash('sha256').update(await readFile(resolve(binary))).digest('hex');
+    const actualHash = createHash('sha256')
+      .update(await readFile(resolve(binary)))
+      .digest('hex');
     if (actualHash !== expectedHash.toLowerCase()) throw new Error(`Explicit native PTY binary SHA-256 mismatch before runtime selection: ${actualHash}`);
     options = { binary };
   }
@@ -55,14 +64,19 @@ export async function selectNativePtyRuntime({ runtime, env = process.env, root 
       const expectedBinary = resolve(ownedRoot, `cli-${identity.platform}`, 'bin', executableName);
       if (resolve(binary) !== expectedBinary) throw new Error(`Selected owned runtime is outside its canonical artifact layout: ${binary}`);
       const manifestPath = resolve(root, 'lib/opencode/runtime-release.json');
-      try { expectedManifest = JSON.parse(await readFile(manifestPath, 'utf8')); }
-      catch (error) { throw new Error(`Default owned runtime has no independently pinned package release manifest at ${manifestPath}: ${error.message}`); }
+      try {
+        expectedManifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+      } catch (error) {
+        throw new Error(`Default owned runtime has no independently pinned package release manifest at ${manifestPath}: ${error.message}`);
+      }
     }
     const verified = await identityTools.loadNativeTestRuntime({ binary, ownedRoot, expectedManifest, env });
-    if (verified.binarySha256 !== identity.binarySha256
-      || verified.sourceRevision !== identity.sourceRevision
-      || verified.patchSha256 !== identity.patchSha256
-      || verified.lockSha256 !== identity.lockSha256) {
+    if (
+      verified.binarySha256 !== identity.binarySha256 ||
+      verified.sourceRevision !== identity.sourceRevision ||
+      verified.patchSha256 !== identity.patchSha256 ||
+      verified.lockSha256 !== identity.lockSha256
+    ) {
       throw new Error('Independent owned runtime verification does not match the production runtime identity.');
     }
     return Object.freeze({ binary, identity, verified, binarySha256: verified.binarySha256 });
@@ -74,7 +88,9 @@ export async function selectNativePtyRuntime({ runtime, env = process.env, root 
   if (verified.runtimeVersion !== identity.version || verified.runtimeVersion !== '2.0.32') {
     throw new Error('Selected upstream-compatible runtime does not match the pinned compatibility version.');
   }
-  const actual = createHash('sha256').update(await readFile(binary)).digest('hex');
+  const actual = createHash('sha256')
+    .update(await readFile(binary))
+    .digest('hex');
   if (actual !== identity.binarySha256) throw new Error(`Selected upstream-compatible runtime changed during runtime selection: ${actual}`);
   const expectedHash = env.CTG_NATIVE_PTY_EXPECTED_SHA256;
   if (expectedHash && actual !== expectedHash.toLowerCase()) throw new Error(`Explicit native PTY binary SHA-256 mismatch: ${actual}`);

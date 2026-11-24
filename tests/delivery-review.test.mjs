@@ -13,14 +13,33 @@ function fixture(t) {
   const git = args => execFileSync('git', args, { cwd, stdio: 'pipe' });
   writeFileSync(join(cwd, '.gitignore'), '.harness/\n');
   writeFileSync(join(cwd, 'app.mjs'), 'export const amount = 1;\n');
-  git(['init', '-q']); git(['add', '.']);
+  git(['init', '-q']);
+  git(['add', '.']);
   git(['-c', 'user.name=Test', '-c', 'user.email=test@localhost', 'commit', '-qm', 'Baseline']);
   writeFileSync(join(cwd, 'app.mjs'), 'export const amount = 2;\n');
   writeFileSync(join(cwd, 'new.mjs'), 'export const result = 2;\n');
   const check = { id: 'unit', kind: 'test', argv: ['node', '--test'], timeoutSeconds: 10 };
-  const state = { runId: 'a', revision: 1, plan: { goal: 'Repair money', artifacts: ['.'], steps: [{ id: 'fix', title: 'Fix' }], acceptance: [{ requirement: 'Correct amount', checks: ['unit'] }], checks: [check] }, evidence: {}, stepStatus: { step0: 'done' } };
+  const state = {
+    runId: 'a',
+    revision: 1,
+    plan: {
+      goal: 'Repair money',
+      artifacts: ['.'],
+      steps: [{ id: 'fix', title: 'Fix' }],
+      acceptance: [{ requirement: 'Correct amount', checks: ['unit'] }],
+      checks: [check],
+    },
+    evidence: {},
+    stepStatus: { step0: 'done' },
+  };
   state.evidence.unit = { ...evidenceIdentity(state, check), passed: true, fingerprint: fingerprint(cwd, ['.']) };
-  const params = captureId => ({ captureId, coverage: [{ requirement: 'Correct amount', assertions: 'app amount equals 2' }], probes: ['node assert amount: 2, passed'], findings: [], limitations: ['Fixture assertion review'] });
+  const params = captureId => ({
+    captureId,
+    coverage: [{ requirement: 'Correct amount', assertions: 'app amount equals 2' }],
+    probes: ['node assert amount: 2, passed'],
+    findings: [],
+    limitations: ['Fixture assertion review'],
+  });
   return { cwd, state, params, dir: join(cwd, '.harness', 'review') };
 }
 
@@ -41,7 +60,10 @@ test('review captures real diff/new files and binds complete assertions to final
   const { findings: _omitted, ...missingFindings } = params(capture.id);
   assert.throws(() => recordDeliveryReview(state, cwd, missingFindings), /findings: array/);
   assert.equal(state.reviewEvidence, undefined);
-  assert.throws(() => recordDeliveryReview(state, cwd, bare), error => /probes:[\s\S]*findings:[\s\S]*limitations:/.test(error.message) && /one call/.test(error.message));
+  assert.throws(
+    () => recordDeliveryReview(state, cwd, bare),
+    error => /probes:[\s\S]*findings:[\s\S]*limitations:/.test(error.message) && /one call/.test(error.message),
+  );
   assert.match(capture.diff, /export const result = 2/);
   recordDeliveryReview(state, cwd, params(capture.id));
   assert.deepEqual(state.reviewEvidence.evidence, state.evidence);
@@ -67,10 +89,32 @@ test('findings survive empty submissions, recapture, restart and plan revisions 
   assert.equal(recordDeliveryReview(restored, cwd, { ...params(capture.id), limitations: ['Movement integration untested'] }).recorded, false);
   const revised = revisePlan(restored, { assumptions: ['More evidence needed'] }, { cwd, hash: fingerprint(cwd, ['.']), reason: 'Refine' });
   assert.equal(revised.reviewFindings[0].id, rejected.unresolvedFindings[0].id);
-  assert.throws(() => recordDeliveryReview(restored, cwd, { ...params(capture.id), resolutions: [{ id: 'invented', change: 'fixed', evidence: 'test passed' }] }), /Unknown/);
-  recordDeliveryReview(restored, cwd, { ...params(capture.id), resolutions: [{ id: rejected.unresolvedFindings[0].id, change: 'Added input-to-state integration probe', evidence: 'W at five headings matches camera-forward displacement' }] });
+  assert.throws(
+    () => recordDeliveryReview(restored, cwd, { ...params(capture.id), resolutions: [{ id: 'invented', change: 'fixed', evidence: 'test passed' }] }),
+    /Unknown/,
+  );
+  recordDeliveryReview(restored, cwd, {
+    ...params(capture.id),
+    resolutions: [
+      {
+        id: rejected.unresolvedFindings[0].id,
+        change: 'Added input-to-state integration probe',
+        evidence: 'W at five headings matches camera-forward displacement',
+      },
+    ],
+  });
   assert.ok(restored.reviewEvidence.findingHistory[0].resolution);
-  const retry = { ...params(capture.id), findings: ['Movement integration untested'], resolutions: [{ id: rejected.unresolvedFindings[0].id, change: 'Added input-to-state integration probe', evidence: 'W at five headings matches camera-forward displacement' }] };
+  const retry = {
+    ...params(capture.id),
+    findings: ['Movement integration untested'],
+    resolutions: [
+      {
+        id: rejected.unresolvedFindings[0].id,
+        change: 'Added input-to-state integration probe',
+        evidence: 'W at five headings matches camera-forward displacement',
+      },
+    ],
+  };
   recordDeliveryReview(restored, cwd, retry);
   assert.equal(restored.reviewFindings.length, 1);
   recordDeliveryReview(restored, cwd, retry);
@@ -81,7 +125,8 @@ test('findings survive empty submissions, recapture, restart and plan revisions 
 test('explicit unverified coverage blocks acceptance even with passing checks', async t => {
   const { cwd, state, params, dir } = fixture(t);
   const capture = await captureDeliveryReview(state, cwd, dir);
-  const p = params(capture.id); p.coverage[0].status = 'unverified';
+  const p = params(capture.id);
+  p.coverage[0].status = 'unverified';
   assert.equal(recordDeliveryReview(state, cwd, p).recorded, false);
   assert.match(state.reviewFindings[0].description, /Acceptance gap/);
   assert.equal(recordDeliveryReview(state, cwd, params(capture.id)).recorded, false);
@@ -89,16 +134,33 @@ test('explicit unverified coverage blocks acceptance even with passing checks', 
 
 test('outcome coverage binds actual linked receipts and retains missing user behavior', async t => {
   const { cwd, state, params, dir } = fixture(t);
-  state.plan.outcomes = [{ id:'launch',requirement:'Correct amount',entrypoint:'node app.mjs',observable:'Output is 2',substitutions:[],missedFailure:'Internal function works but launch fails',checks:['unit'] }];
-  const capture = await captureDeliveryReview(state,cwd,dir);
-  assert.throws(()=>recordDeliveryReview(state,cwd,params(capture.id)),/exactly one outcome/);
-  const outcome = {id:'launch',check:'missing',observation:'printed 2',challenge:'bad input rejected',status:'demonstrated'};
-  assert.throws(()=>recordDeliveryReview(state,cwd,{...params(capture.id),outcomes:[outcome]}),/linked check receipt/);
-  outcome.check='unit';outcome.status='unverified';outcome.observation='Only alternate test mode exercised';
-  assert.equal(recordDeliveryReview(state,cwd,{...params(capture.id),outcomes:[outcome]}).recorded,false);
-  outcome.status='demonstrated';outcome.observation='Normal launch printed 2';
-  const result=recordDeliveryReview(state,cwd,{...params(capture.id),outcomes:[outcome],resolutions:[{id:state.reviewFindings[0].id,change:'Executed normal launch',evidence:'Launch printed 2 and rejected malformed input'}]});
-  assert.deepEqual(result.outcomes[0].receipt,state.evidence.unit);
+  state.plan.outcomes = [
+    {
+      id: 'launch',
+      requirement: 'Correct amount',
+      entrypoint: 'node app.mjs',
+      observable: 'Output is 2',
+      substitutions: [],
+      missedFailure: 'Internal function works but launch fails',
+      checks: ['unit'],
+    },
+  ];
+  const capture = await captureDeliveryReview(state, cwd, dir);
+  assert.throws(() => recordDeliveryReview(state, cwd, params(capture.id)), /exactly one outcome/);
+  const outcome = { id: 'launch', check: 'missing', observation: 'printed 2', challenge: 'bad input rejected', status: 'demonstrated' };
+  assert.throws(() => recordDeliveryReview(state, cwd, { ...params(capture.id), outcomes: [outcome] }), /linked check receipt/);
+  outcome.check = 'unit';
+  outcome.status = 'unverified';
+  outcome.observation = 'Only alternate test mode exercised';
+  assert.equal(recordDeliveryReview(state, cwd, { ...params(capture.id), outcomes: [outcome] }).recorded, false);
+  outcome.status = 'demonstrated';
+  outcome.observation = 'Normal launch printed 2';
+  const result = recordDeliveryReview(state, cwd, {
+    ...params(capture.id),
+    outcomes: [outcome],
+    resolutions: [{ id: state.reviewFindings[0].id, change: 'Executed normal launch', evidence: 'Launch printed 2 and rejected malformed input' }],
+  });
+  assert.deepEqual(result.outcomes[0].receipt, state.evidence.unit);
 });
 
 test('capture includes new unicode source contents but excludes unignored dependency and generated trees', async t => {
@@ -194,7 +256,10 @@ test('large diffs retain full receipt instead of silently using output tail', as
 test('review accepts assertion aliases and names missing requirements', async t => {
   const { cwd, state, params, dir } = fixture(t);
   const capture = await captureDeliveryReview(state, cwd, dir);
-  assert.throws(() => recordDeliveryReview(state, cwd, { ...params(capture.id), coverage: [{ requirement: 'Other', assertions: 'x' }] }), /Missing: \["Correct amount"\]/);
+  assert.throws(
+    () => recordDeliveryReview(state, cwd, { ...params(capture.id), coverage: [{ requirement: 'Other', assertions: 'x' }] }),
+    /Missing: \["Correct amount"\]/,
+  );
   recordDeliveryReview(state, cwd, { ...params(capture.id), coverage: [{ requirement: 'Correct amount', assertion: 'app amount equals 2' }] });
   assert.equal(state.reviewEvidence.coverage[0].assertions, 'app amount equals 2');
   const again = await captureDeliveryReview(state, cwd, dir);
@@ -212,7 +277,13 @@ test('review works in a fresh repository without commits and never creates one',
   git(['add', 'staged.mjs']);
   writeFileSync(join(cwd, 'staged.mjs'), 'export const staged = 2;\n');
   writeFileSync(join(cwd, 'hello.txt'), 'hi');
-  const state = { runId: 'u', revision: 1, plan: { goal: 'Create hello', artifacts: ['.'], steps: [{ id: 'write', title: 'Write' }], acceptance: [], checks: [] }, evidence: {}, stepStatus: { step0: 'done' } };
+  const state = {
+    runId: 'u',
+    revision: 1,
+    plan: { goal: 'Create hello', artifacts: ['.'], steps: [{ id: 'write', title: 'Write' }], acceptance: [], checks: [] },
+    evidence: {},
+    stepStatus: { step0: 'done' },
+  };
   const capture = await captureDeliveryReview(state, cwd, join(cwd, '.harness', 'review'));
   assert.match(capture.diff, /no commits yet/);
   assert.match(capture.diff, /\+export const staged = 1/, 'staged content is diffed against the empty tree');

@@ -1,17 +1,32 @@
 # Repository quality and evaluation evidence
 
-Run `npm ci` followed by `npm run quality`. Native Windows, macOS and Linux CI
-runs lint/typecheck, build and JS/Python regressions. A separate Linux Firefox
-job runs `npm run test:browser` and retains screenshots as diagnostic artifacts,
-not evidence of manual visual approval.
+For setup and agent-facing instructions, see [AGENTS.md](../AGENTS.md).
+Run `npm ci` in a fresh checkout, followed by `npm run quality`. The quality
+command runs lint/typecheck, build and Node regressions. Native Windows, macOS
+and Linux CI also runs Python and native integration gates separately. A
+separate Linux browser job runs `npm run test:browser` with the bundled
+Chrome headless shell and retains screenshots as diagnostic artifacts, not
+evidence of manual visual approval.
 
-ESLint recommended rules cover first-party `.mjs` source, tests and tooling.
-TypeScript extension checking remains a separate compiler check. Vendored code,
-scenario fixtures, generated artifacts and public assets are excluded from this
-initial lint scope; this is not a claim that all repository languages are linted.
+ESLint recommended rules cover first-party `.mjs` source, tests and tooling;
+TypeScript ESLint recommended rules cover `plugins/**/*.ts` and
+`plugins/**/*.tsx`. On top of those, ESLint enforces complexity, nesting depth,
+file length, parameter count, naming and import boundaries; violations that
+predate these rules are recorded in `eslint-suppressions.json` and may only
+shrink. Prettier formats all JavaScript and TypeScript (`npm run format:check`
+runs as part of `lint`). The typecheck command separately checks legacy
+extensions and the native plugin. Vendored code, scenario fixtures, generated
+artifacts and public assets are excluded from lint; this is not a claim that all
+repository languages are linted.
 Unused parameters/caught errors and deliberately underscore-prefixed bindings
 are permitted. Empty catch blocks remain permitted for established best-effort
-cleanup patterns. No formatting rewrite is required.
+cleanup patterns.
+
+CI additionally runs `npm run check:repo` (file sizes, debt markers,
+duplication, unused dependencies, version drift, feature-flag lifecycle,
+generated API docs, AGENTS.md validation), build timings against
+`tools/build-budget.json`, the credential-free QA smoke, and coverage
+thresholds on Linux/Node 24 with JUnit timing reports uploaded as artifacts.
 
 ## Every implementation and evaluation
 

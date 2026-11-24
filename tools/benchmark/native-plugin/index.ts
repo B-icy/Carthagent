@@ -3,7 +3,7 @@ import guard from '../guard.js';
 import advisor from '../advisor.js';
 
 export default Plugin.define({
-  id:'ctg.benchmark',
+  id: 'ctg.benchmark',
   async setup(ctx) {
     const cleanups: Array<() => Promise<void>> = [];
     let disposed = false;

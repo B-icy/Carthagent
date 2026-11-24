@@ -5,7 +5,10 @@ import { effectiveSessionOptions, normalizeSessionOptions, sessionOptionsMetadat
 
 test('native session options isolate concurrent settings and resolve paths at the owning worktree', () => {
   const defaults = { maxTools: 5, workflow: 'standard' };
-  const a = { location: { directory: resolve('first') }, metadata: sessionOptionsMetadata({ maxTools: '8', guide: false, validators: 'checks.json' }, resolve('first'), { other: true }) };
+  const a = {
+    location: { directory: resolve('first') },
+    metadata: sessionOptionsMetadata({ maxTools: '8', guide: false, validators: 'checks.json' }, resolve('first'), { other: true }),
+  };
   const b = { location: { directory: resolve('second') }, metadata: sessionOptionsMetadata({ maxTools: 2, workflow: 'strict' }, resolve('second')) };
   assert.equal(effectiveSessionOptions(a, defaults).maxTools, 8);
   assert.equal(effectiveSessionOptions(b, defaults).maxTools, 2);
@@ -20,7 +23,11 @@ test('invalid persisted limits fail closed and non-runtime options never enter m
   for (const options of [{ maxTools: -1 }, { maxSeconds: 'no' }, { codegraphMaxFiles: 0 }, { guide: 'false' }, { workflow: 'anything' }]) {
     assert.throws(() => normalizeSessionOptions(options));
   }
-  assert.deepEqual(normalizeSessionOptions({ delivery: false, maxTools: 1 }), { delivery: false, maxTools: 1 }, 'budget remains configured independently of delivery workflow participation');
+  assert.deepEqual(
+    normalizeSessionOptions({ delivery: false, maxTools: 1 }),
+    { delivery: false, maxTools: 1 },
+    'budget remains configured independently of delivery workflow participation',
+  );
   assert.deepEqual(normalizeSessionOptions({ apiKey: 'secret', theme: 'carthage', model: 'provider/model', guide: false }), { guide: false });
   assert.throws(() => effectiveSessionOptions({ location: { directory: resolve('.') }, metadata: { 'carthagent.options': [] } }), /persisted/);
 });

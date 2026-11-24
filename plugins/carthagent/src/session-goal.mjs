@@ -104,10 +104,15 @@ export function goalStatusText(goal) {
   if (!goal) return 'No goal set. Use /goal <objective> to have Carthagent keep working until it is done.';
   const objective = clip(goal.objective, 80);
   switch (goal.status) {
-    case 'active': return `Goal active (turn ${goal.turns} of ${goal.maxTurns}): ${objective}`;
-    case 'paused': return `Goal paused (${goal.reason ?? 'paused'}) after ${goal.turns} turn(s): ${objective}. /goal resume continues, /goal clear drops it.`;
-    case 'done': return `Goal done: ${clip(goal.summary ?? objective, 160)}`;
-    case 'blocked': return `Goal blocked: ${clip(goal.summary ?? objective, 160)}`;
-    default: return objective;
+    case 'active':
+      return `Goal active (turn ${goal.turns} of ${goal.maxTurns}): ${objective}`;
+    case 'paused':
+      return `Goal paused (${goal.reason ?? 'paused'}) after ${goal.turns} turn(s): ${objective}. /goal resume continues, /goal clear drops it.`;
+    case 'done':
+      return `Goal done: ${clip(goal.summary ?? objective, 160)}`;
+    case 'blocked':
+      return `Goal blocked: ${clip(goal.summary ?? objective, 160)}`;
+    default:
+      return objective;
   }
 }

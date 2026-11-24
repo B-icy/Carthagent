@@ -5,8 +5,33 @@ import { planD2WithProgress } from '../lib/delivery.mjs';
 import { parseD2 } from '../lib/tui/d2.mjs';
 
 function plan() {
-  const node = (id, step, dependsOn = []) => ({ id, step, dependsOn, title: `Task ${id}`, type: 'work', requirements: ['Works'], components: ['policy'], checks: ['unit'], inputs: [], artifacts: [], effects: ['write'] });
-  return { goal: 'Workflow', steps: [{ id: 'api', title: 'API' }, { id: 'ui', title: 'UI' }], acceptance: [{ requirement: 'Works', checks: ['unit'] }], checks: [{ id: 'unit' }], design: { components: [{ id: 'policy', responsibility: 'Policy', layer: 'core', dependencies: [] }], ports: [] }, workflow: { nodes: [node('server', 'api'), node('client', 'ui', ['server'])], recovery: [{ from: 'client', to: 'server', when: 'Contract mismatch', maxAttempts: 2, stop: 'Report blocked' }] } };
+  const node = (id, step, dependsOn = []) => ({
+    id,
+    step,
+    dependsOn,
+    title: `Task ${id}`,
+    type: 'work',
+    requirements: ['Works'],
+    components: ['policy'],
+    checks: ['unit'],
+    inputs: [],
+    artifacts: [],
+    effects: ['write'],
+  });
+  return {
+    goal: 'Workflow',
+    steps: [
+      { id: 'api', title: 'API' },
+      { id: 'ui', title: 'UI' },
+    ],
+    acceptance: [{ requirement: 'Works', checks: ['unit'] }],
+    checks: [{ id: 'unit' }],
+    design: { components: [{ id: 'policy', responsibility: 'Policy', layer: 'core', dependencies: [] }], ports: [] },
+    workflow: {
+      nodes: [node('server', 'api'), node('client', 'ui', ['server'])],
+      recovery: [{ from: 'client', to: 'server', when: 'Contract mismatch', maxAttempts: 2, stop: 'Report blocked' }],
+    },
+  };
 }
 test('agent workflow preserves branches/recovery and mandatory gate overlay', () => {
   const p = plan();
@@ -24,13 +49,14 @@ test('invalid workflow references, cycles, effects, steps and unbounded recovery
   for (const mutate of [
     p => p.workflow.nodes[0].dependsOn.push('client'),
     p => p.workflow.nodes[0].dependsOn.push('missing'),
-    p => p.workflow.nodes[0].id = 'gate_design',
+    p => (p.workflow.nodes[0].id = 'gate_design'),
     p => p.workflow.nodes[0].effects.push('deploy'),
     p => p.workflow.nodes.pop(),
-    p => p.workflow.recovery[0].maxAttempts = 0,
+    p => (p.workflow.recovery[0].maxAttempts = 0),
     p => p.workflow.nodes[0].components.push('missing'),
   ]) {
-    const p = plan(); mutate(p);
+    const p = plan();
+    mutate(p);
     assert.ok(validateWorkflow(p).length);
     assert.throws(() => workflowGraph(p));
   }

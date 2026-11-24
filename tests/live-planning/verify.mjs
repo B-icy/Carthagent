@@ -10,10 +10,20 @@ const { totalAmounts } = await load('packages/money/index.mjs');
 const { handleSummary } = await load('packages/api/index.mjs');
 const { exportCsv } = await load('packages/csv/index.mjs');
 const failures = [];
-function probe(name, fn) { try { fn(); console.log(`PASS ${name}`); } catch (error) { failures.push(name); console.error(`FAIL ${name}: ${error.message}`); } }
+function probe(name, fn) {
+  try {
+    fn();
+    console.log(`PASS ${name}`);
+  } catch (error) {
+    failures.push(name);
+    console.error(`FAIL ${name}: ${error.message}`);
+  }
+}
 probe('exact mixed input total', () => assert.equal(totalAmounts(['0.10', 0.2, '-0.05']), 0.25));
 probe('repeated decimal additions', () => assert.equal(totalAmounts(Array(100).fill('0.01')), 1));
-probe('public API retains numeric total and adds canonical decimal total', () => assert.deepEqual(handleSummary({ entries: [{ amount: '0.10' }, { amount: '0.20' }] }), { status: 200, body: { count: 2, total: 0.3, totalDecimal: '0.30' } }));
+probe('public API retains numeric total and adds canonical decimal total', () =>
+  assert.deepEqual(handleSummary({ entries: [{ amount: '0.10' }, { amount: '0.20' }] }), { status: 200, body: { count: 2, total: 0.3, totalDecimal: '0.30' } }),
+);
 probe('empty and refund behavior', () => {
   assert.equal(handleSummary({ entries: [] }).body.totalDecimal, '0.00');
   assert.equal(handleSummary({ entries: [{ amount: '-1.05' }] }).body.totalDecimal, '-1.05');
@@ -29,7 +39,13 @@ probe('reject invalid money without throwing through API boundary', () => {
 });
 probe('safe-integer-cent overflow rejected', () => assert.equal(handleSummary({ entries: [{ amount: '90071992547409.92' }] }).status, 400));
 probe('CSV compatibility and validation', () => {
-  assert.equal(exportCsv([{ id: 'café', amount: '0.10' }, { id: 'refund', amount: '-1.05' }]), 'id,amount\ncafé,0.10\nrefund,-1.05\n');
+  assert.equal(
+    exportCsv([
+      { id: 'café', amount: '0.10' },
+      { id: 'refund', amount: '-1.05' },
+    ]),
+    'id,amount\ncafé,0.10\nrefund,-1.05\n',
+  );
   assert.throws(() => exportCsv([{ id: 'bad', amount: '1.001' }]));
 });
 probe('actual CLI with Unicode/spaced file paths and invalid input', () => {
@@ -44,7 +60,9 @@ probe('actual CLI with Unicode/spaced file paths and invalid input', () => {
     const invalid = spawnSync(process.execPath, ['packages/cli/main.mjs', path], { encoding: 'utf8' });
     assert.equal(invalid.status, 1);
     assert.equal(typeof JSON.parse(invalid.stdout).error, 'string');
-  } finally { rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 if (process.argv[2] === 'followup') {
   probe('rounding compatibility: numeric floating-point noise accepted, real third decimal rejected', () => {

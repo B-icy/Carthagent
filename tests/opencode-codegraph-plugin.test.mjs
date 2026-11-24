@@ -23,25 +23,38 @@ test('native codegraph scan consumes the resolved per-session max-files setting'
   };
   const ctx = {
     options: {},
-    tool: { transform: async callback => {
-      callback({ namespace() {}, add(tool) { registered = tool; } });
-      return { dispose: async () => {} };
-    } },
+    tool: {
+      transform: async callback => {
+        callback({
+          namespace() {},
+          add(tool) {
+            registered = tool;
+          },
+        });
+        return { dispose: async () => {} };
+      },
+    },
     session: { get: async ({ sessionID }) => sessions[sessionID] },
   };
   const dispose = await registerCodegraph(ctx, { maxFiles: 2 });
   t.after(dispose);
   const status = async sessionID => JSON.parse((await registered.execute({ op: 'status' }, { sessionID })).content).coverage;
-  assert.deepEqual(
-    (({ files, discovered, skipped, complete }) => ({ files, discovered, skipped, complete }))(await status('capped')),
-    { files: 1, discovered: 3, skipped: 2, complete: false },
-  );
-  assert.deepEqual(
-    (({ files, discovered, skipped, complete }) => ({ files, discovered, skipped, complete }))(await status('expanded')),
-    { files: 3, discovered: 3, skipped: 0, complete: true },
-  );
-  assert.deepEqual(
-    (({ files, discovered, skipped, complete }) => ({ files, discovered, skipped, complete }))(await status('default')),
-    { files: 2, discovered: 3, skipped: 1, complete: false },
-  );
+  assert.deepEqual((({ files, discovered, skipped, complete }) => ({ files, discovered, skipped, complete }))(await status('capped')), {
+    files: 1,
+    discovered: 3,
+    skipped: 2,
+    complete: false,
+  });
+  assert.deepEqual((({ files, discovered, skipped, complete }) => ({ files, discovered, skipped, complete }))(await status('expanded')), {
+    files: 3,
+    discovered: 3,
+    skipped: 0,
+    complete: true,
+  });
+  assert.deepEqual((({ files, discovered, skipped, complete }) => ({ files, discovered, skipped, complete }))(await status('default')), {
+    files: 2,
+    discovered: 3,
+    skipped: 1,
+    complete: false,
+  });
 });

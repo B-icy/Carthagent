@@ -12,20 +12,21 @@ test('bracketed paste survives every byte boundary, Unicode and CRLF', () => {
   const keys = [];
   const parse = makeKeyParser(k => keys.push(k));
   for (const byte of bytes) parse(Buffer.from([byte]));
-  assert.deepEqual(keys, [
-    { key: 'char', ch: 'a' },
-    { key: 'paste', text: text.replace(/\r\n?/g, '\n') },
-    { key: 'char', ch: 'b' },
-    { key: 'enter' },
-  ]);
+  assert.deepEqual(keys, [{ key: 'char', ch: 'a' }, { key: 'paste', text: text.replace(/\r\n?/g, '\n') }, { key: 'char', ch: 'b' }, { key: 'enter' }]);
 });
 
 test('mixed mouse, plain input and consecutive pastes are all consumed', () => {
   const keys = [];
   const parse = makeKeyParser(k => keys.push(k));
   parse('a\x1b[<0;10;8M\x1b[<32;4;2M\x1b[<0;4;2m\x1b[200~one\x1b[201~\x1b[200~two\x1b[201~');
-  assert.deepEqual(keys.map(k => k.key), ['char', 'mousedown', 'mousedrag', 'mouseup', 'paste', 'paste']);
-  assert.deepEqual(keys.slice(-2).map(k => k.text), ['one', 'two']);
+  assert.deepEqual(
+    keys.map(k => k.key),
+    ['char', 'mousedown', 'mousedrag', 'mouseup', 'paste', 'paste'],
+  );
+  assert.deepEqual(
+    keys.slice(-2).map(k => k.text),
+    ['one', 'two'],
+  );
 });
 
 test('split paste end marker never leaks into pasted text', () => {

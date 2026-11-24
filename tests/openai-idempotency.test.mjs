@@ -24,10 +24,11 @@ const model = {
   },
 };
 
-const eventStream = content => new Response(
-  `data: ${JSON.stringify({ id: 'request-1', model: 'carthagent-code', choices: [{ delta: { content }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`,
-  { status: 200, headers: { 'content-type': 'text/event-stream' } },
-);
+const eventStream = content =>
+  new Response(
+    `data: ${JSON.stringify({ id: 'request-1', model: 'carthagent-code', choices: [{ delta: { content }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`,
+    { status: 200, headers: { 'content-type': 'text/event-stream' } },
+  );
 
 test('identity-only OpenAI models omit unknown limits and preserve unknown pricing', async () => {
   const calls = [];
@@ -46,13 +47,17 @@ test('identity-only OpenAI models omit unknown limits and preserve unknown prici
     );
   };
 
-  const result = await streamOpenAiCompletions(identityOnlyModel, {
-    messages: [{ role: 'user', content: 'hello', timestamp: Date.now() }],
-  }, {
-    apiKey: 'test-access-token',
-    fetch: fetchImpl,
-    maxRetries: 0,
-  }).result();
+  const result = await streamOpenAiCompletions(
+    identityOnlyModel,
+    {
+      messages: [{ role: 'user', content: 'hello', timestamp: Date.now() }],
+    },
+    {
+      apiKey: 'test-access-token',
+      fetch: fetchImpl,
+      maxRetries: 0,
+    },
+  ).result();
 
   assert.equal(result.stopReason, 'stop');
   assert.equal(calls.length, 1);
@@ -77,18 +82,22 @@ test('OpenAI transport preserves request-scoped headers across SDK retries', asy
     return eventStream('ok');
   };
 
-  const result = await streamOpenAiCompletions(model, {
-    messages: [{ role: 'user', content: 'hello', timestamp: Date.now() }],
-  }, {
-    apiKey: 'test-access-token',
-    fetch: fetchImpl,
-    maxRetries: 1,
-    maxRetryDelayMs: 1,
-    requestHeaders: {
-      'Idempotency-Key': 'operation-1',
-      'X-Client-Request-Id': 'operation-1',
+  const result = await streamOpenAiCompletions(
+    model,
+    {
+      messages: [{ role: 'user', content: 'hello', timestamp: Date.now() }],
     },
-  }).result();
+    {
+      apiKey: 'test-access-token',
+      fetch: fetchImpl,
+      maxRetries: 1,
+      maxRetryDelayMs: 1,
+      requestHeaders: {
+        'Idempotency-Key': 'operation-1',
+        'X-Client-Request-Id': 'operation-1',
+      },
+    },
+  ).result();
 
   assert.equal(result.stopReason, 'stop');
   assert.equal(calls.length, 2);

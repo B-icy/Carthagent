@@ -20,10 +20,24 @@ type Options = { archiveRoots?: string[]; archiveDir?: string };
 type FileInfo = { path: string; root: string; id: string; size: number };
 type Row = { type?: string; timestamp?: unknown; message?: unknown; [key: string]: unknown };
 type Parsed = { records: Row[]; malformedLines: Array<{ line: number }>; moreMalformedLines: boolean; recordsBytes: number; recordCount: number };
-type ArchiveItem = { path: string; id: string; createdAt: unknown; messageCount: number; malformedLines: Array<{ line: number }>; moreMalformedLines: boolean; searchText: string; excerpt?: string };
+type ArchiveItem = {
+  path: string;
+  id: string;
+  createdAt: unknown;
+  messageCount: number;
+  malformedLines: Array<{ line: number }>;
+  moreMalformedLines: boolean;
+  searchText: string;
+  excerpt?: string;
+};
 type FailureCode = 'invalid_request' | 'not_found' | 'limit_exceeded' | 'archive_io';
 class ArchiveFailure extends Error {
-  constructor(readonly code: FailureCode, message: string) { super(message); }
+  constructor(
+    readonly code: FailureCode,
+    message: string,
+  ) {
+    super(message);
+  }
 }
 
 function inside(root: string, path: string) {
@@ -39,8 +53,9 @@ async function rootsFrom(options: Options): Promise<string[]> {
   }
   const canonicalRoots: string[] = [];
   for (const root of roots) {
-    try { canonicalRoots.push(await realpath(root)); }
-    catch (error) {
+    try {
+      canonicalRoots.push(await realpath(root));
+    } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') canonicalRoots.push(root);
       else throw new ArchiveFailure('archive_io', 'Unable to resolve a configured archive root');
     }
@@ -82,8 +97,9 @@ async function enumerate(roots: string[], signal: AbortSignal): Promise<FileInfo
   for (const root of roots) {
     aborted(signal);
     let metadata;
-    try { metadata = await stat(root); }
-    catch (error) {
+    try {
+      metadata = await stat(root);
+    } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
       throw new ArchiveFailure('archive_io', 'Unable to inspect a configured archive root');
     }
@@ -93,15 +109,17 @@ async function enumerate(roots: string[], signal: AbortSignal): Promise<FileInfo
       aborted(signal);
       const directoryPath = pending.pop()!;
       let canonicalDirectory: string;
-      try { canonicalDirectory = await realpath(directoryPath); }
-      catch (error) {
+      try {
+        canonicalDirectory = await realpath(directoryPath);
+      } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
         throw new ArchiveFailure('archive_io', 'Unable to resolve an archive directory');
       }
       if (!inside(root, canonicalDirectory)) continue;
       let directory;
-      try { directory = await opendir(directoryPath); }
-      catch (error) {
+      try {
+        directory = await opendir(directoryPath);
+      } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
         throw new ArchiveFailure('archive_io', 'Unable to enumerate a configured archive root');
       }
@@ -111,12 +129,16 @@ async function enumerate(roots: string[], signal: AbortSignal): Promise<FileInfo
         if (entriesSeen > MAX_ENTRIES) throw new ArchiveFailure('limit_exceeded', `Archive exceeds the ${MAX_ENTRIES} entry scan limit`);
         if (entry.isSymbolicLink()) continue;
         const path = join(directoryPath, entry.name);
-        if (entry.isDirectory()) { pending.push(path); continue; }
+        if (entry.isDirectory()) {
+          pending.push(path);
+          continue;
+        }
         if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue;
         if (found.length >= MAX_FILES) throw new ArchiveFailure('limit_exceeded', `Archive exceeds the ${MAX_FILES} transcript scan limit`);
         let canonical;
-        try { canonical = await realpath(path); }
-        catch (error) {
+        try {
+          canonical = await realpath(path);
+        } catch (error) {
           if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
           throw new ArchiveFailure('archive_io', 'Unable to resolve an archive transcript');
         }
@@ -140,14 +162,22 @@ async function enumerate(roots: string[], signal: AbortSignal): Promise<FileInfo
       totalBytes += info.size;
       if (totalBytes > MAX_TOTAL_BYTES) throw new ArchiveFailure('limit_exceeded', `Archive exceeds the ${MAX_TOTAL_BYTES} byte scan limit`);
       file.size = info.size;
-    } finally { await handle.close(); }
+    } finally {
+      await handle.close();
+    }
   }
   return found.filter(file => file.size >= 0);
 }
 
 async function openReadHandle(path: string) {
-  try { return await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)); }
-  catch (error) { throw new ArchiveFailure('archive_io', (error as NodeJS.ErrnoException).code === 'ELOOP' ? 'Archive transcript changed to a symbolic link' : 'Unable to open an archive transcript'); }
+  try {
+    return await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  } catch (error) {
+    throw new ArchiveFailure(
+      'archive_io',
+      (error as NodeJS.ErrnoException).code === 'ELOOP' ? 'Archive transcript changed to a symbolic link' : 'Unable to open an archive transcript',
+    );
+  }
 }
 
 async function readBounded(file: FileInfo, signal: AbortSignal, maxBytes = MAX_FILE_BYTES): Promise<Buffer> {
@@ -175,7 +205,9 @@ async function readBounded(file: FileInfo, signal: AbortSignal, maxBytes = MAX_F
       throw new ArchiveFailure('limit_exceeded', `Archive transcript changed or exceeds the ${MAX_FILE_BYTES} byte limit`);
     }
     return Buffer.concat(parts, position);
-  } finally { await handle.close(); }
+  } finally {
+    await handle.close();
+  }
 }
 
 function totalLimitCheck(size: number) {
@@ -213,34 +245,56 @@ function parse(bytes: Buffer, maxRecords = MAX_RECORDS): Parsed {
   return { records, malformedLines, moreMalformedLines, recordsBytes: encodedRecordsBytes, recordCount: records.length };
 }
 
-async function itemFor(file: FileInfo, signal: AbortSignal, maxBytes: number, maxRecords: number): Promise<{ item: ArchiveItem; bytes: number; records: number }> {
+async function itemFor(
+  file: FileInfo,
+  signal: AbortSignal,
+  maxBytes: number,
+  maxRecords: number,
+): Promise<{ item: ArchiveItem; bytes: number; records: number }> {
   const bytes = await readBounded(file, signal, maxBytes);
   const transcript = parse(bytes, maxRecords);
   const header = transcript.records.find(row => row?.type === 'session') ?? transcript.records[0] ?? {};
   const messages = transcript.records.filter(row => row?.type === 'message');
   const searchText = messages.map(row => JSON.stringify(row.message ?? row)).join('\n');
-  return { item: {
-    path: file.path, id: file.id, createdAt: header.timestamp ?? null,
-    messageCount: messages.length, malformedLines: transcript.malformedLines.slice(0, MAX_DIAGNOSTICS),
-    moreMalformedLines: transcript.moreMalformedLines, searchText,
-  }, bytes: bytes.length, records: transcript.recordCount };
+  return {
+    item: {
+      path: file.path,
+      id: file.id,
+      createdAt: header.timestamp ?? null,
+      messageCount: messages.length,
+      malformedLines: transcript.malformedLines.slice(0, MAX_DIAGNOSTICS),
+      moreMalformedLines: transcript.moreMalformedLines,
+      searchText,
+    },
+    bytes: bytes.length,
+    records: transcript.recordCount,
+  };
 }
 
 function pageArgs(input: { offset?: number; limit?: number }) {
   const offset = input.offset ?? 0;
   const limit = input.limit ?? MAX_PAGE;
-  if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1_000_000) throw new ArchiveFailure('invalid_request', 'Archive offset must be between 0 and 1000000');
-  if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_PAGE) throw new ArchiveFailure('invalid_request', `Archive page limit must be between 1 and ${MAX_PAGE}`);
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1_000_000)
+    throw new ArchiveFailure('invalid_request', 'Archive offset must be between 0 and 1000000');
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_PAGE)
+    throw new ArchiveFailure('invalid_request', `Archive page limit must be between 1 and ${MAX_PAGE}`);
   return { offset, limit };
 }
 
 function publicItems(items: ArchiveItem[], offset: number, limit: number, total: number) {
   return {
     items: items.slice(offset, offset + limit).map(item => ({
-      id: item.id, createdAt: item.createdAt, messageCount: item.messageCount,
-      malformedLines: item.malformedLines, moreMalformedLines: item.moreMalformedLines,
-      ...(item.excerpt ? { excerpt: item.excerpt.slice(0, 400) } : {}), archiveOnly: true,
-    })), total, offset, limit,
+      id: item.id,
+      createdAt: item.createdAt,
+      messageCount: item.messageCount,
+      malformedLines: item.malformedLines,
+      moreMalformedLines: item.moreMalformedLines,
+      ...(item.excerpt ? { excerpt: item.excerpt.slice(0, 400) } : {}),
+      archiveOnly: true,
+    })),
+    total,
+    offset,
+    limit,
   };
 }
 
@@ -275,7 +329,10 @@ export async function registerArchive(ctx: Context, options: Options = {}) {
         const { items } = await allItems(roots, call.signal);
         aborted(call.signal);
         return publicItems(items, offset, limit, items.length);
-      } catch (error) { if (call.signal.aborted) throw error; return failure(call, error); }
+      } catch (error) {
+        if (call.signal.aborted) throw error;
+        return failure(call, error);
+      }
     },
     search: async (input, call) => {
       try {
@@ -291,7 +348,10 @@ export async function registerArchive(ctx: Context, options: Options = {}) {
         });
         aborted(call.signal);
         return publicItems(matches, offset, limit, matches.length);
-      } catch (error) { if (call.signal.aborted) throw error; return failure(call, error); }
+      } catch (error) {
+        if (call.signal.aborted) throw error;
+        return failure(call, error);
+      }
     },
     read: async (input, call) => {
       try {
@@ -300,10 +360,20 @@ export async function registerArchive(ctx: Context, options: Options = {}) {
         const file = (await enumerate(roots, call.signal)).find(candidate => candidate.id === id);
         if (!file) throw new ArchiveFailure('not_found', 'Archive transcript ID was not found in configured roots');
         const transcript = parse(await readBounded(file, call.signal));
-        if (transcript.recordsBytes > MAX_FILE_BYTES) throw new ArchiveFailure('limit_exceeded', 'Archive transcript response exceeds the 4,000,000 character limit');
+        if (transcript.recordsBytes > MAX_FILE_BYTES)
+          throw new ArchiveFailure('limit_exceeded', 'Archive transcript response exceeds the 4,000,000 character limit');
         aborted(call.signal);
-        return { id, records: transcript.records, malformedLines: transcript.malformedLines, moreMalformedLines: transcript.moreMalformedLines, archiveOnly: true };
-      } catch (error) { if (call.signal.aborted) throw error; return failure(call, error); }
+        return {
+          id,
+          records: transcript.records,
+          malformedLines: transcript.malformedLines,
+          moreMalformedLines: transcript.moreMalformedLines,
+          archiveOnly: true,
+        };
+      } catch (error) {
+        if (call.signal.aborted) throw error;
+        return failure(call, error);
+      }
     },
     export: async (input, call) => {
       try {
@@ -321,7 +391,10 @@ export async function registerArchive(ctx: Context, options: Options = {}) {
         if (Buffer.byteLength(content) > MAX_FILE_BYTES) throw new ArchiveFailure('limit_exceeded', 'Archive export exceeds the 4,000,000 byte response limit');
         aborted(call.signal);
         return { id, format, content, archiveOnly: true };
-      } catch (error) { if (call.signal.aborted) throw error; return failure(call, error); }
+      } catch (error) {
+        if (call.signal.aborted) throw error;
+        return failure(call, error);
+      }
     },
   });
 }

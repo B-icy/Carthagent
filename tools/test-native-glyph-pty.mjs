@@ -13,19 +13,18 @@ import { loadNativeTestRuntime, preflightNativeTestRuntimeArtifact } from './nat
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const installedDefault = process.argv.includes('--installed-default');
-assert.ok(!installedDefault || !process.env.CTG_TEST_RUNTIME_ARTIFACT_ROOT,
-  'installed acceptance must use the package default runtime resolver, not CTG_TEST_RUNTIME_ARTIFACT_ROOT');
-assert.ok(!installedDefault || !process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST,
-  'installed acceptance must use its packaged trusted release manifest');
-assert.ok(!installedDefault || !process.env.CTG_OWNED_OPENCODE_RUNTIME,
-  'installed acceptance must not select a developer-owned runtime artifact');
+assert.ok(
+  !installedDefault || !process.env.CTG_TEST_RUNTIME_ARTIFACT_ROOT,
+  'installed acceptance must use the package default runtime resolver, not CTG_TEST_RUNTIME_ARTIFACT_ROOT',
+);
+assert.ok(!installedDefault || !process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST, 'installed acceptance must use its packaged trusted release manifest');
+assert.ok(!installedDefault || !process.env.CTG_OWNED_OPENCODE_RUNTIME, 'installed acceptance must not select a developer-owned runtime artifact');
 const ownedRoot = process.env.CTG_TEST_RUNTIME_ARTIFACT_ROOT ?? process.env.CTG_OWNED_OPENCODE_RUNTIME;
 const trustedManifestPath = process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST ?? join(root, 'lib/opencode/runtime-release.json');
 assert.ok(!process.env.CTG_OPENCODE_BIN, 'Unset CTG_OPENCODE_BIN; this proof uses the production owned-runtime resolver');
 assert.ok(!process.env.CTG_TEST_RUNTIME_SHA256, 'Do not override trusted executable digest in glyph acceptance');
 if (process.env.CTG_TEST_RUNTIME_ARTIFACT_ROOT) {
-  assert.ok(process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST,
-    'Explicit test artifact requires a trusted CTG_TEST_RUNTIME_RELEASE_MANIFEST');
+  assert.ok(process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST, 'Explicit test artifact requires a trusted CTG_TEST_RUNTIME_RELEASE_MANIFEST');
 }
 
 let preflight;
@@ -59,20 +58,26 @@ if (preflight) {
 const artifact = process.env.CTG_GLYPH_ARTIFACT;
 const scratch = await mkdtemp(join(tmpdir(), 'ctg-glyph-proof-'));
 const ptyArtifact = join(scratch, 'pty.json');
-const pythonCandidates = [process.env.PYTHON,
+const pythonCandidates = [
+  process.env.PYTHON,
   join(root, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'),
-  process.platform === 'win32' ? 'python.exe' : 'python3', 'python'].filter(Boolean);
+  process.platform === 'win32' ? 'python.exe' : 'python3',
+  'python',
+].filter(Boolean);
 const findExecutable = candidate => {
   if (existsSync(candidate)) return candidate;
-  return (process.env.PATH || '').split(process.platform === 'win32' ? ';' : ':')
-    .map(directory => join(directory, candidate)).find(existsSync) ?? null;
+  return (
+    (process.env.PATH || '')
+      .split(process.platform === 'win32' ? ';' : ':')
+      .map(directory => join(directory, candidate))
+      .find(existsSync) ?? null
+  );
 };
 const python = pythonCandidates.map(findExecutable).find(Boolean);
 if (!python) throw new Error('Python was not found; set PYTHON to an interpreter path');
 const args = [join(root, 'tools/native-glyph-pty.py'), '--binary', binary];
 args.push('--artifact', ptyArtifact);
-const probeEnv = Object.fromEntries(['PATH', 'LANG', 'LC_ALL'].filter(key => process.env[key])
-  .map(key => [key, process.env[key]]));
+const probeEnv = Object.fromEntries(['PATH', 'LANG', 'LC_ALL'].filter(key => process.env[key]).map(key => [key, process.env[key]]));
 const probe = spawnSync(python, args, { cwd: root, encoding: 'utf8', timeout: 120_000, env: probeEnv });
 if (probe.stderr) process.stderr.write(probe.stderr);
 if (probe.status !== 0) {
@@ -80,12 +85,21 @@ if (probe.status !== 0) {
   await rm(scratch, { recursive: true, force: true });
   assert.equal(probe.status, 0, `PTY glyph probe failed with status ${probe.status}`);
 }
-const binaryHash = createHash('sha256').update(await readFile(binary)).digest('hex');
+const binaryHash = createHash('sha256')
+  .update(await readFile(binary))
+  .digest('hex');
 const proof = {
-  runtime: { binary, binarySha256: binaryHash, compatibilityVersion: identity.compatibilityVersion,
-    runtimeVersion: identity.runtimeVersion, sourceRevision: identity.sourceRevision,
-    patchSha256: identity.patchSha256, lockSha256: identity.lockSha256,
-    productResolverKind: productIdentity.kind, productResolverVersion: productIdentity.version },
+  runtime: {
+    binary,
+    binarySha256: binaryHash,
+    compatibilityVersion: identity.compatibilityVersion,
+    runtimeVersion: identity.runtimeVersion,
+    sourceRevision: identity.sourceRevision,
+    patchSha256: identity.patchSha256,
+    lockSha256: identity.lockSha256,
+    productResolverKind: productIdentity.kind,
+    productResolverVersion: productIdentity.version,
+  },
   glyphProof: JSON.parse(await readFile(ptyArtifact, 'utf8')),
 };
 const rendered = JSON.stringify(proof, null, 2) + '\n';

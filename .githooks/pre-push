@@ -1,0 +1,7 @@
+#!/bin/sh
+# Fast whole-checkout checks; ESLint, types and tests run in CI.
+if ! command -v node >/dev/null 2>&1; then
+  echo "pre-push: Node.js is required to run the repository checks." >&2
+  exit 1
+fi
+node tools/check-file-sizes.mjs && node tools/check-debt-markers.mjs >/dev/null

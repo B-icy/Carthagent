@@ -22,7 +22,8 @@ export async function runModelCommand(host: ModelCommandHost, input: { sessionID
   }
   await host.sync();
   const query = input.arg.toLowerCase();
-  const options = host.list()
+  const options = host
+    .list()
     .filter((model) => !query || `${host.providerName(model.providerID)} ${model.providerID}/${model.modelID} ${model.name}`.toLowerCase().includes(query))
     .map((model) => ({ title: `${host.providerName(model.providerID)}/${model.modelID}`, value: model, description: model.name }));
   const selected = await host.select(options);

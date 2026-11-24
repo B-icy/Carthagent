@@ -11,8 +11,7 @@ import { resolveInstalledRuntime } from './installed-runtime-contract.mjs';
 
 assert.equal(process.platform, 'linux', 'installed visual-clear acceptance is a Linux POSIX PTY claim');
 for (const key of Object.keys(process.env)) {
-  assert.ok(!/^CTG_(?:OPENCODE_BIN|OWNED_OPENCODE_RUNTIME|TEST_RUNTIME_)/i.test(key),
-    `${key} must not override installed default runtime acceptance`);
+  assert.ok(!/^CTG_(?:OPENCODE_BIN|OWNED_OPENCODE_RUNTIME|TEST_RUNTIME_)/i.test(key), `${key} must not override installed default runtime acceptance`);
 }
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const manifestPath = join(root, 'lib/opencode/runtime-release.json');
@@ -26,14 +25,18 @@ assert.equal(verified.binarySha256, identity.binarySha256, 'independent verifier
 const python = process.env.PYTHON ?? 'python3';
 const artifact = join(root, `.ctg-visual-clear-${process.pid}.json`);
 try {
-  const result = spawnSync(python, [join(root, 'tools/test-owned-visual-clear.py'),
-    '--binary', binary, '--owned-root', ownedRoot, '--release-manifest', manifestPath,
-    '--artifact', artifact], {
-    cwd: root, encoding: 'utf8', timeout: 240_000,
-    // The clear runner uses its own strict allowlists and does not need the
-    // acquisition token; keep it away from Python, fixture, host, and PTY.
-    env: withoutRuntimeGithubToken(process.env),
-  });
+  const result = spawnSync(
+    python,
+    [join(root, 'tools/test-owned-visual-clear.py'), '--binary', binary, '--owned-root', ownedRoot, '--release-manifest', manifestPath, '--artifact', artifact],
+    {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: 240_000,
+      // The clear runner uses its own strict allowlists and does not need the
+      // acquisition token; keep it away from Python, fixture, host, and PTY.
+      env: withoutRuntimeGithubToken(process.env),
+    },
+  );
   if (result.error) throw result.error;
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);

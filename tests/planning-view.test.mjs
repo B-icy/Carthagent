@@ -10,7 +10,18 @@ import { join } from 'node:path';
 test('shared views distinguish locked, proposed, observed, failed and stale receipts', t => {
   const cwd = mkdtempSync(join(tmpdir(), 'planning-view-'));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
-  const state = { runId: 'run', revision: 1, status: 'implementing', evidence: {}, plan: { goal: 'View', steps: ['Work'], acceptance: [{ requirement: 'Works', checks: ['unit'] }], checks: [{ id: 'unit', kind: 'test', argv: ['node', '--version'], timeoutSeconds: 10 }] } };
+  const state = {
+    runId: 'run',
+    revision: 1,
+    status: 'implementing',
+    evidence: {},
+    plan: {
+      goal: 'View',
+      steps: ['Work'],
+      acceptance: [{ requirement: 'Works', checks: ['unit'] }],
+      checks: [{ id: 'unit', kind: 'test', argv: ['node', '--version'], timeoutSeconds: 10 }],
+    },
+  };
   state.plan.design = fixtureDesign(state.plan);
   let view = planningView(state, fingerprint(cwd, ['.']));
   assert.ok(view.gate.locked);

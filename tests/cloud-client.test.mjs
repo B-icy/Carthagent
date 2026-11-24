@@ -1,6 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CloudClient, cloudControlUrl, cloudManagedUsageRecovery, formatCloudAccount, formatCloudUsage, formatNanoUsd, oauthCredentials, openBrowser } from '../lib/cloud/client.mjs';
+import {
+  CloudClient,
+  cloudControlUrl,
+  cloudManagedUsageRecovery,
+  formatCloudAccount,
+  formatCloudUsage,
+  formatNanoUsd,
+  oauthCredentials,
+  openBrowser,
+} from '../lib/cloud/client.mjs';
 
 function response(status, body) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -10,7 +19,13 @@ test('browser opening uses platform launchers and rejects non-HTTP targets', asy
   const calls = [];
   const spawnImpl = (command, args) => {
     calls.push({ command, args });
-    return { once(event, callback) { if (event === 'spawn') queueMicrotask(callback); return this; }, unref() {} };
+    return {
+      once(event, callback) {
+        if (event === 'spawn') queueMicrotask(callback);
+        return this;
+      },
+      unref() {},
+    };
   };
   assert.equal(await openBrowser('https://cloud.test/path?a=1', { platform: 'linux', env: {}, spawnImpl }), true);
   assert.equal(calls[0].command, 'xdg-open');
@@ -35,13 +50,19 @@ test('Cloud device flow reports the code, tolerates pending, and returns rotatin
   const calls = [];
   let polls = 0;
   const client = new CloudClient({
-    baseUrl: 'https://cloud.test', sleep: async () => {},
+    baseUrl: 'https://cloud.test',
+    sleep: async () => {},
     fetchImpl: async (url, options) => {
       calls.push({ url, options });
-      if (url.endsWith('/v1/device/authorizations')) return response(201, {
-        deviceCode: 'ctgd_secret', userCode: 'ABCDE-12345', verificationUri: 'https://cloud.test/activate',
-        verificationUriComplete: 'https://cloud.test/activate?code=ABCDE-12345', expiresIn: 600, interval: 1,
-      });
+      if (url.endsWith('/v1/device/authorizations'))
+        return response(201, {
+          deviceCode: 'ctgd_secret',
+          userCode: 'ABCDE-12345',
+          verificationUri: 'https://cloud.test/activate',
+          verificationUriComplete: 'https://cloud.test/activate?code=ABCDE-12345',
+          expiresIn: 600,
+          interval: 1,
+        });
       polls++;
       if (polls === 1) return response(428, { error: 'authorization_pending' });
       return response(200, { accessToken: 'access', refreshToken: 'refresh', expiresIn: 900 });
@@ -57,9 +78,13 @@ test('Cloud device flow reports the code, tolerates pending, and returns rotatin
 });
 
 test('Cloud client surfaces denial, expiry, cancellation, and HTTP errors without secrets', async () => {
-  const denied = new CloudClient({ baseUrl: 'https://cloud.test', fetchImpl: async url => url.endsWith('/authorizations')
-    ? response(201, { deviceCode: 'secret-device', userCode: 'DENY-1', verificationUri: 'https://verify', expiresIn: 60, interval: 1 })
-    : response(401, { error: 'access_denied' }) });
+  const denied = new CloudClient({
+    baseUrl: 'https://cloud.test',
+    fetchImpl: async url =>
+      url.endsWith('/authorizations')
+        ? response(201, { deviceCode: 'secret-device', userCode: 'DENY-1', verificationUri: 'https://verify', expiresIn: 60, interval: 1 })
+        : response(401, { error: 'access_denied' }),
+  });
   await assert.rejects(denied.authorizeDevice(), error => error.code === 'access_denied' && !error.message.includes('secret-device'));
 
   const controller = new AbortController();
@@ -67,20 +92,32 @@ test('Cloud client surfaces denial, expiry, cancellation, and HTTP errors withou
   await assert.rejects(new CloudClient().authorizeDevice({ signal: controller.signal }), /cancelled/);
 
   const expired = new CloudClient({
-    baseUrl: 'https://cloud.test', sleep: async () => {},
-    fetchImpl: async url => url.endsWith('/authorizations')
-      ? response(201, { deviceCode: 'd', userCode: 'E', verificationUri: 'https://verify', expiresIn: -1, interval: 1 })
-      : response(428, { error: 'authorization_pending' }),
+    baseUrl: 'https://cloud.test',
+    sleep: async () => {},
+    fetchImpl: async url =>
+      url.endsWith('/authorizations')
+        ? response(201, { deviceCode: 'd', userCode: 'E', verificationUri: 'https://verify', expiresIn: -1, interval: 1 })
+        : response(428, { error: 'authorization_pending' }),
   });
   await assert.rejects(expired.authorizeDevice(), error => error.code === 'expired_token');
 });
 
 test('Cloud client sends account, billing, and session requests with bearer auth', async () => {
   const requests = [];
-  const client = new CloudClient({ baseUrl: 'https://cloud.test', fetchImpl: async (url, options) => {
-    requests.push({ url, options });
-    return response(200, url.includes('/account/usage') ? { accountId: 'a', data: [] } : url.endsWith('/account') ? { accountId: 'a', balance: { availableNanoUsd: 1_000_000_000 }, subscription: { status: 'active' }, sessions: [] } : { url: 'https://stripe.test' });
-  } });
+  const client = new CloudClient({
+    baseUrl: 'https://cloud.test',
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options });
+      return response(
+        200,
+        url.includes('/account/usage')
+          ? { accountId: 'a', data: [] }
+          : url.endsWith('/account')
+            ? { accountId: 'a', balance: { availableNanoUsd: 1_000_000_000 }, subscription: { status: 'active' }, sessions: [] }
+            : { url: 'https://stripe.test' },
+      );
+    },
+  });
   const account = await client.account({ accessToken: 'access' });
   const usage = await client.usage({ accessToken: 'access', limit: 500 });
   await client.checkout({ accessToken: 'access', successUrl: 'https://return', cancelUrl: 'https://return' });
@@ -95,34 +132,58 @@ test('Cloud client sends account, billing, and session requests with bearer auth
 
 test('OAuth and account formatters keep token expiration and account UX deterministic', () => {
   assert.deepEqual(oauthCredentials({ accessToken: 'a', refreshToken: 'r', expiresIn: 900 }, 1_000), { access: 'a', refresh: 'r', expires: 901_000 });
-  assert.match(formatCloudAccount({ accountId: 'acct', balance: { availableNanoUsd: 1_000_000_000 }, subscription: { status: 'none' }, sessions: [{}, { revoked_at: 'x' }] }), /Credit: \$1\.00 available[\s\S]*Plan: No paid plan[\s\S]*1 active, 1 revoked/);
+  assert.match(
+    formatCloudAccount({
+      accountId: 'acct',
+      balance: { availableNanoUsd: 1_000_000_000 },
+      subscription: { status: 'none' },
+      sessions: [{}, { revoked_at: 'x' }],
+    }),
+    /Credit: \$1\.00 available[\s\S]*Plan: No paid plan[\s\S]*1 active, 1 revoked/,
+  );
   const managed = formatCloudAccount({
-    accountId: 'paid', balance: { availableNanoUsd: 8_000_000_000 },
+    accountId: 'paid',
+    balance: { availableNanoUsd: 8_000_000_000 },
     subscription: { status: 'active', current_period_end: 1_800_000_000 },
     managedUsage: {
       planName: 'Pro',
       periodEnd: 1_800_000_000,
       monthly: { allowanceNanoUsd: 8_000_000_000, reservedNanoUsd: 250_000_000, availableNanoUsd: 6_750_000_000 },
       daily: { limitNanoUsd: 500_000_000, reservedNanoUsd: 50_000_000, availableNanoUsd: 300_000_000, resetsAt: '2027-01-02T00:00:00.000Z' },
-    }, sessions: [],
+    },
+    sessions: [],
   });
   assert.match(managed, /Plan: Pro \(active\)/);
   assert.match(managed, /monthly\s+16%\s+▓▓▓░░░░░░░░░░░░░\s+renews Jan 15/);
   assert.match(managed, /daily\s+40%\s+▓▓▓▓▓▓░░░░░░░░░░\s+resets 00:00 UTC/);
-  const usage = { data: [
-    { createdAt: '2027-01-01T12:00:00.000Z', alias: 'gpt-6-luna', inputTokens: 1200, outputTokens: 34, status: 'completed' },
-    { createdAt: '2027-01-01T11:00:00.000Z', alias: 'deepseek-v4-flash', inputTokens: 800, outputTokens: 6, status: 'failed' },
-  ] };
+  const usage = {
+    data: [
+      { createdAt: '2027-01-01T12:00:00.000Z', alias: 'gpt-6-luna', inputTokens: 1200, outputTokens: 34, status: 'completed' },
+      { createdAt: '2027-01-01T11:00:00.000Z', alias: 'deepseek-v4-flash', inputTokens: 800, outputTokens: 6, status: 'failed' },
+    ],
+  };
   assert.match(formatCloudUsage(usage), /𐤀\s+CLOUD · USAGE/);
   assert.match(formatCloudUsage(usage), /last 5\s+gpt-6-luna · 1\.2k in \/ 34 out/);
   assert.match(formatCloudUsage(usage), /deepseek-v4-flash · 800 in \/ 6 out · failed/);
-  assert.match(formatCloudUsage(usage, { account: { managedUsage: { planName: 'Pro', periodEnd: 1_800_000_000,
-    monthly: { allowanceNanoUsd: 21_000_000_000, availableNanoUsd: 12_600_000_000 },
-    daily: { limitNanoUsd: 1_200_000_000, availableNanoUsd: 1_200_000_000, resetsAt: '2027-01-02T00:00:00.000Z' } } } }),
-    /PRO · USAGE[\s\S]*monthly\s+40%[\s\S]*renews Jan 15[\s\S]*daily\s+0%/);
+  assert.match(
+    formatCloudUsage(usage, {
+      account: {
+        managedUsage: {
+          planName: 'Pro',
+          periodEnd: 1_800_000_000,
+          monthly: { allowanceNanoUsd: 21_000_000_000, availableNanoUsd: 12_600_000_000 },
+          daily: { limitNanoUsd: 1_200_000_000, availableNanoUsd: 1_200_000_000, resetsAt: '2027-01-02T00:00:00.000Z' },
+        },
+      },
+    }),
+    /PRO · USAGE[\s\S]*monthly\s+40%[\s\S]*renews Jan 15[\s\S]*daily\s+0%/,
+  );
   assert.match(formatCloudUsage(usage, { byok: true }), /external provider — not counted here/);
   assert.match(formatCloudUsage({ data: [] }), /no settled requests yet/);
-  assert.match(formatCloudAccount({ accountId: 'acct', balance: { availableNanoUsd: 1_000_000_000 }, subscription: { status: 'none' }, sessions: [] }, { usage }), /CLOUD · USAGE/);
+  assert.match(
+    formatCloudAccount({ accountId: 'acct', balance: { availableNanoUsd: 1_000_000_000 }, subscription: { status: 'none' }, sessions: [] }, { usage }),
+    /CLOUD · USAGE/,
+  );
 });
 
 test('managed usage recovery distinguishes daily, monthly, subscription, and credit paths', () => {

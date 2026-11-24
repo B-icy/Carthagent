@@ -70,14 +70,19 @@ try {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let stderr = '';
-  fixtureChild.stderr.setEncoding('utf8').on('data', chunk => { stderr = (stderr + chunk).slice(-12000); });
+  fixtureChild.stderr.setEncoding('utf8').on('data', chunk => {
+    stderr = (stderr + chunk).slice(-12000);
+  });
   const line = await new Promise((resolveLine, reject) => {
     let stdout = '';
     const timer = setTimeout(() => reject(new Error(`native fixture startup timeout\n${stderr}`)), 60_000);
     fixtureChild.stdout.setEncoding('utf8').on('data', chunk => {
       stdout += chunk;
       const newline = stdout.indexOf('\n');
-      if (newline !== -1) { clearTimeout(timer); resolveLine(stdout.slice(0, newline)); }
+      if (newline !== -1) {
+        clearTimeout(timer);
+        resolveLine(stdout.slice(0, newline));
+      }
     });
     fixtureChild.once('exit', (code, signal) => {
       clearTimeout(timer);
@@ -89,20 +94,41 @@ try {
   assert.equal(fixture.pluginReadiness?.observed, 'active');
   await writeFile(fixturePath, JSON.stringify(fixture));
   const python = process.env.PYTHON ?? 'python3';
-  const args = [join(root, 'tools/test-native-slash-commands.py'), '--binary', binary,
-    '--owned-root', resolve(ownedRoot), '--release-manifest', resolve(manifestPath),
-    '--fixture', fixturePath, '--artifact', artifact];
+  const args = [
+    join(root, 'tools/test-native-slash-commands.py'),
+    '--binary',
+    binary,
+    '--owned-root',
+    resolve(ownedRoot),
+    '--release-manifest',
+    resolve(manifestPath),
+    '--fixture',
+    fixturePath,
+    '--artifact',
+    artifact,
+  ];
   const result = spawnSync(python, args, {
-    cwd: root, encoding: 'utf8', timeout: 180_000,
-    env: { PATH: process.env.PATH ?? '/usr/bin:/bin', LANG: process.env.LANG ?? 'C.UTF-8',
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 180_000,
+    env: {
+      PATH: process.env.PATH ?? '/usr/bin:/bin',
+      LANG: process.env.LANG ?? 'C.UTF-8',
       CTG_OWNED_OPENCODE_RUNTIME: resolve(ownedRoot),
       CTG_TEST_RUNTIME_RELEASE_MANIFEST: resolve(manifestPath),
-      CTG_SLASH_ACCEPTANCE_LOGS: logsPath },
+      CTG_SLASH_ACCEPTANCE_LOGS: logsPath,
+    },
   });
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
-  await writeFile(logsPath, JSON.stringify({ stdout: result.stdout, stderr: result.stderr,
-    status: result.status, signal: result.signal, error: result.error?.message ?? null }, null, 2) + '\n');
+  await writeFile(
+    logsPath,
+    JSON.stringify(
+      { stdout: result.stdout, stderr: result.stderr, status: result.status, signal: result.signal, error: result.error?.message ?? null },
+      null,
+      2,
+    ) + '\n',
+  );
   if (result.error) throw result.error;
   const proof = JSON.parse(await readFile(artifact, 'utf8'));
   if (proof.status === 'PARTIAL') {

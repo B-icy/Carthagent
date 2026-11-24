@@ -42,21 +42,31 @@ try {
     await host.client.session.prompt({ sessionID: session.id, text: `Reply with exactly this fixture marker and nothing else: ${marker}` }, host.request());
     await host.client.session.wait({ sessionID: session.id }, host.request());
     const messages = await host.client.session.context({ sessionID: session.id }, host.request());
-    if (!messages.some(message => message.type === 'assistant' &&
-        message.content?.some(part => part.type === 'text' && part.text.includes(marker)))) {
+    if (!messages.some(message => message.type === 'assistant' && message.content?.some(part => part.type === 'text' && part.text.includes(marker)))) {
       throw new Error(`Session ${name} did not persist unique assistant marker ${marker}`);
     }
     fixtures[name] = { id: session.id, title, marker, directory: roots[name] };
   }
-  const readinessSession = await host.client.session.create({
-    location: { directory: roots.alpha }, model: host.model, title: 'PERF READINESS EMPTY SESSION',
-  }, host.request());
-  const fixture = { temp: host.temp, roots, sessions: fixtures,
+  const readinessSession = await host.client.session.create(
+    {
+      location: { directory: roots.alpha },
+      model: host.model,
+      title: 'PERF READINESS EMPTY SESSION',
+    },
+    host.request(),
+  );
+  const fixture = {
+    temp: host.temp,
+    roots,
+    sessions: fixtures,
     readinessSession: { id: readinessSession.id, directory: roots.alpha },
     runtimeIdentity: host.runtimeIdentity,
     serverPid: host.serverPid(),
-    pluginObservation: host.pluginObservation, pluginInventory: host.pluginInventory,
-    pluginHealth: host.pluginHealth, provenance };
+    pluginObservation: host.pluginObservation,
+    pluginInventory: host.pluginInventory,
+    pluginHealth: host.pluginHealth,
+    provenance,
+  };
   fixture.baseUrl = host.baseUrl;
   fixture.password = host.password;
   const agentDir = join(host.temp, 'home/.carthagent/agent');

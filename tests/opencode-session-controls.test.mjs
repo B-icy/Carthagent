@@ -11,27 +11,61 @@ function fixture(options = {}, sessions = {}) {
   const calls = [];
   let handlers;
   const ctx = {
-    options, location: { directory: '/project' },
+    options,
+    location: { directory: '/project' },
     storage: { get: async key => values.get(key), set: async (key, value) => values.set(key, value) },
     session: {
       get: async ({ sessionID }) => ({ location: { directory: sessionID === 'foreign' ? '/other' : '/project' }, ...sessions[sessionID] }),
-      hook: async (name, hook) => { hooks[name] = hook; return { dispose: async () => { delete hooks[name]; } }; },
-      synthetic: async input => { calls.push(['synthetic', input]); },
-      compact: async input => { calls.push(['compact', input]); },
+      hook: async (name, hook) => {
+        hooks[name] = hook;
+        return {
+          dispose: async () => {
+            delete hooks[name];
+          },
+        };
+      },
+      synthetic: async input => {
+        calls.push(['synthetic', input]);
+      },
+      compact: async input => {
+        calls.push(['compact', input]);
+      },
     },
-    rpc: { register: async (_definition, implementation) => { handlers = implementation; return { dispose: async () => { handlers = undefined; } }; } },
+    rpc: {
+      register: async (_definition, implementation) => {
+        handlers = implementation;
+        return {
+          dispose: async () => {
+            handlers = undefined;
+          },
+        };
+      },
+    },
   };
-  return { ctx, hooks, calls, values, get handlers() { return handlers; } };
+  return {
+    ctx,
+    hooks,
+    calls,
+    values,
+    get handlers() {
+      return handlers;
+    },
+  };
 }
 const call = () => ({
   signal: new AbortController().signal,
-  error(type, message, data) { throw Object.assign(new Error(message), { type, data }); },
+  error(type, message, data) {
+    throw Object.assign(new Error(message), { type, data });
+  },
 });
 
 test('native framing is session-scoped, raw-safe and preserves attachments', async () => {
   const f = fixture();
   const cleanup = await registerSessionControls(f.ctx);
-  const event = { sessionID: 'a', prompt: { text: 'Implement a parser', files: [{ uri: 'file:///project/input', mention: { start: 0, end: 2, text: 'im' } }] } };
+  const event = {
+    sessionID: 'a',
+    prompt: { text: 'Implement a parser', files: [{ uri: 'file:///project/input', mention: { start: 0, end: 2, text: 'im' } }] },
+  };
   await f.hooks.prompt(event);
   assert.notEqual(event.prompt.text, 'Implement a parser');
   assert.equal(event.metadata['ctg.original'], 'Implement a parser');
@@ -70,7 +104,10 @@ test('compaction notes precede queued compaction and cancellation prevents admis
   const f = fixture();
   await registerSessionControls(f.ctx);
   assert.deepEqual(await f.handlers.compact({ sessionID: 'a', notes: 'Preserve unresolved decisions' }, call()), { admitted: true });
-  assert.deepEqual(f.calls.map(item => item[0]), ['synthetic', 'compact']);
+  assert.deepEqual(
+    f.calls.map(item => item[0]),
+    ['synthetic', 'compact'],
+  );
   assert.match(f.calls[0][1].text, /Preserve unresolved decisions/);
   assert.ok(f.calls.every(item => item[1].sessionID === 'a' && item[1].delivery === 'queue'));
   await assert.rejects(f.handlers.compact({ sessionID: 'a' }, { signal: AbortSignal.abort() }));
@@ -78,10 +115,13 @@ test('compaction notes precede queued compaction and cancellation prevents admis
 });
 
 test('persisted per-session launcher settings control framing without affecting neighbors', async () => {
-  const f = fixture({}, {
-    a: { metadata: { 'carthagent.options': { guide: false } } },
-    b: { metadata: { 'carthagent.options': { delivery: false } } },
-  });
+  const f = fixture(
+    {},
+    {
+      a: { metadata: { 'carthagent.options': { guide: false } } },
+      b: { metadata: { 'carthagent.options': { delivery: false } } },
+    },
+  );
   await registerSessionControls(f.ctx);
   for (const sessionID of ['a', 'b']) {
     const event = { sessionID, prompt: { text: 'Implement a parser' } };
@@ -95,10 +135,13 @@ test('persisted per-session launcher settings control framing without affecting 
 });
 
 test('explicit framing RPC override wins over persisted launch guide setting for only that session', async () => {
-  const f = fixture({}, {
-    a: { metadata: { 'carthagent.options': { guide: true } } },
-    b: { metadata: { 'carthagent.options': { guide: true } } },
-  });
+  const f = fixture(
+    {},
+    {
+      a: { metadata: { 'carthagent.options': { guide: true } } },
+      b: { metadata: { 'carthagent.options': { guide: true } } },
+    },
+  );
   await registerSessionControls(f.ctx);
   await f.handlers.framing({ sessionID: 'a', enabled: false }, call());
   const a = { sessionID: 'a', prompt: { text: 'Implement a parser' } };
@@ -113,11 +156,18 @@ test('queued controls recheck ownership after a session moves', async () => {
   const f = fixture();
   let releaseWrite;
   let beganWrite;
-  const writing = new Promise(resolve => { beganWrite = resolve; });
-  const gate = new Promise(resolve => { releaseWrite = resolve; });
+  const writing = new Promise(resolve => {
+    beganWrite = resolve;
+  });
+  const gate = new Promise(resolve => {
+    releaseWrite = resolve;
+  });
   let directory = '/project';
   f.ctx.session.get = async () => ({ location: { directory } });
-  f.ctx.storage.set = async () => { beganWrite(); await gate; };
+  f.ctx.storage.set = async () => {
+    beganWrite();
+    await gate;
+  };
   await registerSessionControls(f.ctx);
   const first = f.handlers.framing({ sessionID: 'a', enabled: true }, call());
   await writing;

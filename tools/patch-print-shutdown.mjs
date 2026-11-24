@@ -3,9 +3,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const path = process.argv[2]
-  ? pathToFileURL(resolve(process.argv[2]))
-  : new URL('../vendor/agent/chunks/chunk-JVUZSMYM.js', import.meta.url);
+const path = process.argv[2] ? pathToFileURL(resolve(process.argv[2])) : new URL('../vendor/agent/chunks/chunk-JVUZSMYM.js', import.meta.url);
 let source = readFileSync(path, 'utf8');
 const marker = 'undici.getGlobalDispatcher()===dispatcher&&await dispatcher.destroy(),await flushRawStdout()';
 

@@ -8,13 +8,23 @@ const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8'
 const digest = value => createHash('sha256').update(value).digest('hex');
 const v20 = read('docs/patches/opencode-v2.0.32-session-ui-combined-v20.patch');
 const v21 = read('docs/patches/opencode-v2.0.32-session-ui-combined-v21.patch');
-const sections = patch => new Map(patch.split(/(?=^diff --git )/m).filter(Boolean).map(section => {
-  const path = section.match(/^diff --git a\/(\S+) b\/\1\n/)?.[1];
-  assert.ok(path?.startsWith('packages/') && !path.split('/').includes('..'), `unsafe path: ${path}`);
-  return [path, section.replace(/^index .*\n/gm, '')];
-}));
-const added = (patch, path) => sections(patch).get(path).split('\n')
-  .filter(line => line.startsWith('+') && !line.startsWith('+++')).join('\n');
+const sections = patch =>
+  new Map(
+    patch
+      .split(/(?=^diff --git )/m)
+      .filter(Boolean)
+      .map(section => {
+        const path = section.match(/^diff --git a\/(\S+) b\/\1\n/)?.[1];
+        assert.ok(path?.startsWith('packages/') && !path.split('/').includes('..'), `unsafe path: ${path}`);
+        return [path, section.replace(/^index .*\n/gm, '')];
+      }),
+  );
+const added = (patch, path) =>
+  sections(patch)
+    .get(path)
+    .split('\n')
+    .filter(line => line.startsWith('+') && !line.startsWith('+++'))
+    .join('\n');
 
 test('v21 is the published 1.1.3 runtime patch', () => {
   const expected = digest(v21);
@@ -33,7 +43,10 @@ test('v21 is the published 1.1.3 runtime patch', () => {
 test('v21 keeps every v20 section and changes only the reviewed paths', () => {
   const before = sections(v20);
   const after = sections(v21);
-  assert.deepEqual([...after.keys()].filter(path => before.has(path)), [...before.keys()]);
+  assert.deepEqual(
+    [...after.keys()].filter(path => before.has(path)),
+    [...before.keys()],
+  );
   const changed = [...before.keys()].filter(path => before.get(path) !== after.get(path)).sort();
   assert.deepEqual(changed, [
     'packages/tui/src/app.tsx',
@@ -74,13 +87,17 @@ test('v21 ends long titles in an ellipsis, uses the real home and runs twin comm
     'a long vertical tab title ends in an ellipsis instead of being cut',
     'hovering a long title keeps the row still and reveals the full title beside the rail',
     'hovering a title that fits shows no tooltip',
-  ]) assert.ok(titles.includes(name), name);
+  ])
+    assert.ok(titles.includes(name), name);
   assert.match(added(v21, 'packages/tui/src/util/path-format.ts'), /value = process\.env\.CTG_USER_HOME/);
   assert.match(added(v21, 'packages/tui/src/app.tsx'), /home: userHome\(global\.home\)/);
   assert.match(read('lib/opencode/runtime.mjs'), /CTG_USER_HOME: inherited\.CTG_USER_HOME && path\.isAbsolute/);
   assert.match(added(v21, 'packages/tui/src/prompt/slash-options.ts'), /else if \(twins\(current, slash\)\)/);
-  assert.ok(added(v21, 'packages/tui/test/plugin-keymap.test.tsx')
-    .includes('one Enter on a submit-twin alias runs the command, and a typed submission still dispatches'));
+  assert.ok(
+    added(v21, 'packages/tui/test/plugin-keymap.test.tsx').includes(
+      'one Enter on a submit-twin alias runs the command, and a typed submission still dispatches',
+    ),
+  );
 });
 
 test('v21 clamps a dragged rail and stops the drag release from clicking through', () => {
@@ -92,10 +109,12 @@ test('v21 clamps a dragged rail and stops the drag release from clicking through
   assert.match(handle, /queueMicrotask\(/);
   // Hit testing reads the last drawn frame, so removing the shield must draw one before the next press.
   assert.match(handle, /setShielded\(false\)\n\s*(\+\s*\/\/.*\n\s*)*\+\s*renderer\.intermediateRender\(\)/);
-  assert.ok(added(v21, 'packages/tui/test/navigation-rail.test.tsx')
-    .includes('dragging the rail divider past the page stops at the widest rail that fits, clicks nothing and releases the highlight'));
-  assert.ok(added(v21, 'packages/tui/test/ui/pane-resize-handle.test.tsx')
-    .includes('a press right after a resize reaches the content under the pointer'));
+  assert.ok(
+    added(v21, 'packages/tui/test/navigation-rail.test.tsx').includes(
+      'dragging the rail divider past the page stops at the widest rail that fits, clicks nothing and releases the highlight',
+    ),
+  );
+  assert.ok(added(v21, 'packages/tui/test/ui/pane-resize-handle.test.tsx').includes('a press right after a resize reaches the content under the pointer'));
 });
 
 test('v21 caches plugin transforms only in release builds and bounds the theme wait', () => {
@@ -110,6 +129,7 @@ test('v21 caches plugin transforms only in release builds and bounds the theme w
     'changed bytes or a different transformer build never reuse an entry',
     'an unreadable or corrupt entry falls back to the transform and is repaired',
     'a cached Solid transform is byte-identical to a fresh one',
-  ]) assert.ok(cacheTests.includes(name), name);
+  ])
+    assert.ok(cacheTests.includes(name), name);
   assert.match(added(v21, 'packages/tui/src/util/theme-mode.ts'), /export const THEME_MODE_WAIT_MS = 300/);
 });

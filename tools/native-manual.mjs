@@ -16,51 +16,29 @@ export async function runManualKit(
   project = 'tiny',
   { live = false, smoke = false, args = [], stop = false, runtimeManifest, manifestSha256 } = {},
 ) {
-  if (!['tiny', 'product', 'scale'].includes(project))
-    throw Error('Project must be tiny, product, or scale');
+  if (!['tiny', 'product', 'scale'].includes(project)) throw Error('Project must be tiny, product, or scale');
   const kit = resolve(directory);
-  const record = JSON.parse(
-    await readFile(join(kit, 'manual-kit.json'), 'utf8'),
-  );
+  const record = JSON.parse(await readFile(join(kit, 'manual-kit.json'), 'utf8'));
   const { manifest, manifestPath, manifestSha256: actualDigest } = await readManualRuntimeManifest({ runtimeManifest, manifestSha256 });
   const releaseVersion = manifest.releaseVersion;
   const target = `${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch}`;
-  if (
-    record.version !== 1 ||
-    record.target !== target ||
-    record.runtime !== `runtimes/${releaseVersion}/${target}`
-  )
-    throw Error(
-      'Kit platform/layout does not match this machine; prepare a new native kit',
-    );
-  if (actualDigest !== record.manifestSha256)
-    throw Error('Kit manifest does not match this source checkout');
+  if (record.version !== 1 || record.target !== target || record.runtime !== `runtimes/${releaseVersion}/${target}`)
+    throw Error('Kit platform/layout does not match this machine; prepare a new native kit');
+  if (actualDigest !== record.manifestSha256) throw Error('Kit manifest does not match this source checkout');
   const ownedRoot = join(kit, record.runtime);
   const { identity } = await preflightNativeTestRuntimeArtifact({
     ownedRoot,
     expectedManifestPath: manifestPath,
     env: {},
   });
-  if (identity.binarySha256 !== record.binarySha256)
-    throw Error('Kit runtime identity changed');
+  if (identity.binarySha256 !== record.binarySha256) throw Error('Kit runtime identity changed');
   const safeEnv = Object.fromEntries(
-    [
-      'PATH',
-      'SystemRoot',
-      'WINDIR',
-      'COMSPEC',
-      'PATHEXT',
-      'LANG',
-      'LC_ALL',
-      'TERM',
-      'COLORTERM',
-    ]
-      .filter((key) => process.env[key])
-      .map((key) => [key, process.env[key]]),
+    ['PATH', 'SystemRoot', 'WINDIR', 'COMSPEC', 'PATHEXT', 'LANG', 'LC_ALL', 'TERM', 'COLORTERM']
+      .filter(key => process.env[key])
+      .map(key => [key, process.env[key]]),
   );
   if (live) {
-    if (smoke)
-      throw Error('Live mode never runs automatically; use offline --smoke');
+    if (smoke) throw Error('Live mode never runs automatically; use offline --smoke');
     const profile = join(kit, 'profiles', 'live');
     if (stop) {
       const { stopService } = await import('../lib/opencode/service.mjs');
@@ -85,38 +63,17 @@ export async function runManualKit(
       CARTHAGENT_CONFIG: join(profile, 'carthagent-config.json'),
       CARTHAGENT_CODING_AGENT_DIR: join(profile, 'agent'),
     };
-    for (const key of [
-      'OPENAI_API_KEY',
-      'ANTHROPIC_API_KEY',
-      'OPENROUTER_API_KEY',
-      'GEMINI_API_KEY',
-    ])
-      if (process.env[key]) env[key] = process.env[key];
-    console.log(
-      'LIVE mode: prompts/source may leave this machine and provider use may incur charges. Profile:',
-      profile,
-    );
-    const child = spawn(
-      process.execPath,
-      [join(root, 'bin/ctg.mjs'), ...args],
-      { cwd: join(kit, 'projects', project), env, stdio: 'inherit' },
-    );
+    for (const key of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'OPENROUTER_API_KEY', 'GEMINI_API_KEY']) if (process.env[key]) env[key] = process.env[key];
+    console.log('LIVE mode: prompts/source may leave this machine and provider use may incur charges. Profile:', profile);
+    const child = spawn(process.execPath, [join(root, 'bin/ctg.mjs'), ...args], { cwd: join(kit, 'projects', project), env, stdio: 'inherit' });
     const [code, signal] = await once(child, 'exit');
     if (signal) throw Error(`Native CLI exited with ${signal}`);
     if (code !== 0) throw Error(`Native CLI exited with status ${code}`);
     return;
   }
-  if (stop || args.length)
-    throw Error('Extra CLI arguments and --stop require --live');
-  const runtimeKeys = [
-    'CTG_OWNED_OPENCODE_RUNTIME',
-    'CTG_TEST_RUNTIME_RELEASE_MANIFEST',
-    'CTG_OPENCODE_BIN',
-    'CTG_TEST_RUNTIME_SHA256',
-  ];
-  const previousEnvironment = Object.fromEntries(
-    runtimeKeys.map((key) => [key, process.env[key]]),
-  );
+  if (stop || args.length) throw Error('Extra CLI arguments and --stop require --live');
+  const runtimeKeys = ['CTG_OWNED_OPENCODE_RUNTIME', 'CTG_TEST_RUNTIME_RELEASE_MANIFEST', 'CTG_OPENCODE_BIN', 'CTG_TEST_RUNTIME_SHA256'];
+  const previousEnvironment = Object.fromEntries(runtimeKeys.map(key => [key, process.env[key]]));
   process.env.CTG_OWNED_OPENCODE_RUNTIME = ownedRoot;
   process.env.CTG_TEST_RUNTIME_RELEASE_MANIFEST = manifestPath;
   delete process.env.CTG_OPENCODE_BIN;
@@ -129,38 +86,22 @@ export async function runManualKit(
       env: { CTG_NODE_EXECUTABLE: process.execPath },
       respond(body, res) {
         const messages = body.messages ?? [];
-        const latest = [...messages]
-          .reverse()
-          .find((message) => message.role === 'user');
-        const text =
-          typeof latest?.content === 'string'
-            ? latest.content
-            : JSON.stringify(latest?.content ?? '');
+        const latest = [...messages].reverse().find(message => message.role === 'user');
+        const text = typeof latest?.content === 'string' ? latest.content : JSON.stringify(latest?.content ?? '');
         if (text.includes('CTG_MANUAL_INSPECT')) {
-          const recent = messages.slice(
-            messages.findLastIndex((message) => message.role === 'user'),
-          );
-          const calls = recent.flatMap((message) => message.tool_calls ?? []);
-          const shell = calls.find((call) => call.id === 'manual-inspection');
-          const output =
-            shell &&
-            recent.find(
-              (message) =>
-                message.role === 'tool' && message.tool_call_id === shell.id,
-            );
-          if (output)
-            return streamText(
-              res,
-              `CTG_MANUAL_INSPECTION_COMPLETE\n${String(output.content).slice(-4000)}`,
-            );
-          const planned = calls.some((call) => call.id === 'manual-plan');
+          const recent = messages.slice(messages.findLastIndex(message => message.role === 'user'));
+          const calls = recent.flatMap(message => message.tool_calls ?? []);
+          const shell = calls.find(call => call.id === 'manual-inspection');
+          const output = shell && recent.find(message => message.role === 'tool' && message.tool_call_id === shell.id);
+          if (output) return streamText(res, `CTG_MANUAL_INSPECTION_COMPLETE\n${String(output.content).slice(-4000)}`);
+          const planned = calls.some(call => call.id === 'manual-plan');
           const name = planned ? 'shell' : 'execute';
-          if (!(body.tools ?? []).some((tool) => tool.function?.name === name))
+          if (!(body.tools ?? []).some(tool => tool.function?.name === name))
             return streamText(
               res,
               `CTG_MANUAL_POLICY_REJECTED: ${name} is not admitted. ${recent
-                .filter((message) => message.role === 'tool')
-                .map((message) => String(message.content))
+                .filter(message => message.role === 'tool')
+                .map(message => String(message.content))
                 .join('\n')}`,
             );
           const input = planned
@@ -191,12 +132,7 @@ export async function runManualKit(
     });
     await cp(join(kit, 'projects', project), host.cwd, {
       recursive: true,
-      filter: (source) =>
-        !source
-          .split(/[\\/]/)
-          .some((part) =>
-            ['.git', '.harness', 'node_modules', '.env'].includes(part),
-          ),
+      filter: source => !source.split(/[\\/]/).some(part => ['.git', '.harness', 'node_modules', '.env'].includes(part)),
     });
     execFileSync('git', ['init', '-b', 'main'], {
       cwd: host.cwd,
@@ -231,50 +167,30 @@ export async function runManualKit(
       CTG_NODE_EXECUTABLE: process.execPath,
     };
     if (smoke) {
-      await host.client.session.prompt(
-        { sessionID: session.id, text: 'CTG_MANUAL_INSPECT' },
-        host.request(),
-      );
+      await host.client.session.prompt({ sessionID: session.id, text: 'CTG_MANUAL_INSPECT' }, host.request());
       const outcome = await host.outcome(session.id);
-      if (outcome !== 'succeeded')
-        throw Error(`Native inspection ended with ${outcome}`);
-      const messages = await host.client.session.context(
-        { sessionID: session.id },
-        host.request(),
-      );
+      if (outcome !== 'succeeded') throw Error(`Native inspection ended with ${outcome}`);
+      const messages = await host.client.session.context({ sessionID: session.id }, host.request());
       const rendered = JSON.stringify(messages);
-      if (
-        !rendered.includes('CTG_MANUAL_INSPECTION_COMPLETE') ||
-        !rendered.includes('CTG_MANUAL_BASELINE_EXIT=0')
-      )
-        throw Error(
-          'Native project inspection did not finish with a successful correlated baseline tool result',
-        );
+      if (!rendered.includes('CTG_MANUAL_INSPECTION_COMPLETE') || !rendered.includes('CTG_MANUAL_BASELINE_EXIT=0'))
+        throw Error('Native project inspection did not finish with a successful correlated baseline tool result');
       const report = {
         project,
         binarySha256: record.binarySha256,
-        scope:
-          'Scripted offline provider; actual native plugin, shell and generated-project baseline',
+        scope: 'Scripted offline provider; actual native plugin, shell and generated-project baseline',
         outcome,
         providerRequests: host.requests.length,
         completed: true,
       };
       await mkdir(join(kit, 'reports'), { recursive: true });
-      await writeFile(
-        join(kit, 'reports', `${project}-native-smoke.json`),
-        JSON.stringify(report, null, 2) + '\n',
-      );
+      await writeFile(join(kit, 'reports', `${project}-native-smoke.json`), JSON.stringify(report, null, 2) + '\n');
       console.log(JSON.stringify(report, null, 2));
       return report;
     }
     console.log(
       `OFFLINE UI: disposable ${project} copy; no provider keys forwarded. This is not an OS sandbox.\nProfile disappears on exit. Do not use this mode to judge model quality.\nUse CTG_MANUAL_INSPECT, /help, /clear, /autocompact off, /workflow.\nProject: ${host.cwd}`,
     );
-    child = spawn(
-      identity.binary,
-      ['--server', host.baseUrl, '--session', session.id],
-      { cwd: host.cwd, env, stdio: 'inherit' },
-    );
+    child = spawn(identity.binary, ['--server', host.baseUrl, '--session', session.id], { cwd: host.cwd, env, stdio: 'inherit' });
     const [code, signal] = await once(child, 'exit');
     if (signal) throw Error(`Native TUI exited with ${signal}`);
     if (code !== 0) throw Error(`Native TUI exited with status ${code}`);
@@ -283,21 +199,18 @@ export async function runManualKit(
       console.error(
         'Offline fixture diagnostics:',
         JSON.stringify({
-          providerErrors: host.providerErrors.map((error) => error.message),
+          providerErrors: host.providerErrors.map(error => error.message),
           requests: host.requests.length,
-          tools: host.requests
-            .at(-1)
-            ?.tools?.map((tool) => tool.function?.name),
+          tools: host.requests.at(-1)?.tools?.map(tool => tool.function?.name),
           lastToolResults: host.requests
             .at(-1)
-            ?.messages?.filter((message) => message.role === 'tool')
-            .map((message) => String(message.content).slice(-2500)),
+            ?.messages?.filter(message => message.role === 'tool')
+            .map(message => String(message.content).slice(-2500)),
         }),
       );
     throw error;
   } finally {
-    if (child && child.exitCode === null && child.signalCode === null)
-      child.kill('SIGTERM');
+    if (child && child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
     try {
       await host?.close();
     } finally {
@@ -309,15 +222,9 @@ export async function runManualKit(
   }
 }
 
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(resolve(process.argv[1])).href
-) {
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const [directory, project = 'tiny', ...options] = process.argv.slice(2);
-  if (!directory)
-    throw Error(
-      'Usage: node tools/native-manual.mjs <kit> [tiny|product|scale] [--smoke | --live [-- <ctg arguments>]]',
-    );
+  if (!directory) throw Error('Usage: node tools/native-manual.mjs <kit> [tiny|product|scale] [--smoke | --live [-- <ctg arguments>]]');
   const delimiter = options.indexOf('--');
   const flags = delimiter < 0 ? options : options.slice(0, delimiter);
   const manifestOptions = {};

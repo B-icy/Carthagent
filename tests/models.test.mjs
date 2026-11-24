@@ -29,15 +29,15 @@ test('providerForModel resolves the full id, then bare id, then prefix', () => {
 test('filterModelsByProvider scopes to a provider and matches a query', () => {
   assert.deepEqual(
     filterModelsByProvider(MODELS, 'deepseek', '').map(m => m.id),
-    ['deepseek-chat', 'deepseek-reasoner']
+    ['deepseek-chat', 'deepseek-reasoner'],
   );
   assert.deepEqual(
     filterModelsByProvider(MODELS, 'openrouter', 'llama').map(m => m.id),
-    ['meta/llama']
+    ['meta/llama'],
   );
   assert.deepEqual(
     filterModelsByProvider(MODELS, 'openrouter', 'DeepSeek 4.1 Flash').map(m => m.id),
-    ['deepseek/deepseek-v4.1-flash']
+    ['deepseek/deepseek-v4.1-flash'],
   );
   // no provider filter → all models
   assert.equal(filterModelsByProvider(MODELS, '', '').length, 6);

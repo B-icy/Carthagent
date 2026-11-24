@@ -33,13 +33,19 @@ const probes = [
   { command: '/ctg-help', expect: 'Carthagent commands', postSubmitMarker: 'search to filter' },
   { command: '/compact', expect: '/compact requires an open session.', secondEnter: true, dismissCompletion: true },
   {
-    command: '/theme carthage', expect: 'Theme “carthage” saved', postSubmitMarker: 'Carthagent reloads valid theme selections', expectedTheme: 'carthage', dismissCompletion: true,
+    command: '/theme carthage',
+    expect: 'Theme “carthage” saved',
+    postSubmitMarker: 'Carthagent reloads valid theme selections',
+    expectedTheme: 'carthage',
+    dismissCompletion: true,
   },
   { command: '/ctg-status', expect: `Carthagent ${selection.identity.version}`, initialTheme: 'carthage', color: '213,175,102' },
 ];
 
 for (const probe of probes) {
-  const currentSha256 = createHash('sha256').update(await readFile(binary)).digest('hex');
+  const currentSha256 = createHash('sha256')
+    .update(await readFile(binary))
+    .digest('hex');
   if (currentSha256 !== selection.binarySha256) throw new Error('Selected OpenCode binary changed after native runtime verification.');
   const args = nativePtySmokeArgs({ root, binary, plugin, selection, probe });
   const result = spawnSync('python3', args, { cwd: root, stdio: 'inherit', timeout: 90_000 });

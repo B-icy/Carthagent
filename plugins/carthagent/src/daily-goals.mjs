@@ -4,15 +4,25 @@
 // verification: they are deliberately simple and never block or alter a tool call.
 
 export const DAILY_GOAL_METRICS = Object.freeze(['lines', 'tests', 'reviews', 'commits', 'tasks', 'verified']);
-export const METRIC_UNITS = Object.freeze({ lines: ['line', 'lines'], tests: ['test run', 'test runs'], reviews: ['review', 'reviews'], commits: ['commit', 'commits'], tasks: ['task', 'tasks'], verified: ['verified task', 'verified tasks'] });
+export const METRIC_UNITS = Object.freeze({
+  lines: ['line', 'lines'],
+  tests: ['test run', 'test runs'],
+  reviews: ['review', 'reviews'],
+  commits: ['commit', 'commits'],
+  tasks: ['task', 'tasks'],
+  verified: ['verified task', 'verified tasks'],
+});
 const MAX_METRIC = 100000;
 const MAX_TEXT = 2_000_000;
 
 export const utcDay = (now = Date.now()) => new Date(now).toISOString().slice(0, 10);
 export const emptyMetrics = () => Object.fromEntries(DAILY_GOAL_METRICS.map(name => [name, 0]));
 
-const text = value => typeof value === 'string' && value.length <= MAX_TEXT ? value : '';
-const lines = value => { const t = text(value); return t ? t.replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n') : []; };
+const text = value => (typeof value === 'string' && value.length <= MAX_TEXT ? value : '');
+const lines = value => {
+  const t = text(value);
+  return t ? t.replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n') : [];
+};
 
 /** Lines added plus lines removed between two texts, by multiset difference (order-insensitive, cheap). */
 export function changedLines(before, after) {
@@ -21,7 +31,8 @@ export function changedLines(before, after) {
   let added = 0;
   for (const line of lines(after)) {
     const left = counts.get(line) ?? 0;
-    if (left > 0) counts.set(line, left - 1); else added++;
+    if (left > 0) counts.set(line, left - 1);
+    else added++;
   }
   let removed = 0;
   for (const left of counts.values()) removed += left;
@@ -38,14 +49,18 @@ export function patchLines(patch) {
   return count;
 }
 
-const TEST_COMMAND = /(^|[\s;&|(])((npm|pnpm|yarn|bun)( run)? test(:[\w:-]+)?\b|npx (vitest|jest|playwright test|mocha)\b|node( (-r|--import|--require|--loader|--env-file(-if-exists)?)(=| )\S+| --(?!test)[\w-]+(=\S+)?)* --test\b|(vitest|jest|mocha|pytest|phpunit|rspec)\b|(python3?|uv run|poetry run) -m (pytest|unittest)\b|uv run pytest\b|go test\b|cargo (test|nextest)\b|dotnet test\b|mvn( -\S+)* (test|verify)\b|gradlew? (test|check)\b|make (test|check)\b|swift test\b|deno test\b|mix test\b|bundle exec (rspec|rake test)\b)/;
+const TEST_COMMAND =
+  /(^|[\s;&|(])((npm|pnpm|yarn|bun)( run)? test(:[\w:-]+)?\b|npx (vitest|jest|playwright test|mocha)\b|node( (-r|--import|--require|--loader|--env-file(-if-exists)?)(=| )\S+| --(?!test)[\w-]+(=\S+)?)* --test\b|(vitest|jest|mocha|pytest|phpunit|rspec)\b|(python3?|uv run|poetry run) -m (pytest|unittest)\b|uv run pytest\b|go test\b|cargo (test|nextest)\b|dotnet test\b|mvn( -\S+)* (test|verify)\b|gradlew? (test|check)\b|make (test|check)\b|swift test\b|deno test\b|mix test\b|bundle exec (rspec|rake test)\b)/;
 const COMMIT_COMMAND = /(^|[\s;&|(])git( -C \S+)?( -c \S+)* commit\b/;
 
 export const isTestCommand = command => TEST_COMMAND.test(text(command));
 export const isCommitCommand = command => COMMIT_COMMAND.test(text(command)) && !/\s--dry-run\b/.test(text(command));
 
 const name = tool => String(tool ?? '').replace(/^carthagent[._]/, '');
-const field = (input, ...keys) => { for (const key of keys) if (typeof input?.[key] === 'string') return input[key]; return undefined; };
+const field = (input, ...keys) => {
+  for (const key of keys) if (typeof input?.[key] === 'string') return input[key];
+  return undefined;
+};
 
 /**
  * Metric increments for one finished tool call. `previous` is the file's text before a
@@ -56,7 +71,8 @@ export function toolGoalProgress({ tool, input, status, previous }) {
   const t = name(tool);
   const completed = status === 'completed';
   if (t === 'edit' && completed) return { lines: changedLines(field(input, 'oldString', 'old_string'), field(input, 'newString', 'new_string')) };
-  if (t === 'multiedit' && completed && Array.isArray(input?.edits)) return { lines: input.edits.reduce((sum, e) => sum + changedLines(field(e, 'oldString', 'old_string'), field(e, 'newString', 'new_string')), 0) };
+  if (t === 'multiedit' && completed && Array.isArray(input?.edits))
+    return { lines: input.edits.reduce((sum, e) => sum + changedLines(field(e, 'oldString', 'old_string'), field(e, 'newString', 'new_string')), 0) };
   if (t === 'write' && completed) return { lines: changedLines(previous ?? '', field(input, 'content')) };
   if ((t === 'apply_patch' || t === 'patch') && completed) return { lines: patchLines(field(input, 'patchText', 'patch', 'input')) };
   if (t === 'shell' || t === 'bash') {
@@ -102,7 +118,7 @@ export function goalProgressLabel(goal) {
 
 /** A fixed-width text progress bar. */
 export function goalBar(goal, width = 12) {
-  const filled = goal.completed ? width : Math.max(0, Math.min(width, Math.floor(width * goal.progress / goal.target)));
+  const filled = goal.completed ? width : Math.max(0, Math.min(width, Math.floor((width * goal.progress) / goal.target)));
   return '█'.repeat(filled) + '░'.repeat(width - filled);
 }
 

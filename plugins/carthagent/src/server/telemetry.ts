@@ -30,7 +30,9 @@ export function createSessionIdentity({ id = randomUUID, secret = randomUUID() }
       requests.set(key, next);
       return createHash('sha256').update(`${secret}\0${key}\0${kind}\0${next}`).digest('hex');
     },
-    turn(sessionID: string) { return requests.get(String(sessionID || '')) || 0; },
+    turn(sessionID: string) {
+      return requests.get(String(sessionID || '')) || 0;
+    },
     forget(sessionID: string) {
       const key = String(sessionID || '');
       threads.delete(key);
@@ -41,9 +43,7 @@ export function createSessionIdentity({ id = randomUUID, secret = randomUUID() }
 
 /** Stable fallback request key derived from session, kind, and serialized
  * request. Native managed calls use the lifecycle-scoped identity below. */
-export function managedRequestIdentity({ sessionID, kind, body, secret = '' }: {
-  sessionID: string; kind: string; body: string; secret?: string;
-}) {
+export function managedRequestIdentity({ sessionID, kind, body, secret = '' }: { sessionID: string; kind: string; body: string; secret?: string }) {
   return createHash('sha256').update(`${secret}\0${sessionID}\0${kind}\0${body}`).digest('hex');
 }
 
@@ -70,9 +70,14 @@ export function shipTelemetryHeaders({
   runMode: sessionMode,
   version = packageVersion(),
 }: {
-  sessionID: string; kind: string; body: string; env?: NodeJS.ProcessEnv;
-  agentDir?: string; identity?: ReturnType<typeof createSessionIdentity>;
-  requestSecret?: string; version?: string;
+  sessionID: string;
+  kind: string;
+  body: string;
+  env?: NodeJS.ProcessEnv;
+  agentDir?: string;
+  identity?: ReturnType<typeof createSessionIdentity>;
+  requestSecret?: string;
+  version?: string;
   requestID?: string;
   turn?: number;
   runMode?: string;
@@ -83,8 +88,7 @@ export function shipTelemetryHeaders({
     'x-carthagent-os': process.platform,
   };
   const generatedRequestID = requestID || identity.request(sessionID, kind);
-  headers['x-carthagent-thread-id'] = UUID.test(String(sessionID))
-    ? String(sessionID).toLowerCase() : identity.thread(sessionID);
+  headers['x-carthagent-thread-id'] = UUID.test(String(sessionID)) ? String(sessionID).toLowerCase() : identity.thread(sessionID);
   headers['x-carthagent-turn'] = String(Math.max(0, Math.trunc(turn ?? identity.turn(sessionID))));
   const runMode = String(sessionMode || env.CARTHAGENT_RUN_MODE || '').trim();
   if (RUN_MODES.has(runMode)) headers['x-carthagent-run-mode'] = runMode;
@@ -98,7 +102,14 @@ export function isManagedShipCredential(credential: Credential.Value | undefined
   if (parts.length !== 3) return false;
   try {
     const claims = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
-    return typeof claims.sub === 'string' && typeof claims.sid === 'string'
-      && String(claims.scope || '').split(' ').includes('gateway:invoke');
-  } catch { return false; }
+    return (
+      typeof claims.sub === 'string' &&
+      typeof claims.sid === 'string' &&
+      String(claims.scope || '')
+        .split(' ')
+        .includes('gateway:invoke')
+    );
+  } catch {
+    return false;
+  }
 }

@@ -1,0 +1,8 @@
+{
+  "suiteSeconds": 480,
+  "testSeconds": 30,
+  "tests": {
+    "tests/opencode-runtime.test.mjs > owned runtime upgrades restart the authenticated service and preserve the profile": 45,
+    "tests/native-ship-plan.test.mjs > the runtime plan graph parser typechecks against the pinned native client API": 45
+  }
+}

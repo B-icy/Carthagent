@@ -19,9 +19,13 @@ test('atomicWrite cleanup matches only exact basename/PID/UUID staging files and
   await writeFile(staged, Buffer.from([0xff, 0x00, 0x80]));
   await symlink(target, link);
   const kept = [
-    `${file}.0.${UUID}.tmp`, `${file}.01.${UUID}.tmp`, `${file}.-1.${UUID}.tmp`,
-    `${file}.123.not-uuid.tmp`, `${file}.123.${UUID}.tmp.backup`,
-    `${file}.backup.123.${UUID}.tmp`, join(root, `other.json.123.${UUID}.tmp`),
+    `${file}.0.${UUID}.tmp`,
+    `${file}.01.${UUID}.tmp`,
+    `${file}.-1.${UUID}.tmp`,
+    `${file}.123.not-uuid.tmp`,
+    `${file}.123.${UUID}.tmp.backup`,
+    `${file}.backup.123.${UUID}.tmp`,
+    join(root, `other.json.123.${UUID}.tmp`),
   ];
   for (const path of kept) await writeFile(path, 'unrelated remains');
   const directory = `${file}.456.${UUID}.tmp`;

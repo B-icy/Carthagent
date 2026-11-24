@@ -4,7 +4,14 @@ import type { ScrollBoxRenderable } from "@opentui/core";
 import { usePlugin } from "@opencode/plugin/tui";
 import { pullRequestClient, rpcEventOptions, workspaceClient, type PullRequestRecord, type WorkspaceDelivery, type WorkspaceSnapshot } from "./client.js";
 import { createPointerActions } from "./pointer-action.js";
-import { createLatestRequestGate, independentReviewText, onWorkspaceUpdated, orderedWorkflowNodes, renderDeliveryReadiness, workspaceReturnRoute } from "./workspace-live.js";
+import {
+  createLatestRequestGate,
+  independentReviewText,
+  onWorkspaceUpdated,
+  orderedWorkflowNodes,
+  renderDeliveryReadiness,
+  workspaceReturnRoute,
+} from "./workspace-live.js";
 
 function sessionAttention(context: ReturnType<typeof usePlugin>, sessionID: string) {
   return (context.data.session.permission.list(sessionID)?.length ?? 0) + (context.data.session.form.list(sessionID)?.length ?? 0);
@@ -25,9 +32,11 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
   const [pullRequests, setPullRequests] = createSignal<Record<string, PullRequestRecord[]>>({});
   const base = () => context.keymap.mode.current() === "base";
   const back = () => context.ui.router.navigate(workspaceReturnRoute(props.sessionID ?? props.returnSessionID));
+  // prettier-ignore
   const escape = () => { if (filterFocused()) { setFilterFocused(false); return; } back(); };
   const pointer = createPointerActions(base);
   let content: ScrollBoxRenderable | undefined;
+  // prettier-ignore
   context.keymap.layer(() => ({
     priority: 30,
     commands: [
@@ -41,14 +50,25 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
   const evidenceRequests = createLatestRequestGate();
   const currentSessionID = () => {
     const currentRoute = context.ui.router.current();
-    return props.sessionID ?? (currentRoute.type === "session" ? currentRoute.sessionID : currentRoute.type === "plugin" && currentRoute.name === "carthagent" && typeof currentRoute.data?.sessionID === "string" ? currentRoute.data.sessionID : undefined);
+    return (
+      props.sessionID ??
+      (currentRoute.type === "session"
+        ? currentRoute.sessionID
+        : currentRoute.type === "plugin" && currentRoute.name === "carthagent" && typeof currentRoute.data?.sessionID === "string"
+          ? currentRoute.data.sessionID
+          : undefined)
+    );
   };
-  const sessionLocation = () => currentSessionID() ? context.data.session.get(currentSessionID()!)?.location : undefined;
+  const sessionLocation = () => (currentSessionID() ? context.data.session.get(currentSessionID()!)?.location : undefined);
   const api = workspaceClient(context, sessionLocation);
   const currentLocation = () => sessionLocation() ?? context.location ?? context.data.location.default();
   const activeSession = () => {
     const activeRoute = context.ui.router.current();
-    return activeRoute.type === "plugin" ? activeRoute.data?.sessionID ?? props.sessionID : activeRoute.type === "session" ? activeRoute.sessionID : props.sessionID;
+    return activeRoute.type === "plugin"
+      ? (activeRoute.data?.sessionID ?? props.sessionID)
+      : activeRoute.type === "session"
+        ? activeRoute.sessionID
+        : props.sessionID;
   };
   const localSessions = () => inventorySessions().filter((session) => !session.parentID);
   const syncNativeSessions = async (isCurrent: () => boolean, signal: AbortSignal) => {
@@ -78,17 +98,35 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
     const known = new Set(snapshotSessions.map((session) => session.id));
     const projectIDs = new Set(snapshot()?.projects.map((project) => project.id) ?? []);
     const projectDirectories = new Set(snapshot()?.projects.map((project) => project.directory) ?? []);
-    const nativeSessions = localSessions().filter((session) => !known.has(session.id) &&
-      (projectIDs.has(session.projectID) || projectDirectories.has(session.location.directory)));
+    const nativeSessions = localSessions().filter(
+      (session) => !known.has(session.id) && (projectIDs.has(session.projectID) || projectDirectories.has(session.location.directory)),
+    );
     return [
-      ...snapshotSessions.map((session): WorkspaceSession => ({ id: session.id, title: session.title, directory: session.directory, status: session.status, projectID: session.projectID, attention: sessionAttention(context, session.id) })),
-      ...nativeSessions.map((session) => ({ id: session.id, title: session.title ?? session.id, directory: session.location.directory, status: activeSessions()[session.id]?.type === "running" ? "running" : "idle", projectID: session.projectID, attention: sessionAttention(context, session.id) })),
+      ...snapshotSessions.map((session): WorkspaceSession => ({
+        id: session.id,
+        title: session.title,
+        directory: session.directory,
+        status: session.status,
+        projectID: session.projectID,
+        attention: sessionAttention(context, session.id),
+      })),
+      ...nativeSessions.map((session) => ({
+        id: session.id,
+        title: session.title ?? session.id,
+        directory: session.location.directory,
+        status: activeSessions()[session.id]?.type === "running" ? "running" : "idle",
+        projectID: session.projectID,
+        attention: sessionAttention(context, session.id),
+      })),
     ].filter((session) => !query() || `${session.title} ${session.id} ${session.directory}`.toLowerCase().includes(query().toLowerCase()));
   };
 
   const refresh = async (signal?: AbortSignal) => {
     const request = snapshotRequests.begin();
-    if (!api) { if (request.isCurrent()) setError("Workspace service is not connected. Start the CTG-local workspace server to browse tasks and worktrees."); return; }
+    if (!api) {
+      if (request.isCurrent()) setError("Workspace service is not connected. Start the CTG-local workspace server to browse tasks and worktrees.");
+      return;
+    }
     const requestSignal = signal ? AbortSignal.any([signal, request.signal]) : request.signal;
     try {
       const result = await api.snapshot(undefined, requestSignal);
@@ -115,18 +153,26 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
       stopRpc?.();
       if (!api) return;
       rpcAbort = new AbortController();
-      stopRpc = onWorkspaceUpdated(api.events, () => currentLocation().directory, () => {
-        snapshotRequests.invalidate();
-        evidenceRequests.invalidate();
-        void refresh();
-      }, rpcEventOptions(context, rpcAbort.signal));
+      stopRpc = onWorkspaceUpdated(
+        api.events,
+        () => currentLocation().directory,
+        () => {
+          snapshotRequests.invalidate();
+          evidenceRequests.invalidate();
+          void refresh();
+        },
+        rpcEventOptions(context, rpcAbort.signal),
+      );
     };
     const queueRehydrate = (() => {
       let queued = false;
       return () => {
         if (queued) return;
         queued = true;
-        queueMicrotask(() => { queued = false; void rehydrate(); });
+        queueMicrotask(() => {
+          queued = false;
+          void rehydrate();
+        });
       };
     })();
     const rehydrate = async () => {
@@ -138,16 +184,16 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
       nativeAbort?.abort();
       nativeAbort = rehydrateAbort;
       const isCurrent = () => currentGeneration === generation && !rehydrateAbort?.signal.aborted;
-      const [projects, active] = await Promise.allSettled([
-        context.data.project.sync(),
-        context.client.session.active({ signal: rehydrateAbort.signal }),
-      ]);
+      const [projects, active] = await Promise.allSettled([context.data.project.sync(), context.client.session.active({ signal: rehydrateAbort.signal })]);
       if (!isCurrent()) return;
       if (projects.status === "rejected") setError(String(projects.reason));
       if (active.status === "fulfilled") setActiveSessions(active.value);
       else setError(String(active.reason));
-      try { await syncNativeSessions(isCurrent, nativeAbort.signal); }
-      catch (cause) { if (isCurrent()) setError(String(cause)); }
+      try {
+        await syncNativeSessions(isCurrent, nativeAbort.signal);
+      } catch (cause) {
+        if (isCurrent()) setError(String(cause));
+      }
       if (!isCurrent()) return;
       await refresh(rehydrateAbort.signal);
       if (!isCurrent()) return;
@@ -172,14 +218,37 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
       return true;
     };
     const invalidateFromHostEvent = (details: unknown) => {
-      const event = details as { type: string; data?: { sessionID?: string; form?: { sessionID?: string; info?: { sessionID?: string } } }; location?: { directory: string } };
+      const event = details as {
+        type: string;
+        data?: { sessionID?: string; form?: { sessionID?: string; info?: { sessionID?: string } } };
+        location?: { directory: string };
+      };
       const sessionID = event.data?.sessionID ?? event.data?.form?.sessionID ?? event.data?.form?.info?.sessionID;
       if (sessionID) {
         context.data.session.invalidate(sessionID);
         context.data.session.permission.invalidate(sessionID);
         context.data.session.form.invalidate(sessionID, event.location ?? currentLocation());
       }
-      if (["session.created", "session.deleted", "session.updated", "session.status", "session.idle", "session.execution.started", "session.execution.succeeded", "session.execution.failed", "session.execution.interrupted", "permission.asked", "permission.replied", "form.created", "form.updated", "form.deleted", "form.replied", "form.cancelled"].includes(event.type)) {
+      if (
+        [
+          "session.created",
+          "session.deleted",
+          "session.updated",
+          "session.status",
+          "session.idle",
+          "session.execution.started",
+          "session.execution.succeeded",
+          "session.execution.failed",
+          "session.execution.interrupted",
+          "permission.asked",
+          "permission.replied",
+          "form.created",
+          "form.updated",
+          "form.deleted",
+          "form.replied",
+          "form.cancelled",
+        ].includes(event.type)
+      ) {
         queueRehydrate();
       }
     };
@@ -203,10 +272,19 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
         } else invalidateFromHostEvent(details);
       }
     });
-    onCleanup(() => { generation++; snapshotRequests.invalidate(); evidenceRequests.invalidate(); rehydrateAbort?.abort(); nativeAbort?.abort(); rpcAbort?.abort(); stopRpc?.(); stopEvents(); });
+    onCleanup(() => {
+      generation++;
+      snapshotRequests.invalidate();
+      evidenceRequests.invalidate();
+      rehydrateAbort?.abort();
+      nativeAbort?.abort();
+      rpcAbort?.abort();
+      stopRpc?.();
+      stopEvents();
+    });
   });
-  const filteredProjects = () => (snapshot()?.projects ?? []).filter((project) =>
-    `${project.name ?? ""} ${project.directory}`.toLowerCase().includes(query().toLowerCase()));
+  const filteredProjects = () =>
+    (snapshot()?.projects ?? []).filter((project) => `${project.name ?? ""} ${project.directory}`.toLowerCase().includes(query().toLowerCase()));
   const navigationOptions = () => {
     const state = snapshot();
     if (!state) return [];
@@ -215,9 +293,21 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
     const tasks = state.tasks.filter((task) => projectIDs.has(task.projectID));
     const sessions = workspaceSessions();
     return [
-      ...projects.map((project) => ({ name: `Project · ${project.name ?? project.directory}`, description: project.directory, value: { type: "project", id: project.id } })),
-      ...tasks.map((task) => ({ name: `Task · ${task.title} [${task.status}]`, description: task.directory ?? task.branch ?? task.id, value: { type: "task", id: task.id } })),
-      ...sessions.map((session) => ({ name: `Session · ${session.title}${session.attention ? ` [${session.attention} pending]` : ` [${session.status}]`}`, description: session.directory, value: { type: "session", id: session.id } })),
+      ...projects.map((project) => ({
+        name: `Project · ${project.name ?? project.directory}`,
+        description: project.directory,
+        value: { type: "project", id: project.id },
+      })),
+      ...tasks.map((task) => ({
+        name: `Task · ${task.title} [${task.status}]`,
+        description: task.directory ?? task.branch ?? task.id,
+        value: { type: "task", id: task.id },
+      })),
+      ...sessions.map((session) => ({
+        name: `Session · ${session.title}${session.attention ? ` [${session.attention} pending]` : ` [${session.status}]`}`,
+        description: session.directory,
+        value: { type: "session", id: session.id },
+      })),
     ];
   };
   const selectNavigation = (option: { value?: { type: string; id: string } } | null) => {
@@ -234,56 +324,85 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
     }
   };
   const openSession = async (sessionID: string) => {
-    if (!api) { context.ui.router.navigate({ type: "session", sessionID }); return; }
-    try { await api.open({ sessionID }); context.ui.router.navigate({ type: "session", sessionID }); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    if (!api) {
+      context.ui.router.navigate({ type: "session", sessionID });
+      return;
+    }
+    try {
+      await api.open({ sessionID });
+      context.ui.router.navigate({ type: "session", sessionID });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
   };
   const worktree = async (projectID: string) => {
     const name = await context.ui.dialog.prompt({ title: "Create CTG worktree", placeholder: "feature-name" });
     if (!name || !api) return;
-    try { const result = await api.createWorktree({ projectID, name }); context.ui.toast.show({ message: `Worktree created: ${context.ui.format.path(result.directory)}`, variant: "success" }); await refresh(); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    try {
+      const result = await api.createWorktree({ projectID, name });
+      context.ui.toast.show({ message: `Worktree created: ${context.ui.format.path(result.directory)}`, variant: "success" });
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
   };
 
   const evidenceSessions = () => workspaceSessions().filter((session) => !activeSession() || session.id === activeSession());
   const readiness = () => renderDeliveryReadiness(deliveryEvidence());
-  const readinessColor = () => readiness().tone === "success" ? context.theme.text.feedback.success.base : readiness().tone === "warning" ? context.theme.text.feedback.warning.base : context.theme.text.muted;
+  const readinessColor = () =>
+    readiness().tone === "success"
+      ? context.theme.text.feedback.success.base
+      : readiness().tone === "warning"
+        ? context.theme.text.feedback.warning.base
+        : context.theme.text.muted;
   const taskForSession = (sessionID: string) => snapshot()?.sessions.find((session) => session.id === sessionID)?.taskID;
   const loadPullRequests = async (sessionID: string) => {
     const taskID = taskForSession(sessionID);
-    if (!taskID) { setError("This session is not attached to a CTG task."); return; }
+    if (!taskID) {
+      setError("This session is not attached to a CTG task.");
+      return;
+    }
     try {
       const result = await pullRequestClient(context, sessionLocation).list({ sessionID, taskID });
       setPullRequests((current) => ({ ...current, [taskID]: result.pullRequests }));
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
   };
   const associatePullRequest = async (sessionID: string) => {
     const taskID = taskForSession(sessionID);
-    if (!taskID) { setError("Associate a pull request from a session attached to a CTG task."); return; }
+    if (!taskID) {
+      setError("Associate a pull request from a session attached to a CTG task.");
+      return;
+    }
     const answer = await context.ui.dialog.prompt({ title: "Associate GitHub pull request", placeholder: "Pull request number" });
     if (!answer) return;
     const number = Number(answer.trim());
-    if (!Number.isSafeInteger(number) || number < 1) { setError("Enter a positive pull request number."); return; }
+    if (!Number.isSafeInteger(number) || number < 1) {
+      setError("Enter a positive pull request number.");
+      return;
+    }
     try {
       const result = await pullRequestClient(context, sessionLocation).associate({ sessionID, taskID, number });
       setPullRequests((current) => ({ ...current, [taskID]: [...(current[taskID] ?? []).filter((item) => item.number !== number), result.pullRequest] }));
       setError("");
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
   };
   const refreshPullRequest = async (sessionID: string, taskID: string, number: number) => {
     try {
       const result = await pullRequestClient(context, sessionLocation).refresh({ sessionID, taskID, number });
-      setPullRequests((current) => ({ ...current, [taskID]: (current[taskID] ?? []).map((item) => item.number === number ? result.pullRequest : item) }));
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+      setPullRequests((current) => ({ ...current, [taskID]: (current[taskID] ?? []).map((item) => (item.number === number ? result.pullRequest : item)) }));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
   };
   const refreshEvidence = async (sessionID: string) => {
     if (!api) return;
     const request = evidenceRequests.begin();
     const signal = request.signal;
-    const [delivery, review] = await Promise.allSettled([
-      api.delivery({ sessionID }, signal),
-      api.review({ sessionID }, signal),
-    ]);
+    const [delivery, review] = await Promise.allSettled([api.delivery({ sessionID }, signal), api.review({ sessionID }, signal)]);
     if (!request.isCurrent() || activeSession() !== sessionID) return;
     setDeliveryEvidence(delivery.status === "fulfilled" ? delivery.value : { status: "invalid", error: String(delivery.reason) });
     setReviewEvidence(review.status === "fulfilled" ? review.value : { error: String(review.reason) });
@@ -291,7 +410,9 @@ export function WorkspacePage(props: { view: string; refreshKey?: string; sessio
   onMount(() => {
     if (["evidence", "workflow", "architecture"].includes(props.view) && activeSession()) void refreshEvidence(activeSession()!);
   });
-  const sectionColor = (tone: "returned" | "truncated" | "unknown") => tone === "truncated" ? context.theme.text.feedback.warning.base : context.theme.text.muted;
+  const sectionColor = (tone: "returned" | "truncated" | "unknown") =>
+    tone === "truncated" ? context.theme.text.feedback.warning.base : context.theme.text.muted;
+  // prettier-ignore
   return <box flexDirection="column" flexGrow={1} minHeight={0} overflow="hidden" padding={1} onMouseDown={pointer.press} onMouseUp={pointer.release}>
     <box flexDirection="row" flexShrink={0} gap={2}>
       <text flexShrink={0} fg={context.theme.text.action.primary.base} onMouseUp={pointer.action(back)}>← Back</text>

@@ -18,7 +18,7 @@ const producerReleaseAssets = [
   'opencode-windows-x64.tar.gz',
   'runtime-release.json',
   'runtime-release-SHA256SUMS.txt',
-].map((name) => ({ name }));
+].map(name => ({ name }));
 const release = { id: 77, tag_name: tag, draft: true, assets: producerReleaseAssets };
 
 function mockRun({ releaseValue = release, remoteSha = sha, checkoutSha = sha, annotated = false } = {}) {
@@ -27,9 +27,12 @@ function mockRun({ releaseValue = release, remoteSha = sha, checkoutSha = sha, a
     calls.push([command, args]);
     if (command === 'git' && args[0] === 'rev-parse') return `${checkoutSha}\n`;
     if (command !== 'gh') throw new Error(`Unexpected fake command ${command} ${args.join(' ')}`);
-    if (args[0] === 'api' && args[1] === `repos/B-icy/Carthagent/git/ref/tags/${tag}`) return JSON.stringify({ object: { type: annotated ? 'tag' : 'commit', sha: annotated ? 'c'.repeat(40) : remoteSha } });
-    if (args[0] === 'api' && args[1] === `repos/B-icy/Carthagent/git/tags/${'c'.repeat(40)}`) return JSON.stringify({ object: { type: 'commit', sha: remoteSha } });
-    if (args[0] === 'api' && args[1] === '--paginate' && args[2] === '--slurp' && args[3] === 'repos/B-icy/Carthagent/releases?per_page=100') return JSON.stringify([[releaseValue]]);
+    if (args[0] === 'api' && args[1] === `repos/B-icy/Carthagent/git/ref/tags/${tag}`)
+      return JSON.stringify({ object: { type: annotated ? 'tag' : 'commit', sha: annotated ? 'c'.repeat(40) : remoteSha } });
+    if (args[0] === 'api' && args[1] === `repos/B-icy/Carthagent/git/tags/${'c'.repeat(40)}`)
+      return JSON.stringify({ object: { type: 'commit', sha: remoteSha } });
+    if (args[0] === 'api' && args[1] === '--paginate' && args[2] === '--slurp' && args[3] === 'repos/B-icy/Carthagent/releases?per_page=100')
+      return JSON.stringify([[releaseValue]]);
     throw new Error(`Unexpected fake GitHub API call ${args.join(' ')}`);
   };
   return { run, calls };
@@ -46,7 +49,10 @@ test('resolves an annotated tag object to the exact commit before acceptance', a
   const { run, calls } = mockRun({ annotated: true });
   const result = await verifyDraftRuntimeGate({ phase: 'before', releaseTag: tag, repo: 'B-icy/Carthagent', cwd: '/fixture', run });
   assert.equal(result.sha, sha);
-  assert.equal(calls.some(([, args]) => args?.[1] === `repos/B-icy/Carthagent/git/tags/${'c'.repeat(40)}`), true);
+  assert.equal(
+    calls.some(([, args]) => args?.[1] === `repos/B-icy/Carthagent/git/tags/${'c'.repeat(40)}`),
+    true,
+  );
 });
 
 test('rejects a malformed tag before invoking git or GitHub', async () => {
@@ -58,13 +64,19 @@ test('rejects a malformed tag before invoking git or GitHub', async () => {
 test('rejects a stale/moved tag before installed acceptance', async () => {
   const { run, calls } = mockRun({ remoteSha: 'b'.repeat(40) });
   await assert.rejects(verifyDraftRuntimeGate({ phase: 'before', releaseTag: tag, repo: 'B-icy/Carthagent', cwd: '/fixture', run }), /but this checkout is/);
-  assert.equal(calls.some(([command]) => command === 'git'), true);
+  assert.equal(
+    calls.some(([command]) => command === 'git'),
+    true,
+  );
 });
 
 test('rejects a published release before installed acceptance', async () => {
   const { run, calls } = mockRun({ releaseValue: { ...release, draft: false } });
   await assert.rejects(verifyDraftRuntimeGate({ phase: 'before', releaseTag: tag, repo: 'B-icy/Carthagent', run }), /must remain a draft/);
-  assert.equal(calls.some(([, args]) => args?.[1]?.includes('/git/ref/')), false);
+  assert.equal(
+    calls.some(([, args]) => args?.[1]?.includes('/git/ref/')),
+    false,
+  );
 });
 
 test('requires the exact seven-asset producer contract: five archives, manifest, and combined checksums', async () => {
@@ -79,8 +91,11 @@ test('requires the exact seven-asset producer contract: five archives, manifest,
   ];
   assert.deepEqual(REQUIRED_RELEASE_ASSETS, expectedAssets);
   const result = await verifyDraftRuntimeGate({
-    phase: 'before', releaseTag: tag, repo: 'B-icy/Carthagent', cwd: '/fixture',
-    run: mockRun({ releaseValue: { ...release, assets: expectedAssets.map((name) => ({ name })) } }).run,
+    phase: 'before',
+    releaseTag: tag,
+    repo: 'B-icy/Carthagent',
+    cwd: '/fixture',
+    run: mockRun({ releaseValue: { ...release, assets: expectedAssets.map(name => ({ name })) } }).run,
   });
   assert.deepEqual(result, { releaseId: 77, sha, version });
 
@@ -88,14 +103,18 @@ test('requires the exact seven-asset producer contract: five archives, manifest,
     ['missing manifest', release.assets.filter(({ name }) => name !== 'runtime-release.json'), /exactly one runtime-release\.json asset/],
     ['duplicate platform archive', [...release.assets, { name: REQUIRED_RELEASE_ASSETS[0] }], /exactly one opencode-linux-x64\.tar\.gz asset/],
     ['unexpected extra asset', [...release.assets, { name: 'unreviewed-runtime.tar.gz' }], /unexpected assets: unreviewed-runtime\.tar\.gz/],
-    ['renamed checksum asset', release.assets.map((asset) => asset.name === 'runtime-release-SHA256SUMS.txt' ? { name: 'SHA256SUMS.txt' } : asset), /exactly one runtime-release-SHA256SUMS\.txt asset/],
+    [
+      'renamed checksum asset',
+      release.assets.map(asset => (asset.name === 'runtime-release-SHA256SUMS.txt' ? { name: 'SHA256SUMS.txt' } : asset)),
+      /exactly one runtime-release-SHA256SUMS\.txt asset/,
+    ],
   ]) {
     const { run } = mockRun({ releaseValue: { ...release, assets } });
     await assert.rejects(verifyDraftRuntimeGate({ phase: 'before', releaseTag: tag, repo: 'B-icy/Carthagent', run }), expected, label);
   }
 });
 
-test('the workflow precheck command fails before acceptance for malformed tag, moved tag, or published release', async (t) => {
+test('the workflow precheck command fails before acceptance for malformed tag, moved tag, or published release', async t => {
   const temp = await mkdtemp(path.join(tmpdir(), 'ctg-draft-gate-fake-gh-'));
   t.after(() => rm(temp, { recursive: true, force: true }));
   const requestsLog = path.join(temp, 'gh-requests');
@@ -105,7 +124,9 @@ test('the workflow precheck command fails before acceptance for malformed tag, m
   const currentSha = spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
   await writeFile(targetFile, currentSha);
   await writeFile(releaseFile, JSON.stringify(release));
-  await writeFile(preloadFile, `
+  await writeFile(
+    preloadFile,
+    `
 import fs from 'node:fs';
 import childProcess from 'node:child_process';
 import { syncBuiltinESMExports } from 'node:module';
@@ -124,17 +145,23 @@ childProcess.spawnSync = function(command, args, options) {
   return { status: 0, stdout, stderr: '', error: undefined };
 };
 syncBuiltinESMExports();
-`);
+`,
+  );
   const tool = fileURLToPath(new URL('../tools/verify-draft-runtime-gate.mjs', import.meta.url));
-  const invoke = (tagValue) => spawnSync(process.execPath, [tool, 'before', tagValue], {
-    cwd: path.resolve('.'), encoding: 'utf8',
-    env: {
-      ...process.env,
-      NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(preloadFile).href}`.trim(),
-      GITHUB_REPOSITORY: 'B-icy/Carthagent', GITHUB_OUTPUT: path.join(temp, 'github-output'),
-      FAKE_GH_LOG: requestsLog, FAKE_RELEASE_JSON: releaseFile, FAKE_TARGET_SHA: targetFile,
-    },
-  });
+  const invoke = tagValue =>
+    spawnSync(process.execPath, [tool, 'before', tagValue], {
+      cwd: path.resolve('.'),
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(preloadFile).href}`.trim(),
+        GITHUB_REPOSITORY: 'B-icy/Carthagent',
+        GITHUB_OUTPUT: path.join(temp, 'github-output'),
+        FAKE_GH_LOG: requestsLog,
+        FAKE_RELEASE_JSON: releaseFile,
+        FAKE_TARGET_SHA: targetFile,
+      },
+    });
 
   const malformed = invoke('not-a-version');
   assert.notEqual(malformed.status, 0);
@@ -152,10 +179,14 @@ syncBuiltinESMExports();
   assert.match(published.stderr, /must remain a draft/);
 });
 
-test('trusted inline bootstrap accepts a main tag and rejects non-main dispatch and a foreign tag', async (t) => {
+test('trusted inline bootstrap accepts a main tag and rejects non-main dispatch and a foreign tag', async t => {
   const workflow = (await readFile(new URL('../.github/workflows/accept-draft-release.yml', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
-  const bootstrap = workflow.match(/- name: Require main dispatch and a release tag descended from origin\/main[\s\S]*?\n        run: \|\n((?:          .*\n)+)/)?.[1];
-  const postcheck = workflow.match(/- name: Reverify release tag ancestry against approved main after acceptance[\s\S]*?\n        run: \|\n((?:          .*\n?)+?)(?=\n      - |\n\s*$)/)?.[1];
+  const bootstrap = workflow.match(
+    /- name: Require main dispatch and a release tag descended from origin\/main[\s\S]*?\n        run: \|\n((?:          .*\n)+)/,
+  )?.[1];
+  const postcheck = workflow.match(
+    /- name: Reverify release tag ancestry against approved main after acceptance[\s\S]*?\n        run: \|\n((?:          .*\n?)+?)(?=\n      - |\n\s*$)/,
+  )?.[1];
   assert.ok(bootstrap, 'trusted ancestry bootstrap block must be extractable');
   assert.ok(postcheck, 'post-acceptance trusted ancestry block must be extractable');
 
@@ -180,21 +211,23 @@ test('trusted inline bootstrap accepts a main tag and rejects non-main dispatch 
   git(source, 'remote', 'add', 'origin', bare);
   git(source, 'push', 'origin', 'main', '--tags');
 
-  const bashPath = (value) => {
+  const bashPath = value => {
     if (process.platform !== 'win32') return value;
     return execFileSync('cygpath', ['-u', value], { encoding: 'utf8' }).trim();
   };
-  const invoke = (script, ref, expectedSha = '') => spawnSync('bash', ['-euo', 'pipefail', '-c', script], {
-    cwd: source, encoding: 'utf8',
-    env: {
-      ...process.env,
-      GITHUB_REF: ref,
-      GITHUB_OUTPUT: bashPath(output),
-      RELEASE_TAG: fixtureTag,
-      TRUSTED_REPOSITORY_URL: bashPath(bare),
-      EXPECTED_SHA: expectedSha,
-    },
-  });
+  const invoke = (script, ref, expectedSha = '') =>
+    spawnSync('bash', ['-euo', 'pipefail', '-c', script], {
+      cwd: source,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GITHUB_REF: ref,
+        GITHUB_OUTPUT: bashPath(output),
+        RELEASE_TAG: fixtureTag,
+        TRUSTED_REPOSITORY_URL: bashPath(bare),
+        EXPECTED_SHA: expectedSha,
+      },
+    });
 
   const accepted = invoke(bootstrap, 'refs/heads/main');
   assert.equal(accepted.status, 0, accepted.stderr);
@@ -218,22 +251,76 @@ test('trusted inline bootstrap accepts a main tag and rejects non-main dispatch 
 
 test('post-check requires the same release ID and the pre-acceptance tested SHA', async () => {
   const { run: goodRun } = mockRun();
-  assert.deepEqual(await verifyDraftRuntimeGate({ phase: 'after', releaseTag: tag, expectedSha: sha, expectedReleaseId: 77, repo: 'B-icy/Carthagent', cwd: '/fixture', run: goodRun }), {
-    releaseId: 77, sha, version,
-  });
+  assert.deepEqual(
+    await verifyDraftRuntimeGate({
+      phase: 'after',
+      releaseTag: tag,
+      expectedSha: sha,
+      expectedReleaseId: 77,
+      repo: 'B-icy/Carthagent',
+      cwd: '/fixture',
+      run: goodRun,
+    }),
+    {
+      releaseId: 77,
+      sha,
+      version,
+    },
+  );
   const { run: movedRun } = mockRun({ remoteSha: 'b'.repeat(40) });
-  await assert.rejects(verifyDraftRuntimeGate({ phase: 'after', releaseTag: tag, expectedSha: sha, expectedReleaseId: 77, repo: 'B-icy/Carthagent', cwd: '/fixture', run: movedRun }), /but this checkout is/);
+  await assert.rejects(
+    verifyDraftRuntimeGate({
+      phase: 'after',
+      releaseTag: tag,
+      expectedSha: sha,
+      expectedReleaseId: 77,
+      repo: 'B-icy/Carthagent',
+      cwd: '/fixture',
+      run: movedRun,
+    }),
+    /but this checkout is/,
+  );
   const { run: idRun } = mockRun({ releaseValue: { ...release, id: 78 } });
-  await assert.rejects(verifyDraftRuntimeGate({ phase: 'after', releaseTag: tag, expectedSha: sha, expectedReleaseId: 77, repo: 'B-icy/Carthagent', run: idRun }), /identity changed/);
+  await assert.rejects(
+    verifyDraftRuntimeGate({ phase: 'after', releaseTag: tag, expectedSha: sha, expectedReleaseId: 77, repo: 'B-icy/Carthagent', run: idRun }),
+    /identity changed/,
+  );
 });
 
 test('immediate pre-acceptance recheck pins the original SHA and release ID', async () => {
   const { run } = mockRun();
-  assert.deepEqual(await verifyDraftRuntimeGate({ phase: 'recheck', releaseTag: tag, expectedSha: sha, expectedReleaseId: 77, repo: 'B-icy/Carthagent', cwd: '/fixture', run }), {
-    releaseId: 77, sha, version,
-  });
-  await assert.rejects(verifyDraftRuntimeGate({ phase: 'recheck', releaseTag: tag, expectedSha: 'b'.repeat(40), expectedReleaseId: 77, repo: 'B-icy/Carthagent', cwd: '/fixture', run }), /changed during acceptance/);
-  await assert.rejects(verifyDraftRuntimeGate({ phase: 'recheck', releaseTag: tag, expectedSha: sha, expectedReleaseId: 76, repo: 'B-icy/Carthagent', cwd: '/fixture', run }), /identity changed/);
+  assert.deepEqual(
+    await verifyDraftRuntimeGate({
+      phase: 'recheck',
+      releaseTag: tag,
+      expectedSha: sha,
+      expectedReleaseId: 77,
+      repo: 'B-icy/Carthagent',
+      cwd: '/fixture',
+      run,
+    }),
+    {
+      releaseId: 77,
+      sha,
+      version,
+    },
+  );
+  await assert.rejects(
+    verifyDraftRuntimeGate({
+      phase: 'recheck',
+      releaseTag: tag,
+      expectedSha: 'b'.repeat(40),
+      expectedReleaseId: 77,
+      repo: 'B-icy/Carthagent',
+      cwd: '/fixture',
+      run,
+    }),
+    /changed during acceptance/,
+  );
+  await assert.rejects(
+    verifyDraftRuntimeGate({ phase: 'recheck', releaseTag: tag, expectedSha: sha, expectedReleaseId: 76, repo: 'B-icy/Carthagent', cwd: '/fixture', run }),
+    /identity changed/,
+  );
 });
 
 test('draft workflow grants required push capability but performs only read operations', async () => {
@@ -243,7 +330,9 @@ test('draft workflow grants required push capability but performs only read oper
   assert.match(workflow, /draft releases only to callers with push access/i);
   assert.match(workflow, /minimum GITHUB_TOKEN capability/i);
   assert.match(workflow, /token only for GETs/i);
-  const acceptance = workflow.match(/- name: Run the current full non-focused installed-package gate through the default resolver([\s\S]*?\n\s+run: npm run test:native-package)/)?.[0];
+  const acceptance = workflow.match(
+    /- name: Run the current full non-focused installed-package gate through the default resolver([\s\S]*?\n\s+run: npm run test:native-package)/,
+  )?.[0];
   assert.ok(acceptance);
   assert.match(acceptance, /CTG_REQUIRE_OWNED_RUNTIME:\s*['"]?1/);
   assert.match(acceptance, /CTG_RUNTIME_GITHUB_TOKEN:\s*\$\{\{ github\.token \}\}/);
@@ -260,14 +349,22 @@ test('draft workflow grants required push capability but performs only read oper
   const bootstrapIndex = workflow.indexOf('Require main dispatch and a release tag descended from origin/main');
   const checkoutIndex = workflow.indexOf('uses: actions/checkout@v4');
   const verifierIndex = workflow.indexOf('verify-draft-runtime-gate.mjs before');
-  assert.ok(bootstrapIndex >= 0 && bootstrapIndex < checkoutIndex && checkoutIndex < verifierIndex,
-    'trusted inline ancestry bootstrap must run before release checkout and tag-sourced verifier');
-  assert.match(workflow, /ref:\s*\$\{\{ steps\.trusted-ancestry\.outputs\.sha \}\}/,
-    'checkout must use the trusted ancestry-checked SHA, not resolve the mutable tag again');
+  assert.ok(
+    bootstrapIndex >= 0 && bootstrapIndex < checkoutIndex && checkoutIndex < verifierIndex,
+    'trusted inline ancestry bootstrap must run before release checkout and tag-sourced verifier',
+  );
+  assert.match(
+    workflow,
+    /ref:\s*\$\{\{ steps\.trusted-ancestry\.outputs\.sha \}\}/,
+    'checkout must use the trusted ancestry-checked SHA, not resolve the mutable tag again',
+  );
   const docs = (await readFile(new URL('../docs/opencode-owned-runtime.md', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
   assert.match(docs, /current full,\s+non-focused installed-package gate/);
   assert.match(docs, /exactly those seven assets/);
-  assert.match(docs, /independently reviewed host-controls, glyph,\s+controlled-terminal semantics, and visual-clear\/reopen probes are now composed\s+into that gate/);
+  assert.match(
+    docs,
+    /independently reviewed host-controls, glyph,\s+controlled-terminal semantics, and visual-clear\/reopen probes are now composed\s+into that gate/,
+  );
   assert.match(docs, /Their live final-artifact results remain pending/);
 });
 

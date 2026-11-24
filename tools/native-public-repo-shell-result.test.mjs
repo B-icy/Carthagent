@@ -21,8 +21,5 @@ test('rejects nonzero native status even when output claims all package tests pa
 });
 
 test('fails closed when native result has no explicit status trailer', () => {
-  assert.throws(
-    () => assertNativeShellResult('  111 passing (10ms)', { status: 0, passingTests: 111 }),
-    /must end with its explicit/,
-  );
+  assert.throws(() => assertNativeShellResult('  111 passing (10ms)', { status: 0, passingTests: 111 }), /must end with its explicit/);
 });

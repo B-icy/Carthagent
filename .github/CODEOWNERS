@@ -1,0 +1,23 @@
+# Code owners are requested for review automatically on matching PRs.
+# Later rules take precedence. Keep the catch-all first.
+*                                  @B-icy
+
+# Release, packaging and runtime pins: changes here affect every installed user.
+/.github/                          @B-icy
+/lib/opencode/runtime*.mjs         @B-icy
+/lib/opencode/runtime-release.json @B-icy
+/script/ctg/                       @B-icy
+/vendor/                           @B-icy
+/docs/patches/                     @B-icy
+/package.json                      @B-icy
+/package-lock.json                 @B-icy
+/.npmrc                            @B-icy
+
+# Credentials, billing and Cloud account handling.
+/lib/cloud/                        @B-icy
+/lib/opencode/credentials.mjs      @B-icy
+/lib/ship-auth.mjs                 @B-icy
+/migrations/                       @B-icy
+
+# Native plugin (TUI and server).
+/plugins/carthagent/               @B-icy

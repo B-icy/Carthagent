@@ -14,15 +14,21 @@ test('Cloud extension gives limit-specific recovery without hiding BYOK', () => 
   let handler;
   const registered = [];
   factory({
-    registerProvider(id) { registered.push(id); },
-    on(name, callback) { if (name === 'message_end') handler = callback; },
+    registerProvider(id) {
+      registered.push(id);
+    },
+    on(name, callback) {
+      if (name === 'message_end') handler = callback;
+    },
   });
   assert.deepEqual(registered, ['carthagent-cloud']);
   assert.equal(typeof handler, 'function');
 
   const notices = [];
   const ctx = { model: { provider: 'carthagent-cloud' }, ui: { notify: (...args) => notices.push(args) } };
-  const event = code => ({ message: { role: 'assistant', provider: 'carthagent-cloud', stopReason: 'error', errorMessage: `429: {"error":{"code":"${code}"}}` } });
+  const event = code => ({
+    message: { role: 'assistant', provider: 'carthagent-cloud', stopReason: 'error', errorMessage: `429: {"error":{"code":"${code}"}}` },
+  });
   handler(event('daily_limit_reached'), ctx);
   handler(event('monthly_allowance_exhausted'), ctx);
   handler(event('subscription_inactive'), ctx);

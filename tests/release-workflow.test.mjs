@@ -44,3 +44,11 @@ test('the final publish step resolves the remote lightweight or annotated tag im
   const postIndex = publish.indexOf('curl -fsS -X POST');
   assert.ok(verifyIndex >= 0 && postIndex > verifyIndex, 'tag equality check precedes POST in the same step');
 });
+
+test('the release health check starts only after npm and the update manifest are published', () => {
+  const job = workflow.match(/\n  report-release-health:\n([\s\S]*)/)?.[1];
+  assert.ok(job, 'release health job exists');
+  assert.match(job, /needs: \[verify-release, publish-npm, publish-release-manifest\]/);
+  assert.match(job, /gh workflow run release-health\.yml/);
+  assert.equal(workflow.match(/gh workflow run release-health\.yml/g).length, 1, 'no other job dispatches the health check');
+});

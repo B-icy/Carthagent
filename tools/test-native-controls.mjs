@@ -24,8 +24,14 @@ try {
   const bMessages = await client.session.context({ sessionID: b.id }, request());
   assert.notEqual(aMessages.find(m => m.type === 'user')?.text, 'Implement a parser');
   assert.equal(bMessages.find(m => m.type === 'user')?.text, 'Implement a parser');
-  assert.ok(aMessages.some(m => m.type === 'assistant'), JSON.stringify(aMessages));
-  assert.ok(bMessages.some(m => m.type === 'assistant'), JSON.stringify(bMessages));
+  assert.ok(
+    aMessages.some(m => m.type === 'assistant'),
+    JSON.stringify(aMessages),
+  );
+  assert.ok(
+    bMessages.some(m => m.type === 'assistant'),
+    JSON.stringify(bMessages),
+  );
   assert.equal(aMessages.at(-1).outcome, 'succeeded');
   assert.equal(bMessages.at(-1).outcome, 'succeeded');
   await client.session.update({ sessionID: b.id, metadata: { 'carthagent.options': { guide: false } } }, request());
@@ -42,11 +48,14 @@ try {
   await rpc('compact', { sessionID: a.id, notes: marker });
   await client.session.wait({ sessionID: a.id }, request());
   const compacted = await client.session.context({ sessionID: a.id }, request());
-  assert.ok(compacted.some(m => m.type === 'compaction'), JSON.stringify(compacted));
-  assert.ok(requests.some(body =>
-    JSON.stringify(body.messages).includes(marker)
-    && JSON.stringify(body.messages.at(-1)).includes('structured summary')
-  ), 'User notes reached the actual native summary request');
+  assert.ok(
+    compacted.some(m => m.type === 'compaction'),
+    JSON.stringify(compacted),
+  );
+  assert.ok(
+    requests.some(body => JSON.stringify(body.messages).includes(marker) && JSON.stringify(body.messages.at(-1)).includes('structured summary')),
+    'User notes reached the actual native summary request',
+  );
 
   // Exercise real RPC location ownership, rather than relying on stubbed context.
   const other = { directory: join(host.temp, 'other') };
@@ -75,9 +84,20 @@ try {
   assert.equal(afterA.at(-1).outcome, 'succeeded');
   assert.equal(afterB.at(-1).outcome, 'succeeded');
   assert.deepEqual(host.providerErrors, []);
-  console.log(JSON.stringify({ host: identity.runtimeVersion, compatibilityVersion: identity.compatibilityVersion,
-    ...(identity.binarySha256 ? { binarySha256: identity.binarySha256 } : {}), sessions: 2, providerRequests: requests.length,
-    framing: 'passed', raw: 'passed', compaction: 'passed', locationOwnership: 'passed', serviceRestart: 'passed' }));
+  console.log(
+    JSON.stringify({
+      host: identity.runtimeVersion,
+      compatibilityVersion: identity.compatibilityVersion,
+      ...(identity.binarySha256 ? { binarySha256: identity.binarySha256 } : {}),
+      sessions: 2,
+      providerRequests: requests.length,
+      framing: 'passed',
+      raw: 'passed',
+      compaction: 'passed',
+      locationOwnership: 'passed',
+      serviceRestart: 'passed',
+    }),
+  );
 } catch (error) {
   console.error(host.output);
   throw error;

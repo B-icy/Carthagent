@@ -4,9 +4,13 @@ import assert from 'node:assert/strict';
 import { nativeFixture, streamText } from './native-fixture.mjs';
 
 let admitted;
-const pending = new Promise(resolve => { admitted = resolve; });
+const pending = new Promise(resolve => {
+  admitted = resolve;
+});
 let disconnected;
-const cancelled = new Promise(resolve => { disconnected = resolve; });
+const cancelled = new Promise(resolve => {
+  disconnected = resolve;
+});
 const host = await nativeFixture({
   plugin: process.argv[2],
   respond(body, res) {
@@ -26,17 +30,21 @@ const identity = host.runtimeIdentity;
 async function bounded(promise, message) {
   let timer;
   try {
-    return await Promise.race([promise, new Promise((_, reject) => {
-      timer = setTimeout(() => reject(Error(message)), 10_000);
-    })]);
-  } finally { clearTimeout(timer); }
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(Error(message)), 10_000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 try {
   const { client, location, model, request } = host;
   await host.active('carthagent', location);
-  const create = title => client.session.create({ location, title, model,
-    metadata: { 'carthagent.options': { guide: false } } }, request());
+  const create = title => client.session.create({ location, title, model, metadata: { 'carthagent.options': { guide: false } } }, request());
   const [failed, interrupted, healthy] = await Promise.all(['Failure', 'Cancellation', 'Healthy'].map(create));
   await client.session.prompt({ sessionID: failed.id, text: 'CTG_FIXTURE_FAILURE' }, request());
   assert.equal(await host.outcome(failed.id), 'failed');
@@ -52,7 +60,10 @@ try {
   await client.session.interrupt({ sessionID: interrupted.id, resume: false }, request(10_000));
   await bounded(cancelled, 'Interrupt did not cancel the underlying provider HTTP request');
   assert.deepEqual(await Promise.all([host.outcome(interrupted.id), host.outcome(healthy.id)]), ['interrupted', 'succeeded']);
-  assert.ok((await client.session.inbox.list({ sessionID: interrupted.id }, request())).some(item => item.id === queued.id), 'Queued prompt remains pending after interruption');
+  assert.ok(
+    (await client.session.inbox.list({ sessionID: interrupted.id }, request())).some(item => item.id === queued.id),
+    'Queued prompt remains pending after interruption',
+  );
   assert.ok(!host.requests.some(body => JSON.stringify(body.messages).includes('CTG_FIXTURE_QUEUED')), 'Queued prompt did not resume execution');
   await client.session.inbox.cancel({ sessionID: interrupted.id, inboxID: queued.id }, request());
   const cancellationMs = Math.round(performance.now() - started);
@@ -64,9 +75,19 @@ try {
   assert.ok(history.some(message => message.type === 'idle' && message.outcome === 'interrupted'));
   assert.equal(history.at(-1).outcome, 'succeeded');
   assert.deepEqual(host.providerErrors, []);
-  console.log(JSON.stringify({ host: identity.runtimeVersion, compatibilityVersion: identity.compatibilityVersion,
-    ...(identity.binarySha256 ? { binarySha256: identity.binarySha256 } : {}), failure: 'passed', cancellation: 'passed',
-    concurrentIsolation: 'passed', recovery: 'passed', queuedInterruption: 'passed', cancellationMs }));
+  console.log(
+    JSON.stringify({
+      host: identity.runtimeVersion,
+      compatibilityVersion: identity.compatibilityVersion,
+      ...(identity.binarySha256 ? { binarySha256: identity.binarySha256 } : {}),
+      failure: 'passed',
+      cancellation: 'passed',
+      concurrentIsolation: 'passed',
+      recovery: 'passed',
+      queuedInterruption: 'passed',
+      cancellationMs,
+    }),
+  );
 } catch (error) {
   console.error(host.output);
   throw error;

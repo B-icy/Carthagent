@@ -1,0 +1,42 @@
+name: Droid Auto Review
+
+on:
+  pull_request:
+    types: [opened, ready_for_review, reopened]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  droid-review:
+    # Fork PRs get a read-only token and no secrets, so the review cannot run there.
+    if: github.event.pull_request.draft == false && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    env:
+      # Dependabot PRs and repositories without the secret skip the review instead of failing.
+      HAS_FACTORY_API_KEY: ${{ secrets.FACTORY_API_KEY != '' }}
+    steps:
+      - name: Skip when FACTORY_API_KEY is not available
+        if: env.HAS_FACTORY_API_KEY != 'true'
+        run: echo "::notice::FACTORY_API_KEY is not available to this run; skipping Droid review."
+      - name: Checkout repository
+        if: env.HAS_FACTORY_API_KEY == 'true'
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+      - name: Run Droid Auto Review
+        if: env.HAS_FACTORY_API_KEY == 'true'
+        uses: Factory-AI/droid-action@035954f0d86a72304d87a75a8625aa34699e1274 # v14
+        with:
+          factory_api_key: ${{ secrets.FACTORY_API_KEY }}
+          automatic_review: true
+          automatic_security_review: true
+          allowed_bots: factory-droid

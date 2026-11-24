@@ -1,0 +1,592 @@
+{
+  "lib/browser.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "lib/cdp.mjs": {
+    "complexity": {
+      "count": 2
+    },
+    "max-depth": {
+      "count": 5
+    }
+  },
+  "lib/cloud/client.mjs": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "lib/cloud/control-plane.mjs": {
+    "complexity": {
+      "count": 3
+    }
+  },
+  "lib/cloud/gateway.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "lib/codegraph-query.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "lib/codegraph.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "lib/delivery-context.mjs": {
+    "complexity": {
+      "count": 3
+    }
+  },
+  "lib/delivery-review.mjs": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "lib/delivery.mjs": {
+    "complexity": {
+      "count": 4
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "lib/engine.mjs": {
+    "complexity": {
+      "count": 2
+    },
+    "max-depth": {
+      "count": 1
+    }
+  },
+  "lib/jev-advisor.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "lib/opencode/cli-runtime.mjs": {
+    "complexity": {
+      "count": 16
+    },
+    "max-depth": {
+      "count": 10
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "lib/opencode/cli.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "lib/opencode/credentials.mjs": {
+    "complexity": {
+      "count": 4
+    }
+  },
+  "lib/opencode/demo.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "lib/opencode/evaluation.mjs": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "lib/opencode/file-lock.mjs": {
+    "complexity": {
+      "count": 1
+    },
+    "max-depth": {
+      "count": 6
+    }
+  },
+  "lib/opencode/headless.mjs": {
+    "complexity": {
+      "count": 5
+    },
+    "max-params": {
+      "count": 1
+    }
+  },
+  "lib/opencode/review.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "lib/opencode/runtime-artifact.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "lib/opencode/runtime.mjs": {
+    "complexity": {
+      "count": 4
+    },
+    "max-depth": {
+      "count": 6
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "lib/opencode/service.mjs": {
+    "complexity": {
+      "count": 5
+    }
+  },
+  "lib/opencode/session-options.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "lib/opencode/update.mjs": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "lib/openrouter-jev.mjs": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "lib/outcome-contract.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "lib/plan-advisor.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "lib/planning-view.mjs": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "lib/planning.mjs": {
+    "complexity": {
+      "count": 3
+    }
+  },
+  "lib/providers/experiential.mjs": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "lib/providers/subscription-models.mjs": {
+    "complexity": {
+      "count": 3
+    }
+  },
+  "lib/review-state.mjs": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "lib/scenarios.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "lib/ship-jev.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "lib/ship-route.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "lib/ship-telemetry.mjs": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "lib/small-lane-diff.mjs": {
+    "complexity": {
+      "count": 2
+    },
+    "max-depth": {
+      "count": 3
+    }
+  },
+  "lib/tui/ansi.mjs": {
+    "complexity": {
+      "count": 1
+    },
+    "max-depth": {
+      "count": 1
+    }
+  },
+  "lib/tui/app.mjs": {
+    "complexity": {
+      "count": 20
+    },
+    "max-depth": {
+      "count": 2
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "lib/tui/d2.mjs": {
+    "complexity": {
+      "count": 1
+    },
+    "max-depth": {
+      "count": 2
+    },
+    "max-params": {
+      "count": 1
+    }
+  },
+  "lib/tui/feed.mjs": {
+    "complexity": {
+      "count": 4
+    },
+    "max-depth": {
+      "count": 5
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "lib/tui/glyphs.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "lib/tui/mock-engine.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "lib/tui/theme.mjs": {
+    "complexity": {
+      "count": 1
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "lib/update.mjs": {
+    "complexity": {
+      "count": 4
+    }
+  },
+  "lib/webdriver.mjs": {
+    "complexity": {
+      "count": 1
+    },
+    "max-depth": {
+      "count": 3
+    }
+  },
+  "lib/workflow.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "plugins/carthagent/src/daily-goals.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "plugins/carthagent/src/server/archive-rpc.ts": {
+    "complexity": {
+      "count": 1
+    },
+    "max-depth": {
+      "count": 1
+    }
+  },
+  "plugins/carthagent/src/server/daily-source-rpc.ts": {
+    "complexity": {
+      "count": 4
+    }
+  },
+  "plugins/carthagent/src/server/delivery.ts": {
+    "complexity": {
+      "count": 6
+    },
+    "max-depth": {
+      "count": 1
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "plugins/carthagent/src/server/providers.ts": {
+    "complexity": {
+      "count": 3
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "plugins/carthagent/src/server/pull-request-rpc.ts": {
+    "complexity": {
+      "count": 4
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "plugins/carthagent/src/server/ship-context.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "plugins/carthagent/src/server/ship-guidance.ts": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "plugins/carthagent/src/server/workspace-rpc.ts": {
+    "complexity": {
+      "count": 3
+    },
+    "max-depth": {
+      "count": 1
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "plugins/carthagent/src/tui.tsx": {
+    "complexity": {
+      "count": 1
+    },
+    "max-depth": {
+      "count": 1
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "plugins/carthagent/src/ui/native-review.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "plugins/carthagent/src/ui/voyages-art.mjs": {
+    "complexity": {
+      "count": 5
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "plugins/carthagent/src/ui/voyages-navigation-state.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "plugins/carthagent/src/ui/voyages.tsx": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "plugins/carthagent/src/ui/workspace-live.ts": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "plugins/carthagent/src/ui/workspace.tsx": {
+    "complexity": {
+      "count": 1
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "server.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "tests/budget-engine.test.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "tests/extension.test.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "tests/native-cli-host-smoke.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "tests/opencode-cli.test.mjs": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "tests/opencode-providers.test.mjs": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "tests/opencode-runtime.test.mjs": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "tests/owned-runtime-publish-workflow.test.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "tools/benchmark/fixtures/shop/server.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "tools/benchmark/gateway.mjs": {
+    "complexity": {
+      "count": 1
+    },
+    "max-depth": {
+      "count": 2
+    }
+  },
+  "tools/benchmark/replay-diagnostic.mjs": {
+    "complexity": {
+      "count": 1
+    },
+    "max-depth": {
+      "count": 4
+    }
+  },
+  "tools/benchmark/runner.mjs": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "tools/benchmark/transport.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "tools/benchmark/upstream-error.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "tools/generate-owned-runtime-release.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "tools/manual-runtime-manifest.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "tools/native-fixture.mjs": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "tools/native-manual.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "tools/native-paired-guards.mjs": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "tools/native-plugin-readiness.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "tools/native-pty-invocation.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "tools/native-pty-runtime.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "tools/native-runtime-identity.mjs": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "tools/pinned-owned-runtime-inputs.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "tools/repo-pilot/runner.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "tools/run-native-test-stress.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "tools/test-native-delivery-host.mjs": {
+    "complexity": {
+      "count": 1
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "tools/test-native-host.mjs": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "tools/test-native-public-repo.mjs": {
+    "complexity": {
+      "count": 1
+    },
+    "max-depth": {
+      "count": 2
+    }
+  },
+  "tools/test-native-swe-host.mjs": {
+    "complexity": {
+      "count": 1
+    },
+    "max-depth": {
+      "count": 4
+    }
+  },
+  "tools/test-owned-host-controls.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "tools/verify-draft-runtime-gate.mjs": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "tools/verify-owned-runtime-release.mjs": {
+    "complexity": {
+      "count": 1
+    }
+  }
+}

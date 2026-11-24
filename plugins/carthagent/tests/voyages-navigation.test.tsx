@@ -11,10 +11,16 @@ import { Voyages } from "../src/voyages-rpc.js";
 import { VoyagesNavigation } from "../src/ui/voyages-navigation.js";
 
 const profile = { profile: { name: "Test captain", shipName: "Test vessel", coins: 10, level: 2, totalXp: 150 } };
-const slate = { day: "2026-10-30", endsAt: "2026-10-31T00:00:00Z", coins: 10, level: 1, goals: [
-  { id: "lines-20", metric: "lines", tier: "bigger", title: "Change 20 lines of code", target: 20, progress: 3, completed: false, coins: 10, xp: 50 },
-  { id: "reviews-1", metric: "reviews", title: "Run a code review", target: 1, progress: 1, completed: true, coins: 10, xp: 50 },
-] };
+const slate = {
+  day: "2026-10-30",
+  endsAt: "2026-10-31T00:00:00Z",
+  coins: 10,
+  level: 1,
+  goals: [
+    { id: "lines-20", metric: "lines", tier: "bigger", title: "Change 20 lines of code", target: 20, progress: 3, completed: false, coins: 10, xp: 50 },
+    { id: "reviews-1", metric: "reviews", title: "Run a code review", target: 1, progress: 1, completed: true, coins: 10, xp: 50 },
+  ],
+};
 
 const missingLocation = () => Object.assign(new Error("Location not found"), { _tag: "LocationNotFoundError", name: "LocationNotFoundError" });
 
@@ -24,7 +30,9 @@ async function fixture({ width = 30, height = 36, authenticated = true, hint = f
   const [compact, setCompact] = createSignal(false);
   const [mode, setMode] = createSignal("base");
   const [sessionID, setSessionID] = createSignal<string | undefined>("coding-session");
-  const routes: unknown[] = [], calls: string[] = [], selected: string[] = [];
+  const routes: unknown[] = [],
+    calls: string[] = [],
+    selected: string[] = [];
   const responses: Promise<unknown>[] = [];
   let responseGate: Promise<void> | undefined;
   let listener: ((event: { details: { type: string } }) => void) | undefined;
@@ -35,39 +43,109 @@ async function fixture({ width = 30, height = 36, authenticated = true, hint = f
     data: {
       session: { get: () => ({ location: { directory: sessionDirectory } }) },
       location: { default: () => ({ directory: "/test-project" }) },
-      listen: (next: typeof listener) => { listener = next; return () => { listening = false; }; },
+      listen: (next: typeof listener) => {
+        listener = next;
+        return () => {
+          listening = false;
+        };
+      },
     },
-    client: { rpc: (definition: unknown) => ({ snapshot: (_input: unknown, options: { location: { directory: string } }) => {
-      calls.push(definition === Voyages ? "profile" : "daily");
-      // The server rejects a deleted folder before any handler runs.
-      const response = options.location.directory !== "/test-project" ? Promise.reject(missingLocation()) : authenticated ? (responseGate ?? Promise.resolve()).then(() => definition === Voyages ? profile : slate) : Promise.reject({ type: "voyagesError", data: { code: "authentication_required" } });
-      responses.push(response);
-      return response;
-    } }) },
-    keymap: { mode: { current: mode }, dispatch: (id: string) => { calls.push(id); } },
+    client: {
+      rpc: (definition: unknown) => ({
+        snapshot: (_input: unknown, options: { location: { directory: string } }) => {
+          calls.push(definition === Voyages ? "profile" : "daily");
+          // The server rejects a deleted folder before any handler runs.
+          const response =
+            options.location.directory !== "/test-project"
+              ? Promise.reject(missingLocation())
+              : authenticated
+                ? (responseGate ?? Promise.resolve()).then(() => (definition === Voyages ? profile : slate))
+                : Promise.reject({ type: "voyagesError", data: { code: "authentication_required" } });
+          responses.push(response);
+          return response;
+        },
+      }),
+    },
+    keymap: {
+      mode: { current: mode },
+      dispatch: (id: string) => {
+        calls.push(id);
+      },
+    },
     ui: {
       router: { navigate: (route: unknown) => routes.push(route) },
-      navigation: { current: () => "voyages", select: (name: string) => { selected.push(name); return true; } },
+      navigation: {
+        current: () => "voyages",
+        select: (name: string) => {
+          selected.push(name);
+          return true;
+        },
+      },
     },
   } as unknown as Context;
-  const app = await testRender(() => <PluginContextProvider value={context}>
-    <box width={width} height={height} visible={active()} flexDirection="column">
-      {/* The native rail inserts this focus hint above the pane when it takes focus, like the pinned host. */}
-      {hint && focused() ? <text height={1} flexShrink={0}> ↑↓ Enter · Esc back</text> : null}
-      <VoyagesNavigation width={width} active={active()} compact={compact()} focused={focused()} sessionID={sessionID()} focus={() => { if (mode() !== "base") return; setFocused(true); setMode("navigation"); }} blur={() => { setFocused(false); if (mode() === "navigation") setMode("base"); }} />
-    </box>
-  </PluginContextProvider>, { width, height, kittyKeyboard: true });
-  const settle = async () => { await Promise.allSettled(responses); await app.renderOnce(); };
+  const app = await testRender(
+    () => (
+      <PluginContextProvider value={context}>
+        <box width={width} height={height} visible={active()} flexDirection="column">
+          {/* The native rail inserts this focus hint above the pane when it takes focus, like the pinned host. */}
+          {hint && focused() ? (
+            <text height={1} flexShrink={0}>
+              {" "}
+              ↑↓ Enter · Esc back
+            </text>
+          ) : null}
+          <VoyagesNavigation
+            width={width}
+            active={active()}
+            compact={compact()}
+            focused={focused()}
+            sessionID={sessionID()}
+            focus={() => {
+              if (mode() !== "base") return;
+              setFocused(true);
+              setMode("navigation");
+            }}
+            blur={() => {
+              setFocused(false);
+              if (mode() === "navigation") setMode("base");
+            }}
+          />
+        </box>
+      </PluginContextProvider>
+    ),
+    { width, height, kittyKeyboard: true },
+  );
+  const settle = async () => {
+    await Promise.allSettled(responses);
+    await app.renderOnce();
+  };
   await settle();
   return {
-    app, calls, routes, selected, mode, setMode, setActive, setFocused, setCompact, setSessionID, settle,
-    focus: async () => { setFocused(true); setMode("navigation"); await app.renderOnce(); },
+    app,
+    calls,
+    routes,
+    selected,
+    mode,
+    setMode,
+    setActive,
+    setFocused,
+    setCompact,
+    setSessionID,
+    settle,
+    focus: async () => {
+      setFocused(true);
+      setMode("navigation");
+      await app.renderOnce();
+    },
     event: (type: string) => listener?.({ details: { type } }),
-    delay: (promise: Promise<void> | undefined) => { responseGate = promise; },
+    delay: (promise: Promise<void> | undefined) => {
+      responseGate = promise;
+    },
     listening: () => listening,
     list: () => app.renderer.currentFocusedRenderable as SelectRenderable,
     scroll: () => {
-      const find = (node: Renderable): ScrollBoxRenderable | undefined => node instanceof ScrollBoxRenderable ? node : node.getChildren().map(find).find(Boolean);
+      const find = (node: Renderable): ScrollBoxRenderable | undefined =>
+        node instanceof ScrollBoxRenderable ? node : node.getChildren().map(find).find(Boolean);
       return find(app.renderer.root)!;
     },
   };
@@ -87,7 +165,9 @@ test.each([30, 18])("real Voyages navigator renders account and assignment summa
     expect(frame).not.toContain("must not appear");
     expect(f.calls).toEqual(["profile", "daily"]);
     expect(f.routes).toHaveLength(0);
-  } finally { f.app.renderer.destroy(); }
+  } finally {
+    f.app.renderer.destroy();
+  }
   expect(f.listening()).toBe(false);
 });
 
@@ -99,7 +179,9 @@ test("a session whose folder was deleted still loads account-level Voyages from 
     expect(frame).toContain("10 coins");
     expect(frame).not.toContain("Could not load voyages");
     expect(f.calls).toEqual(["profile", "daily", "profile", "daily"]);
-  } finally { f.app.renderer.destroy(); }
+  } finally {
+    f.app.renderer.destroy();
+  }
 });
 
 test("rail focus owns arrows/Enter; palette or modal mode cannot trigger a route", async () => {
@@ -125,7 +207,9 @@ test("rail focus owns arrows/Enter; palette or modal mode cannot trigger a route
     expect(f.routes).toEqual([{ type: "plugin", name: "voyages", data: { sessionID: "coding-session", section: "equipment" } }]);
     expect(f.mode()).toBe("base");
     expect(f.calls).toEqual(["profile", "daily"]);
-  } finally { f.app.renderer.destroy(); }
+  } finally {
+    f.app.renderer.destroy();
+  }
 });
 
 test("Projects/Voyages toggles retain selection and do not route, submit or purchase", async () => {
@@ -143,7 +227,9 @@ test("Projects/Voyages toggles retain selection and do not route, submit or purc
     expect(f.list().getSelectedOption()?.value).toBe("equipment");
     expect(f.routes).toHaveLength(0);
     expect(f.calls).toEqual(["profile", "daily", "profile", "daily"]);
-  } finally { f.app.renderer.destroy(); }
+  } finally {
+    f.app.renderer.destroy();
+  }
 });
 
 test("server reconnect preserves the selected static rail destination without navigating", async () => {
@@ -157,7 +243,9 @@ test("server reconnect preserves the selected static rail destination without na
     await f.settle();
     expect(f.list().getSelectedOption()?.value).toBe("equipment");
     expect(f.routes).toHaveLength(0);
-  } finally { f.app.renderer.destroy(); }
+  } finally {
+    f.app.renderer.destroy();
+  }
 });
 
 test("reconnect keeps Shop highlighted after opening it and delayed summary recovery", async () => {
@@ -182,7 +270,10 @@ test("reconnect keeps Shop highlighted after opening it and delayed summary reco
     await f.settle();
     expect(list.getSelectedOption()?.value).toBe("equipment");
     expect(f.routes).toHaveLength(1);
-  } finally { gate.resolve(); f.app.renderer.destroy(); }
+  } finally {
+    gate.resolve();
+    f.app.renderer.destroy();
+  }
 });
 
 test("compact mode uses the same mounted selection and keyboard behavior", async () => {
@@ -201,7 +292,9 @@ test("compact mode uses the same mounted selection and keyboard behavior", async
     f.app.mockInput.pressEnter();
     await f.app.renderOnce();
     expect(f.routes).toEqual([{ type: "plugin", name: "voyages", data: { sessionID: "coding-session", section: "equipment" } }]);
-  } finally { f.app.renderer.destroy(); }
+  } finally {
+    f.app.renderer.destroy();
+  }
 });
 
 test("switching modes preserves the Voyages scroll position at a short terminal height", async () => {
@@ -219,7 +312,9 @@ test("switching modes preserves the Voyages scroll position at a short terminal 
     expect(f.scroll()).toBe(scroll);
     expect(scroll.scrollTop).toBe(before);
     expect(f.routes).toHaveLength(0);
-  } finally { f.app.renderer.destroy(); }
+  } finally {
+    f.app.renderer.destroy();
+  }
 });
 
 test("slow summary reads preserve scrolled position after an intervening loading layout", async () => {
@@ -242,7 +337,9 @@ test("slow summary reads preserve scrolled position after an intervening loading
     await f.settle();
     await f.app.renderOnce();
     expect(scroll.scrollTop).toBe(before);
-  } finally { f.app.renderer.destroy(); }
+  } finally {
+    f.app.renderer.destroy();
+  }
 });
 
 test("short terminal keyboard navigation keeps the highlighted action on screen", async () => {
@@ -257,13 +354,18 @@ test("short terminal keyboard navigation keeps the highlighted action on screen"
     expect(f.app.captureCharFrame()).toContain("Coding");
     expect(f.list().height).toBeLessThanOrEqual(f.scroll().viewport.height);
     expect(f.routes).toHaveLength(0);
-  } finally { f.app.renderer.destroy(); }
+  } finally {
+    f.app.renderer.destroy();
+  }
 });
 
 test("mouse press focuses the rail and release opens the clicked row without acting through a modal", async () => {
   const f = await fixture();
   try {
-    const row = f.app.captureCharFrame().split("\n").findIndex((line) => line.includes("Quests"));
+    const row = f.app
+      .captureCharFrame()
+      .split("\n")
+      .findIndex((line) => line.includes("Quests"));
     expect(row).toBeGreaterThanOrEqual(0);
     for (const mode of ["modal", "palette"]) {
       f.setMode(mode);
@@ -286,14 +388,18 @@ test("mouse press focuses the rail and release opens the clicked row without act
     expect(f.routes).toEqual([{ type: "plugin", name: "daily-quests", data: { sessionID: "coding-session" } }]);
     expect(f.mode()).toBe("base");
     // Empty pane space below the actions never routes.
-    const blankRow = f.app.captureCharFrame().split("\n").findIndex((line) => line.includes("Coding")) + 2;
+    const blankRow =
+      f.app
+        .captureCharFrame()
+        .split("\n")
+        .findIndex((line) => line.includes("Coding")) + 2;
     expect(blankRow).toBeGreaterThan(1);
     await f.app.mockMouse.click(5, blankRow);
     await f.app.renderOnce();
-    expect(f.routes).toEqual([
-      { type: "plugin", name: "daily-quests", data: { sessionID: "coding-session" } },
-    ]);
-  } finally { f.app.renderer.destroy(); }
+    expect(f.routes).toEqual([{ type: "plugin", name: "daily-quests", data: { sessionID: "coding-session" } }]);
+  } finally {
+    f.app.renderer.destroy();
+  }
 });
 
 test("signed-out account and invalidation hide protected summaries, reset stale selection, and stay read-only", async () => {
@@ -309,7 +415,9 @@ test("signed-out account and invalidation hide protected summaries, reset stale 
     expect(f.list().getSelectedOption()?.value).toBe("daily");
     expect(f.routes).toHaveLength(0);
     expect(f.calls).toEqual(["profile", "daily", "profile", "daily"]);
-  } finally { f.app.renderer.destroy(); }
+  } finally {
+    f.app.renderer.destroy();
+  }
 });
 
 test.each(["coding-session", undefined])("return to coding explicitly navigates to the selected session or Home (%s)", async (sessionID) => {
@@ -324,13 +432,16 @@ test.each(["coding-session", undefined])("return to coding explicitly navigates 
     await f.app.renderOnce();
     expect(f.selected).toEqual(["projects"]);
     expect(f.routes).toEqual([sessionID ? { type: "session", sessionID } : { type: "home" }]);
-  } finally { f.app.renderer.destroy(); }
+  } finally {
+    f.app.renderer.destroy();
+  }
 });
 
-const rowOf = (frame: string, label: string) => frame.split("\n").findIndex((line) => {
-  const text = line.replace(/[█▀▄]/g, "").trim().replace(/^▶ /, "");
-  return text.length >= 3 && (text === label || (text.endsWith("…") && label.startsWith(text.slice(0, -1))));
-});
+const rowOf = (frame: string, label: string) =>
+  frame.split("\n").findIndex((line) => {
+    const text = line.replace(/[█▀▄]/g, "").trim().replace(/^▶ /, "");
+    return text.length >= 3 && (text === label || (text.endsWith("…") && label.startsWith(text.slice(0, -1))));
+  });
 const pointerCases = [
   { name: "unfocused full", width: 30, height: 36, compact: false, focused: false, scrolled: false },
   { name: "focused full", width: 30, height: 36, compact: false, focused: true, scrolled: false },
@@ -339,26 +450,39 @@ const pointerCases = [
   { name: "unfocused scrolled", width: 30, height: 6, compact: false, focused: false, scrolled: true },
   { name: "focused scrolled", width: 30, height: 6, compact: false, focused: true, scrolled: true },
 ];
-for (const c of pointerCases) for (const [label, route] of [["Shop", { type: "plugin", name: "voyages", data: { sessionID: "coding-session", section: "equipment" } }], [c.compact ? "Captain" : "Character", { type: "plugin", name: "voyages", data: { sessionID: "coding-session", section: "profile" } }]] as const) {
-  test(`pointer activates the row under the press when the focus hint shifts the rail (${c.name}, ${label})`, async () => {
-    const f = await fixture({ width: c.width, height: c.height, hint: true });
-    try {
-      if (c.compact) { f.setCompact(true); await f.app.renderOnce(); }
-      if (c.focused) await f.focus();
-      if (c.scrolled) { f.scroll().scrollBy(2); await f.app.renderOnce(); expect(f.scroll().scrollTop).toBeGreaterThan(0); }
-      const frame = f.app.captureCharFrame();
-      const row = rowOf(frame, label);
-      if (row < 0) throw new Error(`${label} not drawn:\n${frame}`);
-      await f.app.mockMouse.pressDown(3, row);
-      await f.app.renderOnce();
-      expect(f.mode()).toBe("navigation");
-      expect(f.routes).toHaveLength(0);
-      await f.app.mockMouse.release(3, row);
-      await f.app.renderOnce();
-      expect(f.routes).toEqual([route]);
-    } finally { f.app.renderer.destroy(); }
-  });
-}
+for (const c of pointerCases)
+  for (const [label, route] of [
+    ["Shop", { type: "plugin", name: "voyages", data: { sessionID: "coding-session", section: "equipment" } }],
+    [c.compact ? "Captain" : "Character", { type: "plugin", name: "voyages", data: { sessionID: "coding-session", section: "profile" } }],
+  ] as const) {
+    test(`pointer activates the row under the press when the focus hint shifts the rail (${c.name}, ${label})`, async () => {
+      const f = await fixture({ width: c.width, height: c.height, hint: true });
+      try {
+        if (c.compact) {
+          f.setCompact(true);
+          await f.app.renderOnce();
+        }
+        if (c.focused) await f.focus();
+        if (c.scrolled) {
+          f.scroll().scrollBy(2);
+          await f.app.renderOnce();
+          expect(f.scroll().scrollTop).toBeGreaterThan(0);
+        }
+        const frame = f.app.captureCharFrame();
+        const row = rowOf(frame, label);
+        if (row < 0) throw new Error(`${label} not drawn:\n${frame}`);
+        await f.app.mockMouse.pressDown(3, row);
+        await f.app.renderOnce();
+        expect(f.mode()).toBe("navigation");
+        expect(f.routes).toHaveLength(0);
+        await f.app.mockMouse.release(3, row);
+        await f.app.renderOnce();
+        expect(f.routes).toEqual([route]);
+      } finally {
+        f.app.renderer.destroy();
+      }
+    });
+  }
 
 test("a release without a matching press, or on another row, never activates a rail row", async () => {
   const f = await fixture({ hint: true });
@@ -372,7 +496,12 @@ test("a release without a matching press, or on another row, never activates a r
     await f.app.mockMouse.release(3, shop + 1);
     await f.app.renderOnce();
     expect(f.routes).toHaveLength(0);
-    for (const button of [1, 2] as const) { await f.app.mockMouse.click(3, shop, button); await f.app.renderOnce(); }
+    for (const button of [1, 2] as const) {
+      await f.app.mockMouse.click(3, shop, button);
+      await f.app.renderOnce();
+    }
     expect(f.routes).toHaveLength(0);
-  } finally { f.app.renderer.destroy(); }
+  } finally {
+    f.app.renderer.destroy();
+  }
 });

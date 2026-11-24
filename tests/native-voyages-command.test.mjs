@@ -13,7 +13,11 @@ test('/voyages with no argument opens the Voyages hub, not Daily goals', () => {
 
 test('/quests still reaches Daily goals; /voyages claim still opens the claim', () => {
   assert.deepEqual(voyagesCommandRoute('quests', '', 'ses_1'), { kind: 'navigate', name: 'daily-quests', data: { sessionID: 'ses_1' } });
-  assert.deepEqual(voyagesCommandRoute('voyages', 'Claim', 'ses_1'), { kind: 'navigate', name: 'voyages', data: { sessionID: 'ses_1', section: 'profile', claim: true } });
+  assert.deepEqual(voyagesCommandRoute('voyages', 'Claim', 'ses_1'), {
+    kind: 'navigate',
+    name: 'voyages',
+    data: { sessionID: 'ses_1', section: 'profile', claim: true },
+  });
   assert.equal(voyagesCommandRoute('voyages', 'claim').kind, 'error');
   assert.match(voyagesCommandRoute('voyages', 'goals').message, /\/quests/);
 });

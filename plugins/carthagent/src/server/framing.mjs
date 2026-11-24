@@ -37,7 +37,9 @@ function readTemplate(path) {
     const raw = readFileSync(path, 'utf8');
     const fm = raw.match(/^---\n[\s\S]*?\n---\n?/);
     body = (fm ? raw.slice(fm[0].length) : raw).trim();
-  } catch { body = ''; }
+  } catch {
+    body = '';
+  }
   return body;
 }
 

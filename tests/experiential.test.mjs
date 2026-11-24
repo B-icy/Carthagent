@@ -23,7 +23,11 @@ test('Experiential provider uses the hosted gateway and canonical environment va
   assert.equal(experientialBaseUrl({ EXP_GATEWAY_URL: ' https://preview.test/v1/ ' }), 'https://preview.test/v1');
   assert.equal(experientialBaseUrl({ CARTHAGENT_CLOUD_URL: ' https://control-plane.test/ ' }), 'https://api.experientiallabs.ai/v1');
   assert.equal(cloudGatewayUrl({ CARTHAGENT_CLOUD_URL: ' https://control-plane.test/v1/ ' }), 'https://control-plane.test/v1');
-  const access = ['header', Buffer.from(JSON.stringify({ sub: 'account', sid: 'session', scope: 'models:read gateway:invoke' })).toString('base64url'), 'signature'].join('.');
+  const access = [
+    'header',
+    Buffer.from(JSON.stringify({ sub: 'account', sid: 'session', scope: 'models:read gateway:invoke' })).toString('base64url'),
+    'signature',
+  ].join('.');
   assert.equal(isCloudAccessToken(access), true);
   assert.equal(isCloudAccessToken('direct-test-key'), false);
   const config = experientialProviderConfig({ env: {} });
@@ -37,14 +41,17 @@ test('Experiential provider uses the hosted gateway and canonical environment va
 test('Managed Cloud operations share one identity and disable transport retries until replay exists', async () => {
   let ids = 0;
   const payloads = [];
-  const options = managedCloudRequestOptions({
-    maxRetries: 7,
-    requestHeaders: { 'X-Test': 'preserved' },
-    onPayload: async payload => {
-      payloads.push(payload);
-      return { ...payload, metadata: { inherited: 'yes' } };
+  const options = managedCloudRequestOptions(
+    {
+      maxRetries: 7,
+      requestHeaders: { 'X-Test': 'preserved' },
+      onPayload: async payload => {
+        payloads.push(payload);
+        return { ...payload, metadata: { inherited: 'yes' } };
+      },
     },
-  }, () => `operation-${++ids}`);
+    () => `operation-${++ids}`,
+  );
 
   assert.equal(ids, 1);
   assert.equal(options.maxRetries, 0);
@@ -52,13 +59,17 @@ test('Managed Cloud operations share one identity and disable transport retries 
     'X-Test': 'preserved',
     'Idempotency-Key': 'operation-1',
     'X-Client-Request-Id': 'operation-1',
-  })) assert.equal(options.requestHeaders[key], value);
+  }))
+    assert.equal(options.requestHeaders[key], value);
   const body = await options.onPayload({ model: 'carthagent-code', messages: [] }, { id: 'carthagent-code' });
   assert.equal(payloads.length, 1);
   assert.deepEqual(body.metadata, { inherited: 'yes', operation_key: 'operation-1' });
 
   assert.equal(options.requestHeaders['Idempotency-Key'], 'operation-1');
-  assert.equal(createCloudOperationIdentity(() => `operation-${++ids}`), 'operation-2');
+  assert.equal(
+    createCloudOperationIdentity(() => `operation-${++ids}`),
+    'operation-2',
+  );
   assert.throws(() => createCloudOperationIdentity(() => ''), /identity is invalid/);
 });
 
@@ -87,7 +98,11 @@ test('Managed Cloud duplicate-operation errors are marked non-retryable', () => 
 });
 
 test('Managed Cloud transport makes one attempt while direct Experiential preserves configured retries', async () => {
-  const managedAccess = ['header', Buffer.from(JSON.stringify({ sub: 'account', sid: 'session', scope: 'gateway:invoke' })).toString('base64url'), 'signature'].join('.');
+  const managedAccess = [
+    'header',
+    Buffer.from(JSON.stringify({ sub: 'account', sid: 'session', scope: 'gateway:invoke' })).toString('base64url'),
+    'signature',
+  ].join('.');
   const model = {
     id: 'gpt-5.6-luna',
     name: 'GPT-5.6 Luna',
@@ -96,49 +111,62 @@ test('Managed Cloud transport makes one attempt while direct Experiential preser
     baseUrl: 'https://direct.test/v1',
   };
   const context = { messages: [{ role: 'user', content: 'hello', timestamp: Date.now() }] };
-  const response = () => new Response(JSON.stringify({ error: { message: 'retryable test failure' } }), {
-    status: 500,
-    headers: { 'content-type': 'application/json' },
-  });
+  const response = () =>
+    new Response(JSON.stringify({ error: { message: 'retryable test failure' } }), {
+      status: 500,
+      headers: { 'content-type': 'application/json' },
+    });
   const config = experientialProviderConfig({ env: { CARTHAGENT_CLOUD_URL: 'https://cloud.test' } });
 
   const managedCalls = [];
-  const managed = await config.streamSimple(model, context, {
-    apiKey: managedAccess,
-    maxRetries: 2,
-    maxRetryDelayMs: 1,
-    fetch: async (url, init) => { managedCalls.push({ url, init }); return response(); },
-  }).result();
+  const managed = await config
+    .streamSimple(model, context, {
+      apiKey: managedAccess,
+      maxRetries: 2,
+      maxRetryDelayMs: 1,
+      fetch: async (url, init) => {
+        managedCalls.push({ url, init });
+        return response();
+      },
+    })
+    .result();
   assert.equal(managed.stopReason, 'error');
   assert.equal(managedCalls.length, 1);
   assert.equal(managedCalls[0].url.startsWith('https://cloud.test/v1/'), true);
   assert.equal(managedCalls[0].init.headers.has('idempotency-key'), true);
 
   const duplicateCalls = [];
-  const duplicate = await config.streamSimple(model, context, {
-    apiKey: managedAccess,
-    maxRetries: 2,
-    maxRetryDelayMs: 1,
-    fetch: async (url, init) => {
-      duplicateCalls.push({ url, init });
-      return new Response(JSON.stringify({ error: { message: 'request_reconciliation_required', code: 'request_reconciliation_required' } }), {
-        status: 400,
-        headers: { 'content-type': 'application/json' },
-      });
-    },
-  }).result();
+  const duplicate = await config
+    .streamSimple(model, context, {
+      apiKey: managedAccess,
+      maxRetries: 2,
+      maxRetryDelayMs: 1,
+      fetch: async (url, init) => {
+        duplicateCalls.push({ url, init });
+        return new Response(JSON.stringify({ error: { message: 'request_reconciliation_required', code: 'request_reconciliation_required' } }), {
+          status: 400,
+          headers: { 'content-type': 'application/json' },
+        });
+      },
+    })
+    .result();
   assert.equal(duplicate.stopReason, 'error');
   assert.equal(duplicateCalls.length, 1);
   assert.match(duplicate.errorMessage, /cannot safely replay this operation yet/i);
   assert.match(duplicate.errorMessage, /request_reconciliation_required/i);
 
   const directCalls = [];
-  const direct = await config.streamSimple(model, context, {
-    apiKey: 'direct-test-key',
-    maxRetries: 1,
-    maxRetryDelayMs: 1,
-    fetch: async (url, init) => { directCalls.push({ url, init }); return response(); },
-  }).result();
+  const direct = await config
+    .streamSimple(model, context, {
+      apiKey: 'direct-test-key',
+      maxRetries: 1,
+      maxRetryDelayMs: 1,
+      fetch: async (url, init) => {
+        directCalls.push({ url, init });
+        return response();
+      },
+    })
+    .result();
   assert.equal(direct.stopReason, 'error');
   assert.equal(directCalls.length, 2);
   assert.equal(directCalls[0].url.startsWith('https://direct.test/v1/'), true);
@@ -146,18 +174,23 @@ test('Managed Cloud transport makes one attempt while direct Experiential preser
 });
 
 test('Experiential model parsing is sorted, deduplicated, and resolves reasoning capabilities', () => {
-  const models = parseExperientialModels({ data: [
-    { id: 'z-model', name: 'Zed' },
-    { id: 'gpt-6-luna' },
-    { id: 'qwen3-max-thinking' },
-    { id: 'z-model', name: 'Duplicate' },
-    { nope: true },
-  ] });
-  assert.deepEqual(models.map(model => model.id), ['gpt-6-luna', 'qwen3-max-thinking', 'z-model']);
+  const models = parseExperientialModels({
+    data: [{ id: 'z-model', name: 'Zed' }, { id: 'gpt-6-luna' }, { id: 'qwen3-max-thinking' }, { id: 'z-model', name: 'Duplicate' }, { nope: true }],
+  });
+  assert.deepEqual(
+    models.map(model => model.id),
+    ['gpt-6-luna', 'qwen3-max-thinking', 'z-model'],
+  );
   assert.equal(models[0].name, 'GPT-6 Luna');
   assert.equal(models[0].reasoning, true);
   assert.deepEqual(models[0].thinkingLevelMap, {
-    off: 'none', minimal: null, low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max',
+    off: 'none',
+    minimal: null,
+    low: 'low',
+    medium: 'medium',
+    high: 'high',
+    xhigh: 'xhigh',
+    max: 'max',
   });
   assert.equal(models[0].compat.supportsReasoningEffort, true);
   assert.equal(models[1].reasoning, true);
@@ -168,7 +201,10 @@ test('Experiential model parsing is sorted, deduplicated, and resolves reasoning
 
 test('Experiential model definitions preserve supplied metadata and detect explicit thinking aliases', () => {
   assert.deepEqual(experientialModelDefinition({ id: 'future-thinking', name: 'Future', reasoning: false, contextWindow: 42 }), {
-    id: 'future-thinking', name: 'Future', reasoning: false, contextWindow: 42,
+    id: 'future-thinking',
+    name: 'Future',
+    reasoning: false,
+    contextWindow: 42,
   });
   const detected = experientialModelDefinition('future-reasoning-model');
   assert.equal(detected.reasoning, true);
@@ -206,9 +242,16 @@ test('Experiential model discovery authenticates with API-key or OAuth credentia
     allowNetwork: true,
     credential: { type: 'api_key', key: 'test-secret' },
     signal: new AbortController().signal,
-    publish: async value => { published = value; value.update?.(); return true; },
+    publish: async value => {
+      published = value;
+      value.update?.();
+      return true;
+    },
   });
-  assert.deepEqual(models.map(model => model.id), ['coding']);
+  assert.deepEqual(
+    models.map(model => model.id),
+    ['coding'],
+  );
   assert.equal(requests[0].url, 'https://preview.test/v1/models');
   assert.equal(requests[0].options.headers.Authorization, 'Bearer test-secret');
   assert.deepEqual(published.persist.models, [{ id: 'coding', name: 'coding' }]);
@@ -224,20 +267,35 @@ test('Carthagent Ship OAuth uses device authorization and rotating refresh token
   let polls = 0;
   const opened = [];
   const oauth = cloudOAuth({
-    env: { CARTHAGENT_CLOUD_URL: 'https://cloud.test' }, now: () => 1_000, sleep: async () => {}, openBrowserImpl: async url => { opened.push(url); return true; },
+    env: { CARTHAGENT_CLOUD_URL: 'https://cloud.test' },
+    now: () => 1_000,
+    sleep: async () => {},
+    openBrowserImpl: async url => {
+      opened.push(url);
+      return true;
+    },
     fetchImpl: async (url, options) => {
       calls.push({ url, options });
-      if (url.endsWith('/v1/device/authorizations')) return new Response(JSON.stringify({ deviceCode: 'd', userCode: 'CODE', verificationUri: 'https://verify', expiresIn: 600, interval: 1 }), { status: 201 });
+      if (url.endsWith('/v1/device/authorizations'))
+        return new Response(JSON.stringify({ deviceCode: 'd', userCode: 'CODE', verificationUri: 'https://verify', expiresIn: 600, interval: 1 }), {
+          status: 201,
+        });
       if (url.endsWith('/v1/device/token')) {
         polls++;
-        return polls === 1 ? new Response(JSON.stringify({ error: 'authorization_pending' }), { status: 428 })
+        return polls === 1
+          ? new Response(JSON.stringify({ error: 'authorization_pending' }), { status: 428 })
           : new Response(JSON.stringify({ accessToken: 'access', refreshToken: 'refresh', expiresIn: 900 }), { status: 200 });
       }
       return new Response(JSON.stringify({ accessToken: 'next-access', refreshToken: 'next-refresh', expiresIn: 900 }), { status: 200 });
     },
   });
   const codes = [];
-  const credential = await oauth.login({ signal: new AbortController().signal, onDeviceCode: value => codes.push(value), onAuth: () => {}, onProgress: () => {} });
+  const credential = await oauth.login({
+    signal: new AbortController().signal,
+    onDeviceCode: value => codes.push(value),
+    onAuth: () => {},
+    onProgress: () => {},
+  });
   assert.deepEqual(credential, { access: 'access', refresh: 'refresh', expires: 901_000 });
   assert.equal(codes[0].userCode, 'CODE');
   assert.deepEqual(opened, ['https://verify']);
@@ -249,20 +307,33 @@ test('Carthagent Ship OAuth uses device authorization and rotating refresh token
 
 test('Experiential discovery reuses stored identities offline and fails clearly online', async () => {
   const stored = [{ id: 'stored-model' }];
-  const offline = experientialProviderConfig({ fetchImpl: () => { throw new Error('network called'); } });
+  const offline = experientialProviderConfig({
+    fetchImpl: () => {
+      throw new Error('network called');
+    },
+  });
   let restored = false;
-  assert.equal((await offline.refreshModels({
-    allowNetwork: false,
-    stored,
-    publish: async value => { restored = true; value.update?.(); return true; },
-  })).at(0).id, 'stored-model');
+  assert.equal(
+    (
+      await offline.refreshModels({
+        allowNetwork: false,
+        stored,
+        publish: async value => {
+          restored = true;
+          value.update?.();
+          return true;
+        },
+      })
+    ).at(0).id,
+    'stored-model',
+  );
   assert.equal(restored, true);
   assert.deepEqual(offline.models, [{ id: 'stored-model', name: 'stored-model' }]);
 
   const failing = experientialProviderConfig({ fetchImpl: async () => ({ ok: false, status: 401, text: async () => 'unauthorized' }) });
   await assert.rejects(
     failing.refreshModels({ allowNetwork: true, credential: { type: 'api_key', key: 'xpl_bad' }, signal: new AbortController().signal }),
-    /failed \(401\): unauthorized/
+    /failed \(401\): unauthorized/,
   );
 });
 
@@ -293,8 +364,11 @@ test('ModelRuntime resolves EXPLABS_API_KEY without copying it into provider con
     });
     assert.equal(runtime.getRegisteredProviderConfig('carthagent-cloud').apiKey, '$EXPLABS_API_KEY');
   } finally {
-    if (previous === undefined) delete process.env.EXPLABS_API_KEY; else process.env.EXPLABS_API_KEY = previous;
-    if (previousCarthagentDir === undefined) delete process.env.CARTHAGENT_CODING_AGENT_DIR; else process.env.CARTHAGENT_CODING_AGENT_DIR = previousCarthagentDir;
-    if (previousPiDir === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previousPiDir;
+    if (previous === undefined) delete process.env.EXPLABS_API_KEY;
+    else process.env.EXPLABS_API_KEY = previous;
+    if (previousCarthagentDir === undefined) delete process.env.CARTHAGENT_CODING_AGENT_DIR;
+    else process.env.CARTHAGENT_CODING_AGENT_DIR = previousCarthagentDir;
+    if (previousPiDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousPiDir;
   }
 });

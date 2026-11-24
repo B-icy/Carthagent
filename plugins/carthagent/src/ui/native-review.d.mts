@@ -18,7 +18,10 @@ export interface NativeReviewConsumerOptions {
 }
 
 export function sendNativeReviewKickoff(options: { client: any; sessionID: string; signal?: AbortSignal; prompt?: string }): Promise<void>;
-export function showNativeReviewOffer(toast: { show(options: { sessionID: string; message: string; variant: 'info'; duration: number }): void }, input: { sessionID: string }): void;
+export function showNativeReviewOffer(
+  toast: { show(options: { sessionID: string; message: string; variant: "info"; duration: number }): void },
+  input: { sessionID: string },
+): void;
 export function nativeReviewMode(session: any, config: any, explicitMode?: string): string;
 export function createNativeReviewConsumer(options: NativeReviewConsumerOptions): {
   setLoopActive(sessionID: string, active: boolean): void;
@@ -28,7 +31,15 @@ export function createNativeReviewConsumer(options: NativeReviewConsumerOptions)
   onSucceeded(event: any): Promise<void>;
   onFailed(event: any): Promise<void>;
   onInterrupted(event: any): Promise<void>;
-  enqueueInboxDelivery(event: any, getMessage: (sessionID: string, messageID: string, signal: AbortSignal) => Promise<{ type?: string; metadata?: Record<string, unknown> } | undefined>): Promise<void>;
+  enqueueInboxDelivery(
+    event: any,
+    getMessage: (sessionID: string, messageID: string, signal: AbortSignal) => Promise<{ type?: string; metadata?: Record<string, unknown> } | undefined>,
+  ): Promise<void>;
   dispose(): void;
 };
-export function subscribeNativeReviewEvents(data: any, consumer: ReturnType<typeof createNativeReviewConsumer>, onError?: (error: unknown) => void, getMessage?: (sessionID: string, messageID: string, signal: AbortSignal) => Promise<{ type?: string; metadata?: Record<string, unknown> } | undefined>): Array<() => void>;
+export function subscribeNativeReviewEvents(
+  data: any,
+  consumer: ReturnType<typeof createNativeReviewConsumer>,
+  onError?: (error: unknown) => void,
+  getMessage?: (sessionID: string, messageID: string, signal: AbortSignal) => Promise<{ type?: string; metadata?: Record<string, unknown> } | undefined>,
+): Array<() => void>;

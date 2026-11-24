@@ -50,12 +50,7 @@ test('domCheck executes inline scripts and asserts on selectors, text, and click
 
 test('domCheck reports failures for missing elements, wrong counts, bad text, and console errors', async () => {
   const html = `<!doctype html><body><div id="x">nope</div><script>console.error('boom');</script></body>`;
-  const r = await domCheck(html, [
-    { selector: '#missing' },
-    { selector: '#x', text: 'expected' },
-    { selector: 'div', count: 5 },
-    { console: 'error-free' },
-  ]);
+  const r = await domCheck(html, [{ selector: '#missing' }, { selector: '#x', text: 'expected' }, { selector: 'div', count: 5 }, { console: 'error-free' }]);
   assert.equal(r.pass, false);
   assert.equal(r.failures.length, 4);
   assert.ok(r.failures.some(f => f.includes('not found')));
