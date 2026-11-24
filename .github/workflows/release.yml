@@ -17,11 +17,11 @@ jobs:
     outputs:
       tested_sha: ${{ steps.commit.outputs.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.release_tag }}
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -47,7 +47,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.release_tag }}
           fetch-depth: 0
@@ -63,7 +63,7 @@ jobs:
             echo "::error::Release tag ${RELEASE_TAG} resolves to ${tag_sha}, not tested commit ${EXPECTED_SHA}." >&2
             exit 1
           fi
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
@@ -95,7 +95,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.release_tag }}
           fetch-depth: 0

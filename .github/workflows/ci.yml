@@ -28,22 +28,22 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         node: [22, 24]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
         env:
           GIT_CONFIG_COUNT: 1
           GIT_CONFIG_KEY_0: core.autocrlf
           GIT_CONFIG_VALUE_0: 'false'
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - run: npm ci
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: node_modules/.cache/ctg
           key: build-cache-${{ runner.os }}-node${{ matrix.node }}-${{ hashFiles('package-lock.json', 'eslint.config.mjs', 'plugins/carthagent/tsconfig.json') }}-${{ github.sha }}
@@ -59,7 +59,7 @@ jobs:
       - name: Test timing report
         if: always()
         run: node tools/test-report.mjs
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: test-results-${{ matrix.os }}-node${{ matrix.node }}
@@ -90,10 +90,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -105,7 +105,7 @@ jobs:
       # Cold timings (no build cache) stay comparable with tools/build-budget.json.
       - run: npm run build:timings
       - run: npm run qa:smoke -- --json artifacts/qa-smoke/report.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: repo-checks
@@ -118,10 +118,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -136,14 +136,14 @@ jobs:
       contents: write
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
         env:
           GIT_CONFIG_COUNT: 1
           GIT_CONFIG_KEY_0: core.autocrlf
           GIT_CONFIG_VALUE_0: 'false'
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -155,18 +155,18 @@ jobs:
   browser:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         env:
           GIT_CONFIG_COUNT: 1
           GIT_CONFIG_KEY_0: core.autocrlf
           GIT_CONFIG_VALUE_0: 'false'
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
       - run: npm ci
       - run: npm run test:browser   # bundled chrome-headless-shell; no browser setup needed
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: browser-evidence

@@ -49,7 +49,7 @@ jobs:
       release_tag: ${{ steps.validate.outputs.release_tag }}
       release_commit: ${{ steps.validate.outputs.release_commit }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
       - name: Validate planned version and selected source/release
@@ -137,11 +137,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: ctg
           ref: ${{ needs.validate-request.outputs.source_commit }}
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: anomalyco/opencode
           ref: 843a6c514e606b436a7fe713422ace0a93ad3d61
@@ -152,7 +152,7 @@ jobs:
           GIT_CONFIG_COUNT: 1
           GIT_CONFIG_KEY_0: core.autocrlf
           GIT_CONFIG_VALUE_0: 'false'
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: B-icy/Carthagent
           ref: e32bcf7d00645222a34be002f9f7da6626d8db9c
@@ -204,7 +204,7 @@ jobs:
           test "$(git -C opencode rev-parse HEAD)" = 843a6c514e606b436a7fe713422ace0a93ad3d61
           test "$SOURCE_COMMIT" = "${{ needs.validate-request.outputs.source_commit }}"
           if command -v sha256sum >/dev/null 2>&1; then sha256sum "$archive" "$OUT/opencode-${TARGET_KEY}.tar.gz.build.json" >> "$GITHUB_STEP_SUMMARY"; else shasum -a 256 "$archive" "$OUT/opencode-${TARGET_KEY}.tar.gz.build.json" >> "$GITHUB_STEP_SUMMARY"; fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ctg-runtime-prebuild-${{ matrix.key }}
           path: |
@@ -221,11 +221,11 @@ jobs:
       actions: read
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.validate-request.outputs.source_commit }}
           path: ctg
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: B-icy/Carthagent
           ref: e32bcf7d00645222a34be002f9f7da6626d8db9c
@@ -235,7 +235,7 @@ jobs:
         run: |
           test "$(git -C release-generator rev-parse HEAD)" = e32bcf7d00645222a34be002f9f7da6626d8db9c
           test -f release-generator/tools/generate-owned-runtime-release.mjs
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: ctg-runtime-prebuild-*
           path: native-build-records
@@ -266,7 +266,7 @@ jobs:
           (cd candidate-bundle && sha256sum opencode-*.tar.gz > runtime-archives-SHA256SUMS.txt)
           node -e 'const fs=require("node:fs");const meta={version:1,releaseVersion:process.env.RELEASE_VERSION,sourceCommit:process.env.SOURCE_COMMIT,workflowPath:".github/workflows/publish-owned-opencode-runtime.yml",runId:Number(process.env.RUN_ID)};fs.writeFileSync("candidate-bundle/candidate-provenance.json",JSON.stringify(meta,null,2)+"\n",{flag:"wx"})'
           sha256sum candidate-bundle/opencode-*.tar.gz candidate-bundle/runtime-release.json.candidate >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ctg-runtime-candidate-${{ needs.validate-request.outputs.release_version }}
           path: candidate-bundle/*
@@ -282,18 +282,18 @@ jobs:
       actions: read
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
           run-id: ${{ inputs.prebuild_run_id }}
           name: ctg-runtime-candidate-${{ needs.validate-request.outputs.release_version }}
           path: candidate
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.validate-request.outputs.release_commit }}
           path: ctg
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: B-icy/Carthagent
           ref: e32bcf7d00645222a34be002f9f7da6626d8db9c

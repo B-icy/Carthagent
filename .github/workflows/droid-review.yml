@@ -29,7 +29,7 @@ jobs:
         run: echo "::notice::FACTORY_API_KEY is not available to this run; skipping Droid review."
       - name: Checkout repository
         if: env.HAS_FACTORY_API_KEY == 'true'
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
       - name: Run Droid Auto Review
