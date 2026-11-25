@@ -145,7 +145,7 @@
     "knip": "6.45.1",
     "prettier": "3.10.1",
     "typescript": "^5.9.2",
-    "typescript-eslint": "8.57.0"
+    "typescript-eslint": "8.73.0"
   },
   "allowScripts": {
     "@opencode/cli@2.0.32": true
