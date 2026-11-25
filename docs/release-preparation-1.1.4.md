@@ -23,6 +23,12 @@ DOM-readiness and release-checkout regression fixes. The incompatible
 TypeScript 7 proposal in
 [#322](https://github.com/B-icy/Carthagent/pull/322) was closed, not included.
 
+The reviewed lockfile audit on 2026-11-25 reports 29 moderate advisories,
+0 high and 0 critical, compared with 38 moderate and 1 high before cleanup.
+The `body-parser` high-severity advisory is fixed. This is an audit snapshot,
+not a claim of a vulnerability-free release. Remaining moderate findings
+have not been suppressed.
+
 The root package and both root lockfile versions become 1.1.4. The private
 plugin's independent version stays unchanged. The runtime manifest's
 `releaseVersion` also becomes 1.1.4 because the resolver requires it to match
