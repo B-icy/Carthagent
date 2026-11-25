@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createServer } from 'node:http';
 import { serveDir, domCheck } from '../lib/browser.mjs';
 
 function fixture(t, html = '<!doctype html><div id="app">hello</div>') {
@@ -88,4 +89,46 @@ test('domCheck supports eval assertions and type/key actions', async () => {
     { eval: 'document.title', expect: '' },
   ]);
   assert.equal(r.pass, true);
+});
+
+test('domCheck fails closed when a blocking script leaves later markup unparsed', async t => {
+  const server = createServer(() => {});
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => {
+    server.closeAllConnections();
+    server.close();
+  });
+  const url = `http://127.0.0.1:${server.address().port}/`;
+  const html = '<div id="ready">ready</div><script src="/pending.js"></script><div id="tail">later</div><script type="module">throw Error("broken")</script>';
+  const result = await domCheck(html, [{ selector: '#ready', text: 'ready' }, { console: 'error-free' }], { url, waitMs: 25 });
+  try {
+    assert.equal(result.document.readyState, 'loading');
+    assert.equal(result.document.querySelector('#tail'), null);
+    assert.equal(result.pass, false);
+    assert.match(result.failures.join(' '), /Document parsing did not finish/);
+  } finally {
+    result.window.close();
+  }
+  const staticResult = await domCheck(html, [{ selector: '#tail', text: 'later' }], { url, runScripts: false });
+  try {
+    assert.equal(staticResult.pass, true);
+  } finally {
+    staticResult.window.close();
+  }
+});
+
+test('domCheck checks the completed tree after an external blocking script loads', async t => {
+  const dir = fixture(t, '<div id="ready">ready</div><script src="/app.js"></script><div id="tail">later</div>');
+  writeFileSync(join(dir, 'app.js'), 'window.externalLoaded = true;');
+  const server = await serveDir(dir);
+  t.after(() => server.close());
+  const result = await domCheck(server.url, [
+    { selector: '#tail', text: 'later' },
+    { eval: 'externalLoaded', expect: true },
+  ]);
+  try {
+    assert.equal(result.pass, true, result.failures.join(' '));
+  } finally {
+    result.window.close();
+  }
 });
