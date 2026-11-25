@@ -31,10 +31,6 @@ test('v21 is the published 1.1.3 runtime patch', () => {
   assert.equal(expected, '9a73eb1ded4d9914a554640226949d53caca986ef8b846ef8592fe75a9a1bf92');
   assert.ok(read('docs/staged-native-polish-v21.md').includes(expected));
   assert.ok(read('docs/release-preparation-1.1.3.md').includes(expected));
-  const build = read('script/ctg/build-owned-runtime.sh');
-  assert.ok(build.includes(`EXPECTED_PATCH="${expected}"`));
-  assert.ok(build.includes('docs/patches/opencode-v2.0.32-session-ui-combined-v21.patch'));
-  assert.ok(read('.github/workflows/publish-owned-opencode-runtime.yml').includes('combined-v21.patch'));
   assert.equal(expected, CTG_RUNTIME_PATCH_SHA256);
   assert.notEqual(expected, CTG_DEVELOPMENT_RUNTIME_PATCH_SHA256);
   assert.equal(JSON.parse(read('lib/opencode/runtime-release.json')).patchSha256, expected);

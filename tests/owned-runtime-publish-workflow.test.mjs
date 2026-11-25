@@ -111,7 +111,7 @@ function workflowJob(name) {
   return lines.slice(start, end).join('\n');
 }
 
-const combinedPatchPath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v21.patch';
+const combinedPatchPath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v22.patch';
 
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
@@ -450,13 +450,13 @@ test('draft metadata validation has scoped write capability; artifact mutation s
   assert.match(uploadBlock, /gh release upload/);
   assert.match(
     workflow,
-    /git -C ctg show HEAD:docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v21\.patch > opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v21\.patch/,
+    /git -C ctg show HEAD:docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v22\.patch > opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v22\.patch/,
   );
-  assert.match(workflow, /patch_sha256="\$\(hash_file opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v21\.patch\)"/);
+  assert.match(workflow, /patch_sha256="\$\(hash_file opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v22\.patch\)"/);
   assert.equal(
     (
       workflow.match(
-        /git -C ctg show HEAD:docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v21\.patch > ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui\.patch/g,
+        /git -C ctg show HEAD:docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v22\.patch > ctg\/docs\/patches\/opencode-v2\.0\.32-session-ui\.patch/g,
       ) ?? []
     ).length,
     1,
@@ -468,7 +468,7 @@ test('draft metadata validation has scoped write capability; artifact mutation s
   assert.match(workflow, /chmod \+x opencode\/script\/ctg\/build-owned-runtime\.sh/);
   assert.match(workflow, /GIT_CONFIG_KEY_0:\s*core\.autocrlf[\s\S]*?GIT_CONFIG_VALUE_0:\s*'false'/);
   assert.match(workflow, /git -C opencode config --local core\.autocrlf false/);
-  assert.match(workflow, /patch_sha256="\$\(hash_file opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v21\.patch\)"/);
+  assert.match(workflow, /patch_sha256="\$\(hash_file opencode\/docs\/patches\/opencode-v2\.0\.32-session-ui-combined-v22\.patch\)"/);
 });
 
 test(

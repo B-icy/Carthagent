@@ -7,6 +7,7 @@ import { CTG_DEVELOPMENT_RUNTIME_PATCH_SHA256, CTG_RUNTIME_LOCK_SHA256, CTG_RUNT
 const releasedPath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v15.patch';
 const candidatePath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v16.patch';
 const promotedPath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v21.patch';
+const stagedPath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v22.patch';
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url));
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 
@@ -33,7 +34,7 @@ test('v15 patch stays immutable; the 1.1.3 runtime pin selects reviewed v21', ()
   assert.equal(release.lockSha256, CTG_RUNTIME_LOCK_SHA256);
 });
 
-test('resolver, release trust root, build recipe and workflow agree on promoted v21', () => {
+test('resolver and release trust root retain v21 while the source build stages v22', () => {
   const release = JSON.parse(read('lib/opencode/runtime-release.json'));
   const packageJson = JSON.parse(read('package.json'));
   assert.equal(release.releaseVersion, packageJson.version);
@@ -41,9 +42,10 @@ test('resolver, release trust root, build recipe and workflow agree on promoted 
   assert.equal(release.sourceRevision, CTG_RUNTIME_SOURCE);
   assert.equal(release.lockSha256, CTG_RUNTIME_LOCK_SHA256);
   const build = read('script/ctg/build-owned-runtime.sh').toString('utf8');
-  assert.ok(build.includes(`EXPECTED_PATCH="${sha256(read(promotedPath))}"`));
-  assert.ok(build.includes(promotedPath));
-  assert.ok(read('.github/workflows/publish-owned-opencode-runtime.yml').toString('utf8').includes(promotedPath));
+  assert.notEqual(sha256(read(stagedPath)), release.patchSha256);
+  assert.ok(build.includes(`EXPECTED_PATCH="${sha256(read(stagedPath))}"`));
+  assert.ok(build.includes(stagedPath));
+  assert.ok(read('.github/workflows/publish-owned-opencode-runtime.yml').toString('utf8').includes(stagedPath));
 });
 
 test('combined v16 is a separately identified source candidate, not an active runtime pin', t => {
