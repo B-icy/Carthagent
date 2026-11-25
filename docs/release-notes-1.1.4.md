@@ -75,7 +75,27 @@ cost. ([#305](https://github.com/B-icy/Carthagent/pull/305))
   Automatic Droid review skips forks and runs without an available API key.
   Enabling it requires a `FACTORY_API_KEY` secret and the required Factory setup.
 
-Dependency updates opened by Dependabot after these merges are not included.
+## Dependency updates
+
+- Express 5.3.0, with the locked `body-parser` updated to 2.4.0 to fix a
+  high-severity compressed-request denial of service. The lockfile also updates
+  `qs` to 6.17.1.
+  ([#323](https://github.com/B-icy/Carthagent/pull/323))
+- jsdom 31.0.0, with DOM checks now rejecting incomplete document parsing
+  instead of reporting success against only the first part of a page.
+  Explicit static inspection remains available through `runScripts:false`.
+  ([#324](https://github.com/B-icy/Carthagent/pull/324))
+- string-width 8.3.0 for the native Voyages rail.
+  ([#325](https://github.com/B-icy/Carthagent/pull/325))
+- Compatible lint tooling and GitHub Actions updates. Release-checkout
+  regressions still enforce the checked commit, ancestry and credential rules
+  without hardcoding the checkout action's version.
+  ([#320](https://github.com/B-icy/Carthagent/pull/320),
+  [#321](https://github.com/B-icy/Carthagent/pull/321))
+
+The proposed TypeScript 7 update was deferred because its compiler API is not
+supported by the lint tooling. The supported TypeScript 5 compiler remains.
+([#322](https://github.com/B-icy/Carthagent/pull/322))
 
 "Verified" means the declared required checks passed against the current code.
 It is not independent proof of task completeness or freedom from bugs. See the

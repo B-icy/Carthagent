@@ -13,6 +13,16 @@ Includes the changes since 1.1.3 from
 user-home and workflow fixes. See
 [draft release notes](release-notes-1.1.4.md).
 
+Also includes the reviewed dependency updates in
+[#320](https://github.com/B-icy/Carthagent/pull/320),
+[#321](https://github.com/B-icy/Carthagent/pull/321),
+[#323](https://github.com/B-icy/Carthagent/pull/323),
+[#324](https://github.com/B-icy/Carthagent/pull/324) and
+[#325](https://github.com/B-icy/Carthagent/pull/325), with scoped parser-security,
+DOM-readiness and release-checkout regression fixes. The incompatible
+TypeScript 7 proposal in
+[#322](https://github.com/B-icy/Carthagent/pull/322) was closed, not included.
+
 The root package and both root lockfile versions become 1.1.4. The private
 plugin's independent version stays unchanged. The runtime manifest's
 `releaseVersion` also becomes 1.1.4 because the resolver requires it to match
