@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { sections } from './helpers/patch-sections.mjs';
 import { CTG_RUNTIME_PATCH_SHA256, CTG_RUNTIME_SOURCE } from '../lib/opencode/runtime.mjs';
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
@@ -11,19 +12,6 @@ const candidate = read(candidatePath);
 const previous = read('docs/patches/opencode-v2.0.32-session-ui-combined-v21.patch');
 const expected = 'ce3af84f6bba4c58255c160e897bab86508c917942de23d8b676f9ce589e31f5';
 const portedUpstreamFixes = ['https://github.com/anomalyco/opencode/pull/65980'];
-
-function sections(patch) {
-  const entries = patch
-    .split(/(?=^diff --git )/m)
-    .filter(Boolean)
-    .map(section => {
-      const path = section.match(/^diff --git a\/(\S+) b\/\1\n/)?.[1];
-      assert.ok(path?.startsWith('packages/') && !path.split('/').includes('..'), `unsafe patch path: ${path}`);
-      return [path, section.replace(/^index .*\n/gm, '')];
-    });
-  assert.equal(new Set(entries.map(([path]) => path)).size, entries.length);
-  return new Map(entries);
-}
 
 test('v22 stages the upstream Promise cancellation fix without promoting the release pin', () => {
   assert.equal(digest(candidate), expected);
