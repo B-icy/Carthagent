@@ -323,6 +323,44 @@ test('immediate pre-acceptance recheck pins the original SHA and release ID', as
   );
 });
 
+function assertTrustedCheckout(workflow) {
+  const bootstrapIndex = workflow.indexOf('Require main dispatch and a release tag descended from origin/main');
+  // The trust boundary is the checkout step and its inputs, not its action version.
+  const checkout = workflow.match(/^      - uses: actions\/checkout@\S+\r?\n(?:        .*\r?\n)*/m);
+  assert.ok(checkout, 'release checkout step must be present');
+  const verifierIndex = workflow.indexOf('verify-draft-runtime-gate.mjs before');
+  assert.ok(
+    bootstrapIndex >= 0 && bootstrapIndex < checkout.index && checkout.index < verifierIndex,
+    'trusted inline ancestry bootstrap must run before release checkout and tag-sourced verifier',
+  );
+  assert.match(
+    checkout[0],
+    /ref:\s*\$\{\{ steps\.trusted-ancestry\.outputs\.sha \}\}/,
+    'checkout must use the trusted ancestry-checked SHA, not resolve the mutable tag again',
+  );
+  assert.match(checkout[0], /persist-credentials:\s*false/, 'release checkout must not retain credentials');
+  assert.match(checkout[0], /fetch-depth:\s*0/, 'release checkout must retain full ancestry');
+}
+
+test('draft workflow checkout guard accepts action upgrades but rejects trust-boundary regressions', async () => {
+  const workflow = await readFile(new URL('../.github/workflows/accept-draft-release.yml', import.meta.url), 'utf8');
+  for (const ref of ['v4', 'v7', 'a'.repeat(40)]) {
+    assertTrustedCheckout(workflow.replace(/actions\/checkout@\S+/, `actions/checkout@${ref}`));
+  }
+  const checkout = workflow.match(/^      - uses: actions\/checkout@\S+\r?\n(?:        .*\r?\n)*/m)[0];
+  for (const unsafe of [
+    workflow.replace(checkout, ''),
+    checkout + workflow.replace(checkout, ''),
+    workflow.replace('Require main dispatch and a release tag descended from origin/main', 'Removed bootstrap'),
+    workflow.replace('verify-draft-runtime-gate.mjs before', 'removed-verifier'),
+    workflow.replace('ref: ${{ steps.trusted-ancestry.outputs.sha }}', 'ref: ${{ inputs.release_tag }}'),
+    workflow.replace('persist-credentials: false', 'persist-credentials: true'),
+    workflow.replace('fetch-depth: 0', 'fetch-depth: 1'),
+  ]) {
+    assert.throws(() => assertTrustedCheckout(unsafe), assert.AssertionError);
+  }
+});
+
 test('draft workflow grants required push capability but performs only read operations', async () => {
   const workflow = await readFile(new URL('../.github/workflows/accept-draft-release.yml', import.meta.url), 'utf8');
   assert.match(workflow, /permissions:\s*\n\s+contents:\s+read/);
@@ -346,18 +384,7 @@ test('draft workflow grants required push capability but performs only read oper
   assert.match(workflow, /verify-draft-runtime-gate\.mjs recheck/);
   assert.match(workflow, /verify-draft-runtime-gate\.mjs after/);
   assert.match(workflow, /verify release tag ancestry against approved main after acceptance/);
-  const bootstrapIndex = workflow.indexOf('Require main dispatch and a release tag descended from origin/main');
-  const checkoutIndex = workflow.indexOf('uses: actions/checkout@v4');
-  const verifierIndex = workflow.indexOf('verify-draft-runtime-gate.mjs before');
-  assert.ok(
-    bootstrapIndex >= 0 && bootstrapIndex < checkoutIndex && checkoutIndex < verifierIndex,
-    'trusted inline ancestry bootstrap must run before release checkout and tag-sourced verifier',
-  );
-  assert.match(
-    workflow,
-    /ref:\s*\$\{\{ steps\.trusted-ancestry\.outputs\.sha \}\}/,
-    'checkout must use the trusted ancestry-checked SHA, not resolve the mutable tag again',
-  );
+  assertTrustedCheckout(workflow);
   const docs = (await readFile(new URL('../docs/opencode-owned-runtime.md', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
   assert.match(docs, /current full,\s+non-focused installed-package gate/);
   assert.match(docs, /exactly those seven assets/);
