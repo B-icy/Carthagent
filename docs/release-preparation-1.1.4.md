@@ -32,13 +32,23 @@ release still needs all five exact, reviewed runtime archives at its own tag,
 plus the matching manifest and checksum asset. Do not bypass the manifest
 version check or point the new package at an old release to make CI pass.
 
+## Confirmed CI blocker
+
+The Linux native-host and installed-package jobs in
+[the preparation CI run](https://github.com/B-icy/Carthagent/actions/runs/45520429517)
+fail while acquiring the owned runtime, with
+`The exact Carthagent runtime release was not found.`
+The v1.1.4 release and assets have not been staged. Ordinary lint, build and
+unit-test success does not clear this final-artifact blocker. Keep this PR
+draft until the approved artifact sequence and acceptance gates are complete.
+
 ## Remaining release gates
 
 - [ ] Review this preparation PR and its checks.
 - [ ] Stage the existing exact runtime archives under the approved release
       process, verify their digests and produce the matching manifest and
-      checksum asset. Missing v1.1.4 assets may block native integration CI
-      until this step is complete.
+      checksum asset. Missing v1.1.4 assets currently block native integration
+      CI until this step is complete.
 - [ ] Follow the approved main/tag ancestry and draft-asset sequence in
       [the owned-runtime release procedure](opencode-owned-runtime.md).
 - [ ] Run the full installed-package gate against the exact final artifacts,
