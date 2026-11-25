@@ -26,11 +26,11 @@ jobs:
     steps:
       # A release event would otherwise check out the release tag, which may
       # predate this tooling.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'release' && github.event.repository.default_branch || github.ref }}
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - name: Check the latest stable release
@@ -48,7 +48,7 @@ jobs:
           echo "exit_code=${status}" >> "$GITHUB_OUTPUT"
       - name: Upload the release health report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-health-${{ github.run_id }}
           path: release-health.json
