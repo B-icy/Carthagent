@@ -188,6 +188,10 @@ Experimental software may still contain bugs; read its release notes first.
 
 ## Release status
 
+**1.1.4 is in preparation, not published.** See the
+[draft release notes](docs/release-notes-1.1.4.md) and
+[release checklist](docs/release-preparation-1.1.4.md).
+
 **1.1.3 is the current stable release** (npm `latest`, `ctg update` on the
 stable channel): a faster start, a polished Projects sidebar, one-Enter `/help`
 and Voyages that load after a session's folder moves; see the
