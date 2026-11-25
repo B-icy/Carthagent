@@ -126,7 +126,7 @@
     "@resvg/resvg-js": "^2.6.2",
     "express": "^5.2.1",
     "jiti": "^2.7.0",
-    "jsdom": "^30.0.1",
+    "jsdom": "^31.0.0",
     "solid-js": "1.9.12",
     "tree-sitter-wasms": "^0.1.13",
     "web-tree-sitter": "0.25.10",
@@ -145,7 +145,7 @@
     "knip": "6.45.1",
     "prettier": "3.10.1",
     "typescript": "^5.9.2",
-    "typescript-eslint": "8.57.0"
+    "typescript-eslint": "8.73.0"
   },
   "allowScripts": {
     "@opencode/cli@2.0.32": true
