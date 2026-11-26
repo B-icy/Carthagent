@@ -519,6 +519,18 @@ index ef0d5d635b1f7c6341da16ee610fd00621e1b65f..346cc6872c33d028ffa9149028682692
                const content =
                  typeof executed.content === "string"
                    ? [{ type: "text" as const, text: executed.content }]
+diff --git a/packages/core/src/config/plugin/source.ts b/packages/core/src/config/plugin/source.ts
+index ef1057abe82d7bf9b86037b9392418bfadfcbdc2..3a1e89e0f52686e2356a9d428712f322bd6222dd 100644
+--- a/packages/core/src/config/plugin/source.ts
++++ b/packages/core/src/config/plugin/source.ts
+@@ -60,6 +60,7 @@ export const layer = Layer.effect(
+         const updates = yield* watcher.subscribe({
+           path: operation.target,
+           type: (yield* fs.isDir(operation.target)) ? "directory" : "file",
++          ignore: ["node_modules", ".git", "**/{node_modules,.git}/**"],
+         })
+         yield* updates.pipe(
+           Stream.runForEach(() => PubSub.publish(configuredChanges, undefined)),
 diff --git a/packages/core/src/filesystem.ts b/packages/core/src/filesystem.ts
 index 8896bf8fa9e00bc6fe3799a227c4dc91c0a2ad5d..1c1db523de1b9dba3ec35f0e86809db363239211 100644
 --- a/packages/core/src/filesystem.ts
@@ -702,6 +714,66 @@ index e25084b0a406e3629691b387990748df740f5b3b..4f0b5f7f2e91f33d6f36e9493721d556
                                type: "string",
                                required: true,
                                custom: false,
+diff --git a/packages/core/test/config/plugin-source.test.ts b/packages/core/test/config/plugin-source.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..cfec681b4043f0dde81f60baf46d8dec8f2f49df
+--- /dev/null
++++ b/packages/core/test/config/plugin-source.test.ts
+@@ -0,0 +1,54 @@
++import fs from "fs/promises"
++import path from "path"
++import { describe, expect } from "bun:test"
++import { Effect, Layer, Schema } from "effect"
++import { Document, Info } from "@opencode/schema/config"
++import { Config } from "@opencode/core/config"
++import { ConfigPluginSource } from "@opencode/core/config/plugin/source"
++import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
++import { Watcher } from "@opencode/core/filesystem/watcher"
++import { Location } from "@opencode/core/location"
++import { AbsolutePath } from "@opencode/core/schema"
++import { FSUtil } from "@opencode/util/fs-util"
++import { LayerNode } from "@opencode/util/effect/layer-node"
++import { location } from "../fixture/location"
++import { tmpdirScoped } from "../fixture/tmpdir"
++import { testEffect } from "../lib/effect"
++
++const it = testEffect(Layer.merge(AppNodeBuilder.build(LayerNode.group([FSUtil.node])), Watcher.testLayer))
++const decode = Schema.decodeUnknownSync(Info)
++
++describe("configured plugin source watches", () => {
++  it.live("ignores dependency and VCS trees inside a configured local plugin directory", () =>
++    Effect.gen(function* () {
++      const tmp = yield* tmpdirScoped()
++      const plugin = path.join(tmp.path, "plugins", "local")
++      yield* Effect.promise(async () => {
++        await fs.mkdir(path.join(plugin, "node_modules", "dep"), { recursive: true })
++        await fs.mkdir(path.join(plugin, ".git"), { recursive: true })
++        await Bun.write(path.join(plugin, "index.ts"), "export default {}\n")
++      })
++      const ref = Location.Ref.make({ directory: AbsolutePath.make(tmp.path) })
++      const entries = [new Document({ type: "document", info: decode({ plugins: [plugin] }) })]
++
++      const operations = yield* Effect.gen(function* () {
++        const source = yield* ConfigPluginSource.Service
++        return yield* source.operations()
++      }).pipe(
++        Effect.provide(
++          ConfigPluginSource.layer.pipe(
++            Layer.provide(Config.testLayer(entries)),
++            Layer.provide(Layer.succeed(Location.Service, Location.Service.of(location(ref)))),
++          ),
++        ),
++      )
++      const watcher = yield* Watcher.Test
++
++      expect(operations.map((operation) => operation.target)).toEqual([plugin])
++      // The test watcher records ignore globs sorted, as the native watcher keys them.
++      expect(yield* watcher.subscriptions()).toEqual([
++        { path: plugin, type: "directory", ignore: ["**/{node_modules,.git}/**", ".git", "node_modules"] },
++      ])
++    }),
++  )
++})
 diff --git a/packages/core/test/plugin-failure.test.ts b/packages/core/test/plugin-failure.test.ts
 index a800b5d85782dd089ef17457d8926e0c42613563..5d05c4efef90d48e132a859a0417e10ce2cd0ada 100644
 --- a/packages/core/test/plugin-failure.test.ts

@@ -10,10 +10,21 @@ const digest = value => createHash('sha256').update(value).digest('hex');
 const candidatePath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v22.patch';
 const candidate = read(candidatePath);
 const previous = read('docs/patches/opencode-v2.0.32-session-ui-combined-v21.patch');
-const expected = 'ce3af84f6bba4c58255c160e897bab86508c917942de23d8b676f9ce589e31f5';
-const portedUpstreamFixes = ['https://github.com/anomalyco/opencode/pull/65980'];
+const expected = '649cfb098f8a2afc7f44de17d3bcdfb54d64a862866c665bf7bc200169a6c5e1';
+const portedUpstreamFixes = ['https://github.com/anomalyco/opencode/pull/65980', 'https://github.com/anomalyco/opencode/pull/66471'];
+const focusedSuites = [
+  'test/plugin/promise-abort.test.ts test/plugin/promise-tool.test.ts test/plugin/session-remove.test.ts',
+  'bun test --cwd packages/core test/config/plugin-source.test.ts',
+];
+const portMarkers = {
+  'packages/core/src/config/plugin/source.ts': ['ignore: ["node_modules", ".git", "**/{node_modules,.git}/**"]'],
+  'packages/core/test/config/plugin-source.test.ts': [
+    'ignores dependency and VCS trees inside a configured local plugin directory',
+    '{ path: plugin, type: "directory", ignore: ["**/{node_modules,.git}/**", ".git", "node_modules"] }',
+  ],
+};
 
-test('v22 stages the upstream Promise cancellation fix without promoting the release pin', () => {
+test('v22 stages the ported upstream fixes without promoting the release pin', () => {
   assert.equal(digest(candidate), expected);
   assert.equal(digest(previous), CTG_RUNTIME_PATCH_SHA256);
   assert.equal(CTG_RUNTIME_PATCH_SHA256, '9a73eb1ded4d9914a554640226949d53caca986ef8b846ef8592fe75a9a1bf92');
@@ -24,15 +35,15 @@ test('v22 stages the upstream Promise cancellation fix without promoting the rel
   assert.equal(CTG_RUNTIME_SOURCE, '843a6c514e606b436a7fe713422ace0a93ad3d61');
   const doc = read('docs/staged-native-upstream-v22.md');
   assert.ok(doc.includes(expected));
-  for (const reference of portedUpstreamFixes) assert.ok(doc.includes(reference));
+  for (const reference of portedUpstreamFixes) assert.ok(doc.includes(reference), reference);
   const build = read('script/ctg/build-owned-runtime.sh');
   assert.ok(build.includes(`EXPECTED_PATCH="${expected}"`));
   assert.ok(build.includes(candidatePath));
-  assert.ok(build.includes('test/plugin/promise-abort.test.ts test/plugin/promise-tool.test.ts test/plugin/session-remove.test.ts'));
+  for (const suite of focusedSuites) assert.ok(build.includes(suite), suite);
   assert.ok(read('.github/workflows/publish-owned-opencode-runtime.yml').includes(candidatePath));
 });
 
-test('v22 preserves v21 except for the Promise API adapter and its new focused regressions', () => {
+test('v22 preserves v21 except for the ported upstream fixes and their focused regressions', () => {
   const before = sections(previous);
   const after = sections(candidate);
   assert.deepEqual(
@@ -41,7 +52,7 @@ test('v22 preserves v21 except for the Promise API adapter and its new focused r
   );
   assert.deepEqual(
     [...after.keys()].filter(path => !before.has(path)),
-    ['packages/core/test/plugin/promise-abort.test.ts'],
+    ['packages/core/src/config/plugin/source.ts', 'packages/core/test/config/plugin-source.test.ts', 'packages/core/test/plugin/promise-abort.test.ts'],
   );
   const adapter = after.get('packages/plugin/src/promise/adapter.ts');
   for (const marker of [
@@ -64,4 +75,7 @@ test('v22 preserves v21 except for the Promise API adapter and its new focused r
   assert.ok(regression.includes('expect(error).toBe(controller.signal.reason)'));
   assert.ok(regression.includes('expect(calls.stopped).toBe(index + 1)'));
   assert.ok(regression.includes('toEqual([kept.id])'));
+  for (const [path, markers] of Object.entries(portMarkers)) {
+    for (const marker of markers) assert.ok(after.get(path).includes(marker), `${path}: ${marker}`);
+  }
 });

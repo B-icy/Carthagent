@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 EXPECTED_SOURCE="843a6c514e606b436a7fe713422ace0a93ad3d61"
 EXPECTED_LOCK="9d78379cd264584a495440a217b9d2ecab524c9a56f7f8b4b5bed3926daa330d"
-EXPECTED_PATCH="ce3af84f6bba4c58255c160e897bab86508c917942de23d8b676f9ce589e31f5"
+EXPECTED_PATCH="649cfb098f8a2afc7f44de17d3bcdfb54d64a862866c665bf7bc200169a6c5e1"
 TARGET="${1:-opencode-linux-x64}"
 HOST_PLATFORM="$(node -p 'process.platform')"
 HOST_ARCH="$(node -p 'process.arch')"
@@ -111,6 +111,7 @@ bun run --cwd packages/cli typecheck
 bun test --cwd packages/core test/session-compaction.test.ts
 bun test --cwd packages/core test/shell-retention.test.ts
 bun test --cwd packages/core test/plugin/promise-abort.test.ts test/plugin/promise-tool.test.ts test/plugin/session-remove.test.ts
+bun test --cwd packages/core test/config/plugin-source.test.ts
 bun test --cwd packages/server test/shell-provenance.test.ts
 bun test --cwd packages/server test/fs.test.ts
 bun test --cwd packages/server test/integration-startup.test.ts

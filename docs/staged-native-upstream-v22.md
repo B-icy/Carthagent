@@ -1,15 +1,15 @@
-# Staged native upstream fix v22
+# Staged native upstream fixes v22
 
 This is staged source only. The published runtime, release manifest, package
 versions and `CTG_RUNTIME_PATCH_SHA256` remain unchanged on combined-v21.
 Selecting v22 for a release is a separate manual step.
 
 Candidate patch: `docs/patches/opencode-v2.0.32-session-ui-combined-v22.patch`.
-Candidate patch SHA-256: `ce3af84f6bba4c58255c160e897bab86508c917942de23d8b676f9ce589e31f5`.
+Candidate patch SHA-256: `649cfb098f8a2afc7f44de17d3bcdfb54d64a862866c665bf7bc200169a6c5e1`.
 Pinned source: `843a6c514e606b436a7fe713422ace0a93ad3d61` (v2.0.32).
 Pinned Bun: 1.4.2. The lockfile and upstream MIT license are unchanged.
 
-## Ported upstream fix
+## Ported upstream fixes
 
 - [OpenCode #65980](https://github.com/anomalyco/opencode/pull/65980),
   commit `57f83d690d97297678ed181136d02139ff342c66`: honor abort signals
@@ -29,12 +29,23 @@ upstream reverted both in [#66140](https://github.com/anomalyco/opencode/pull/66
 while retaining #65980. An in-flight rejection keeps the Effect runner's existing
 error contract; this patch does not promise identity with `AbortSignal.reason`.
 
+## Further ported fixes
+
+- [OpenCode #66471](https://github.com/anomalyco/opencode/pull/66471),
+  commit `1e16a3177b4e024e733078822cf3be63d623e396`: ignore `node_modules` and
+  `.git` in configured plugin directory watches. Carthagent writes its native
+  plugin as an absolute configured plugin directory, which the pinned
+  `ConfigPluginSource` watches recursively with no ignore list. Upstream passes
+  `FSUtil.ignoreGlobs`, which the pin does not have, so the port uses the pinned
+  config watcher's own list (`node_modules`, `.git` and their nested globs).
+  A new focused test checks the recorded watch subscription; it fails on v21.
+
 ## Validation
 
 - Regenerated from a clean v2.0.32 worktree with combined-v21 applied.
   `git apply --check` passes in a separate clean checkout of the exact pin.
-- Only `packages/plugin/src/promise/adapter.ts` and the new
-  `packages/core/test/plugin/promise-abort.test.ts` differ from v21.
+- Relative to v21, only `packages/plugin/src/promise/adapter.ts` changes; every
+  other difference is a new section for the files listed above.
 - The pre-aborted-removal regression fails before the port and passes after it.
 - Bun core focused suites: 27 passing tests, including session compaction, shell
   retention, Promise tool invocation context, session removal and cancellation.
