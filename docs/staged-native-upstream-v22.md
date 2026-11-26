@@ -38,6 +38,8 @@ error contract; this patch does not promise identity with `AbortSignal.reason`.
   `ConfigPluginSource` watches recursively with no ignore list. Upstream passes
   `FSUtil.ignoreGlobs`, which the pin does not have, so the port uses the pinned
   config watcher's own list (`node_modules`, `.git` and their nested globs).
+  Upstream's newer list also covers `.venv`, `venv` and `__pycache__`; the port
+  intentionally keeps the pin's narrower list for this TypeScript plugin path.
   A new focused test checks the recorded watch subscription; it fails on v21.
 - [OpenCode #66477](https://github.com/anomalyco/opencode/pull/66477),
   commit `f3b5e9fa0ae7fac2c5516ccb3481ecc3b3d15831`: name the request method and
@@ -52,8 +54,11 @@ error contract; this patch does not promise identity with `AbortSignal.reason`.
 
 - Regenerated from a clean v2.0.32 worktree with combined-v21 applied.
   `git apply --check` passes in a separate clean checkout of the exact pin.
-- Relative to v21, only `packages/plugin/src/promise/adapter.ts` changes; every
-  other difference is a new section for the files listed above.
+- Relative to v21, only `packages/plugin/src/promise/adapter.ts` changes. The
+  other differences are new sections: `packages/ai/src/route/executor.ts`,
+  `packages/ai/test/executor.test.ts`, `packages/core/src/config/plugin/source.ts`,
+  `packages/core/test/config/plugin-source.test.ts` and
+  `packages/core/test/plugin/promise-abort.test.ts`.
 - The pre-aborted-removal regression fails before the port and passes after it.
 - #66471 and #66477 were added as separate regenerations with
   `git diff --full-index`, which reproduces the earlier v22 bytes exactly. The
@@ -62,7 +67,7 @@ error contract; this patch does not promise identity with `AbortSignal.reason`.
 - After both ports: `packages/ai` 1,821 passing tests, no failures; 325 passing
   core tests across `test/config/`, `test/aisdk.test.ts`, the plugin supervisor
   and the focused recipe suites; `packages/ai` and `packages/core` typechecks pass.
-- Bun core focused suites: 27 passing tests, including session compaction, shell
+- For #65980, Bun core focused suites: 27 passing tests, including session compaction, shell
   retention, Promise tool invocation context, session removal and cancellation.
 - Bun plugin package: 9 passing tests. Core and plugin typechecks pass with
   `GOMAXPROCS=2 GOMEMLIMIT=512MiB`. An initial 180-second core typecheck timed out;
