@@ -5,7 +5,7 @@ versions and `CTG_RUNTIME_PATCH_SHA256` remain unchanged on combined-v21.
 Selecting v22 for a release is a separate manual step.
 
 Candidate patch: `docs/patches/opencode-v2.0.32-session-ui-combined-v22.patch`.
-Candidate patch SHA-256: `649cfb098f8a2afc7f44de17d3bcdfb54d64a862866c665bf7bc200169a6c5e1`.
+Candidate patch SHA-256: `26b564635e1e2699797e72cf24a816952962bb392713d3812a98e4a3acb30711`.
 Pinned source: `843a6c514e606b436a7fe713422ace0a93ad3d61` (v2.0.32).
 Pinned Bun: 1.4.2. The lockfile and upstream MIT license are unchanged.
 
@@ -39,6 +39,14 @@ error contract; this patch does not promise identity with `AbortSignal.reason`.
   `FSUtil.ignoreGlobs`, which the pin does not have, so the port uses the pinned
   config watcher's own list (`node_modules`, `.git` and their nested globs).
   A new focused test checks the recorded watch subscription; it fails on v21.
+- [OpenCode #66477](https://github.com/anomalyco/opencode/pull/66477),
+  commit `f3b5e9fa0ae7fac2c5516ccb3481ecc3b3d15831`: name the request method and
+  URL in bare provider HTTP errors. The pinned `packages/ai` executor reports only
+  `Provider request failed with HTTP <status>` for empty or HTML error bodies, which
+  hides a misrouted custom provider base URL. The message now appends the method,
+  origin and path; the query string and fragment are dropped so key parameters
+  never reach the message. Recognized and raw provider bodies are unchanged. The
+  upstream executor tests are ported; the empty-body and HTML cases fail on v21.
 
 ## Validation
 
@@ -47,6 +55,13 @@ error contract; this patch does not promise identity with `AbortSignal.reason`.
 - Relative to v21, only `packages/plugin/src/promise/adapter.ts` changes; every
   other difference is a new section for the files listed above.
 - The pre-aborted-removal regression fails before the port and passes after it.
+- #66471 and #66477 were added as separate regenerations with
+  `git diff --full-index`, which reproduces the earlier v22 bytes exactly. The
+  plugin-source watch regression and the two upstream executor cases fail
+  without their ports and pass with them.
+- After both ports: `packages/ai` 1,821 passing tests, no failures; 325 passing
+  core tests across `test/config/`, `test/aisdk.test.ts`, the plugin supervisor
+  and the focused recipe suites; `packages/ai` and `packages/core` typechecks pass.
 - Bun core focused suites: 27 passing tests, including session compaction, shell
   retention, Promise tool invocation context, session removal and cancellation.
 - Bun plugin package: 9 passing tests. Core and plugin typechecks pass with

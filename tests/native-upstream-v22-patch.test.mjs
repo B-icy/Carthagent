@@ -10,17 +10,31 @@ const digest = value => createHash('sha256').update(value).digest('hex');
 const candidatePath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v22.patch';
 const candidate = read(candidatePath);
 const previous = read('docs/patches/opencode-v2.0.32-session-ui-combined-v21.patch');
-const expected = '649cfb098f8a2afc7f44de17d3bcdfb54d64a862866c665bf7bc200169a6c5e1';
-const portedUpstreamFixes = ['https://github.com/anomalyco/opencode/pull/65980', 'https://github.com/anomalyco/opencode/pull/66471'];
+const expected = '26b564635e1e2699797e72cf24a816952962bb392713d3812a98e4a3acb30711';
+const portedUpstreamFixes = [
+  'https://github.com/anomalyco/opencode/pull/65980',
+  'https://github.com/anomalyco/opencode/pull/66471',
+  'https://github.com/anomalyco/opencode/pull/66477',
+];
 const focusedSuites = [
   'test/plugin/promise-abort.test.ts test/plugin/promise-tool.test.ts test/plugin/session-remove.test.ts',
   'bun test --cwd packages/core test/config/plugin-source.test.ts',
+  'bun test --cwd packages/ai test/executor.test.ts',
 ];
 const portMarkers = {
   'packages/core/src/config/plugin/source.ts': ['ignore: ["node_modules", ".git", "**/{node_modules,.git}/**"]'],
   'packages/core/test/config/plugin-source.test.ts': [
     'ignores dependency and VCS trees inside a configured local plugin directory',
     '{ path: plugin, type: "directory", ignore: ["**/{node_modules,.git}/**", ".git", "node_modules"] }',
+  ],
+  'packages/ai/src/route/executor.ts': [
+    'return parsed ? `${parsed.origin}${parsed.pathname}` : url.split(/[?#]/)[0]',
+    'return `${fallback} (${request.method} ${requestTarget(request.url)})`',
+  ],
+  'packages/ai/test/executor.test.ts': [
+    'shows the request method and URL without its query for empty error bodies',
+    'expect(error.message).not.toContain("secret")',
+    'Provider request failed with HTTP 502 (POST https://provider.test/v1/chat)',
   ],
 };
 
@@ -52,7 +66,13 @@ test('v22 preserves v21 except for the ported upstream fixes and their focused r
   );
   assert.deepEqual(
     [...after.keys()].filter(path => !before.has(path)),
-    ['packages/core/src/config/plugin/source.ts', 'packages/core/test/config/plugin-source.test.ts', 'packages/core/test/plugin/promise-abort.test.ts'],
+    [
+      'packages/ai/src/route/executor.ts',
+      'packages/ai/test/executor.test.ts',
+      'packages/core/src/config/plugin/source.ts',
+      'packages/core/test/config/plugin-source.test.ts',
+      'packages/core/test/plugin/promise-abort.test.ts',
+    ],
   );
   const adapter = after.get('packages/plugin/src/promise/adapter.ts');
   for (const marker of [
