@@ -80,7 +80,8 @@ error contract; this patch does not promise identity with `AbortSignal.reason`.
   pass (77 tests). `npm run quality` passes: 1,432 passing tests, 5 skipped,
   no failures, including lint, formatting and TypeScript checks.
 
-The candidate recipe and prebuild workflow select v22, including the new
-regression suite. Five-platform native build/prebuild and merge gates remain
+Combined-v23 now supersedes v22 as the staged candidate; see
+`docs/staged-native-upstream-v23.md`. When v22 merged, the candidate recipe and
+prebuild workflow selected it, including the new regression suite. Five-platform native build/prebuild and merge gates remain
 required. No runtime artifact, tag, release, asset upload, or acceptance workflow
 is part of this source staging change.

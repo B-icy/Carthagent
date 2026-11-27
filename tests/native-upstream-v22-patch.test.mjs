@@ -51,10 +51,7 @@ test('v22 stages the ported upstream fixes without promoting the release pin', (
   assert.ok(doc.includes(expected));
   for (const reference of portedUpstreamFixes) assert.ok(doc.includes(reference), reference);
   const build = read('script/ctg/build-owned-runtime.sh');
-  assert.ok(build.includes(`EXPECTED_PATCH="${expected}"`));
-  assert.ok(build.includes(candidatePath));
   for (const suite of focusedSuites) assert.ok(build.includes(suite), suite);
-  assert.ok(read('.github/workflows/publish-owned-opencode-runtime.yml').includes(candidatePath));
 });
 
 test('v22 preserves v21 except for the ported upstream fixes and their focused regressions', () => {
