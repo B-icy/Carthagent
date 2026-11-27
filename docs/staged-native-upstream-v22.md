@@ -82,6 +82,7 @@ error contract; this patch does not promise identity with `AbortSignal.reason`.
 
 Combined-v23 now supersedes v22 as the staged candidate; see
 `docs/staged-native-upstream-v23.md`. When v22 merged, the candidate recipe and
-prebuild workflow selected it, including the new regression suite. Five-platform native build/prebuild and merge gates remain
-required. No runtime artifact, tag, release, asset upload, or acceptance workflow
-is part of this source staging change.
+prebuild workflow selected it, including the new regression suite.
+Five-platform native build/prebuild and merge gates remain required. No runtime
+artifact, tag, release, asset upload, or acceptance workflow is part of this
+source staging change.

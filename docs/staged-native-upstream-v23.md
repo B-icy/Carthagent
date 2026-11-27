@@ -5,7 +5,7 @@ versions and `CTG_RUNTIME_PATCH_SHA256` remain unchanged on combined-v21.
 Selecting v23 for a release is a separate manual step.
 
 Candidate patch: `docs/patches/opencode-v2.0.32-session-ui-combined-v23.patch`.
-Candidate patch SHA-256: `9933167c5e96de430d5f53375e46953ebf81387e88ca7fc7cc0156c6bbb7ce8f`.
+Candidate patch SHA-256: `50e92d9bb9a85ce7b70feec69871df6c1530e77149cda2bfb1fae8d0823f342c`.
 Base revision: combined-v22 (`26b564635e1e2699797e72cf24a816952962bb392713d3812a98e4a3acb30711`).
 Pinned source: `843a6c514e606b436a7fe713422ace0a93ad3d61` (v2.0.32).
 Pinned Bun: 1.4.2. The lockfile and upstream MIT license are unchanged.
@@ -38,8 +38,9 @@ Pinned Bun: 1.4.2. The lockfile and upstream MIT license are unchanged.
   [OpenCode #54090](https://github.com/anomalyco/opencode/pull/54090)
   (commit `1b2c720cbac2ec8d5587395abe59dba698ccdb24`) landed after v2.0.32. The
   port adds #66391's recursive `withoutUndefined`, which also covers #54090's
-  top-level case. The pin has no `@opencode/util/record`, so a local `isRecord`
-  with the same definition is used. The automation-trigger half of #66391 targets
+  top-level case. The pin has no `@opencode/util/record`, so the port imports
+  the identical `isRecord` that core already uses from
+  `@opencode/ai/utils/record`. The automation-trigger half of #66391 targets
   `packages/core/src/automation.ts`, which does not exist at the pin, and is not
   ported. The combined #54090/#66391 test is ported; it fails on v22, and encoding
   a request with top-level or nested `undefined` metadata through the response

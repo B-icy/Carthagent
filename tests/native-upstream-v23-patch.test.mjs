@@ -10,7 +10,7 @@ const digest = value => createHash('sha256').update(value).digest('hex');
 const candidatePath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v23.patch';
 const candidate = read(candidatePath);
 const previous = read('docs/patches/opencode-v2.0.32-session-ui-combined-v22.patch');
-const expected = '9933167c5e96de430d5f53375e46953ebf81387e88ca7fc7cc0156c6bbb7ce8f';
+const expected = '50e92d9bb9a85ce7b70feec69871df6c1530e77149cda2bfb1fae8d0823f342c';
 const portedUpstreamFixes = [
   'https://github.com/anomalyco/opencode/pull/66643',
   'https://github.com/anomalyco/opencode/pull/66646',
@@ -30,6 +30,7 @@ const portMarkers = {
     '{ normalized: "length", raw: "model_context_window_exceeded" }',
   ],
   'packages/core/src/permission.ts': [
+    'import { isRecord } from "@opencode/ai/utils/record"',
     'metadata: input.metadata && withoutUndefined(input.metadata)',
     '.map(([key, value]) => [key, isRecord(value) ? withoutUndefined(value) : value])',
   ],
