@@ -10,9 +10,13 @@ const digest = value => createHash('sha256').update(value).digest('hex');
 const candidatePath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v23.patch';
 const candidate = read(candidatePath);
 const previous = read('docs/patches/opencode-v2.0.32-session-ui-combined-v22.patch');
-const expected = 'bd47bd0ea90685cbbbd29e57a77f7f051bebb28fb4766cca20cd1ed22fba0e92';
-const portedUpstreamFixes = ['https://github.com/anomalyco/opencode/pull/66643', 'https://github.com/anomalyco/opencode/pull/66646'];
-const focusedSuites = ['bun test --cwd packages/ai test/provider/openai-compatible-chat.test.ts'];
+const expected = '9933167c5e96de430d5f53375e46953ebf81387e88ca7fc7cc0156c6bbb7ce8f';
+const portedUpstreamFixes = [
+  'https://github.com/anomalyco/opencode/pull/66643',
+  'https://github.com/anomalyco/opencode/pull/66646',
+  'https://github.com/anomalyco/opencode/pull/66391',
+];
+const focusedSuites = ['bun test --cwd packages/ai test/provider/openai-compatible-chat.test.ts', 'bun test --cwd packages/core test/permission.test.ts'];
 const portMarkers = {
   'packages/ai/src/protocols/openai-chat.ts': [
     '// Z.AI ends a response its safety review blocked with "sensitive".',
@@ -24,6 +28,15 @@ const portMarkers = {
     '{ normalized: "content-filter", raw: "sensitive" }',
     "maps Z.AI's model_context_window_exceeded finish to a length finish",
     '{ normalized: "length", raw: "model_context_window_exceeded" }',
+  ],
+  'packages/core/src/permission.ts': [
+    'metadata: input.metadata && withoutUndefined(input.metadata)',
+    '.map(([key, value]) => [key, isRecord(value) ? withoutUndefined(value) : value])',
+  ],
+  'packages/core/test/permission.test.ts': [
+    'drops undefined metadata values so pending requests encode as JSON',
+    'Schema.encodeEffect(Schema.toCodecJson(Schema.Struct({ data: Schema.Array(Permission.Request) })))',
+    'trigger: { type: "at", at: "2026-11-25T12:00:00.000Z", tz: undefined }',
   ],
 };
 
@@ -55,7 +68,7 @@ test('v23 preserves v22 except for the ported upstream fixes and their focused r
   );
   assert.deepEqual(
     [...after.keys()].filter(path => !before.has(path)),
-    ['packages/ai/test/provider/openai-compatible-chat.test.ts'],
+    ['packages/ai/test/provider/openai-compatible-chat.test.ts', 'packages/core/src/permission.ts', 'packages/core/test/permission.test.ts'],
   );
   for (const [path, markers] of Object.entries(portMarkers)) {
     for (const marker of markers) assert.ok(after.get(path).includes(marker), `${path}: ${marker}`);

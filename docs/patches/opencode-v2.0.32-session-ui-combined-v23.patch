@@ -678,6 +678,39 @@ index 8896bf8fa9e00bc6fe3799a227c4dc91c0a2ad5d..1c1db523de1b9dba3ec35f0e86809db3
      })
    }),
  )
+diff --git a/packages/core/src/permission.ts b/packages/core/src/permission.ts
+index 2aecebb0ce347c9acfc7e8dbec0f6c1b7d5951b9..3f8cca5b8d4998b508c7df08cdead4fc00cae5e0 100644
+--- a/packages/core/src/permission.ts
++++ b/packages/core/src/permission.ts
+@@ -195,7 +195,7 @@ const layer = Layer.effect(
+         action: input.action,
+         resources: input.resources,
+         save: input.save,
+-        metadata: input.metadata,
++        metadata: input.metadata && withoutUndefined(input.metadata),
+         source: input.source,
+         message,
+       }
+@@ -340,6 +340,19 @@ const layer = Layer.effect(
+   }),
+ )
+ 
++// Tools copy optional inputs straight into metadata, nested objects included; undefined values are not JSON
++// and would fail the HttpApi response encoder when clients list pending requests.
++function withoutUndefined(record: Record<string, unknown>): Record<string, unknown> {
++  return Object.fromEntries(
++    Object.entries(record)
++      .filter(([, value]) => value !== undefined)
++      .map(([key, value]) => [key, isRecord(value) ? withoutUndefined(value) : value]),
++  )
++}
++
++const isRecord = (value: unknown): value is Record<string, unknown> =>
++  typeof value === "object" && value !== null && !Array.isArray(value)
++
+ export const node = makeLocationNode({
+   service: Service,
+   layer,
 diff --git a/packages/core/src/session/compaction.ts b/packages/core/src/session/compaction.ts
 index 3cb52790295e7057d06573598a2928f3ea27b4cf..602114bb6b7e7d2791109ae52cd1fd96ef52c5f6 100644
 --- a/packages/core/src/session/compaction.ts
@@ -897,6 +930,63 @@ index 0000000000000000000000000000000000000000..cfec681b4043f0dde81f60baf46d8dec
 +    }),
 +  )
 +})
+diff --git a/packages/core/test/permission.test.ts b/packages/core/test/permission.test.ts
+index d906c937a6904519dcae79298c18abd6fd83ddce..9a376004a2a6fafda1b1f498e79ea5862afe0f86 100644
+--- a/packages/core/test/permission.test.ts
++++ b/packages/core/test/permission.test.ts
+@@ -1,5 +1,5 @@
+ import { describe, expect, test } from "bun:test"
+-import { Cause, Deferred, Effect, Fiber, Layer } from "effect"
++import { Cause, Deferred, Effect, Fiber, Layer, Schema } from "effect"
+ import { Agent } from "@opencode/core/agent"
+ import { Database } from "@opencode/core/database/database"
+ import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+@@ -296,6 +296,45 @@ describe("Permission", () => {
+     }),
+   )
+ 
++  it.effect("drops undefined metadata values so pending requests encode as JSON", () =>
++    Effect.gen(function* () {
++      yield* setup()
++      // Tools copy optional model inputs straight into metadata, so omitted inputs arrive as undefined values.
++      const { service, request } = yield* waitForRequest({
++        action: "glob",
++        resources: ["/project"],
++        metadata: {
++          root: "/project",
++          path: undefined,
++          hidden: undefined,
++          limit: undefined,
++          trigger: { type: "at", at: "2026-11-25T12:00:00.000Z", tz: undefined },
++        },
++      })
++      expect(request.metadata).toStrictEqual({
++        root: "/project",
++        trigger: { type: "at", at: "2026-11-25T12:00:00.000Z" },
++      })
++      expect(yield* service.forSession(request.sessionID)).toEqual([request])
++      // HttpApi encodes JSON success bodies through Schema.toCodecJson, which rejects undefined values in Unknown.
++      const encode = Schema.encodeEffect(Schema.toCodecJson(Schema.Struct({ data: Schema.Array(Permission.Request) })))
++      expect(yield* encode({ data: yield* service.forSession(request.sessionID) })).toEqual({
++        data: [
++          {
++            id: request.id,
++            sessionID: request.sessionID,
++            action: "glob",
++            resources: ["/project"],
++            metadata: {
++              root: "/project",
++              trigger: { type: "at", at: "2026-11-25T12:00:00.000Z" },
++            },
++          },
++        ],
++      })
++    }),
++  )
++
+   it.effect("defects when an asked permission is declined", () =>
+     Effect.gen(function* () {
+       yield* setup()
 diff --git a/packages/core/test/plugin-failure.test.ts b/packages/core/test/plugin-failure.test.ts
 index a800b5d85782dd089ef17457d8926e0c42613563..5d05c4efef90d48e132a859a0417e10ce2cd0ada 100644
 --- a/packages/core/test/plugin-failure.test.ts
