@@ -1,5 +1,5 @@
 diff --git a/packages/ai/src/protocols/openai-chat.ts b/packages/ai/src/protocols/openai-chat.ts
-index 27e9843d628ccf3a0c1a5521cfe3a169d13fd554..6bd6ade45c28f5c5d32581f76be6530d1aea4cb7 100644
+index 27e9843d628ccf3a0c1a5521cfe3a169d13fd554..fb484961b98a046617a23f31eead698d56cffe61 100644
 --- a/packages/ai/src/protocols/openai-chat.ts
 +++ b/packages/ai/src/protocols/openai-chat.ts
 @@ -352,7 +352,7 @@ const lowerToolChoice = (toolChoice: NonNullable<LLMRequest["toolChoice"]>) =>
@@ -51,8 +51,12 @@ index 27e9843d628ccf3a0c1a5521cfe3a169d13fd554..6bd6ade45c28f5c5d32581f76be6530d
      toolCallID: (id: string) => {
        if (mistral)
          return id
-@@ -887,6 +889,8 @@ const mapFinishReason = Effect.fnUntraced(function* (event: OpenAIChatEvent, rea
+@@ -885,8 +887,12 @@ const mapFinishReason = Effect.fnUntraced(function* (event: OpenAIChatEvent, rea
+     case "end":
+       return "stop" as const
      case "length":
++    // Z.AI stops with this when the prompt plus the generated output fill the context window.
++    case "model_context_window_exceeded":
        return "length" as const
      case "content_filter":
 +    // Z.AI ends a response its safety review blocked with "sensitive".
@@ -185,10 +189,10 @@ index 46576a740949b5947d4d064480eeaeb542830b46..6128c10ce88773386e4feb4c3eaf9614
      Effect.gen(function* () {
        const prepared = yield* compileRequest(
 diff --git a/packages/ai/test/provider/openai-compatible-chat.test.ts b/packages/ai/test/provider/openai-compatible-chat.test.ts
-index 2f26ae52af16131df45c81682825d7bbc3a7929d..f8f05f596b9acfb1df43edafdec52dd5ac9afe36 100644
+index 2f26ae52af16131df45c81682825d7bbc3a7929d..984a58b7d3fc1cb6680a361dabf3bb9d982b680d 100644
 --- a/packages/ai/test/provider/openai-compatible-chat.test.ts
 +++ b/packages/ai/test/provider/openai-compatible-chat.test.ts
-@@ -609,6 +609,16 @@ describe("OpenAI-compatible Chat route", () => {
+@@ -609,6 +609,26 @@ describe("OpenAI-compatible Chat route", () => {
      }),
    )
  
@@ -199,6 +203,16 @@ index 2f26ae52af16131df45c81682825d7bbc3a7929d..f8f05f596b9acfb1df43edafdec52dd5
 +      )
 +
 +      expect(filtered.finishReason).toEqual({ normalized: "content-filter", raw: "sensitive" })
++    }),
++  )
++
++  it.effect("maps Z.AI's model_context_window_exceeded finish to a length finish", () =>
++    Effect.gen(function* () {
++      const response = yield* LLMClient.generate(request).pipe(
++        Effect.provide(fixedResponse(sseEvents(deltaChunk({}, "model_context_window_exceeded")))),
++      )
++
++      expect(response.finishReason).toEqual({ normalized: "length", raw: "model_context_window_exceeded" })
 +    }),
 +  )
 +

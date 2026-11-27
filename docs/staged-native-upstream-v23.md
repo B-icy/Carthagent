@@ -5,7 +5,7 @@ versions and `CTG_RUNTIME_PATCH_SHA256` remain unchanged on combined-v21.
 Selecting v23 for a release is a separate manual step.
 
 Candidate patch: `docs/patches/opencode-v2.0.32-session-ui-combined-v23.patch`.
-Candidate patch SHA-256: `bd938d1600c06caadcf51267f962121e68e01f393d62ad8659e01ca9dea70516`.
+Candidate patch SHA-256: `bd47bd0ea90685cbbbd29e57a77f7f051bebb28fb4766cca20cd1ed22fba0e92`.
 Base revision: combined-v22 (`26b564635e1e2699797e72cf24a816952962bb392713d3812a98e4a3acb30711`).
 Pinned source: `843a6c514e606b436a7fe713422ace0a93ad3d61` (v2.0.32).
 Pinned Bun: 1.4.2. The lockfile and upstream MIT license are unchanged.
@@ -21,6 +21,13 @@ Pinned Bun: 1.4.2. The lockfile and upstream MIT license are unchanged.
   content-filter finish. Carthagent runs GLM through this protocol. The port adds
   the case next to `content_filter`, and the upstream test is ported; it fails on
   v22 with that error.
+- [OpenCode #66646](https://github.com/anomalyco/opencode/pull/66646),
+  commit `3a2e427d0d7453aff2780f5c4d9134aaaf5f8360`: map Z.AI's
+  `model_context_window_exceeded` finish reason to `length`. Z.AI ends a chat
+  completion with this value when the prompt plus output fill the context window.
+  The pinned mapper fails the stream with an `UnknownProvider` error; the port
+  treats it like `length`. The upstream test is ported; it fails on v22 with
+  `Provider finish_reason: model_context_window_exceeded`.
 
 Each fix is a separate commit that cites one upstream PR.
 
@@ -32,7 +39,7 @@ Each fix is a separate commit that cites one upstream PR.
   applying and regenerating there gives identical bytes.
 - Relative to v22, only `packages/ai/src/protocols/openai-chat.ts` changes; the
   only new section is `packages/ai/test/provider/openai-compatible-chat.test.ts`.
-- `packages/ai` `test/provider/openai-compatible-chat.test.ts`: 22 pass, 0 fail.
+- `packages/ai` `test/provider/openai-compatible-chat.test.ts`: 23 pass, 0 fail.
 
 The candidate recipe and prebuild workflow select v23, including the new focused
 regression suites. Five-platform native build/prebuild and merge gates remain

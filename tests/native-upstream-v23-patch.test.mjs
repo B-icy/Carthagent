@@ -10,14 +10,20 @@ const digest = value => createHash('sha256').update(value).digest('hex');
 const candidatePath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v23.patch';
 const candidate = read(candidatePath);
 const previous = read('docs/patches/opencode-v2.0.32-session-ui-combined-v22.patch');
-const expected = 'bd938d1600c06caadcf51267f962121e68e01f393d62ad8659e01ca9dea70516';
-const portedUpstreamFixes = ['https://github.com/anomalyco/opencode/pull/66643'];
+const expected = 'bd47bd0ea90685cbbbd29e57a77f7f051bebb28fb4766cca20cd1ed22fba0e92';
+const portedUpstreamFixes = ['https://github.com/anomalyco/opencode/pull/66643', 'https://github.com/anomalyco/opencode/pull/66646'];
 const focusedSuites = ['bun test --cwd packages/ai test/provider/openai-compatible-chat.test.ts'];
 const portMarkers = {
-  'packages/ai/src/protocols/openai-chat.ts': ['// Z.AI ends a response its safety review blocked with "sensitive".', 'case "sensitive":'],
+  'packages/ai/src/protocols/openai-chat.ts': [
+    '// Z.AI ends a response its safety review blocked with "sensitive".',
+    'case "sensitive":',
+    'case "model_context_window_exceeded":',
+  ],
   'packages/ai/test/provider/openai-compatible-chat.test.ts': [
     "maps Z.AI's sensitive finish to a content-filter finish",
     '{ normalized: "content-filter", raw: "sensitive" }',
+    "maps Z.AI's model_context_window_exceeded finish to a length finish",
+    '{ normalized: "length", raw: "model_context_window_exceeded" }',
   ],
 };
 
