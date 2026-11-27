@@ -7,7 +7,7 @@ import { CTG_DEVELOPMENT_RUNTIME_PATCH_SHA256, CTG_RUNTIME_LOCK_SHA256, CTG_RUNT
 const releasedPath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v15.patch';
 const candidatePath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v16.patch';
 const promotedPath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v21.patch';
-const stagedPath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v22.patch';
+const stagedPath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v23.patch';
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url));
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 
@@ -34,7 +34,7 @@ test('v15 patch stays immutable; the 1.1.3 runtime pin selects reviewed v21', ()
   assert.equal(release.lockSha256, CTG_RUNTIME_LOCK_SHA256);
 });
 
-test('resolver and release trust root retain v21 while the source build stages v22', () => {
+test('resolver and release trust root retain v21 while the source build stages v23', () => {
   const release = JSON.parse(read('lib/opencode/runtime-release.json'));
   const packageJson = JSON.parse(read('package.json'));
   assert.equal(release.releaseVersion, packageJson.version);
