@@ -10,12 +10,18 @@ const digest = value => createHash('sha256').update(value).digest('hex');
 const candidatePath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v24.patch';
 const candidate = read(candidatePath);
 const previous = read('docs/patches/opencode-v2.0.32-session-ui-combined-v23.patch');
-const expected = '04719444a2cb428930a4996f70e3c771ab95e94eccf6655cbe1a8da496341f99';
-const portedUpstreamFixes = ['https://github.com/anomalyco/opencode/pull/66798'];
+const expected = '5dc460d384a8ad193adc0218d797916fba531e0b6639d5fe9673ea4edd3076db';
+const portedUpstreamFixes = ['https://github.com/anomalyco/opencode/pull/66798', 'https://github.com/anomalyco/opencode/pull/66796'];
 const focusedSuites = ['bun test --cwd packages/ai test/provider-error.test.ts', 'bun test --cwd packages/core test/session-error.test.ts'];
 const portMarkers = {
-  'packages/ai/src/provider-error.ts': ['const override = http !== undefined && http.status >= 400 ? http.headers["x-should-retry"] : undefined'],
-  'packages/ai/test/provider-error.test.ts': ['applies to failed responses, not streams that drop after a successful one'],
+  'packages/ai/src/provider-error.ts': [
+    'const override = http !== undefined && http.status >= 400 ? http.headers["x-should-retry"] : undefined',
+    "/input tokens exceeds? the model'?s? context limit/i,",
+  ],
+  'packages/ai/test/provider-error.test.ts': [
+    'applies to failed responses, not streams that drop after a successful one',
+    "classifies Tencent's 400003 passed through OpenCode Go as context overflow",
+  ],
   'packages/core/test/session-error.test.ts': ['retries a stream that drops after a successful response that said not to retry'],
   'packages/core/test/session-runner.test.ts': ['error: { type: header ? "provider.rate-limit" : "provider.invalid-output" },'],
 };

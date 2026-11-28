@@ -65,10 +65,19 @@ index 27e9843d628ccf3a0c1a5521cfe3a169d13fd554..fb484961b98a046617a23f31eead698d
      case "function_call":
      case "tool_calls":
 diff --git a/packages/ai/src/provider-error.ts b/packages/ai/src/provider-error.ts
-index 722728c3a0316e0b69c9b3aad6e3f15f2bde5d62..645f389f2c09ccf68f6abedeae4be4d8acb1b446 100644
+index 722728c3a0316e0b69c9b3aad6e3f15f2bde5d62..53e9e76747fcabd1171dcbdcf3dddd354b9b5738 100644
 --- a/packages/ai/src/provider-error.ts
 +++ b/packages/ai/src/provider-error.ts
-@@ -79,7 +79,10 @@ export const isContextOverflowFailure = (failure: unknown) =>
+@@ -16,6 +16,8 @@ import {
+ const patterns = [
+   /prompt is too long/i,
+   /input is too long for requested model/i,
++  // Tencent TokenHub code 400003, which OpenCode Go passes through for Hy models.
++  /input tokens exceeds? the model'?s? context limit/i,
+   // Cloudflare Workers AI reports this as HTTP 413.
+   /exceeded this model context window limit/i,
+   /exceeds the context window/i,
+@@ -79,7 +81,10 @@ export const isContextOverflowFailure = (failure: unknown) =>
   * not deliver an accepted write, and unrecognized failures. Callers decide which calls are safe to repeat.
   */
  export const isRetryable = (error: AIError) => {
@@ -173,7 +182,7 @@ index a0bd3d17ea9c2083a6dc7c726dd4a815c589a35e..8c42ee9d1a4bc5e6d9e528f257e30960
      }).pipe(Effect.provide(fixedResponse("<!DOCTYPE html><html><body>Bad Gateway</body></html>", { status: 502 }))),
    )
 diff --git a/packages/ai/test/provider-error.test.ts b/packages/ai/test/provider-error.test.ts
-index c325698cd591c368b6d00cb0a6559d4e36f3f143..59cb08e1e1f62d7c4378a1eb5c174c55f23c6bc4 100644
+index c325698cd591c368b6d00cb0a6559d4e36f3f143..6db15f02b18eeee2376f25a0a569ed48144ee5ce 100644
 --- a/packages/ai/test/provider-error.test.ts
 +++ b/packages/ai/test/provider-error.test.ts
 @@ -1,6 +1,7 @@
@@ -185,7 +194,34 @@ index c325698cd591c368b6d00cb0a6559d4e36f3f143..59cb08e1e1f62d7c4378a1eb5c174c55
  
  describe("provider error classification", () => {
    test("classifies provider token limit messages as context overflow", () => {
-@@ -582,3 +583,21 @@ describe("provider error messages", () => {
+@@ -17,11 +18,26 @@ describe("provider error classification", () => {
+       "Too many tokens",
+       "Input validation error: `inputs` tokens + `max_new_tokens` must be <= 131073. Given: 600035 `inputs` tokens and 16 `max_new_tokens`",
+       "Token limit exceeded",
++      "[400003] Input tokens exceed the model context limit.",
++      "The number of input tokens exceeds the model's context limit.",
+     ]
+ 
+     expect(messages.every(isContextOverflow)).toBe(true)
+   })
+ 
++  test("classifies Tencent's 400003 passed through OpenCode Go as context overflow", () => {
++    const go = {
++      error: {
++        type: "server_error",
++        message: "Upstream request failed: [400003] Input tokens exceed the model context limit.",
++      },
++    }
++
++    expect(
++      classifyProviderFailure({ message: go.error.message, status: 400, rawBody: JSON.stringify(go) }),
++    ).toMatchObject({ _tag: "InvalidRequest", classification: "context-overflow" })
++  })
++
+   test("classifies Anthropic request_too_large as recoverable overflow", () => {
+     expect(
+       classifyProviderFailure({
+@@ -582,3 +598,21 @@ describe("provider error messages", () => {
      ).toEqual([undefined, undefined, undefined, undefined])
    })
  })

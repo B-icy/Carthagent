@@ -5,7 +5,7 @@ versions and `CTG_RUNTIME_PATCH_SHA256` remain unchanged on combined-v21.
 Selecting v24 for a release is a separate manual step.
 
 Candidate patch: `docs/patches/opencode-v2.0.32-session-ui-combined-v24.patch`.
-Candidate patch SHA-256: `04719444a2cb428930a4996f70e3c771ab95e94eccf6655cbe1a8da496341f99`.
+Candidate patch SHA-256: `5dc460d384a8ad193adc0218d797916fba531e0b6639d5fe9673ea4edd3076db`.
 Base revision: combined-v23 (`50e92d9bb9a85ce7b70feec69871df6c1530e77149cda2bfb1fae8d0823f342c`).
 Pinned source: `843a6c514e606b436a7fe713422ace0a93ad3d61` (v2.0.32).
 Pinned Bun: 1.4.2. The lockfile and upstream MIT license are unchanged.
@@ -28,6 +28,13 @@ Pinned Bun: 1.4.2. The lockfile and upstream MIT license are unchanged.
   pinned compaction scenario that relied on a 200 response's header now uses a
   429 rate limit, as upstream changed it. The `ModelRetry.retryOneShot` test
   targets an absent module and is not ported.
+- [OpenCode #66796](https://github.com/anomalyco/opencode/pull/66796),
+  commit `0b22cf9195dbbf03f2f4abda53c3289e68013b9c`: classify Tencent TokenHub's
+  `400003` error (`Input tokens exceed the model context limit`) as context
+  overflow. OpenCode Go passes it through for Hy models. The pinned pattern list
+  has no match, so the session runner treats it as an ordinary invalid request
+  instead of an overflow it recovers from by compacting. The port adds the
+  upstream pattern, and the upstream tests are ported.
 
 Each fix is a separate commit that cites one upstream PR.
 
