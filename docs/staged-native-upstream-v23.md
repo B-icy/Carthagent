@@ -69,7 +69,9 @@ Each fix is a separate commit that cites one upstream PR.
   `test/config.test.ts`, `test/fetch.test.ts` and `test/session-instances.test.ts`:
   15 pass, 0 fail.
 
-The candidate recipe and prebuild workflow select v23, including the new focused
-regression suites. Five-platform native build/prebuild and merge gates remain
-required. No runtime artifact, tag, release, asset upload, or acceptance workflow
-is part of this source staging change.
+Combined-v24 now supersedes v23 as the staged candidate; see
+`docs/staged-native-upstream-v24.md`. When v23 merged, the candidate recipe and
+prebuild workflow selected it, including the new focused regression suites.
+Five-platform native build/prebuild and merge gates remain required. No runtime
+artifact, tag, release, asset upload, or acceptance workflow is part of this
+source staging change.

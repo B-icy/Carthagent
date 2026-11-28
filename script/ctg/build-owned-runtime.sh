@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 EXPECTED_SOURCE="843a6c514e606b436a7fe713422ace0a93ad3d61"
 EXPECTED_LOCK="9d78379cd264584a495440a217b9d2ecab524c9a56f7f8b4b5bed3926daa330d"
-EXPECTED_PATCH="50e92d9bb9a85ce7b70feec69871df6c1530e77149cda2bfb1fae8d0823f342c"
+EXPECTED_PATCH="3fe2540c266ddb71c0b3dfb77c3c9945a1964479f2848c2233838b8f180d3a3a"
 TARGET="${1:-opencode-linux-x64}"
 HOST_PLATFORM="$(node -p 'process.platform')"
 HOST_ARCH="$(node -p 'process.arch')"
@@ -34,7 +34,7 @@ if ! git diff --cached --quiet HEAD --; then
   exit 1
 fi
 expected_inputs=(
-  "docs/patches/opencode-v2.0.32-session-ui-combined-v23.patch"
+  "docs/patches/opencode-v2.0.32-session-ui-combined-v24.patch"
   "script/ctg/build-owned-runtime.sh"
   "tools/run-native-test-stress.mjs"
 )
@@ -87,7 +87,7 @@ if [[ "$(bun --version)" != "1.4.2" ]]; then
   exit 1
 fi
 
-patch_file="$ROOT/docs/patches/opencode-v2.0.32-session-ui-combined-v23.patch"
+patch_file="$ROOT/docs/patches/opencode-v2.0.32-session-ui-combined-v24.patch"
 actual_patch="$("${HASH_COMMAND[@]}" "$patch_file" | awk '{print $1}')"
 if [[ "$actual_patch" != "$EXPECTED_PATCH" ]]; then
   echo "Patch checksum mismatch: $actual_patch" >&2
@@ -115,6 +115,8 @@ bun test --cwd packages/core test/config/plugin-source.test.ts
 bun test --cwd packages/ai test/executor.test.ts
 bun test --cwd packages/ai test/provider/openai-compatible-chat.test.ts
 bun test --cwd packages/core test/permission.test.ts
+bun test --cwd packages/ai test/provider-error.test.ts
+bun test --cwd packages/core test/session-error.test.ts
 bun test --cwd packages/server test/shell-provenance.test.ts
 bun test --cwd packages/server test/fs.test.ts
 bun test --cwd packages/server test/integration-startup.test.ts
@@ -123,6 +125,7 @@ bun test --cwd packages/client test/solid-connection.test.ts
 bun test --cwd packages/theme test/theme.test.ts
 bun test --cwd packages/tui test/plugin-source.test.ts
 bun test --cwd packages/tui test/clear-session.test.tsx
+bun test --cwd packages/tui --timeout 30000 test/plugin-structure.test.ts
 # Beta.8 release-owner waiver: Intel macOS has a reproduced intermittent Rename
 # click failure after context-menu resize/reopen. Keep all other checks required;
 # the exact excluded case remains required on every other supported platform.
