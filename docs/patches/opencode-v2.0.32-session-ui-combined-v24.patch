@@ -10178,6 +10178,46 @@ index b1ebab022675b018033582f9549ae28d51d1ec73..0dafc495f59653094fade6c816fc39a2
  ensureRuntimePluginSupport({
    additional: {
      "@opencode/plugin/tui": { Plugin, PluginContextProvider, usePlugin },
+diff --git a/packages/tui/src/plugin/structure.ts b/packages/tui/src/plugin/structure.ts
+index 1a5e8617672abe9a8b8d02c3c82a898ff7efa562..026d92776976dac0c1e8fc5b3aa610a034ccf8a8 100644
+--- a/packages/tui/src/plugin/structure.ts
++++ b/packages/tui/src/plugin/structure.ts
+@@ -74,7 +74,7 @@ export function resolveSlots<Render>(input: {
+   const winners = new Map<string, Claim<Render>>()
+   for (const claim of input.claims) {
+     if (claim.placement.kind !== "replace") continue
+-    if (!input.paths.has(claim.placement.target)) {
++    if (!validPath(claim.placement.target) || !input.paths.has(claim.placement.target)) {
+       suppressed.push({ claim })
+       continue
+     }
+@@ -115,6 +115,10 @@ export function resolveSlots<Render>(input: {
+     const kind = claim.placement.kind
+     if (kind === "replace") continue
+     const target = claim.placement.target
++    if (!validPath(target)) {
++      suppressed.push({ claim })
++      continue
++    }
+     // Inside placements targeting a replaced boundary are part of its
+     // contents; sibling placements on the boundary itself stay outside it.
+     const inside = kind === "prepend" || kind === "append" ? boundaries.get(target) : undefined
+@@ -150,8 +154,14 @@ function depth(path: string) {
+   return path.split(".").length
+ }
+ 
++function validPath(path: string) {
++  return path.length > 0 && !path.startsWith(".") && !path.endsWith(".") && !path.includes("..")
++}
++
+ function survivingAncestor(path: string, paths: ReadonlySet<string>) {
+-  for (let index = path.lastIndexOf("."); index !== -1; index = path.lastIndexOf(".", index - 1)) {
++  // lastIndexOf clamps a negative start to 0, so stop before index 0 to avoid
++  // looping on a leading dot.
++  for (let index = path.lastIndexOf("."); index > 0; index = path.lastIndexOf(".", index - 1)) {
+     const ancestor = path.slice(0, index)
+     if (paths.has(ancestor)) return ancestor
+   }
 diff --git a/packages/tui/src/plugin/transform-cache.ts b/packages/tui/src/plugin/transform-cache.ts
 new file mode 100644
 index 0000000000000000000000000000000000000000..7ec436ae7b13115460451007ff3e3f09816aeb6c
@@ -17434,6 +17474,91 @@ index 2f4d396a6155750228ca92fa3ee07ddce562f3f8..a7eb1a3a47561dbfba2e67d794adedf9
    while (Date.now() < deadline) {
      if (changes > count) break
      await Bun.sleep(10)
+diff --git a/packages/tui/test/plugin-structure.test.ts b/packages/tui/test/plugin-structure.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..c76bf06ea60ae224992938c320cb11866b298ad1
+--- /dev/null
++++ b/packages/tui/test/plugin-structure.test.ts
+@@ -0,0 +1,79 @@
++import { expect, test } from "bun:test"
++import type { Claim, Degraded, PlacementKind, Slotted, Suppressed } from "../src/plugin/structure"
++
++function claim(kind: PlacementKind, target: string, id: string): Claim<string> {
++  return { key: `p/${id}`, plugin: "p", placement: { kind, target }, render: id }
++}
++
++type SerializedResolution = {
++  readonly slotted: ReadonlyArray<[string, Slotted<string>]>
++  readonly suppressed: ReadonlyArray<Suppressed<string>>
++  readonly degraded: ReadonlyArray<Degraded<string>>
++}
++
++// Run resolveSlots off the main thread so a synchronous infinite loop fails
++// via the timeout instead of blocking the test runner.
++async function resolveWithTimeout(
++  paths: ReadonlyArray<string>,
++  claims: ReadonlyArray<Claim<string>>,
++  timeoutMs = 5_000,
++): Promise<SerializedResolution> {
++  const moduleUrl = new URL("../src/plugin/structure.ts", import.meta.url).href
++  const source = `
++    import { resolveSlots } from ${JSON.stringify(moduleUrl)}
++    self.onmessage = (event) => {
++      const result = resolveSlots({ paths: new Set(event.data.paths), claims: event.data.claims })
++      self.postMessage({
++        slotted: [...result.slotted.entries()],
++        suppressed: result.suppressed,
++        degraded: result.degraded,
++      })
++    }
++  `
++  const blobUrl = URL.createObjectURL(new Blob([source], { type: "text/javascript" }))
++  const worker = new Worker(blobUrl)
++  let timer: ReturnType<typeof setTimeout> | undefined
++  try {
++    return await new Promise<SerializedResolution>((resolve, reject) => {
++      timer = setTimeout(() => reject(new Error(`resolveSlots did not return within ${timeoutMs}ms`)), timeoutMs)
++      worker.onmessage = (event) => resolve(event.data as SerializedResolution)
++      worker.onerror = (event) => reject(event.error ?? new Error(event.message))
++      worker.postMessage({ paths, claims })
++    })
++  } finally {
++    clearTimeout(timer)
++    worker.terminate()
++    URL.revokeObjectURL(blobUrl)
++  }
++}
++
++test("suppresses slot claims targeting paths with empty segments without hanging", async () => {
++  const invalid = [
++    claim("append", ".x", "leading"),
++    claim("after", ".", "dot"),
++    claim("before", ".side.child", "leading-nested"),
++    claim("prepend", "", "empty"),
++    claim("append", "side.", "trailing"),
++    claim("append", "side..child", "double-dot"),
++    claim("replace", "side..child", "replace-double-dot"),
++    claim("replace", ".x", "replace-leading"),
++  ]
++  const direct = claim("append", "side", "direct")
++  const degraded = claim("after", "side.missing", "degraded")
++
++  const result = await resolveWithTimeout(["side", "side.child"], [...invalid, direct, degraded])
++
++  expect(result.slotted).toEqual([
++    [
++      "side",
++      {
++        before: [],
++        prepend: [],
++        append: [direct, degraded],
++        after: [],
++      },
++    ],
++  ])
++  expect(result.degraded).toEqual([{ claim: degraded, to: "side" }])
++  expect(result.suppressed).toEqual([...invalid.slice(6), ...invalid.slice(0, 6)].map((item) => ({ claim: item })))
++})
 diff --git a/packages/tui/test/plugin-theme-provider.test.tsx b/packages/tui/test/plugin-theme-provider.test.tsx
 new file mode 100644
 index 0000000000000000000000000000000000000000..ff8cbeabb00abf008453a9c31a8eec04ef08a2c5

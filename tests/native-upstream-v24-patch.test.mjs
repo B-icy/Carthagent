@@ -10,9 +10,17 @@ const digest = value => createHash('sha256').update(value).digest('hex');
 const candidatePath = 'docs/patches/opencode-v2.0.32-session-ui-combined-v24.patch';
 const candidate = read(candidatePath);
 const previous = read('docs/patches/opencode-v2.0.32-session-ui-combined-v23.patch');
-const expected = '5dc460d384a8ad193adc0218d797916fba531e0b6639d5fe9673ea4edd3076db';
-const portedUpstreamFixes = ['https://github.com/anomalyco/opencode/pull/66798', 'https://github.com/anomalyco/opencode/pull/66796'];
-const focusedSuites = ['bun test --cwd packages/ai test/provider-error.test.ts', 'bun test --cwd packages/core test/session-error.test.ts'];
+const expected = '3fe2540c266ddb71c0b3dfb77c3c9945a1964479f2848c2233838b8f180d3a3a';
+const portedUpstreamFixes = [
+  'https://github.com/anomalyco/opencode/pull/66798',
+  'https://github.com/anomalyco/opencode/pull/66796',
+  'https://github.com/anomalyco/opencode/pull/66863',
+];
+const focusedSuites = [
+  'bun test --cwd packages/ai test/provider-error.test.ts',
+  'bun test --cwd packages/core test/session-error.test.ts',
+  'bun test --cwd packages/tui test/plugin-structure.test.ts',
+];
 const portMarkers = {
   'packages/ai/src/provider-error.ts': [
     'const override = http !== undefined && http.status >= 400 ? http.headers["x-should-retry"] : undefined',
@@ -24,6 +32,11 @@ const portMarkers = {
   ],
   'packages/core/test/session-error.test.ts': ['retries a stream that drops after a successful response that said not to retry'],
   'packages/core/test/session-runner.test.ts': ['error: { type: header ? "provider.rate-limit" : "provider.invalid-output" },'],
+  'packages/tui/src/plugin/structure.ts': [
+    'function validPath(path: string) {',
+    'for (let index = path.lastIndexOf("."); index > 0; index = path.lastIndexOf(".", index - 1)) {',
+  ],
+  'packages/tui/test/plugin-structure.test.ts': ['suppresses slot claims targeting paths with empty segments without hanging'],
 };
 
 test('v24 stages the ported upstream fixes without promoting the release pin', () => {
@@ -59,6 +72,8 @@ test('v24 preserves v23 except for the ported upstream fixes and their focused r
       'packages/ai/test/provider-error.test.ts',
       'packages/core/test/session-error.test.ts',
       'packages/core/test/session-runner.test.ts',
+      'packages/tui/src/plugin/structure.ts',
+      'packages/tui/test/plugin-structure.test.ts',
     ],
   );
   for (const [path, markers] of Object.entries(portMarkers)) {

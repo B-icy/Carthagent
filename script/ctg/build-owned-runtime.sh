@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 EXPECTED_SOURCE="843a6c514e606b436a7fe713422ace0a93ad3d61"
 EXPECTED_LOCK="9d78379cd264584a495440a217b9d2ecab524c9a56f7f8b4b5bed3926daa330d"
-EXPECTED_PATCH="5dc460d384a8ad193adc0218d797916fba531e0b6639d5fe9673ea4edd3076db"
+EXPECTED_PATCH="3fe2540c266ddb71c0b3dfb77c3c9945a1964479f2848c2233838b8f180d3a3a"
 TARGET="${1:-opencode-linux-x64}"
 HOST_PLATFORM="$(node -p 'process.platform')"
 HOST_ARCH="$(node -p 'process.arch')"
@@ -125,6 +125,7 @@ bun test --cwd packages/client test/solid-connection.test.ts
 bun test --cwd packages/theme test/theme.test.ts
 bun test --cwd packages/tui test/plugin-source.test.ts
 bun test --cwd packages/tui test/clear-session.test.tsx
+bun test --cwd packages/tui test/plugin-structure.test.ts
 # Beta.8 release-owner waiver: Intel macOS has a reproduced intermittent Rename
 # click failure after context-menu resize/reopen. Keep all other checks required;
 # the exact excluded case remains required on every other supported platform.

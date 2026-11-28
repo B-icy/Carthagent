@@ -5,7 +5,7 @@ versions and `CTG_RUNTIME_PATCH_SHA256` remain unchanged on combined-v21.
 Selecting v24 for a release is a separate manual step.
 
 Candidate patch: `docs/patches/opencode-v2.0.32-session-ui-combined-v24.patch`.
-Candidate patch SHA-256: `5dc460d384a8ad193adc0218d797916fba531e0b6639d5fe9673ea4edd3076db`.
+Candidate patch SHA-256: `3fe2540c266ddb71c0b3dfb77c3c9945a1964479f2848c2233838b8f180d3a3a`.
 Base revision: combined-v23 (`50e92d9bb9a85ce7b70feec69871df6c1530e77149cda2bfb1fae8d0823f342c`).
 Pinned source: `843a6c514e606b436a7fe713422ace0a93ad3d61` (v2.0.32).
 Pinned Bun: 1.4.2. The lockfile and upstream MIT license are unchanged.
@@ -35,6 +35,17 @@ Pinned Bun: 1.4.2. The lockfile and upstream MIT license are unchanged.
   has no match, so the session runner treats it as an ordinary invalid request
   instead of an overflow it recovers from by compacting. The port adds the
   upstream pattern, and the upstream tests are ported.
+- [OpenCode #66863](https://github.com/anomalyco/opencode/pull/66863),
+  commit `93e3b623db26a3984263c4fe2fed276624851325`: stop TUI slot resolution
+  from hanging on a slot path with an empty segment. When a claim targets a
+  missing path with a leading dot, `survivingAncestor` in the pinned
+  `packages/tui/src/plugin/structure.ts` loops forever, because `lastIndexOf`
+  clamps a negative start to 0. The Carthagent TUI plugin registers slot claims
+  through this resolver, so one malformed target from any enabled plugin freezes
+  the TUI. The port, identical to upstream, suppresses claims whose target is
+  empty or has an empty segment and stops the ancestor walk before index 0. The
+  upstream worker-based regression is ported; without the port it times out
+  after 5 seconds.
 
 Each fix is a separate commit that cites one upstream PR.
 
@@ -47,8 +58,10 @@ Each fix is a separate commit that cites one upstream PR.
   identical bytes.
 - Relative to v23, no existing section changes. The new sections are
   `packages/ai/src/provider-error.ts`, `packages/ai/test/provider-error.test.ts`,
-  `packages/core/test/session-error.test.ts` and
-  `packages/core/test/session-runner.test.ts`.
+  `packages/core/test/session-error.test.ts`,
+  `packages/core/test/session-runner.test.ts`,
+  `packages/tui/src/plugin/structure.ts` and
+  `packages/tui/test/plugin-structure.test.ts`.
 - Each new regression fails without its port and passes with it. Without the
   ports, the three `packages/ai` regressions and the `session-error` regression
   fail, and the TUI regression times out after 5 seconds.
