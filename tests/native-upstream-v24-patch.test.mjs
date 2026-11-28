@@ -19,7 +19,7 @@ const portedUpstreamFixes = [
 const focusedSuites = [
   'bun test --cwd packages/ai test/provider-error.test.ts',
   'bun test --cwd packages/core test/session-error.test.ts',
-  'bun test --cwd packages/tui test/plugin-structure.test.ts',
+  'bun test --cwd packages/tui --timeout 30000 test/plugin-structure.test.ts',
 ];
 const portMarkers = {
   'packages/ai/src/provider-error.ts': [

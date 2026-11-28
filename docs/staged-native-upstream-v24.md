@@ -19,15 +19,20 @@ Pinned Bun: 1.4.2. The lockfile and upstream MIT license are unchanged.
   `x-should-retry: false`, the pinned `isRetryable` in
   `packages/ai/src/provider-error.ts` still honors the header and refuses to
   retry a failure the header never described. Session step retry
-  (`SessionRunnerRetry.isRetryable`), compaction retry and media reads all use
-  that function. The port honors the header only for HTTP status 400 and above.
-  Upstream moved the check into a new `AIError.retryHint` getter and
-  `packages/core/src/model-retry.ts`. Neither exists at the pin, so the port
-  changes the pinned function instead. The upstream `provider-error` and
-  `session-error` regressions are ported against the pinned function, and the
-  pinned compaction scenario that relied on a 200 response's header now uses a
-  429 rate limit, as upstream changed it. The `ModelRetry.retryOneShot` test
-  targets an absent module and is not ported.
+  (`SessionRunnerRetry.isRetryable`), compaction retry and the media
+  generation-poll GET retry all use that function. Once output has started, the
+  step runner already retries an interrupted stream, so the step change matters
+  for drops before the first output event. The port honors the header only for
+  HTTP status 400 and above. Upstream moved the check into a new
+  `AIError.retryHint` getter, which `AIError.isRetryable` and `notRun` in
+  `packages/core/src/model-retry.ts` use. Neither the getter nor
+  `model-retry.ts` exists at the pin, so the port changes the pinned function
+  instead. The upstream `provider-error` and `session-error` regressions are
+  ported against the pinned function, and the pinned compaction scenario that
+  relied on a 200 response's header now uses a 429 rate limit, as upstream
+  changed it. The `ModelRetry.retryOneShot` test and the
+  `startup-prompt.test.tsx` isolation change target files absent at the pin and
+  are not ported.
 - [OpenCode #66796](https://github.com/anomalyco/opencode/pull/66796),
   commit `0b22cf9195dbbf03f2f4abda53c3289e68013b9c`: classify Tencent TokenHub's
   `400003` error (`Input tokens exceed the model context limit`) as context

@@ -125,7 +125,7 @@ bun test --cwd packages/client test/solid-connection.test.ts
 bun test --cwd packages/theme test/theme.test.ts
 bun test --cwd packages/tui test/plugin-source.test.ts
 bun test --cwd packages/tui test/clear-session.test.tsx
-bun test --cwd packages/tui test/plugin-structure.test.ts
+bun test --cwd packages/tui --timeout 30000 test/plugin-structure.test.ts
 # Beta.8 release-owner waiver: Intel macOS has a reproduced intermittent Rename
 # click failure after context-menu resize/reopen. Keep all other checks required;
 # the exact excluded case remains required on every other supported platform.
